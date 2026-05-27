@@ -84,6 +84,75 @@
       font-size: 11px; color: #3d4556; line-height: 1.5;
     }
 
+    /* ── Nieuw-scherm ─────────────────────────────────────────────────── */
+    #newScreen {
+      display: none; position: fixed; inset: 0; z-index: 150;
+      background: #0d1117;
+      flex-direction: row;
+    }
+    #newScreen.visible { display: flex; }
+    #newPanel {
+      width: 300px; min-width: 260px;
+      background: #151d2e;
+      border-right: 1px solid rgba(126,200,227,0.15);
+      display: flex; flex-direction: column;
+      padding: 24px 20px; gap: 16px;
+      font-family: 'Segoe UI', sans-serif;
+      overflow-y: auto;
+    }
+    #newPanel h2 { margin: 0; color: #7ec8e3; font-size: 16px; }
+    #newPanel label {
+      display: flex; flex-direction: column; gap: 5px;
+      font-size: 12px; color: #5a6272;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    #newPanel input, #newPanel select {
+      background: #1a2233; color: #c9d6e8;
+      border: 1px solid rgba(126,200,227,0.25); border-radius: 6px;
+      padding: 7px 10px; font-size: 13px;
+    }
+    #newPanel input::placeholder { color: #3a4455; }
+    #bboxDisplay {
+      font-size: 11px; color: #5a6272; font-family: monospace;
+      background: #1a2233; border-radius: 6px; padding: 8px 10px;
+      line-height: 1.7;
+    }
+    #newMap { flex: 1; }
+    .new-btn {
+      padding: 9px 14px; border-radius: 7px; font-size: 13px; cursor: pointer;
+      border: 1px solid rgba(126,200,227,0.35);
+      background: rgba(126,200,227,0.12); color: #7ec8e3;
+      transition: background .15s;
+    }
+    .new-btn:hover { background: rgba(126,200,227,0.22); }
+    .new-btn.secondary {
+      background: transparent; color: #5a6272;
+      border-color: rgba(255,255,255,0.1);
+    }
+    .new-btn.secondary:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #newProgress {
+      display: none; flex-direction: column; gap: 8px;
+    }
+    #newProgressBar {
+      height: 6px; border-radius: 3px;
+      background: rgba(126,200,227,0.15);
+      overflow: hidden;
+    }
+    #newProgressFill {
+      height: 100%; width: 0%;
+      background: #7ec8e3;
+      transition: width .3s;
+      animation: progressPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes progressPulse {
+      0%,100% { opacity: 1; } 50% { opacity: .5; }
+    }
+    #newLog {
+      font-size: 11px; font-family: monospace; color: #5a6272;
+      background: #1a2233; border-radius: 6px; padding: 8px 10px;
+      max-height: 160px; overflow-y: auto; white-space: pre-wrap;
+    }
+
     /* ── Laadscherm ───────────────────────────────────────────────────── */
     #loader {
       position: absolute; inset: 0; z-index: 100;
@@ -128,7 +197,52 @@
 
   <div id="map"></div>
 
+  <!-- ── Nieuw gebied aanmaken ──────────────────────────────────────────── -->
+  <div id="newScreen">
+    <div id="newPanel">
+      <h2>Nieuw gebied</h2>
+
+      <label>Naam
+        <input type="text" id="newName" placeholder="bijv. Merwehaven"/>
+      </label>
+
+      <label>Transportmodus
+        <select id="newMode">
+          <option value="CAR">Auto (CAR)</option>
+          <option value="BIKE">Fiets (BIKE)</option>
+          <option value="PEDESTRIAN">Voetganger (PEDESTRIAN)</option>
+        </select>
+      </label>
+
+      <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa">
+        Teken een rechthoek op de kaart om de bbox te bepalen.
+        Klik voor de eerste hoek, klik nogmaals voor de tweede.
+      </label>
+
+      <div id="bboxDisplay">Geen bbox getekend</div>
+
+      <div style="display:flex;gap:8px">
+        <button class="new-btn" id="newClearBtn" style="flex:1">Wis bbox</button>
+      </div>
+
+      <!-- Voortgang -->
+      <div id="newProgress">
+        <div id="newProgressBar"><div id="newProgressFill"></div></div>
+        <div id="newStatus" style="font-size:12px;color:#7ec8e3"></div>
+        <div id="newLog"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:auto">
+        <button class="new-btn secondary" id="newHomeBtn" style="flex:1" onclick="window.location.href='/'">&#8962; Overzicht</button>
+        <button class="new-btn secondary" id="newCancelBtn" style="flex:1">Annuleren</button>
+        <button class="new-btn" id="newSubmitBtn" style="flex:2">Aanmaken</button>
+      </div>
+    </div>
+    <div id="newMap"></div>
+  </div>
+
   <div id="ui">
+    <button id="homeBtn" onclick="window.location.href='/'" style="margin-bottom:8px;background:#2a3a4a;color:#8896aa" title="Home">&#8962;</button>
     <h2 id="networkTitle">Verkeersnetwerk Rotterdam</h2>
 
     <div class="legend-bar" id="legendBar"></div>
@@ -204,22 +318,34 @@
           document.getElementById('areaError').textContent =
             'Geen gebieden gevonden. Start de server met --data <map>.';
           document.getElementById('areaError').style.display = 'block';
-          return;
+        } else {
+          areas.forEach(({ areaId, mode, name }) => {
+            const btn = document.createElement('button');
+            btn.textContent = `${name}  —  ${mode}`;
+            btn.style.cssText = `background:#1a2233;color:#c9d6e8;border:1px solid rgba(126,200,227,0.25);
+              border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;text-align:left;
+              transition:background .15s;width:100%`;
+            btn.onmouseenter = () => btn.style.background = 'rgba(126,200,227,0.12)';
+            btn.onmouseleave = () => btn.style.background = '#1a2233';
+            btn.onclick = () => {
+              window.location.href =
+                `/?areaId=${encodeURIComponent(areaId)}&mode=${encodeURIComponent(mode)}`;
+            };
+            container.appendChild(btn);
+          });
         }
-        areas.forEach(({ areaId, mode, name }) => {
-          const btn = document.createElement('button');
-          btn.textContent = `${name}  —  ${mode}`;
-          btn.style.cssText = `background:#1a2233;color:#c9d6e8;border:1px solid rgba(126,200,227,0.25);
-            border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;text-align:left;
-            transition:background .15s;width:100%`;
-          btn.onmouseenter = () => btn.style.background = 'rgba(126,200,227,0.12)';
-          btn.onmouseleave = () => btn.style.background = '#1a2233';
-          btn.onclick = () => {
-            window.location.href =
-              `/?areaId=${encodeURIComponent(areaId)}&mode=${encodeURIComponent(mode)}`;
-          };
-          container.appendChild(btn);
-        });
+
+        // "Nieuw"-knop altijd toevoegen
+        const newBtn = document.createElement('button');
+        newBtn.textContent = '+ Nieuw gebied aanmaken';
+        newBtn.style.cssText = `background:transparent;color:#7ec8e3;
+          border:1px dashed rgba(126,200,227,0.4);
+          border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
+          transition:background .15s;width:100%;margin-top:4px`;
+        newBtn.onmouseenter = () => newBtn.style.background = 'rgba(126,200,227,0.07)';
+        newBtn.onmouseleave = () => newBtn.style.background = 'transparent';
+        newBtn.onclick = () => openNewScreen();
+        container.appendChild(newBtn);
       })
       .catch(() => {
         document.getElementById('areaError').textContent = 'Verbinding met server mislukt.';
@@ -227,6 +353,181 @@
       });
 
     throw new Error('Geen areaId — keuzescherm getoond');
+  }
+
+  // ── Nieuw-scherm ──────────────────────────────────────────────────────────
+  function openNewScreen() {
+    document.getElementById('loader').style.display   = 'none';
+    document.getElementById('newScreen').classList.add('visible');
+
+    // Initialiseer de kaart in het nieuw-scherm (MapLibre, zelfde stijl als hoofdkaart)
+    const newMap = new maplibregl.Map({
+      container: 'newMap',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      center: [4.9, 52.3],
+      zoom: 7,
+    });
+
+    let bbox   = null;   // { minLon, minLat, maxLon, maxLat }
+    let corner = null;   // eerste klik-coördinaat
+    const SOURCE_ID = 'bbox-src';
+    const LAYER_ID  = 'bbox-layer';
+
+    function bboxToGeoJSON(b) {
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [b.minLon, b.minLat],
+            [b.maxLon, b.minLat],
+            [b.maxLon, b.maxLat],
+            [b.minLon, b.maxLat],
+            [b.minLon, b.minLat],
+          ]],
+        },
+      };
+    }
+
+    function updateBboxLayer() {
+      if (!newMap.getSource(SOURCE_ID)) return;
+      newMap.getSource(SOURCE_ID).setData(
+        bbox ? bboxToGeoJSON(bbox) : { type: 'FeatureCollection', features: [] }
+      );
+      document.getElementById('bboxDisplay').innerHTML = bbox
+        ? `min lon: <b>${bbox.minLon.toFixed(5)}</b><br>
+           min lat: <b>${bbox.minLat.toFixed(5)}</b><br>
+           max lon: <b>${bbox.maxLon.toFixed(5)}</b><br>
+           max lat: <b>${bbox.maxLat.toFixed(5)}</b>`
+        : 'Geen bbox getekend';
+    }
+
+    newMap.on('load', () => {
+      newMap.addSource(SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      newMap.addLayer({
+        id: LAYER_ID, type: 'fill', source: SOURCE_ID,
+        paint: { 'fill-color': '#7ec8e3', 'fill-opacity': 0.15 },
+      });
+      newMap.addLayer({
+        id: LAYER_ID + '-outline', type: 'line', source: SOURCE_ID,
+        paint: { 'line-color': '#7ec8e3', 'line-width': 2 },
+      });
+      newMap.getCanvas().style.cursor = 'crosshair';
+    });
+
+    newMap.on('click', e => {
+      const { lng, lat } = e.lngLat;
+      if (!corner) {
+        corner = [lng, lat];
+      } else {
+        bbox = {
+          minLon: Math.min(corner[0], lng),
+          minLat: Math.min(corner[1], lat),
+          maxLon: Math.max(corner[0], lng),
+          maxLat: Math.max(corner[1], lat),
+        };
+        corner = null;
+        updateBboxLayer();
+      }
+    });
+
+    // Rubber-band preview tijdens muis bewegen
+    newMap.on('mousemove', e => {
+      if (!corner || !newMap.getSource(SOURCE_ID)) return;
+      const { lng, lat } = e.lngLat;
+      const preview = {
+        minLon: Math.min(corner[0], lng), minLat: Math.min(corner[1], lat),
+        maxLon: Math.max(corner[0], lng), maxLat: Math.max(corner[1], lat),
+      };
+      newMap.getSource(SOURCE_ID).setData(bboxToGeoJSON(preview));
+    });
+
+    document.getElementById('newClearBtn').onclick = () => {
+      bbox = null; corner = null;
+      updateBboxLayer();
+    };
+
+    document.getElementById('newCancelBtn').onclick = () => {
+      document.getElementById('newScreen').classList.remove('visible');
+      document.getElementById('loader').style.display = 'flex';
+      newMap.remove();
+    };
+
+    document.getElementById('newSubmitBtn').onclick = async () => {
+      const name = document.getElementById('newName').value.trim();
+      if (!name) { alert('Voer een naam in.'); return; }
+      if (!bbox)  { alert('Teken eerst een bbox op de kaart.'); return; }
+
+      const mode   = document.getElementById('newMode').value;
+
+      // UI in wacht-modus
+      const progressEl = document.getElementById('newProgress');
+      const statusEl   = document.getElementById('newStatus');
+      const logEl      = document.getElementById('newLog');
+      const fillEl     = document.getElementById('newProgressFill');
+      progressEl.style.display = 'flex';
+      document.getElementById('newSubmitBtn').disabled = true;
+      statusEl.textContent = 'Pipeline starten…';
+      fillEl.style.width = '5%';
+
+      const body = {
+        name, mode,
+        min_lon: bbox.minLon, min_lat: bbox.minLat,
+        max_lon: bbox.maxLon, max_lat: bbox.maxLat,
+      };
+      let jobId;
+      try {
+        const res  = await fetch('/api/prepare', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) { statusEl.style.color = '#ff6b6b'; statusEl.textContent = data.error; return; }
+        jobId = data.job_id;
+      } catch (e) {
+        statusEl.style.color = '#ff6b6b';
+        statusEl.textContent = 'Verbinding mislukt.';
+        return;
+      }
+
+      // Poll job-status
+      let lastLogLen = 0;
+      const poll = setInterval(async () => {
+        try {
+          const res  = await fetch(`/api/prepare/${jobId}`);
+          const job  = await res.json();
+
+          // Append nieuwe logregels
+          const newLines = job.log.slice(lastLogLen);
+          if (newLines.length) {
+            logEl.textContent += newLines.join('\n') + '\n';
+            logEl.scrollTop = logEl.scrollHeight;
+            lastLogLen = job.log.length;
+          }
+
+          if (job.status === 'running') {
+            statusEl.textContent = 'Pipeline actief…';
+            fillEl.style.width = '60%';
+          } else if (job.status === 'done') {
+            clearInterval(poll);
+            fillEl.style.width = '100%';
+            fillEl.style.animation = 'none';
+            statusEl.style.color = '#00e676';
+            statusEl.textContent = 'Klaar! Gebied is beschikbaar.';
+            document.getElementById('newSubmitBtn').disabled = false;
+            document.getElementById('newSubmitBtn').textContent = 'Terug naar overzicht';
+            document.getElementById('newSubmitBtn').onclick = () => window.location.reload();
+          } else if (job.status === 'error') {
+            clearInterval(poll);
+            fillEl.style.background = '#ff1744';
+            fillEl.style.animation = 'none';
+            statusEl.style.color = '#ff6b6b';
+            statusEl.textContent = `Fout (exitcode ${job.returncode}).`;
+            document.getElementById('newSubmitBtn').disabled = false;
+          }
+        } catch (_) {}
+      }, 1500);
+    };
   }
 
   function apiUrl(type) {
@@ -721,6 +1022,21 @@
     document.getElementById('networkTitle').textContent = `Verkeersnetwerk ${networkName}`;
     document.title = `Verkeersnetwerk ${networkName}`;
 
+    // Bepaal bbox voor kaartnavigatie: uit properties of berekend uit features
+    let areaBounds = geojson.properties?.bbox;  // [minLon, minLat, maxLon, maxLat]
+    if (!areaBounds || areaBounds.length < 4) {
+      let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+      for (const f of features) {
+        for (const [lon, lat] of f.geometry.coordinates) {
+          if (lon < minLon) minLon = lon;
+          if (lat < minLat) minLat = lat;
+          if (lon > maxLon) maxLon = lon;
+          if (lat > maxLat) maxLat = lat;
+        }
+      }
+      areaBounds = [minLon, minLat, maxLon, maxLat];
+    }
+
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments = features.map(f => ({
       coords:  f.geometry.coordinates,
@@ -939,6 +1255,14 @@
       pitch:     58,
       bearing:   -10,
       antialias: true,
+    });
+
+    // Navigeer naar het gebied zodra de kaart klaar is
+    map.once('load', () => {
+      map.fitBounds(
+        [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]],
+        { padding: 60, pitch: 58, bearing: -10, duration: 0 }
+      );
     });
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
