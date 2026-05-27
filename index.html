@@ -397,28 +397,156 @@
     };
   }
 
-  // ── Auto-geometrie ────────────────────────────────────────────────────────
+  // ── Voertuigtype-definities (5 typen, gewogen naar RDW-kentekenbestand) ──────
+  //
+  //  Coördinatenstelsel per mesh:
+  //    X = rijrichting (voor = +X)
+  //    Y = breedte     (rechts = +Y)
+  //    Z = hoogte      (omhoog = +Z, onderkant voertuig = Z 0)
+  //
+  //  Gewichten (benaderd naar RDW-voertuigpopulatie):
+  //    Personenauto  55 %  — sedan / hatchback
+  //    Stadsauto     15 %  — city car (kort, hoge daklijn)
+  //    SUV / MPV     15 %  — hoger en breder, grotere wielen
+  //    Bestelwagen   10 %  — rechthoekige laadruimte
+  //    Vrachtauto     5 %  — cabine + laadbak, 6 wielen
 
-  const CAR_BODY_MESH = mergeMeshes([
-    makeBoxGeom(4.5, 2.0, 0.85,  0,    0,  0.425),
-    makeBoxGeom(2.4, 1.75, 0.70, -0.2, 0,  1.225),
-    makeBoxGeom(0.15, 2.05, 0.25,  2.3, 0,  0.125),
-    makeBoxGeom(0.15, 2.05, 0.25, -2.3, 0,  0.125),
-  ]);
+  const VEHICLE_TYPES = (() => {
 
-  const CAR_WHEEL_MESH = mergeMeshes([
-    makeCylinderGeom(0.38, 0.25,  1.55, -1.0, 0.38, 12),
-    makeCylinderGeom(0.38, 0.25,  1.55,  1.0, 0.38, 12),
-    makeCylinderGeom(0.38, 0.25, -1.55, -1.0, 0.38, 12),
-    makeCylinderGeom(0.38, 0.25, -1.55,  1.0, 0.38, 12),
-  ]);
+    // 1 ── Personenauto (sedan / hatchback)
+    const personenauto = {
+      body: mergeMeshes([
+        makeBoxGeom(4.5,  2.0,  0.85,  0,     0,  0.425),  // carrosserie onderstuk
+        makeBoxGeom(2.4,  1.75, 0.55, -0.2,   0,  1.125),  // cabine
+        makeBoxGeom(0.15, 2.05, 0.25,  2.3,   0,  0.125),  // voorbumper
+        makeBoxGeom(0.15, 2.05, 0.25, -2.3,   0,  0.125),  // achterbumper
+      ]),
+      windows: mergeMeshes([
+        makeBoxGeom(0.04, 1.55, 0.44,  1.0,   0,     1.12),  // voorruit
+        makeBoxGeom(0.04, 1.55, 0.44, -1.4,   0,     1.12),  // achterruit
+        makeBoxGeom(1.90, 0.04, 0.44, -0.2,   0.878, 1.12),  // rechter zijruit
+        makeBoxGeom(1.90, 0.04, 0.44, -0.2,  -0.878, 1.12),  // linker zijruit
+      ]),
+      wheels: mergeMeshes([
+        makeCylinderGeom(0.33, 0.22,  1.55, -1.0, 0.33),
+        makeCylinderGeom(0.33, 0.22,  1.55,  1.0, 0.33),
+        makeCylinderGeom(0.33, 0.22, -1.55, -1.0, 0.33),
+        makeCylinderGeom(0.33, 0.22, -1.55,  1.0, 0.33),
+      ]),
+      weight: 55,
+    };
 
-  const CAR_WINDOW_MESH = mergeMeshes([
-    makeBoxGeom(0.04, 1.55, 0.54,  1.03, 0,     1.26),
-    makeBoxGeom(0.04, 1.55, 0.54, -1.43, 0,     1.26),
-    makeBoxGeom(1.90, 0.04, 0.54, -0.2,  0.898, 1.26),
-    makeBoxGeom(1.90, 0.04, 0.54, -0.2, -0.898, 1.26),
-  ]);
+    // 2 ── Kleine stadsauto (city car — kort, hoge daklijn)
+    const stadsauto = {
+      body: mergeMeshes([
+        makeBoxGeom(3.2,  1.7,  0.85,  0,    0,  0.425),  // onderstuk
+        makeBoxGeom(2.2,  1.55, 0.65,  0,    0,  1.175),  // hoge cabine
+        makeBoxGeom(0.12, 1.75, 0.22,  1.65, 0,  0.11),   // voorbumper
+        makeBoxGeom(0.12, 1.75, 0.22, -1.65, 0,  0.11),   // achterbumper
+      ]),
+      windows: mergeMeshes([
+        makeBoxGeom(0.04, 1.35, 0.54,  0.8,   0,     1.17),  // voorruit
+        makeBoxGeom(0.04, 1.35, 0.54, -1.2,   0,     1.17),  // achterruit
+        makeBoxGeom(1.80, 0.04, 0.54,  0,     0.778, 1.17),  // rechter zijruit
+        makeBoxGeom(1.80, 0.04, 0.54,  0,    -0.778, 1.17),  // linker zijruit
+      ]),
+      wheels: mergeMeshes([
+        makeCylinderGeom(0.28, 0.20,  1.1, -0.85, 0.28),
+        makeCylinderGeom(0.28, 0.20,  1.1,  0.85, 0.28),
+        makeCylinderGeom(0.28, 0.20, -1.1, -0.85, 0.28),
+        makeCylinderGeom(0.28, 0.20, -1.1,  0.85, 0.28),
+      ]),
+      weight: 15,
+    };
+
+    // 3 ── SUV / MPV (hoger, breder, grotere wielen)
+    const suv = {
+      body: mergeMeshes([
+        makeBoxGeom(4.8,  2.1,  1.0,   0,    0,  0.5),    // onderstuk
+        makeBoxGeom(3.2,  1.95, 0.75,  0,    0,  1.375),  // cabine
+        makeBoxGeom(0.15, 2.15, 0.30,  2.45, 0,  0.15),   // voorbumper
+        makeBoxGeom(0.15, 2.15, 0.30, -2.45, 0,  0.15),   // achterbumper
+      ]),
+      windows: mergeMeshes([
+        makeBoxGeom(0.04, 1.75, 0.62,  1.2,   0,     1.37),  // voorruit
+        makeBoxGeom(0.04, 1.75, 0.62, -1.4,   0,     1.37),  // achterruit
+        makeBoxGeom(2.80, 0.04, 0.62,  0,     0.978, 1.37),  // rechter zijruit
+        makeBoxGeom(2.80, 0.04, 0.62,  0,    -0.978, 1.37),  // linker zijruit
+      ]),
+      wheels: mergeMeshes([
+        makeCylinderGeom(0.40, 0.26,  1.65, -1.05, 0.40),
+        makeCylinderGeom(0.40, 0.26,  1.65,  1.05, 0.40),
+        makeCylinderGeom(0.40, 0.26, -1.65, -1.05, 0.40),
+        makeCylinderGeom(0.40, 0.26, -1.65,  1.05, 0.40),
+      ]),
+      weight: 15,
+    };
+
+    // 4 ── Bestelwagen (rechthoekige laadruimte, hoge dakrand)
+    const bestelwagen = {
+      body: mergeMeshes([
+        makeBoxGeom(5.5,  2.2,  2.2,   0,     0,  1.1),   // doos-carrosserie
+        makeBoxGeom(0.12, 2.25, 0.40,  2.81,  0,  0.2),   // voorbumper
+        makeBoxGeom(0.12, 2.25, 0.40, -2.81,  0,  0.2),   // achterbumper
+      ]),
+      windows: mergeMeshes([
+        makeBoxGeom(0.04, 1.95, 0.60,  2.76,  0,     1.80),  // voorruit (breed)
+        makeBoxGeom(0.55, 0.04, 0.50,  2.5,   1.12,  1.80),  // rechter cabine-zijraam
+        makeBoxGeom(0.55, 0.04, 0.50,  2.5,  -1.12,  1.80),  // linker cabine-zijraam
+      ]),
+      wheels: mergeMeshes([
+        makeCylinderGeom(0.36, 0.24,  2.0, -1.1, 0.36),
+        makeCylinderGeom(0.36, 0.24,  2.0,  1.1, 0.36),
+        makeCylinderGeom(0.36, 0.24, -1.9, -1.1, 0.36),
+        makeCylinderGeom(0.36, 0.24, -1.9,  1.1, 0.36),
+      ]),
+      weight: 10,
+    };
+
+    // 5 ── Vrachtauto (cabine voor + laadbak achter, 6 wielen)
+    //   Totale lengte ≈ 10 m; coördinaat-oorsprong op onderkant midden-voertuig.
+    //   Cabine: X van +2.5 → +5.0  (midden X = +3.75)
+    //   Laadbak: X van -5.0 → +2.5 (midden X = -1.25)
+    const vrachtauto = {
+      body: mergeMeshes([
+        makeBoxGeom(2.5,  2.5,  2.8,   3.75, 0,  1.4),   // cabine
+        makeBoxGeom(7.2,  2.45, 3.0,  -1.25, 0,  1.5),   // laadbak
+        makeBoxGeom(0.15, 2.6,  0.40,  5.08, 0,  0.2),   // voorbumper
+      ]),
+      windows: mergeMeshes([
+        makeBoxGeom(0.04, 2.1,  0.80,  5.0,  0,     2.3),  // grote voorruit
+        makeBoxGeom(0.65, 0.04, 0.65,  4.7,  1.26,  2.3),  // rechter zijraam
+        makeBoxGeom(0.65, 0.04, 0.65,  4.7, -1.26,  2.3),  // linker zijraam
+      ]),
+      wheels: mergeMeshes([
+        // Vooras
+        makeCylinderGeom(0.48, 0.28,  3.8, -1.25, 0.48),
+        makeCylinderGeom(0.48, 0.28,  3.8,  1.25, 0.48),
+        // Aandrijfas 1
+        makeCylinderGeom(0.48, 0.28, -1.2, -1.35, 0.48),
+        makeCylinderGeom(0.48, 0.28, -1.2,  1.35, 0.48),
+        // Aandrijfas 2
+        makeCylinderGeom(0.48, 0.28, -3.0, -1.35, 0.48),
+        makeCylinderGeom(0.48, 0.28, -3.0,  1.35, 0.48),
+      ]),
+      weight: 5,
+    };
+
+    return [personenauto, stadsauto, suv, bestelwagen, vrachtauto];
+  })();
+
+  // Gewogen type-loting (zelfde patroon als kleurpalet)
+  const _vtTotal = VEHICLE_TYPES.reduce((s, v) => s + v.weight, 0);
+  const _vtCumul = (() => {
+    let acc = 0;
+    return VEHICLE_TYPES.map(v => { acc += v.weight; return acc; });
+  })();
+
+  function randomVehicleType() {
+    const r = Math.random() * _vtTotal;
+    const i = _vtCumul.findIndex(v => v > r);
+    return i < 0 ? VEHICLE_TYPES.length - 1 : i;
+  }
 
   // ── Debounce helper ───────────────────────────────────────────────────────
 
@@ -472,61 +600,162 @@
     })();
 
     // ── 2. Routes laden (optioneel) ─────────────────────────────────────────
-    setLoaderMsg('Routes laden…');
-    let routeMode  = false;
-    let routeList  = [];       // { coords, length, speedMs, weight }
-    let totalRouteWeight = 1;  // som van alle route.trips
 
-    // Bouw een map linkId -> coordinaten uit het netwerkbestand.
-    // Wordt gebruikt om route-geometrie te reconstrueren zonder voedingslinks.
+    // linkId → geometrie (voor route-reconstructie)
     const linkGeomMap = new Map();
     for (const seg of segments) linkGeomMap.set(seg.props.linkId, seg.coords);
+
+    // Netwerk-graph voor pathfinding (Dijkstra)
+    // Alle links inclusief voedingslinks zodat zone-nodes bereikbaar zijn.
+    const nodeCoords  = new Map();   // nodeId → [lon, lat]
+    const nodeLinkMap = new Map();   // linkId → { fromNode, toNode }
+    const adj         = new Map();   // nodeId → [{ toNode, length, coords }]
+    for (const f of geojson.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const p = f.properties, c = f.geometry.coordinates;
+      nodeCoords.set(p.fromNode, c[0]);
+      nodeCoords.set(p.toNode,   c[c.length - 1]);
+      nodeLinkMap.set(p.linkId, { fromNode: p.fromNode, toNode: p.toNode });
+      if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
+      adj.get(p.fromNode).push({ toNode: p.toNode, length: p.length || 1, coords: c });
+    }
+
+    // Zone-data laden: fromNodeProportions / toNodeProportions
+    setLoaderMsg('Zones laden…');
+    const zoneMap = new Map();   // zoneId → { from: {nodeId: prop}, to: {nodeId: prop} }
+    try {
+      const zoneFile = GEOJSON_FILE.replace('-NETWORK-', '-ZONE-');
+      const zr = await fetch(zoneFile);
+      if (zr.ok) {
+        for (const f of (await zr.json()).features) {
+          const p = f.properties;
+          if (p.zoneId) zoneMap.set(p.zoneId, {
+            from:      p.fromNodeProportions || {},
+            to:        p.toNodeProportions   || {},
+            boundary:  p.zoneClass === 'BOUNDARY',
+          });
+        }
+        console.info(`Zones geladen: ${zoneMap.size}`);
+      }
+    } catch (e) { console.info('Zone-bestand niet beschikbaar:', e.message); }
+
+    /** Kies gewogen willekeurig een nodeId uit een proporties-object */
+    function pickNode(proportions) {
+      const entries = Object.entries(proportions);
+      if (!entries.length) return null;
+      const total = entries.reduce((s, [, v]) => s + v, 0);
+      let r = Math.random() * total;
+      for (const [k, v] of entries) { r -= v; if (r <= 0) return parseInt(k); }
+      return parseInt(entries[entries.length - 1][0]);
+    }
+
+    /**
+     * Dijkstra van source → target langs het netwerk.
+     * Geeft array van [lon,lat]-coördinaten terug, of null als onbereikbaar.
+     * Resultaten worden gecached.
+     */
+    const dijkstraCache = new Map();
+    function dijkstraPath(source, target) {
+      if (source === target) {
+        const c = nodeCoords.get(source);
+        return c ? [c] : null;
+      }
+      const key = `${source}→${target}`;
+      if (dijkstraCache.has(key)) return dijkstraCache.get(key);
+
+      const dist = new Map([[source, 0]]);
+      const prev = new Map();
+      const open = [[0, source]];
+
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        if (u === target) break;
+        for (const e of (adj.get(u) || [])) {
+          const nd = d + e.length;
+          if (nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            prev.set(e.toNode, { via: u, coords: e.coords });
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+
+      if (!prev.has(target)) { dijkstraCache.set(key, null); return null; }
+
+      const segs = [];
+      let cur = target;
+      while (prev.has(cur)) { const { via, coords } = prev.get(cur); segs.unshift(coords); cur = via; }
+      const merged = [...segs[0]];
+      for (let j = 1; j < segs.length; j++) merged.push(...segs[j].slice(1));
+      dijkstraCache.set(key, merged);
+      return merged;
+    }
+
+    setLoaderMsg('Routes laden…');
+    let routeMode        = false;
+    let routeList        = [];
+    let totalRouteWeight = 1;
+
+    // Aantal voedingslinks aan begin én eind van het pad dat wordt overgeslagen.
+    // De auto's rijden het middelste stuk; aanloop en uitloop worden via Dijkstra
+    // gerouteerd vanuit een gewogen willekeurige node in de herkomst-/bestemmingszone.
+    const N_SKIP = 3;
 
     try {
       const resp = await fetch(ROUTES_FILE);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const routesGeoJson = await resp.json();
 
-      // Elke feature = één HB-paar; geometry is MultiLineString.
-      // feature.properties.routes[i].trips    = fractie trips op deze route.
-      // feature.properties.routes[i].linkPath = lijst van linkIds (strings).
-      //
-      // De eerste en laatste link in linkPath zijn voedingslinks die zone-centroids
-      // met het wegennet verbinden. Deze worden weggelaten; de tussenliggende links
-      // worden gebruikt om de geometrie te reconstrueren.
       for (const feat of routesGeoJson.features) {
-        const routes = feat.properties.routes;
+        const routes     = feat.properties.routes;
+        const fromZoneId = feat.properties.fromZoneId;
+        const toZoneId   = feat.properties.toZoneId;
         if (!routes) continue;
-        for (let i = 0; i < routes.length; i++) {
-          const r = routes[i];
-          if (!r.linkPath || r.linkPath.length <= 2) continue;
 
-          // Sla eerste en laatste link over (voedingslinks)
-          const innerLinks = r.linkPath.slice(1, -1).map(id => parseInt(id));
+        for (const r of routes) {
+          const fromBoundary = zoneMap.get(fromZoneId)?.boundary ?? false;
+          const toBoundary   = zoneMap.get(toZoneId)?.boundary   ?? false;
 
-          // Reconstrueer geometrie door link-coördinaten samen te voegen
-          const coordChunks = [];
-          for (const id of innerLinks) {
-            const c = linkGeomMap.get(id);
-            if (!c || c.length < 2) continue;
-            coordChunks.push(c);
-          }
-          if (coordChunks.length === 0) continue;
+          // Bepaal slice-grenzen:
+          //   BOUNDARY-kant heeft geen voedingslinks → niet overslaan
+          //   Niet-BOUNDARY-kant → N_SKIP links overslaan
+          const skipStart = fromBoundary ? 0 : N_SKIP;
+          const skipEnd   = toBoundary   ? 0 : N_SKIP;
+          const minLen    = skipStart + skipEnd + 1;
+          if (!r.linkPath || r.linkPath.length < minLen) continue;
 
-          // Aaneensluitend samenvoegen: eerste punt van elk volgend segment weglaten
-          // (deelt een knooppunt met het laatste punt van het vorige segment)
-          const merged = [...coordChunks[0]];
-          for (let j = 1; j < coordChunks.length; j++) {
-            merged.push(...coordChunks[j].slice(1));
-          }
-          if (merged.length < 2) continue;
+          const sliced = skipEnd > 0
+            ? r.linkPath.slice(skipStart, -skipEnd)
+            : r.linkPath.slice(skipStart);
+          const innerIds = sliced.map(id => parseInt(id));
+          if (!innerIds.length) continue;
 
-          const len = segmentLength(merged);
-          if (len < 30) continue;
+          const firstLink = nodeLinkMap.get(innerIds[0]);
+          const lastLink  = nodeLinkMap.get(innerIds[innerIds.length - 1]);
+          if (!firstLink || !lastLink) continue;
+
+          const chunks = innerIds.map(id => linkGeomMap.get(id)).filter(c => c?.length >= 2);
+          if (!chunks.length) continue;
+
+          const innerCoords = [...chunks[0]];
+          for (let j = 1; j < chunks.length; j++) innerCoords.push(...chunks[j].slice(1));
+          if (innerCoords.length < 2) continue;
+
+          const innerLen = segmentLength(innerCoords);
+          if (innerLen < 30) continue;
+
           const spd = r.travelTime > 0 ? r.distance / r.travelTime : 10;
           routeList.push({
-            coords:  merged,
-            length:  len,
+            innerCoords,
+            innerLen,
+            midStartNode: firstLink.fromNode,
+            midEndNode:   lastLink.toNode,
+            fromZoneId,
+            toZoneId,
+            fromBoundary,
+            toBoundary,
             speedMs: spd,
             weight:  r.trips,
           });
@@ -540,10 +769,9 @@
         document.getElementById('routeBadge').classList.add('visible');
         document.getElementById('statRoutes').textContent =
           `${routesGeoJson.features.length.toLocaleString('nl')} HB-paren · ${routeList.length.toLocaleString('nl')} routes`;
-        // Threshold slider: in route-modus is waarde min. trips × 10000
         document.getElementById('threshLabel').textContent = 'Min. trips-gewicht';
         document.getElementById('threshVal').textContent   = '0.020';
-        document.getElementById('threshold').value         = 200;  // = 0.020 trips
+        document.getElementById('threshold').value         = 200;
         document.getElementById('hintText').innerHTML =
           'Auto\'s volgen berekende routes.<br>Dagdeel beïnvloedt de wegkleur.<br>Zoom in voor meer detail.';
       }
@@ -607,9 +835,34 @@
         for (const route of filtered) {
           // Aantal auto's voor deze route: proportioneel aan gewicht
           const count = Math.max(1, Math.round((route.weight / weightSum) * N));
+
           for (let i = 0; i < count; i++) {
-            const offset = (i / count + Math.random()) % 1;
-            list.push({ path: route, offset, speed: route.speedMs, color: randomCarColor() });
+            // Bouw het volledige pad: aanloop + binnenste stuk + uitloop
+            // Aan een BOUNDARY-kant geen Dijkstra (geen voedingslinks aanwezig)
+            let coords = route.innerCoords;
+
+            if (!route.fromBoundary) {
+              const fromZone = zoneMap.get(route.fromZoneId);
+              const fromNode = fromZone ? pickNode(fromZone.from) : null;
+              if (fromNode != null && fromNode !== route.midStartNode) {
+                const approach = dijkstraPath(fromNode, route.midStartNode);
+                if (approach && approach.length >= 2)
+                  coords = [...approach, ...coords.slice(1)];
+              }
+            }
+
+            if (!route.toBoundary) {
+              const toZone = zoneMap.get(route.toZoneId);
+              const toNode = toZone ? pickNode(toZone.to) : null;
+              if (toNode != null && toNode !== route.midEndNode) {
+                const exit = dijkstraPath(route.midEndNode, toNode);
+                if (exit && exit.length >= 2)
+                  coords = [...coords, ...exit.slice(1)];
+              }
+            }
+
+            const path = { coords, length: segmentLength(coords), speedMs: route.speedMs };
+            list.push({ path, offset: Math.random(), speed: route.speedMs, color: randomCarColor(), typeIdx: randomVehicleType() });
           }
         }
       } else {
@@ -619,7 +872,7 @@
           const count = flowToCarCount(segFlow(seg));
           for (let i = 0; i < count; i++) {
             const offset = (i / count + Math.random()) % 1;
-            list.push({ path: seg, offset, speed: seg.speedMs, color: randomCarColor() });
+            list.push({ path: seg, offset, speed: seg.speedMs, color: randomCarColor(), typeIdx: randomVehicleType() });
           }
         }
       }
@@ -639,6 +892,7 @@
           position:    [lon, lat, 0.75],
           orientation: [0, 90 - bearing, 0],
           color:       c.color,
+          typeIdx:     c.typeIdx,
         };
       }
     }
@@ -690,36 +944,43 @@
     }
 
     function makeCarLayers(data) {
-      const shared = {
-        data,
-        getPosition:    d => d.position,
-        getOrientation: d => d.orientation,
-        sizeScale: 1,
-        pickable: false,
-      };
-      return [
-        new SimpleMeshLayer({
-          ...shared,
-          id:       'cars-body',
-          mesh:     CAR_BODY_MESH,
-          getColor: d => d.color,
-          material: { ambient: 0.55, diffuse: 0.85, shininess: 60, specularColor: [80, 80, 80] },
-        }),
-        new SimpleMeshLayer({
-          ...shared,
-          id:       'cars-windows',
-          mesh:     CAR_WINDOW_MESH,
-          getColor: [12, 28, 72, 210],
-          material: { ambient: 0.3, diffuse: 0.5, shininess: 120, specularColor: [160, 200, 255] },
-        }),
-        new SimpleMeshLayer({
-          ...shared,
-          id:       'cars-wheels',
-          mesh:     CAR_WHEEL_MESH,
-          getColor: [22, 22, 24, 255],
-          material: { ambient: 0.4, diffuse: 0.6, shininess: 20, specularColor: [30, 30, 30] },
-        }),
-      ];
+      const layers = [];
+      for (let ti = 0; ti < VEHICLE_TYPES.length; ti++) {
+        const vt       = VEHICLE_TYPES[ti];
+        const typeData = data.filter(d => d.typeIdx === ti);
+        if (!typeData.length) continue;
+        const shared = {
+          data:           typeData,
+          getPosition:    d => d.position,
+          getOrientation: d => d.orientation,
+          sizeScale: 1,
+          pickable:  false,
+        };
+        layers.push(
+          new SimpleMeshLayer({
+            ...shared,
+            id:       `cars-body-${ti}`,
+            mesh:     vt.body,
+            getColor: d => d.color,
+            material: { ambient: 0.55, diffuse: 0.85, shininess: 60, specularColor: [80, 80, 80] },
+          }),
+          new SimpleMeshLayer({
+            ...shared,
+            id:       `cars-windows-${ti}`,
+            mesh:     vt.windows,
+            getColor: [12, 28, 72, 210],
+            material: { ambient: 0.3, diffuse: 0.5, shininess: 120, specularColor: [160, 200, 255] },
+          }),
+          new SimpleMeshLayer({
+            ...shared,
+            id:       `cars-wheels-${ti}`,
+            mesh:     vt.wheels,
+            getColor: [22, 22, 24, 255],
+            material: { ambient: 0.4, diffuse: 0.6, shininess: 20, specularColor: [30, 30, 30] },
+          }),
+        );
+      }
+      return layers;
     }
 
     function makeTooltip({ object }) {
