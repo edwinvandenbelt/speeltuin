@@ -8,16 +8,17 @@ Start:
 Standaard worden GeoJSON-bestanden gezocht in dezelfde map als dit script.
 Gebruik --data om een andere map op te geven.
 
-Bestandsconventie (ongewijzigd t.o.v. bestaande bestanden):
+Bestandsconventie:
     {areaId}-NETWORK-{MODE}.geojson
     {areaId}-ROUTES-{MODE}.geojson
     {areaId}-ZONE-{MODE}.geojson
 
 API:
-    GET /                                   → index.html
-    GET /api/geojson?areaId=…&mode=…&type=… → GeoJSON-bestand
+    GET /                                      → index.html
+    GET /api/geojson?areaId=…&mode=…&type=…   → GeoJSON-bestand
          type ∈ {NETWORK, ROUTES, ZONE}
-    GET /api/areas                          → beschikbare (areaId, mode)-combinaties
+    GET /api/areas                             → beschikbare (areaId, mode, name)-combinaties
+    GET /api/setdir?path=…                     → stel data-map in, geeft areas terug
 """
 
 import argparse
@@ -43,8 +44,7 @@ DATA_DIR   = Path(args.data).resolve()
 STATIC_DIR = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
 
 VALID_TYPES = {'NETWORK', 'ROUTES', 'ZONE'}
-# Toegestane tekens in areaId en mode (voorkom path-traversal)
-_SAFE_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
+_SAFE_RE    = re.compile(r'^[A-Za-z0-9_\-]+$')
 
 app = Flask(__name__, static_folder=None)
 
@@ -53,27 +53,35 @@ app = Flask(__name__, static_folder=None)
 # ---------------------------------------------------------------------------
 
 def _safe(value: str) -> bool:
-    """Controleer of een parameter alleen veilige tekens bevat."""
     return bool(value and _SAFE_RE.match(value))
 
 
 def _geojson_path(area_id: str, mode: str, file_type: str) -> Path:
-    """Geeft het volledige pad naar een GeoJSON-bestand."""
     filename = f"{area_id}-{file_type}-{mode}.geojson"
     return DATA_DIR / filename
 
 
 def _discover_areas():
     """
-    Zoek alle beschikbare (areaId, mode)-combinaties in DATA_DIR
-    op basis van NETWORK-bestanden (authoritative).
+    Zoek alle beschikbare (areaId, mode)-combinaties in DATA_DIR.
+    Leest 'name' uit top-level GeoJSON properties indien beschikbaar.
     """
-    areas = []
+    areas   = []
     pattern = re.compile(r'^(.+)-NETWORK-([A-Za-z0-9_]+)\.geojson$')
     for f in sorted(DATA_DIR.glob('*-NETWORK-*.geojson')):
         m = pattern.match(f.name)
-        if m:
-            areas.append({'areaId': m.group(1), 'mode': m.group(2)})
+        if not m:
+            continue
+        area_id = m.group(1)
+        mode    = m.group(2)
+        name    = area_id
+        try:
+            with open(f, encoding='utf-8') as fh:
+                data = json.load(fh)
+                name = data.get('properties', {}).get('name', area_id)
+        except Exception:
+            pass
+        areas.append({'areaId': area_id, 'mode': mode, 'name': name})
     return areas
 
 # ---------------------------------------------------------------------------
@@ -82,34 +90,46 @@ def _discover_areas():
 
 @app.route('/')
 def index():
-    """Serveer de frontend."""
     return send_from_directory(str(STATIC_DIR), 'index.html')
 
 
 @app.route('/api/areas')
 def api_areas():
-    """
-    Geeft een lijst van beschikbare (areaId, mode)-combinaties.
-    Response: [{ areaId, mode }, ...]
-    """
+    """Geeft [{ areaId, mode, name }, ...] voor de huidige data-map."""
     return jsonify(_discover_areas())
+
+
+@app.route('/api/setdir')
+def api_setdir():
+    """
+    Stel de data-map dynamisch in.
+
+    Query-parameters:
+        path — volledig pad naar een GeoJSON-bestand of een map
+
+    Response: { dir, areas: [{ areaId, mode, name }, ...] }
+    """
+    global DATA_DIR
+    raw = request.args.get('path', '').strip()
+    if not raw:
+        abort(400, 'Parameter "path" ontbreekt')
+
+    p = Path(raw).resolve()
+    if p.is_file():
+        p = p.parent
+    if not p.is_dir():
+        abort(404, f'Map niet gevonden: {p}')
+
+    DATA_DIR = p
+    return jsonify({'dir': str(DATA_DIR), 'areas': _discover_areas()})
 
 
 @app.route('/api/geojson')
 def api_geojson():
-    """
-    Serveer een GeoJSON-bestand.
-
-    Query-parameters:
-        areaId  — verplicht
-        mode    — verplicht  (bijv. CAR, BIKE)
-        type    — verplicht  (NETWORK | ROUTES | ZONE)
-    """
     area_id   = request.args.get('areaId',  '')
     mode      = request.args.get('mode',    '').upper()
     file_type = request.args.get('type',    '').upper()
 
-    # Validatie
     if not _safe(area_id):
         abort(400, 'Ongeldige of ontbrekende parameter: areaId')
     if not _safe(mode):
@@ -118,7 +138,6 @@ def api_geojson():
         abort(400, f'Ongeldige parameter type. Toegestaan: {", ".join(sorted(VALID_TYPES))}')
 
     path = _geojson_path(area_id, mode, file_type)
-
     if not path.exists():
         abort(404, f'Bestand niet gevonden: {path.name}')
 

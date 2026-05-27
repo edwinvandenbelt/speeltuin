@@ -185,12 +185,48 @@
   const AREA_ID = _params.get('areaId');
   const MODE    = (_params.get('mode') || 'CAR').toUpperCase();
 
+  // ── Geen areaId: toon keuzescherm ─────────────────────────────────────────
   if (!AREA_ID) {
-    document.getElementById('loader').innerHTML =
-      '<p style="color:#ff6b6b;font-family:Segoe UI,sans-serif;padding:32px;text-align:center">' +
-      'Geen <b>areaId</b> opgegeven.<br>' +
-      'Gebruik: <code>/?areaId=&lt;id&gt;&amp;mode=CAR</code></p>';
-    throw new Error('areaId ontbreekt in URL');
+    const loader = document.getElementById('loader');
+    loader.innerHTML = `
+      <div style="text-align:center;font-family:'Segoe UI',sans-serif;color:#c9d6e8;max-width:420px;padding:24px">
+        <h2 style="color:#7ec8e3;margin:0 0 8px;font-size:20px">Verkeersnetwerk-visualisatie</h2>
+        <p style="color:#5a6272;font-size:13px;margin:0 0 24px">Kies een gebied om te laden:</p>
+        <div id="areaButtons" style="display:flex;flex-direction:column;gap:8px"></div>
+        <p id="areaError" style="display:none;color:#ff6b6b;font-size:13px;margin-top:16px"></p>
+      </div>`;
+
+    fetch('/api/areas')
+      .then(r => r.json())
+      .then(areas => {
+        const container = document.getElementById('areaButtons');
+        if (!areas.length) {
+          document.getElementById('areaError').textContent =
+            'Geen gebieden gevonden. Start de server met --data <map>.';
+          document.getElementById('areaError').style.display = 'block';
+          return;
+        }
+        areas.forEach(({ areaId, mode, name }) => {
+          const btn = document.createElement('button');
+          btn.textContent = `${name}  —  ${mode}`;
+          btn.style.cssText = `background:#1a2233;color:#c9d6e8;border:1px solid rgba(126,200,227,0.25);
+            border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;text-align:left;
+            transition:background .15s;width:100%`;
+          btn.onmouseenter = () => btn.style.background = 'rgba(126,200,227,0.12)';
+          btn.onmouseleave = () => btn.style.background = '#1a2233';
+          btn.onclick = () => {
+            window.location.href =
+              `/?areaId=${encodeURIComponent(areaId)}&mode=${encodeURIComponent(mode)}`;
+          };
+          container.appendChild(btn);
+        });
+      })
+      .catch(() => {
+        document.getElementById('areaError').textContent = 'Verbinding met server mislukt.';
+        document.getElementById('areaError').style.display = 'block';
+      });
+
+    throw new Error('Geen areaId — keuzescherm getoond');
   }
 
   function apiUrl(type) {
