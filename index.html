@@ -48,8 +48,6 @@
       font-size: 10px; color: #5a6272;
       margin-bottom: 14px;
     }
-    .stat { color: #5a6272; font-size: 12px; margin-bottom: 3px; }
-    .stat b { color: #dde4f0; font-weight: 600; }
     .control { margin-top: 14px; }
     .control label {
       font-size: 12px; color: #5a6272;
@@ -80,20 +78,6 @@
       border-color: rgba(255, 200, 80, 0.35);
     }
     #pauseBtn.paused:hover { background: rgba(255, 200, 80, 0.22); }
-
-    /* Route-modus badge */
-    #routeBadge {
-      display: none;
-      margin-top: 10px;
-      padding: 5px 9px;
-      background: rgba(80, 200, 120, 0.13);
-      border: 1px solid rgba(80, 200, 120, 0.3);
-      border-radius: 6px;
-      font-size: 11px;
-      color: #50c878;
-      line-height: 1.4;
-    }
-    #routeBadge.visible { display: block; }
 
     .hint {
       margin-top: 14px; padding-top: 10px;
@@ -146,17 +130,13 @@
   <div id="map"></div>
 
   <div id="ui">
-    <h2>Verkeersnetwerk Rotterdam</h2>
+    <h2 id="networkTitle">Verkeersnetwerk Rotterdam</h2>
 
     <div class="legend-bar"></div>
-    <div class="legend-labels"><span>Laag</span><span>Flow intensiteit</span><span>Hoog</span></div>
-
-    <div class="stat">Segmenten: <b id="statSegs">–</b></div>
-    <div class="stat">Auto-entiteiten: <b id="statCars">–</b></div>
-    <div class="stat">Max flow: <b id="statMax">–</b> vtg/24u</div>
-
-    <div id="routeBadge">&#10003; Route-modus actief<br>
-      <span id="statRoutes" style="color:#8896aa"></span>
+    <div class="legend-labels">
+      <span id="legendMin">0</span>
+      <span>Intensiteit</span>
+      <span id="legendMax">–</span>
     </div>
 
     <div class="control">
@@ -189,10 +169,26 @@
   <script>
   'use strict';
 
-  const GEOJSON_FILE = '06b7cb71-cb6b-4170-8e39-d09466fbae92-NETWORK-CAR.geojson';
-  // Routes-bestand: zelfde areaId + mode, maar 'NETWORK' vervangen door 'ROUTES'
-  const ROUTES_FILE  = GEOJSON_FILE.replace('-NETWORK-', '-ROUTES-');
-  const CENTER       = [4.42043, 51.91117];
+  // ── Parameters uit URL (bijv. /?areaId=xxx&mode=CAR) ─────────────────────
+  const _params = new URLSearchParams(window.location.search);
+  const AREA_ID = _params.get('areaId');
+  const MODE    = (_params.get('mode') || 'CAR').toUpperCase();
+
+  if (!AREA_ID) {
+    document.getElementById('loader').innerHTML =
+      '<p style="color:#ff6b6b;font-family:Segoe UI,sans-serif;padding:32px;text-align:center">' +
+      'Geen <b>areaId</b> opgegeven.<br>' +
+      'Gebruik: <code>/?areaId=&lt;id&gt;&amp;mode=CAR</code></p>';
+    throw new Error('areaId ontbreekt in URL');
+  }
+
+  function apiUrl(type) {
+    return `/api/geojson?areaId=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}&type=${type}`;
+  }
+
+  const GEOJSON_FILE  = apiUrl('NETWORK');
+  const ROUTES_FILE   = apiUrl('ROUTES');
+  const CENTER        = [4.42043, 51.91117];
 
   // ── Geo-hulpfuncties ──────────────────────────────────────────────────────
 
@@ -621,8 +617,22 @@
     const maxFlow    = Math.max(...flowValues);
     const flowRange  = maxFlow - minFlow || 1;
 
-    document.getElementById('statSegs').textContent = features.length.toLocaleString('nl');
-    document.getElementById('statMax').textContent  = Math.round(maxFlow).toLocaleString('nl');
+    /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
+    function updateLegend() {
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of segments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      document.getElementById('legendMin').textContent = Math.round(dpMin).toLocaleString('nl') + ' vtg/u';
+      document.getElementById('legendMax').textContent = Math.round(dpMax).toLocaleString('nl') + ' vtg/u';
+    }
+
+    // Netwerknaam instellen vanuit GeoJSON top-level properties
+    const networkName = geojson.properties?.name || AREA_ID;
+    document.getElementById('networkTitle').textContent = `Verkeersnetwerk ${networkName}`;
+    document.title = `Verkeersnetwerk ${networkName}`;
 
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments = features.map(f => ({
@@ -684,7 +694,7 @@
     setLoaderMsg('Zones laden…');
     const zoneMap = new Map();   // zoneId → { from: {nodeId: prop}, to: {nodeId: prop} }
     try {
-      const zoneFile = GEOJSON_FILE.replace('-NETWORK-', '-ZONE-');
+      const zoneFile = apiUrl('ZONE');
       const zr = await fetch(zoneFile);
       if (zr.ok) {
         for (const f of (await zr.json()).features) {
@@ -824,14 +834,9 @@
       routeMode = routeList.length > 0;
 
       if (routeMode) {
-        document.getElementById('routeBadge').classList.add('visible');
-        document.getElementById('statRoutes').textContent =
-          `${routesGeoJson.features.length.toLocaleString('nl')} HB-paren · ${routeList.length.toLocaleString('nl')} routes`;
         document.getElementById('threshLabel').textContent = 'Min. trips-gewicht';
         document.getElementById('threshVal').textContent   = '0.020';
         document.getElementById('threshold').value         = 200;
-        document.getElementById('hintText').innerHTML =
-          'Auto\'s volgen berekende routes.<br>Dagdeel beïnvloedt de wegkleur.<br>Zoom in voor meer detail.';
       }
     } catch (e) {
       console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
@@ -862,6 +867,9 @@
       if (dp && dp[daypart] != null) return dp[daypart];
       return seg.flow;
     }
+
+    // Initialiseer legenda met avondspits-waarden
+    updateLegend();
 
     /**
      * Bouw een path-object uit een array van link-segmenten.
@@ -1152,8 +1160,9 @@
       const p  = object.properties;
       const dp = p.flowsPerDaypart || {};
       const dpLabels = { mrh: 'Ochtendspits', erh: 'Avondspits', rest: 'Rest dag' };
-      const occ = p.capacity > 0
-        ? ((p.flow / p.capacity) * 100).toFixed(0) + '%' : '–';
+      const dpFlow = dp[daypart] ?? null;
+      const occ = (p.capacity > 0 && dpFlow != null)
+        ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
       return {
         html: `
           <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
@@ -1189,7 +1198,6 @@
 
     cars = buildCarList(threshold);
     computeCarData();
-    document.getElementById('statCars').textContent = cars.length.toLocaleString('nl');
 
     const overlay = new MapboxOverlay({
       layers:     [makeNetworkLayer(), ...makeCarLayers([...carData])],
@@ -1273,7 +1281,6 @@
     function rebuildCars() {
       cars = buildCarList(threshold);
       computeCarData();
-      document.getElementById('statCars').textContent = cars.length.toLocaleString('nl');
     }
 
     // Onderdruk 'Image X could not be loaded'-waarschuwingen van OpenFreeMap's sprite-sheet
@@ -1320,6 +1327,7 @@
       if (!btn) return;
       daypart = btn.dataset.dp;
       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b === btn));
+      updateLegend();
       // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
       // in segment-modus bepaalt het de flow-drempel per segment.
       rebuildCars();
