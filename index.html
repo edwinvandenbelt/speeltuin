@@ -336,6 +336,46 @@
     return { pos, nor, uv, idx, vc: 24 };
   }
 
+  /**
+   * Schuin geplaatst glasvlak (voor- en achterruit).
+   *   w       = breedte (Y-as)
+   *   h       = hoogte  (Z-as)
+   *   tiltDx  = hoeveel de bovenkant opschuift in de -X richting (>0 = achterover)
+   *   cx,cy,cz = middelpunt van het vlak
+   * Beide zijden worden gerenderd zodat het glas van binnen en buiten zichtbaar is.
+   */
+  function makeTiltedPane(w, h, tiltDx, cx, cy, cz) {
+    const bx = cx + tiltDx / 2;   // onderkant-X (iets naar voren)
+    const tx = cx - tiltDx / 2;   // bovenkant-X (iets naar achter)
+    const yw = w / 2;
+    const zh = h / 2;
+    // Normaalvector: loodrecht op het vlak, naar voren gericht (+X component)
+    const len = Math.sqrt(h * h + tiltDx * tiltDx) || 1;
+    const nx = h / len, nz = tiltDx / len;
+    const pos = new Float32Array([
+      // Voorzijde
+      bx, cy - yw, cz - zh,  // 0 BO-links
+      bx, cy + yw, cz - zh,  // 1 BO-rechts
+      tx, cy + yw, cz + zh,  // 2 BO-rechts boven
+      tx, cy - yw, cz + zh,  // 3 BO-links boven
+      // Achterzijde (zelfde vertices, omgekeerde volgorde)
+      bx, cy - yw, cz - zh,  // 4
+      bx, cy + yw, cz - zh,  // 5
+      tx, cy + yw, cz + zh,  // 6
+      tx, cy - yw, cz + zh,  // 7
+    ]);
+    const nor = new Float32Array([
+       nx, 0,  nz,  nx, 0,  nz,  nx, 0,  nz,  nx, 0,  nz,
+      -nx, 0, -nz, -nx, 0, -nz, -nx, 0, -nz, -nx, 0, -nz,
+    ]);
+    const uv  = new Float32Array(16).fill(0);
+    const idx = new Uint32Array([
+      0, 1, 2,  0, 2, 3,   // voorzijde
+      4, 6, 5,  4, 7, 6,   // achterzijde
+    ]);
+    return { pos, nor, uv, idx, vc: 8 };
+  }
+
   function makeCylinderGeom(radius, h, cx, cy, cz, seg = 12) {
     const pos = [], nor = [], uv = [], idx = [];
     const step = (2 * Math.PI) / seg;
@@ -417,15 +457,17 @@
     const personenauto = {
       body: mergeMeshes([
         makeBoxGeom(4.5,  2.0,  0.85,  0,     0,  0.425),  // carrosserie onderstuk
-        makeBoxGeom(2.4,  1.75, 0.55, -0.2,   0,  1.125),  // cabine
-        makeBoxGeom(0.15, 2.05, 0.25,  2.3,   0,  0.125),  // voorbumper
-        makeBoxGeom(0.15, 2.05, 0.25, -2.3,   0,  0.125),  // achterbumper
+        makeBoxGeom(2.25, 1.75, 0.55, -0.235, 0,  1.125),  // cabine (voor=0.89, achter=-1.36)
+      ]),
+      bumpers: mergeMeshes([
+        makeBoxGeom(0.15, 2.05, 0.28,  2.3,  0,  0.29),   // voorbumper
+        makeBoxGeom(0.15, 2.05, 0.28, -2.3,  0,  0.29),   // achterbumper
       ]),
       windows: mergeMeshes([
-        makeBoxGeom(0.04, 1.55, 0.44,  1.0,   0,     1.12),  // voorruit
-        makeBoxGeom(0.04, 1.55, 0.44, -1.4,   0,     1.12),  // achterruit
-        makeBoxGeom(1.90, 0.04, 0.44, -0.2,   0.878, 1.12),  // rechter zijruit
-        makeBoxGeom(1.90, 0.04, 0.44, -0.2,  -0.878, 1.12),  // linker zijruit
+        makeTiltedPane(1.55, 0.44,  0.22,  1.0,  0,     1.12),  // voorruit (achterover ~27°)
+        makeTiltedPane(1.55, 0.38, -0.14, -1.43, 0,     1.10),  // achterruit (iets voorover)
+        makeBoxGeom(1.90, 0.04, 0.44, -0.2,   0.878, 1.12),     // rechter zijruit
+        makeBoxGeom(1.90, 0.04, 0.44, -0.2,  -0.878, 1.12),     // linker zijruit
       ]),
       wheels: mergeMeshes([
         makeCylinderGeom(0.33, 0.22,  1.55, -1.0, 0.33),
@@ -439,16 +481,18 @@
     // 2 ── Kleine stadsauto (city car — kort, hoge daklijn)
     const stadsauto = {
       body: mergeMeshes([
-        makeBoxGeom(3.2,  1.7,  0.85,  0,    0,  0.425),  // onderstuk
-        makeBoxGeom(2.2,  1.55, 0.65,  0,    0,  1.175),  // hoge cabine
-        makeBoxGeom(0.12, 1.75, 0.22,  1.65, 0,  0.11),   // voorbumper
-        makeBoxGeom(0.12, 1.75, 0.22, -1.65, 0,  0.11),   // achterbumper
+        makeBoxGeom(3.2,  1.7,  0.85,  0,     0,  0.425),  // onderstuk
+        makeBoxGeom(1.82, 1.55, 0.65, -0.23,  0,  1.175),  // hoge cabine (voor=0.68, achter=-1.14)
+      ]),
+      bumpers: mergeMeshes([
+        makeBoxGeom(0.12, 1.75, 0.24,  1.65,  0,  0.27),   // voorbumper
+        makeBoxGeom(0.12, 1.75, 0.24, -1.65,  0,  0.27),   // achterbumper
       ]),
       windows: mergeMeshes([
-        makeBoxGeom(0.04, 1.35, 0.54,  0.8,   0,     1.17),  // voorruit
-        makeBoxGeom(0.04, 1.35, 0.54, -1.2,   0,     1.17),  // achterruit
-        makeBoxGeom(1.80, 0.04, 0.54,  0,     0.778, 1.17),  // rechter zijruit
-        makeBoxGeom(1.80, 0.04, 0.54,  0,    -0.778, 1.17),  // linker zijruit
+        makeTiltedPane(1.35, 0.50,  0.24,  0.8,  0,     1.17),  // voorruit (steil achterover, city-car stijl)
+        makeTiltedPane(1.35, 0.42, -0.12, -1.2,  0,     1.15),  // achterruit
+        makeBoxGeom(1.80, 0.04, 0.54,  0,     0.778, 1.17),     // rechter zijruit
+        makeBoxGeom(1.80, 0.04, 0.54,  0,    -0.778, 1.17),     // linker zijruit
       ]),
       wheels: mergeMeshes([
         makeCylinderGeom(0.28, 0.20,  1.1, -0.85, 0.28),
@@ -462,16 +506,18 @@
     // 3 ── SUV / MPV (hoger, breder, grotere wielen)
     const suv = {
       body: mergeMeshes([
-        makeBoxGeom(4.8,  2.1,  1.0,   0,    0,  0.5),    // onderstuk
-        makeBoxGeom(3.2,  1.95, 0.75,  0,    0,  1.375),  // cabine
-        makeBoxGeom(0.15, 2.15, 0.30,  2.45, 0,  0.15),   // voorbumper
-        makeBoxGeom(0.15, 2.15, 0.30, -2.45, 0,  0.15),   // achterbumper
+        makeBoxGeom(4.8,  2.1,  1.0,   0,     0,  0.5),    // onderstuk
+        makeBoxGeom(3.49, 1.95, 0.75, -0.655, 0,  1.375),  // cabine doorlopend tot achterkant (voor=1.09, achter=-2.4)
+      ]),
+      bumpers: mergeMeshes([
+        makeBoxGeom(0.15, 2.15, 0.32,  2.45,  0,  0.36),   // voorbumper
+        makeBoxGeom(0.15, 2.15, 0.32, -2.45,  0,  0.36),   // achterbumper
       ]),
       windows: mergeMeshes([
-        makeBoxGeom(0.04, 1.75, 0.62,  1.2,   0,     1.37),  // voorruit
-        makeBoxGeom(0.04, 1.75, 0.62, -1.4,   0,     1.37),  // achterruit
-        makeBoxGeom(2.80, 0.04, 0.62,  0,     0.978, 1.37),  // rechter zijruit
-        makeBoxGeom(2.80, 0.04, 0.62,  0,    -0.978, 1.37),  // linker zijruit
+        makeTiltedPane(1.75, 0.55,  0.22,  1.2,  0,     1.37),  // voorruit (achterover)
+        makeBoxGeom(0.04, 1.75, 0.55, -2.4,  0,     1.375),     // achterruit (verticaal, aan achterkant cabine)
+        makeBoxGeom(3.49, 0.04, 0.62,  -0.655, 0.978, 1.375),   // rechter zijruit
+        makeBoxGeom(3.49, 0.04, 0.62,  -0.655,-0.978, 1.375),   // linker zijruit
       ]),
       wheels: mergeMeshes([
         makeCylinderGeom(0.40, 0.26,  1.65, -1.05, 0.40),
@@ -486,13 +532,15 @@
     const bestelwagen = {
       body: mergeMeshes([
         makeBoxGeom(5.5,  2.2,  2.2,   0,     0,  1.1),   // doos-carrosserie
-        makeBoxGeom(0.12, 2.25, 0.40,  2.81,  0,  0.2),   // voorbumper
-        makeBoxGeom(0.12, 2.25, 0.40, -2.81,  0,  0.2),   // achterbumper
+      ]),
+      bumpers: mergeMeshes([
+        makeBoxGeom(0.12, 2.25, 0.38,  2.81,  0,  0.34),   // voorbumper
+        makeBoxGeom(0.12, 2.25, 0.38, -2.81,  0,  0.34),   // achterbumper
       ]),
       windows: mergeMeshes([
-        makeBoxGeom(0.04, 1.95, 0.60,  2.76,  0,     1.80),  // voorruit (breed)
-        makeBoxGeom(0.55, 0.04, 0.50,  2.5,   1.12,  1.80),  // rechter cabine-zijraam
-        makeBoxGeom(0.55, 0.04, 0.50,  2.5,  -1.12,  1.80),  // linker cabine-zijraam
+        makeTiltedPane(1.95, 0.60,  0.10,  2.76, 0,     1.80),  // voorruit (licht achterover)
+        makeBoxGeom(0.55, 0.04, 0.50,  2.5,   1.12,  1.80),     // rechter cabine-zijraam
+        makeBoxGeom(0.55, 0.04, 0.50,  2.5,  -1.12,  1.80),     // linker cabine-zijraam
       ]),
       wheels: mergeMeshes([
         makeCylinderGeom(0.36, 0.24,  2.0, -1.1, 0.36),
@@ -509,14 +557,16 @@
     //   Laadbak: X van -5.0 → +2.5 (midden X = -1.25)
     const vrachtauto = {
       body: mergeMeshes([
-        makeBoxGeom(2.5,  2.5,  2.8,   3.75, 0,  1.4),   // cabine
-        makeBoxGeom(7.2,  2.45, 3.0,  -1.25, 0,  1.5),   // laadbak
-        makeBoxGeom(0.15, 2.6,  0.40,  5.08, 0,  0.2),   // voorbumper
+        makeBoxGeom(2.5,  2.5,  2.8,   3.75,  0,  1.4),   // cabine
+        makeBoxGeom(7.2,  2.45, 3.0,  -1.25,  0,  1.5),   // laadbak
+      ]),
+      bumpers: mergeMeshes([
+        makeBoxGeom(0.15, 2.6,  0.42,  5.08,  0,  0.41),   // voorbumper
       ]),
       windows: mergeMeshes([
-        makeBoxGeom(0.04, 2.1,  0.80,  5.0,  0,     2.3),  // grote voorruit
-        makeBoxGeom(0.65, 0.04, 0.65,  4.7,  1.26,  2.3),  // rechter zijraam
-        makeBoxGeom(0.65, 0.04, 0.65,  4.7, -1.26,  2.3),  // linker zijraam
+        makeTiltedPane(2.1, 0.80,  0.12,  5.0,  0,     2.3),   // voorruit (licht achterover)
+        makeBoxGeom(0.65, 0.04, 0.65,  4.7,   1.26,  2.3),     // rechter zijraam
+        makeBoxGeom(0.65, 0.04, 0.65,  4.7,  -1.26,  2.3),     // linker zijraam
       ]),
       wheels: mergeMeshes([
         // Vooras
@@ -977,6 +1027,13 @@
             mesh:     vt.wheels,
             getColor: [22, 22, 24, 255],
             material: { ambient: 0.4, diffuse: 0.6, shininess: 20, specularColor: [30, 30, 30] },
+          }),
+          new SimpleMeshLayer({
+            ...shared,
+            id:       `cars-bumpers-${ti}`,
+            mesh:     vt.bumpers,
+            getColor: [28, 28, 28, 255],
+            material: { ambient: 0.35, diffuse: 0.5, shininess: 15, specularColor: [20, 20, 20] },
           }),
         );
       }
