@@ -652,14 +652,19 @@
     // ── 2. Routes laden (optioneel) ─────────────────────────────────────────
 
     // linkId → geometrie (voor route-reconstructie)
-    const linkGeomMap = new Map();
-    for (const seg of segments) linkGeomMap.set(seg.props.linkId, seg.coords);
+    const linkGeomMap   = new Map();
+    // linkId → snelheid in m/s (voor per-link snelheidsmodel)
+    const linkSpeedMap  = new Map();
+    for (const seg of segments) {
+      linkGeomMap.set(seg.props.linkId,  seg.coords);
+      linkSpeedMap.set(seg.props.linkId, seg.speedMs);
+    }
 
     // Netwerk-graph voor pathfinding (Dijkstra)
     // Alle links inclusief voedingslinks zodat zone-nodes bereikbaar zijn.
     const nodeCoords  = new Map();   // nodeId → [lon, lat]
     const nodeLinkMap = new Map();   // linkId → { fromNode, toNode }
-    const adj         = new Map();   // nodeId → [{ toNode, length, coords }]
+    const adj         = new Map();   // nodeId → [{ toNode, length, coords, speedMs }]
     for (const f of geojson.features) {
       if (f.geometry?.type !== 'LineString') continue;
       const p = f.properties, c = f.geometry.coordinates;
@@ -667,7 +672,12 @@
       nodeCoords.set(p.toNode,   c[c.length - 1]);
       nodeLinkMap.set(p.linkId, { fromNode: p.fromNode, toNode: p.toNode });
       if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
-      adj.get(p.fromNode).push({ toNode: p.toNode, length: p.length || 1, coords: c });
+      adj.get(p.fromNode).push({
+        toNode:  p.toNode,
+        length:  p.length || 1,
+        coords:  c,
+        speedMs: p.speed > 0 ? p.speed / 3.6 : 10,
+      });
     }
 
     // Zone-data laden: fromNodeProportions / toNodeProportions
@@ -701,15 +711,12 @@
 
     /**
      * Dijkstra van source → target langs het netwerk.
-     * Geeft array van [lon,lat]-coördinaten terug, of null als onbereikbaar.
-     * Resultaten worden gecached.
+     * Geeft array van link-segmenten terug: [{ coords, length, speedMs }, ...]
+     * of null als onbereikbaar. Resultaten worden gecached.
      */
     const dijkstraCache = new Map();
     function dijkstraPath(source, target) {
-      if (source === target) {
-        const c = nodeCoords.get(source);
-        return c ? [c] : null;
-      }
+      if (source === target) return [];
       const key = `${source}→${target}`;
       if (dijkstraCache.has(key)) return dijkstraCache.get(key);
 
@@ -726,7 +733,7 @@
           const nd = d + e.length;
           if (nd < (dist.get(e.toNode) ?? Infinity)) {
             dist.set(e.toNode, nd);
-            prev.set(e.toNode, { via: u, coords: e.coords });
+            prev.set(e.toNode, { via: u, coords: e.coords, speedMs: e.speedMs });
             open.push([nd, e.toNode]);
           }
         }
@@ -734,13 +741,16 @@
 
       if (!prev.has(target)) { dijkstraCache.set(key, null); return null; }
 
+      // Bouw de lijst van link-segmenten op (van achter naar voor)
       const segs = [];
       let cur = target;
-      while (prev.has(cur)) { const { via, coords } = prev.get(cur); segs.unshift(coords); cur = via; }
-      const merged = [...segs[0]];
-      for (let j = 1; j < segs.length; j++) merged.push(...segs[j].slice(1));
-      dijkstraCache.set(key, merged);
-      return merged;
+      while (prev.has(cur)) {
+        const { via, coords, speedMs } = prev.get(cur);
+        segs.unshift({ coords, speedMs });
+        cur = via;
+      }
+      dijkstraCache.set(key, segs);
+      return segs;
     }
 
     setLoaderMsg('Routes laden…');
@@ -786,27 +796,25 @@
           const lastLink  = nodeLinkMap.get(innerIds[innerIds.length - 1]);
           if (!firstLink || !lastLink) continue;
 
-          const chunks = innerIds.map(id => linkGeomMap.get(id)).filter(c => c?.length >= 2);
-          if (!chunks.length) continue;
+          // Controleer of er geldige geometrie beschikbaar is voor alle inner-links
+          const validInnerIds = innerIds.filter(id => linkGeomMap.get(id)?.length >= 2);
+          if (!validInnerIds.length) continue;
 
-          const innerCoords = [...chunks[0]];
-          for (let j = 1; j < chunks.length; j++) innerCoords.push(...chunks[j].slice(1));
-          if (innerCoords.length < 2) continue;
-
-          const innerLen = segmentLength(innerCoords);
+          // Schat totale innerlengte voor de minimumlengte-check
+          const innerLen = validInnerIds.reduce((s, id) => {
+            const c = linkGeomMap.get(id);
+            return s + (c ? segmentLength(c) : 0);
+          }, 0);
           if (innerLen < 30) continue;
 
-          const spd = r.travelTime > 0 ? r.distance / r.travelTime : 10;
           routeList.push({
-            innerCoords,
-            innerLen,
+            innerIds:     validInnerIds,   // linkId's — per-link snelheid opgehaald in buildCarList
             midStartNode: firstLink.fromNode,
             midEndNode:   lastLink.toNode,
             fromZoneId,
             toZoneId,
             fromBoundary,
             toBoundary,
-            speedMs: spd,
             weight:  r.trips,
           });
         }
@@ -856,6 +864,82 @@
     }
 
     /**
+     * Bouw een path-object uit een array van link-segmenten.
+     *
+     * linkObjs: [{ coords: [[lon,lat],...], speedMs: number }, ...]
+     *
+     * Geeft terug:
+     *   coords      — samengevoegde coördinaten (voor rendering + interpolatePosition)
+     *   length      — totale lengte in meters
+     *   links       — [{ length, speedMs }, ...]  één entry per deellink
+     *   boundaries  — [0, d0, d0+d1, ..., total]  cumulatieve afstand per linkgrens
+     *   speedMs     — snelheid van de eerste link (fallback voor segment-modus)
+     */
+    function buildPathFromLinks(linkObjs) {
+      if (!linkObjs.length) return null;
+
+      const links      = [];
+      const boundaries = [0];
+      const mergedCoords = [...linkObjs[0].coords];
+
+      for (let i = 0; i < linkObjs.length; i++) {
+        const lo  = linkObjs[i];
+        const len = segmentLength(lo.coords);
+        links.push({ length: len, speedMs: lo.speedMs });
+        boundaries.push(boundaries[boundaries.length - 1] + len);
+        if (i > 0) mergedCoords.push(...lo.coords.slice(1));
+      }
+
+      const totalLength = boundaries[boundaries.length - 1];
+      return {
+        coords:     mergedCoords,
+        length:     totalLength,
+        links,
+        boundaries,
+        speedMs:    links[0].speedMs,  // fallback
+      };
+    }
+
+    /**
+     * Geeft de doelsnelheid voor een auto op basis van zijn huidige positie:
+     *   - 90 % van de linksnelheid bij vrij rijden
+     *   - lineair teruggebracht naar 50 % in de laatste SLOW_ZONE meter van de link
+     *
+     * Voor paden zonder per-link data (segment-modus fallback):
+     *   altijd 90 % van path.speedMs.
+     */
+    const SLOW_ZONE = 30;   // meters voor het linkeinde waarop wordt afgereden
+
+    function computeLinkTargetSpeed(car) {
+      const path = car.path;
+
+      // Segment-modus of pad zonder link-info: vaste 90%
+      if (!path.boundaries || path.boundaries.length < 2) {
+        return path.speedMs * 0.9;
+      }
+
+      const distM = car.offset * path.length;
+      const bnd   = path.boundaries;
+
+      // Binary search: zoek linkIdx zodat bnd[linkIdx] <= distM < bnd[linkIdx+1]
+      let lo = 0, hi = bnd.length - 2;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (bnd[mid] <= distM) lo = mid; else hi = mid - 1;
+      }
+      const linkIdx    = Math.min(lo, path.links.length - 1);
+      const linkSpeedMs = path.links[linkIdx].speedMs;
+      const distToEnd  = bnd[linkIdx + 1] - distM;
+
+      if (distToEnd <= SLOW_ZONE) {
+        // Lineair: 90% op 30m voor einde → 50% op het einde
+        const t = distToEnd / SLOW_ZONE;          // 1.0 = ver weg, 0.0 = op eindpunt
+        return linkSpeedMs * (0.50 + 0.40 * t);
+      }
+      return linkSpeedMs * 0.90;
+    }
+
+    /**
      * Bouw de auto-lijst opnieuw op.
      *
      * Route-modus:
@@ -887,17 +971,35 @@
           const count = Math.max(1, Math.round((route.weight / weightSum) * N));
 
           for (let i = 0; i < count; i++) {
-            // Bouw het volledige pad: aanloop + binnenste stuk + uitloop
-            // Aan een BOUNDARY-kant geen Dijkstra (geen voedingslinks aanwezig)
-            let coords = route.innerCoords;
+            // Bouw de per-link segmenten op:
+            //   aanloop (Dijkstra) + binnenste links + uitloop (Dijkstra)
+            // Dijkstra geeft nu [{ coords, speedMs }] terug.
+
+            // Binnenste links: rechtstreeks uit route.innerIds + linkSpeedMap
+            const innerLinkObjs = route.innerIds.map(id => {
+              const coords  = linkGeomMap.get(id);
+              const speedMs = linkSpeedMap.get(id) ?? 10;
+              return coords ? { coords, speedMs } : null;
+            }).filter(Boolean);
+
+            if (!innerLinkObjs.length) continue;
+
+            // Aanloop-/uitlooopsnelheid = snelheid van aangrenzende innerLink
+            const approachSpeedMs = innerLinkObjs[0].speedMs;
+            const exitSpeedMs     = innerLinkObjs[innerLinkObjs.length - 1].speedMs;
+
+            let allLinkObjs = [...innerLinkObjs];
 
             if (!route.fromBoundary) {
               const fromZone = zoneMap.get(route.fromZoneId);
               const fromNode = fromZone ? pickNode(fromZone.from) : null;
               if (fromNode != null && fromNode !== route.midStartNode) {
-                const approach = dijkstraPath(fromNode, route.midStartNode);
-                if (approach && approach.length >= 2)
-                  coords = [...approach, ...coords.slice(1)];
+                const segs = dijkstraPath(fromNode, route.midStartNode);
+                if (segs && segs.length) {
+                  // Overschrijf speedMs met aangrenzende innerLink-snelheid
+                  const approachObjs = segs.map(s => ({ coords: s.coords, speedMs: approachSpeedMs }));
+                  allLinkObjs = [...approachObjs, ...allLinkObjs];
+                }
               }
             }
 
@@ -905,24 +1007,29 @@
               const toZone = zoneMap.get(route.toZoneId);
               const toNode = toZone ? pickNode(toZone.to) : null;
               if (toNode != null && toNode !== route.midEndNode) {
-                const exit = dijkstraPath(route.midEndNode, toNode);
-                if (exit && exit.length >= 2)
-                  coords = [...coords, ...exit.slice(1)];
+                const segs = dijkstraPath(route.midEndNode, toNode);
+                if (segs && segs.length) {
+                  const exitObjs = segs.map(s => ({ coords: s.coords, speedMs: exitSpeedMs }));
+                  allLinkObjs = [...allLinkObjs, ...exitObjs];
+                }
               }
             }
 
-            const path = { coords, length: segmentLength(coords), speedMs: route.speedMs };
-            list.push({ path, offset: Math.random(), speed: route.speedMs, color: randomCarColor(), typeIdx: randomVehicleType() });
+            const path = buildPathFromLinks(allLinkObjs);
+            if (!path || path.length < 30) continue;
+
+            list.push({ path, offset: Math.random(), speed: path.speedMs * 0.9, color: randomCarColor(), typeIdx: randomVehicleType() });
           }
         }
       } else {
-        // Segment-modus (origineel gedrag)
+        // Segment-modus: uniform path-formaat met één link
         for (const seg of segments) {
           if (seg.length < 30 || segFlow(seg) < thresh) continue;
           const count = flowToCarCount(segFlow(seg));
+          const path  = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs }]);
           for (let i = 0; i < count; i++) {
             const offset = (i / count + Math.random()) % 1;
-            list.push({ path: seg, offset, speed: seg.speedMs, color: randomCarColor(), typeIdx: randomVehicleType() });
+            list.push({ path, offset, speed: seg.speedMs * 0.9, color: randomCarColor(), typeIdx: randomVehicleType() });
           }
         }
       }
@@ -1110,6 +1217,9 @@
             const car    = group[i];
             const leader = group[(i + 1) % n];
 
+            // Doelsnelheid op basis van huidige link + positie binnen die link
+            const targetSpeedMs = computeLinkTargetSpeed(car);
+
             // Gap in meters tot voorligger (met wrap-around op het pad)
             let gap;
             if (n === 1) {
@@ -1121,20 +1231,19 @@
               gap = (1.0 - car.offset + leader.offset) * path.length;
             }
 
-            // Gewenste volgafstand: gebruik minimaal 1 m/s als ontwerpsnelheid
-            // zodat (desired - CF_MIN_GAP) nooit nul is (vermijdt deling door nul).
+            // Gewenste volgafstand
             const effectiveSpeed = Math.max(car.speed, 1.0);
             const desired = CF_MIN_GAP + CF_TIME_HEADWAY * effectiveSpeed;
 
             if (gap >= desired) {
-              // Vrije baan: optrekken naar maximumsnelheid van het pad
-              car.speed = Math.min(path.speedMs, car.speed + CF_ACCEL * dt);
+              // Vrije baan: optrekken naar link-doelsnelheid
+              car.speed = Math.min(targetSpeedMs, car.speed + CF_ACCEL * dt);
             } else if (gap > CF_MIN_GAP) {
               // Nadert voorligger: snelheid proportioneel terugschroeven
-              const ratio = (gap - CF_MIN_GAP) / (desired - CF_MIN_GAP);
-              const targetSpeed = (n === 1 ? path.speedMs : leader.speed) * ratio;
-              // Rem niet harder dan comfortabele vertraging
-              const brake = Math.min(CF_DECEL * dt, car.speed - targetSpeed);
+              const ratio       = (gap - CF_MIN_GAP) / (desired - CF_MIN_GAP);
+              const leaderSpeed = n === 1 ? targetSpeedMs : leader.speed;
+              const brakeTarget = leaderSpeed * ratio;
+              const brake       = Math.min(CF_DECEL * dt, car.speed - brakeTarget);
               car.speed = Math.max(0, car.speed - brake);
             } else {
               // Bumper-to-bumper: volledig remmen
