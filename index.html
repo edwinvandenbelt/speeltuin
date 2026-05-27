@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Verkeersnetwerk 3D — Rotterdam</title>
+
+  <!-- MapLibre GL voor achtergrondkaart + 3D gebouwen -->
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <link  href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
+
+  <!-- deck.gl (bevat MapboxOverlay, GeoJsonLayer, SimpleMeshLayer) -->
+  <script src="https://unpkg.com/deck.gl@8.9.0/dist.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1117; }
+    #map { width: 100vw; height: 100vh; }
+
+    /* ── UI Panel ─────────────────────────────────────────────────────── */
+    #ui {
+      position: absolute; top: 16px; left: 16px; z-index: 10;
+      background: rgba(13, 17, 23, 0.91);
+      color: #dde4f0;
+      padding: 18px 20px;
+      border-radius: 14px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      width: 250px;
+      border: 1px solid rgba(255,255,255,0.07);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #ui h2 {
+      font-size: 14px; font-weight: 600;
+      color: #7ec8e3; letter-spacing: 0.4px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .legend-bar {
+      width: 100%; height: 9px; border-radius: 5px;
+      background: linear-gradient(to right, #00e676, #ffea00, #ff1744);
+      margin-bottom: 3px;
+    }
+    .legend-labels {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: #5a6272;
+      margin-bottom: 14px;
+    }
+    .stat { color: #5a6272; font-size: 12px; margin-bottom: 3px; }
+    .stat b { color: #dde4f0; font-weight: 600; }
+    .control { margin-top: 14px; }
+    .control label {
+      font-size: 12px; color: #5a6272;
+      display: flex; justify-content: space-between;
+      margin-bottom: 5px;
+    }
+    .control label span { color: #dde4f0; font-weight: 600; }
+    input[type=range] { width: 100%; accent-color: #7ec8e3; cursor: pointer; }
+
+    #pauseBtn {
+      margin-top: 14px;
+      width: 100%;
+      padding: 7px 0;
+      background: rgba(126, 200, 227, 0.12);
+      color: #7ec8e3;
+      border: 1px solid rgba(126, 200, 227, 0.3);
+      border-radius: 7px;
+      font-size: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: background 0.15s, color 0.15s;
+    }
+    #pauseBtn:hover { background: rgba(126, 200, 227, 0.22); }
+    #pauseBtn.paused {
+      background: rgba(255, 200, 80, 0.13);
+      color: #ffc850;
+      border-color: rgba(255, 200, 80, 0.35);
+    }
+    #pauseBtn.paused:hover { background: rgba(255, 200, 80, 0.22); }
+    .hint {
+      margin-top: 14px; padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      font-size: 11px; color: #3d4556; line-height: 1.5;
+    }
+
+    /* ── Laadscherm ───────────────────────────────────────────────────── */
+    #loader {
+      position: absolute; inset: 0; z-index: 100;
+      background: #0d1117;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px;
+      transition: opacity 0.6s;
+    }
+    #loader.fade { opacity: 0; pointer-events: none; }
+    #loader p { color: #5a6272; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(126,200,227,0.15);
+      border-top-color: #7ec8e3;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dpBtn {
+      flex: 1;
+      padding: 5px 4px;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.05);
+      color: #8896aa;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .dpBtn:hover  { background: rgba(126,200,227,0.12); color: #b8d8e8; }
+    .dpBtn.active { background: rgba(126,200,227,0.22); color: #7ec8e3; border-color: rgba(126,200,227,0.45); }
+  </style>
+</head>
+
+<body>
+  <div id="loader">
+    <div class="spinner"></div>
+    <p id="loaderMsg">GeoJSON laden…</p>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="ui">
+    <h2>Verkeersnetwerk Rotterdam</h2>
+
+    <div class="legend-bar"></div>
+    <div class="legend-labels"><span>Laag</span><span>Flow intensiteit</span><span>Hoog</span></div>
+
+    <div class="stat">Segmenten: <b id="statSegs">–</b></div>
+    <div class="stat">Auto-entiteiten: <b id="statCars">–</b></div>
+    <div class="stat">Max flow: <b id="statMax">–</b> vtg/24u</div>
+
+    <div class="control">
+      <label>Tijdschaal <span id="scaleVal">10×</span></label>
+      <input type="range" id="timeScale" min="1" max="60" value="10" step="1"/>
+    </div>
+
+    <div class="control">
+      <label>Min. flow drempel <span id="threshVal">200</span></label>
+      <input type="range" id="threshold" min="0" max="2000" value="200" step="50"/>
+    </div>
+
+    <div class="control">
+      <label>Dagdeel</label>
+      <div id="daypartBtns" style="display:flex;gap:6px;margin-top:6px">
+        <button class="dpBtn" data-dp="mrh">Ochtendspits</button>
+        <button class="dpBtn active" data-dp="erh">Avondspits</button>
+        <button class="dpBtn" data-dp="rest">Rest dag</button>
+      </div>
+    </div>
+
+    <button id="pauseBtn">&#9646;&#9646; Pauzeer</button>
+
+    <div class="hint">
+      Klik op een wegsegment voor details.<br>
+      Scroll of pinch om in te zoomen.
+    </div>
+  </div>
+
+  <script>
+  'use strict';
+
+  const GEOJSON_FILE = '06b7cb71-cb6b-4170-8e39-d09466fbae92-NETWORK-CAR.geojson';
+  const CENTER       = [4.42043, 51.91117];
+
+  // ── Geo-hulpfuncties ──────────────────────────────────────────────────────
+
+  function haversineM([lon1, lat1], [lon2, lat2]) {
+    const R = 6371000, rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function segmentLength(coords) {
+    let total = 0;
+    for (let i = 0; i < coords.length - 1; i++)
+      total += haversineM(coords[i], coords[i + 1]);
+    return total;
+  }
+
+  /**
+   * Geeft [lon, lat, bearing°] op fractie offset ∈ [0,1] langs een LineString.
+   * bearing = kompasrichting (0 = N, 90 = O, 180 = Z, 270 = W).
+   */
+  function interpolatePosition(coords, offset, totalLen) {
+    const target = Math.max(0, Math.min(1, offset)) * totalLen;
+    let acc = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const d = haversineM(coords[i], coords[i + 1]);
+      if (acc + d >= target || i === coords.length - 2) {
+        const t = d > 0 ? Math.min(1, (target - acc) / d) : 0;
+        const lon     = coords[i][0] + t * (coords[i + 1][0] - coords[i][0]);
+        const lat     = coords[i][1] + t * (coords[i + 1][1] - coords[i][1]);
+        const dLon    = coords[i + 1][0] - coords[i][0];
+        const dLat    = coords[i + 1][1] - coords[i][1];
+        const bearing = (Math.atan2(dLon, dLat) * 180 / Math.PI + 360) % 360;
+        return [lon, lat, bearing];
+      }
+      acc += d;
+    }
+    const c = coords[coords.length - 1];
+    return [c[0], c[1], 0];
+  }
+
+  // ── Kleur- & dichtheidsfuncties ───────────────────────────────────────────
+
+  /** norm ∈ [0,1] → RGBA groen → geel → rood */
+  function flowToRgba(norm) {
+    const r = Math.min(255, Math.round(norm * 2 * 255));
+    const g = Math.min(255, Math.round((1 - norm) * 2 * 255));
+    return [r, g, 12, 210];
+  }
+
+  function flowToCarCount(flow) {
+    if (flow < 200)  return 0;
+    if (flow < 600)  return 1;
+    if (flow < 1200) return 2;
+    if (flow < 2000) return 3;
+    return 4;
+  }
+
+  // 8 gevarieerde autokleuren [R, G, B, A]
+  const CAR_PALETTE = [
+    [215, 48,  48,  255],   // rood
+    [48,  115, 215, 255],   // blauw
+    [48,  175, 80,  255],   // groen
+    [215, 175, 48,  255],   // geel
+    [160, 80,  215, 255],   // paars
+    [215, 120, 48,  255],   // oranje
+    [195, 195, 200, 255],   // zilver
+    [30,  30,  35,  255],   // zwart
+  ];
+
+  // ── Applicatielogica ──────────────────────────────────────────────────────
+
+  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer } = deck;
+
+  // ── Mesh-hulpfuncties ────────────────────────────────────────────────────────
+
+  /**
+   * Bouw een box-mesh met aparte per-vlak normalen.
+   * cx/cy/cz = middelpunt van de box in de lokale auto-ruimte.
+   */
+  function makeBoxGeom(lx, ly, lz, cx, cy, cz) {
+    const hx = lx / 2, hy = ly / 2, hz = lz / 2;
+    const pos = new Float32Array([
+      // Front (+X)
+      cx+hx,cy-hy,cz-hz, cx+hx,cy+hy,cz-hz, cx+hx,cy+hy,cz+hz, cx+hx,cy-hy,cz+hz,
+      // Back (-X)
+      cx-hx,cy-hy,cz-hz, cx-hx,cy+hy,cz-hz, cx-hx,cy+hy,cz+hz, cx-hx,cy-hy,cz+hz,
+      // Right (+Y)
+      cx-hx,cy+hy,cz-hz, cx+hx,cy+hy,cz-hz, cx+hx,cy+hy,cz+hz, cx-hx,cy+hy,cz+hz,
+      // Left (-Y)
+      cx-hx,cy-hy,cz-hz, cx+hx,cy-hy,cz-hz, cx+hx,cy-hy,cz+hz, cx-hx,cy-hy,cz+hz,
+      // Top (+Z)
+      cx-hx,cy-hy,cz+hz, cx+hx,cy-hy,cz+hz, cx+hx,cy+hy,cz+hz, cx-hx,cy+hy,cz+hz,
+      // Bottom (-Z)
+      cx-hx,cy-hy,cz-hz, cx+hx,cy-hy,cz-hz, cx+hx,cy+hy,cz-hz, cx-hx,cy+hy,cz-hz,
+    ]);
+    const nor = new Float32Array([
+       1,0,0, 1,0,0, 1,0,0, 1,0,0,
+      -1,0,0,-1,0,0,-1,0,0,-1,0,0,
+       0,1,0, 0,1,0, 0,1,0, 0,1,0,
+       0,-1,0,0,-1,0,0,-1,0,0,-1,0,
+       0,0,1, 0,0,1, 0,0,1, 0,0,1,
+       0,0,-1,0,0,-1,0,0,-1,0,0,-1,
+    ]);
+    const uv = new Float32Array(48).fill(0);
+    const idx = new Uint32Array([
+       0,1,2, 0,2,3,   4,6,5, 4,7,6,
+       8,9,10, 8,10,11, 12,14,13, 12,15,14,
+      16,17,18,16,18,19, 20,22,21,20,23,22,
+    ]);
+    return { pos, nor, uv, idx, vc: 24 };
+  }
+
+  /**
+   * Bouw een cilinder-mesh met Y-as (wielas).
+   * radius = wielstraal, h = breedte van het wiel, seg = aantal zijvlakken.
+   */
+  function makeCylinderGeom(radius, h, cx, cy, cz, seg = 12) {
+    const pos = [], nor = [], uv = [], idx = [];
+    const step = (2 * Math.PI) / seg;
+
+    // Zijvlakken: seg quads
+    for (let i = 0; i < seg; i++) {
+      const a0 = i * step, a1 = ((i + 1) % seg) * step;
+      const x0 = Math.cos(a0) * radius, z0 = Math.sin(a0) * radius;
+      const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
+      const b = pos.length / 3;
+      pos.push(cx+x0,cy-h/2,cz+z0, cx+x0,cy+h/2,cz+z0,
+               cx+x1,cy+h/2,cz+z1, cx+x1,cy-h/2,cz+z1);
+      nor.push(x0/radius,0,z0/radius, x0/radius,0,z0/radius,
+               x1/radius,0,z1/radius, x1/radius,0,z1/radius);
+      uv.push(0,0, 0,1, 1,1, 1,0);
+      idx.push(b,b+1,b+2, b,b+2,b+3);
+    }
+
+    // Top cap (+Y)
+    const tc = pos.length / 3;
+    pos.push(cx, cy+h/2, cz); nor.push(0,1,0); uv.push(0.5,0.5);
+    for (let i = 0; i < seg; i++) {
+      const a = i * step;
+      pos.push(cx+Math.cos(a)*radius, cy+h/2, cz+Math.sin(a)*radius);
+      nor.push(0,1,0); uv.push(0,0);
+    }
+    for (let i = 1; i < seg; i++)   idx.push(tc, tc+i, tc+i+1);
+    idx.push(tc, tc+seg, tc+1);
+
+    // Bottom cap (-Y)
+    const bc = pos.length / 3;
+    pos.push(cx, cy-h/2, cz); nor.push(0,-1,0); uv.push(0.5,0.5);
+    for (let i = 0; i < seg; i++) {
+      const a = i * step;
+      pos.push(cx+Math.cos(a)*radius, cy-h/2, cz+Math.sin(a)*radius);
+      nor.push(0,-1,0); uv.push(0,0);
+    }
+    for (let i = 1; i < seg; i++)   idx.push(bc, bc+i+1, bc+i);
+    idx.push(bc, bc+1, bc+seg);
+
+    const vc = pos.length / 3;
+    return {
+      pos: new Float32Array(pos), nor: new Float32Array(nor),
+      uv:  new Float32Array(uv),  idx: new Uint32Array(idx), vc,
+    };
+  }
+
+  /** Combineer meerdere deelgeometries tot één SimpleMeshLayer-mesh. */
+  function mergeMeshes(parts) {
+    let tv = 0, ti = 0;
+    for (const p of parts) { tv += p.vc; ti += p.idx.length; }
+    const pos = new Float32Array(tv * 3);
+    const nor = new Float32Array(tv * 3);
+    const uv  = new Float32Array(tv * 2);
+    const idx = new Uint32Array(ti);
+    let vo = 0, io = 0;
+    for (const p of parts) {
+      pos.set(p.pos, vo * 3);
+      nor.set(p.nor, vo * 3);
+      uv.set(p.uv,   vo * 2);
+      for (let i = 0; i < p.idx.length; i++) idx[io + i] = p.idx[i] + vo;
+      vo += p.vc; io += p.idx.length;
+    }
+    return {
+      attributes: {
+        positions: { value: pos, size: 3 },
+        normals:   { value: nor, size: 3 },
+        texCoords: { value: uv,  size: 2 },
+      },
+      indices: { value: idx, size: 1 },
+    };
+  }
+
+  // ── Auto-geometrie (auto staat langs +X-as, voorkant = +X) ───────────────────
+  //
+  //  Zij-aanzicht (XZ-vlak):
+  //        ┌──────────┐       ← cabine  (z 0.85 – 1.55)
+  //   ┌────┴──────────┴────┐  ← carrosserie (z 0 – 0.85)
+  //   ○                    ○  ← wielen  (r=0.38)
+  //
+  //  Bovenaanzicht (XY-vlak): 4.5m lang, 2.0m breed.
+
+  const CAR_BODY_MESH = mergeMeshes([
+    // Carrosserie: 4.5 × 2.0 × 0.85 m
+    makeBoxGeom(4.5, 2.0, 0.85,  0,    0,  0.425),
+    // Cabine: 2.4 × 1.75 × 0.70 m, iets naar achter verschoven
+    makeBoxGeom(2.4, 1.75, 0.70, -0.2, 0,  1.225),
+    // Voorspoiler / bumper (laag, breed)
+    makeBoxGeom(0.15, 2.05, 0.25,  2.3, 0,  0.125),
+    // Achterspoiler / bumper
+    makeBoxGeom(0.15, 2.05, 0.25, -2.3, 0,  0.125),
+  ]);
+
+  const CAR_WHEEL_MESH = mergeMeshes([
+    // 4 wielen: cilinder met Y-as (wieldiepte), radius 0.38, breedte 0.25 m
+    //                       r,    h,    cx,    cy,   cz
+    makeCylinderGeom(0.38, 0.25,  1.55, -1.0,  0.38, 12),  // voorlinks
+    makeCylinderGeom(0.38, 0.25,  1.55,  1.0,  0.38, 12),  // voorrechts
+    makeCylinderGeom(0.38, 0.25, -1.55, -1.0,  0.38, 12),  // achterlinks
+    makeCylinderGeom(0.38, 0.25, -1.55,  1.0,  0.38, 12),  // achterrechts
+  ]);
+
+  // Ramen: dunne dozen op de cabine-vlakken (iets buiten de cabine)
+  // Cabine: x=[-1.4 … 1.0], y=[-0.875 … 0.875], z=[0.875 … 1.575]
+  const CAR_WINDOW_MESH = mergeMeshes([
+    // Voorruit (+X face)
+    makeBoxGeom(0.04, 1.55, 0.54,  1.03, 0,     1.26),
+    // Achterruit (-X face)
+    makeBoxGeom(0.04, 1.55, 0.54, -1.43, 0,     1.26),
+    // Rechterruiten (+Y face)
+    makeBoxGeom(1.90, 0.04, 0.54, -0.2,  0.898, 1.26),
+    // Linkerruiten (-Y face)
+    makeBoxGeom(1.90, 0.04, 0.54, -0.2, -0.898, 1.26),
+  ]);
+
+  (async () => {
+
+    // 1. GeoJSON laden
+    setLoaderMsg('Netwerkdata laden…');
+    const geojson = await fetch(GEOJSON_FILE).then(r => r.json());
+
+    const features = geojson.features.filter(
+      f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+    );
+
+    const flowValues = features.map(f => f.properties.flow);
+    const minFlow    = Math.min(...flowValues);
+    const maxFlow    = Math.max(...flowValues);
+    const flowRange  = maxFlow - minFlow || 1;
+
+    document.getElementById('statSegs').textContent = features.length.toLocaleString('nl');
+    document.getElementById('statMax').textContent  = Math.round(maxFlow).toLocaleString('nl');
+
+    // 2. Segmenten pre-processen (lengte, snelheid, flow-norm)
+    const segments = features.map(f => ({
+      coords:  f.geometry.coordinates,
+      length:  segmentLength(f.geometry.coordinates),
+      speedMs: f.properties.speed / 3.6,
+      flow:    f.properties.flow,
+      norm:    (f.properties.flow - minFlow) / flowRange,
+      props:   f.properties,
+    }));
+
+    // 3. MapLibre kaart (OpenFreeMap = gratis, geen token, bevat OSM 3D gebouwen)
+    setLoaderMsg('Kaart laden…');
+    const map = new maplibregl.Map({
+      container: 'map',
+      style:     'https://tiles.openfreemap.org/styles/liberty',
+      center:    CENTER,
+      zoom:      14.5,
+      pitch:     58,
+      bearing:   -10,
+      antialias: true,
+    });
+
+    // 4. Animatiestatus
+    let timeScale = 10;
+    let threshold = 200;
+    let daypart   = 'erh';   // actief dagdeel: 'mrh' | 'erh' | 'rest'
+    let cars      = [];
+    let carData   = [];
+
+    /** Geeft de flow voor het actieve dagdeel terug (vtg/uur → schalen naar vtg/24u equivalent) */
+    function segFlow(seg) {
+      const dp = seg.props.flowsPerDaypart;
+      if (dp && dp[daypart] != null) return dp[daypart];
+      return seg.flow;   // fallback als dagdeel ontbreekt
+    }
+
+    /** Bouw auto-lijst op basis van flow-drempel */
+    function buildCarList(thresh) {
+      const list = [];
+      let idx = 0;
+      for (const seg of segments) {
+        if (seg.length < 30 || segFlow(seg) < thresh) continue;
+        const count = flowToCarCount(segFlow(seg));
+        for (let i = 0; i < count; i++) {
+          // Gouden-ratio spread zodat auto's uniform verdeeld starten
+          const offset = (i / count + (idx * 0.3819) % 1) % 1;
+          list.push({ segment: seg, offset, colorIdx: idx % CAR_PALETTE.length });
+          idx++;
+        }
+      }
+      return list;
+    }
+
+    /** Bereken positie/oriëntatie per auto en schrijf naar carData[] */
+    function computeCarData() {
+      if (carData.length !== cars.length) carData = new Array(cars.length);
+      for (let i = 0; i < cars.length; i++) {
+        const c = cars[i];
+        const [lon, lat, bearing] = interpolatePosition(
+          c.segment.coords, c.offset, c.segment.length
+        );
+        // ToyCar-model is georiënteerd langs +X (oost).
+        // yaw = 90 - bearing zorgt dat bearing=0 (N) → yaw=90° en bearing=90 (O) → yaw=0°
+        carData[i] = {
+          position:    [lon, lat, 0.75],   // 0.75m = halve autohoogte, staat op maaiveld
+          orientation: [0, 90 - bearing, 0],   // [pitch, yaw, roll] — auto staat langs +X
+          color:       CAR_PALETTE[c.colorIdx],
+        };
+      }
+    }
+
+    // 5. Deck.gl lagen
+
+    /** Netwerklaag met kleuring op basis van actief dagdeel */
+    function makeNetworkLayer() {
+      // Per-dagdeel min/max berekenen voor normalisatie
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of segments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      const dpRange = dpMax - dpMin || 1;
+      return new GeoJsonLayer({
+        id: 'network',
+        data: geojson,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth:  f => Math.max(2.5, (f.properties.lanes || 1) * 3),
+        getLineColor:  f => {
+          const dp = f.properties.flowsPerDaypart;
+          const v  = (dp && dp[daypart] != null) ? dp[daypart] : f.properties.flow;
+          return flowToRgba((v - dpMin) / dpRange);
+        },
+        pickable: true,
+        updateTriggers: { getLineColor: daypart },
+      });
+    }
+
+    /** Auto-laag wordt elke frame opnieuw aangemaakt met bijgewerkte data */
+    /** Bouw de 3 auto-lagen: carrosserie (kleur), ramen (donkerblauw), wielen (zwart). */
+    function makeCarLayers(data) {
+      const shared = {
+        data,
+        getPosition:    d => d.position,
+        getOrientation: d => d.orientation,
+        sizeScale: 1,
+        pickable: false,
+      };
+      return [
+        new SimpleMeshLayer({
+          ...shared,
+          id:       'cars-body',
+          mesh:     CAR_BODY_MESH,
+          getColor: d => d.color,
+          material: { ambient: 0.55, diffuse: 0.85, shininess: 60,
+                      specularColor: [80, 80, 80] },
+        }),
+        new SimpleMeshLayer({
+          ...shared,
+          id:       'cars-windows',
+          mesh:     CAR_WINDOW_MESH,
+          getColor: [12, 28, 72, 210],   // donkerblauw, semi-transparant
+          material: { ambient: 0.3, diffuse: 0.5, shininess: 120,
+                      specularColor: [160, 200, 255] },
+        }),
+        new SimpleMeshLayer({
+          ...shared,
+          id:       'cars-wheels',
+          mesh:     CAR_WHEEL_MESH,
+          getColor: [22, 22, 24, 255],   // bijna zwart
+          material: { ambient: 0.4, diffuse: 0.6, shininess: 20,
+                      specularColor: [30, 30, 30] },
+        }),
+      ];
+    }
+
+    /** Tooltip bij hover over een wegsegment */
+    function makeTooltip({ object }) {
+      if (!object) return null;
+      const p   = object.properties;
+      const dp  = p.flowsPerDaypart || {};
+      const dpLabels = { mrh: 'Ochtendspits', erh: 'Avondspits', rest: 'Rest dag' };
+      const occ = p.capacity > 0
+        ? ((p.flow / p.capacity) * 100).toFixed(0) + '%'
+        : '–';
+      return {
+        html: `
+          <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
+            <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
+              Segment #${Math.abs(p.linkId)}
+            </div>
+            <div><span style="color:#5a6272">Dagdeel: </span>
+              <b>${dpLabels[daypart]}</b></div>
+            <div><span style="color:#5a6272">Flow (dagdeel): </span>
+              <b>${dp[daypart] != null ? dp[daypart].toFixed(0) : '–'} vtg/u</b></div>
+            <div><span style="color:#5a6272">Flow (totaal/24u): </span>
+              <b>${p.flow?.toFixed(0)} vtg/24u</b></div>
+            <div><span style="color:#5a6272">Snelheid: </span>
+              <b>${p.speed} km/h</b></div>
+            <div><span style="color:#5a6272">Rijstroken: </span>
+              <b>${p.lanes}</b></div>
+            <div><span style="color:#5a6272">Capaciteit: </span>
+              <b>${p.capacity?.toLocaleString('nl')} vtg/u</b></div>
+            <div><span style="color:#5a6272">Bezettingsgraad: </span>
+              <b>${occ}</b></div>
+            <div><span style="color:#5a6272">Lengte: </span>
+              <b>${p.length?.toFixed(0)} m</b></div>
+          </div>`,
+        style: {
+          background:    'rgba(13,17,23,0.95)',
+          borderRadius:  '10px',
+          padding:       '12px 16px',
+          border:        '1px solid rgba(126,200,227,0.25)',
+          boxShadow:     '0 4px 20px rgba(0,0,0,0.5)',
+          pointerEvents: 'none',
+        },
+      };
+    }
+
+    // Eerste auto-batch
+    cars = buildCarList(threshold);
+    computeCarData();
+    document.getElementById('statCars').textContent = cars.length.toLocaleString('nl');
+
+    const overlay = new MapboxOverlay({
+      layers:     [makeNetworkLayer(), ...makeCarLayers([...carData])],
+      getTooltip: makeTooltip,
+    });
+    map.addControl(overlay);
+
+    // 6. Animatielus
+    let lastT   = null;
+    let paused  = false;
+
+    function animate() {
+      const now = performance.now() / 1000;
+      if (!paused && lastT !== null) {
+        const dt = Math.min(now - lastT, 0.05) * timeScale;
+        for (const car of cars) {
+          car.offset = (car.offset + (car.segment.speedMs * dt) / car.segment.length) % 1.0;
+        }
+        computeCarData();
+        overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+      }
+      if (paused) lastT = null; else lastT = now;
+      requestAnimationFrame(animate);
+    }
+
+    map.on('load', () => {
+      hideLaadscherm();
+      animate();
+    });
+
+    // 7. UI-sliders
+    document.getElementById('timeScale').addEventListener('input', e => {
+      timeScale = +e.target.value;
+      document.getElementById('scaleVal').textContent = timeScale + '×';
+    });
+
+    document.getElementById('threshold').addEventListener('input', e => {
+      threshold = +e.target.value;
+      document.getElementById('threshVal').textContent = (+e.target.value).toLocaleString('nl');
+      cars = buildCarList(threshold);
+      computeCarData();
+      document.getElementById('statCars').textContent = cars.length.toLocaleString('nl');
+    });
+
+    document.getElementById('pauseBtn').addEventListener('click', () => {
+      paused = !paused;
+      const btn = document.getElementById('pauseBtn');
+      btn.classList.toggle('paused', paused);
+      btn.innerHTML = paused
+        ? '&#9654; Hervat'
+        : '&#9646;&#9646; Pauzeer';
+    });
+
+    document.getElementById('daypartBtns').addEventListener('click', e => {
+      const btn = e.target.closest('.dpBtn');
+      if (!btn) return;
+      daypart = btn.dataset.dp;
+      document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b === btn));
+      cars = buildCarList(threshold);
+      computeCarData();
+      document.getElementById('statCars').textContent = cars.length.toLocaleString('nl');
+      overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+    });
+
+  })();
+
+  // ── Hulpfuncties UI ─────────────────────────────────────────────────────────
+
+  function setLoaderMsg(msg) {
+    document.getElementById('loaderMsg').textContent = msg;
+  }
+
+  function hideLaadscherm() {
+    const el = document.getElementById('loader');
+    el.classList.add('fade');
+    setTimeout(() => el.remove(), 700);
+  }
+
+  </script>
+</body>
+</html>
