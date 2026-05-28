@@ -228,6 +228,7 @@
     }
     .node-field { margin-bottom: 12px; }
     .node-field label { font-size: 11px; color: #5a6272; display: block; margin-bottom: 4px; }
+    .field-hint { font-size: 10px; color: #3d4454; font-weight: 400; }
     .node-field-row { display: flex; align-items: center; gap: 6px; }
     .node-field-row input {
       flex: 1; background: #1a2233; color: #c9d6e8;
@@ -449,18 +450,18 @@
   <div id="nodeDialog">
     <h3 id="nodeDialogTitle">Knoop</h3>
     <div class="node-field">
-      <label>Productie (delta of absoluut)</label>
+      <label>Productie <span class="field-hint">+300 = delta &nbsp;|&nbsp; 1200 = absoluut (≥0)</span></label>
       <div class="node-field-row">
         <button id="nodeProdMinus">−</button>
-        <input type="text" id="nodeProdVal" placeholder="bijv. +300 of 1200"/>
+        <input type="text" id="nodeProdVal" placeholder="+300 of 1200"/>
         <button id="nodeProdPlus">+</button>
       </div>
     </div>
     <div class="node-field">
-      <label>Attractie (delta of absoluut)</label>
+      <label>Attractie <span class="field-hint">+300 = delta &nbsp;|&nbsp; 800 = absoluut (≥0)</span></label>
       <div class="node-field-row">
         <button id="nodeAttrMinus">−</button>
-        <input type="text" id="nodeAttrVal" placeholder="bijv. -50 of 800"/>
+        <input type="text" id="nodeAttrVal" placeholder="+300 of 800"/>
         <button id="nodeAttrPlus">+</button>
       </div>
     </div>
@@ -2290,7 +2291,7 @@
           if (!nodeEditActive) return;
           const f = e.features[0];
           openNodeDialog(f, e.point);
-          e.stopPropagation();
+          e.originalEvent.stopPropagation();
         });
         map.on('mouseenter', NODE_LAYER, () => {
           if (nodeEditActive) map.getCanvas().style.cursor = 'pointer';
@@ -2400,9 +2401,15 @@
       list.innerHTML = '';
 
       pendingChanges.forEach((c, i) => {
+        const fmt = v => {
+          if (v == null) return null;
+          const s = String(v).trim();
+          if (s.startsWith('+') || s.startsWith('-')) return `Δ${s}`;
+          return `=${s}`;
+        };
         const parts = [];
-        if (c.production != null) parts.push(`prod: ${c.production}`);
-        if (c.attraction != null) parts.push(`attr: ${c.attraction}`);
+        if (c.production != null) parts.push(`prod: ${fmt(c.production)}`);
+        if (c.attraction != null) parts.push(`attr: ${fmt(c.attraction)}`);
 
         const item = document.createElement('div');
         item.className = 'change-item';
@@ -2582,6 +2589,7 @@
               const validInnerIds = innerIds.filter(id => linkGeomMap.get(id)?.length >= 2);
               if (!validInnerIds.length) continue;
               routeList.push({
+                innerIds:        validInnerIds,
                 linkIds:         validInnerIds,
                 flow:            feat.properties.flow || 0,
                 trips:           r.trips || 0,
@@ -2620,6 +2628,9 @@
       }
 
       // ── Overlay en autos bijwerken ────────────────────────────────────────
+      // Stop bewerkingsmodus als die nog actief was
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+
       updateLegend();
       rebuildCars();
       overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
@@ -2657,17 +2668,17 @@
       map.addLayer({
         id: CMP_LAYER_MAT, type: 'fill', source: CMP_SOURCE,
         filter: ['==', ['get', 'matchType'], 'matched'],
-        paint: { 'fill-color': '#7ec8e3', 'fill-opacity': 0.35 },
+        paint: { 'fill-color': '#8a8a9a', 'fill-opacity': 0.55 },
       });
       map.addLayer({
         id: CMP_LAYER_INC, type: 'fill', source: CMP_SOURCE,
         filter: ['in', ['get', 'matchType'], ['literal', ['increase', 'added']]],
-        paint: { 'fill-color': '#64dc96', 'fill-opacity': 0.7 },
+        paint: { 'fill-color': '#64dc96', 'fill-opacity': 0.88 },
       });
       map.addLayer({
         id: CMP_LAYER_RED, type: 'fill', source: CMP_SOURCE,
         filter: ['in', ['get', 'matchType'], ['literal', ['reduction', 'removed']]],
-        paint: { 'fill-color': '#ff6b6b', 'fill-opacity': 0.7 },
+        paint: { 'fill-color': '#ff6b6b', 'fill-opacity': 0.88 },
       });
 
       [CMP_LAYER_MAT, CMP_LAYER_INC, CMP_LAYER_RED].forEach(id =>
