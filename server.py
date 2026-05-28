@@ -12,6 +12,8 @@ API:
     GET  /api/setdir?path=                     -> stel data-map in
     POST /api/prepare                          -> start prepare-pipeline (achtergrond)
     GET  /api/prepare/<job_id>                 -> status van een job
+    POST /api/adjust                           -> start adjust-pipeline (achtergrond)
+    GET  /api/adjust/<job_id>                  -> status van adjust-job
 """
 
 import argparse
@@ -52,7 +54,7 @@ args, _ = parser.parse_known_args()
 DATA_DIR   = Path(args.data).resolve()
 STATIC_DIR = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
 
-VALID_TYPES = {'NETWORK', 'ROUTES', 'ZONE'}
+VALID_TYPES = {'NETWORK', 'ROUTES', 'ZONE', 'COMPARE'}
 _SAFE_RE    = re.compile(r'^[A-Za-z0-9_\\-]+$')
 
 app = Flask(__name__, static_folder=None)
@@ -121,7 +123,8 @@ def _discover_areas():
                 name = data.get('properties', {}).get('name', area_id)
         except Exception:
             pass
-        areas.append({'areaId': area_id, 'mode': mode, 'name': name})
+        has_compare = (DATA_DIR / f'{area_id}-COMPARE-{mode}.geojson').exists()
+        areas.append({'areaId': area_id, 'mode': mode, 'name': name, 'hasCompare': has_compare})
     return areas
 
 # ---------------------------------------------------------------------------
@@ -215,6 +218,159 @@ def api_prepare():
 
 @app.route('/api/prepare/<job_id>')
 def api_prepare_status(job_id):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        abort(404, f'Job niet gevonden: {job_id}')
+    return jsonify(job)
+
+
+@app.route('/api/adjust', methods=['POST'])
+def api_adjust():
+    """
+    Start de adjust-pipeline als achtergrondproces.
+
+    Body (JSON):
+        area_id   - bestaande area-id (bronmap = DATA_DIR)
+        mode      - transportmodus (CAR / BIKE / PEDESTRIAN)
+        changes   - array van wijzigingen (zoneId/nodeId + production/attraction)
+    """
+    body = request.get_json(force=True, silent=True) or {}
+
+    area_id       = str(body.get('area_id',       '')).strip()
+    mode          = str(body.get('mode',          'CAR')).upper()
+    changes       = body.get('changes', [])
+    scenario_name = str(body.get('scenario_name', '')).strip() or None
+
+    if not area_id:
+        abort(400, 'Parameter "area_id" ontbreekt')
+    if not isinstance(changes, list) or not changes:
+        abort(400, 'Parameter "changes" moet een niet-lege array zijn')
+
+    src_dir = DATA_DIR
+    # Controleer of bronbestanden aanwezig zijn
+    network_file = src_dir / f'{area_id}-NETWORK-{mode}.geojson'
+    routes_file  = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
+    if not network_file.exists():
+        abort(404, f'Netwerkbestand niet gevonden: {network_file.name}')
+    if not routes_file.exists():
+        abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
+
+    # Output rechtstreeks naar DATA_DIR (net als prepare)
+    new_area_id  = str(uuid.uuid4())
+    changes_file = DATA_DIR / f'{new_area_id}-changes.json'
+    changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding='utf-8')
+
+    # adjust_runner leest .area-uuid uit 'folder' om te weten welke bronbestanden
+    # te gebruiken. Zet die daarom op de juiste area_id vóór de run.
+    (DATA_DIR / '.area-uuid').write_text(area_id, encoding='utf-8')
+
+    # Gebruik --scenario-name zodat output in DATA_DIR/{new_area_id}/ terechtkomt
+    # en source_folder != output_folder (voorkomt PermissionError en dubbele run).
+    cmd = [
+        sys.executable, '-m', 'adjust.adjust_runner',
+        str(src_dir),               # folder (bronbestanden)
+        str(changes_file),          # changes (bestandspad)
+        '--routes', str(routes_file),
+        '--scenario-name', new_area_id,
+        '--new-area-id', new_area_id,
+        '--debug',                  # genereert ook COMPARE-bestand
+    ]
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'status':        'pending',
+            'log':           [],
+            'returncode':    None,
+            'out_dir':       str(DATA_DIR),
+            'new_area_id':   new_area_id,
+            'scenario_name': scenario_name,
+            'compare_url':   None,
+        }
+
+    threading.Thread(target=_run_adjust_job,
+                     args=(job_id, cmd, area_id, new_area_id, mode, scenario_name),
+                     daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
+
+
+def _run_adjust_job(job_id, cmd, src_area_id, new_area_id, mode, scenario_name):
+    """Voer adjust-pipeline uit; output staat al in DATA_DIR."""
+    with _jobs_lock:
+        _jobs[job_id]['status'] = 'running'
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            env=os.environ.copy(),
+        )
+        assert proc.stdout is not None
+        for line in iter(proc.stdout.readline, ''):
+            with _jobs_lock:
+                _jobs[job_id]['log'].append(line.rstrip())
+        proc.wait()
+
+        if proc.returncode == 0:
+            # Kopieer output-bestanden van submap naar DATA_DIR en verwijder submap
+            sub_dir = DATA_DIR / new_area_id
+            if sub_dir.is_dir():
+                import shutil as _shutil
+                for f in sub_dir.iterdir():
+                    if f.is_file():
+                        dest = DATA_DIR / f.name
+                        _shutil.copy2(str(f), str(dest))
+                _shutil.rmtree(str(sub_dir), ignore_errors=True)
+
+            # Patch top-level properties in output-GeoJSON met scenario_name en new_area_id
+            if scenario_name:
+                _patch_geojson_properties(new_area_id, mode, scenario_name)
+
+            # Herstel .area-uuid naar new_area_id zodat een volgende adjust hierop aansluit
+            (DATA_DIR / '.area-uuid').write_text(new_area_id, encoding='utf-8')
+
+            compare_file = DATA_DIR / f'{new_area_id}-COMPARE-{mode}.geojson'
+            compare_url  = (f'/api/geojson?areaId={new_area_id}&mode={mode}&type=COMPARE'
+                            if compare_file.exists() else None)
+            with _jobs_lock:
+                _jobs[job_id]['returncode']  = 0
+                _jobs[job_id]['status']      = 'done'
+                _jobs[job_id]['compare_url'] = compare_url
+        else:
+            with _jobs_lock:
+                _jobs[job_id]['returncode'] = proc.returncode
+                _jobs[job_id]['status']     = 'error'
+    except Exception as exc:
+        with _jobs_lock:
+            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
+            _jobs[job_id]['status']     = 'error'
+            _jobs[job_id]['returncode'] = -1
+
+
+def _patch_geojson_properties(area_id, mode, name):
+    """Pas top-level properties.name en properties.area_id aan in alle output-GeoJSON's."""
+    for file_type in ('NETWORK', 'ZONE', 'FEEDLINK', 'ROUTES', 'COMPARE'):
+        path = DATA_DIR / f'{area_id}-{file_type}-{mode}.geojson'
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding='utf-8') as fh:
+                data = json.load(fh)
+            props = data.setdefault('properties', {})
+            props['area_id'] = area_id
+            props['name']    = name
+            with open(path, 'w', encoding='utf-8') as fh:
+                json.dump(data, fh, ensure_ascii=False)
+        except Exception as exc:
+            print(f'[server] Kon {path.name} niet patchen: {exc}')
+
+
+@app.route('/api/adjust/<job_id>')
+def api_adjust_status(job_id):
     with _jobs_lock:
         job = _jobs.get(job_id)
     if job is None:
