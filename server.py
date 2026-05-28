@@ -17,11 +17,12 @@ API:
 """
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
-import subprocess
-import sys
+import shutil
 import threading
 import uuid
 from pathlib import Path
@@ -39,6 +40,26 @@ try:
         print(f'.env geladen: {_env_file}')
 except ImportError:
     pass  # python-dotenv niet geïnstalleerd — env vars moeten al gezet zijn
+
+# ---------------------------------------------------------------------------
+# Importeer pipeline-functies direct uit de geïnstalleerde packages
+# ---------------------------------------------------------------------------
+
+try:
+    from adjust.core.adjust_core import run_pipeline as _adjust_run_pipeline
+    _ADJUST_AVAILABLE = True
+except ImportError as _e:
+    _adjust_run_pipeline = None  # type: ignore[assignment]
+    _ADJUST_AVAILABLE = False
+    print(f'[server] WAARSCHUWING: adjust niet beschikbaar — {_e}')
+
+try:
+    from prepare.core.prepare_core import run_pipeline as _prepare_run_pipeline
+    _PREPARE_AVAILABLE = True
+except ImportError as _e:
+    _prepare_run_pipeline = None  # type: ignore[assignment]
+    _PREPARE_AVAILABLE = False
+    print(f'[server] WAARSCHUWING: prepare niet beschikbaar — {_e}')
 
 # ---------------------------------------------------------------------------
 # Configuratie
@@ -67,32 +88,45 @@ _jobs = {}          # job_id -> { status, log, returncode, out_dir }
 _jobs_lock = threading.Lock()
 
 
-def _run_prepare_job(job_id, cmd):
-    """Voer prepare-pipeline uit in achtergrondthread."""
+class _LogStream(io.TextIOBase):
+    """Schrijft stdout/stderr van run_pipeline door naar de job-loglijst."""
+    def __init__(self, log_list, lock):
+        self._log  = log_list
+        self._lock = lock
+        self._buf  = ''
+
+    def write(self, s):
+        self._buf += s
+        while '\n' in self._buf:
+            line, self._buf = self._buf.split('\n', 1)
+            with self._lock:
+                self._log.append(line)
+        return len(s)
+
+    def flush(self):
+        if self._buf:
+            with self._lock:
+                self._log.append(self._buf)
+            self._buf = ''
+
+
+def _run_prepare_job(job_id, out_dir, kwargs):
+    """Voer prepare-pipeline direct uit in achtergrondthread."""
     with _jobs_lock:
         _jobs[job_id]['status'] = 'running'
+    stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            env=os.environ.copy(),   # geeft geladen .env-variabelen door aan subproces
-        )
-        assert proc.stdout is not None
-        for line in iter(proc.stdout.readline, ''):
-            with _jobs_lock:
-                _jobs[job_id]['log'].append(line.rstrip())
-        proc.wait()
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            _prepare_run_pipeline(**kwargs)
+        stream.flush()
         with _jobs_lock:
-            _jobs[job_id]['returncode'] = proc.returncode
-            _jobs[job_id]['status'] = 'done' if proc.returncode == 0 else 'error'
+            _jobs[job_id]['returncode'] = 0
+            _jobs[job_id]['status']     = 'done'
     except Exception as exc:
+        stream.flush()
         with _jobs_lock:
             _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
-            _jobs[job_id]['status'] = 'error'
+            _jobs[job_id]['status']     = 'error'
             _jobs[job_id]['returncode'] = -1
 
 # ---------------------------------------------------------------------------
@@ -168,6 +202,9 @@ def api_prepare():
         out_dir                           - (optioneel) uitvoermap; standaard DATA_DIR
         refresh                           - (optioneel) bool
     """
+    if not _PREPARE_AVAILABLE:
+        abort(503, 'prepare-package niet beschikbaar')
+
     body = request.get_json(force=True, silent=True) or {}
 
     name    = str(body.get('name', '')).strip()
@@ -192,18 +229,16 @@ def api_prepare():
     uuid_file = out_dir / '.area-uuid'
     uuid_file.write_text(str(uuid.uuid4()), encoding='utf-8')
 
-    cmd = [
-        sys.executable, '-m', 'prepare.prepare_runner',
-        str(min_lon), str(min_lat), str(max_lon), str(max_lat),
-        mode, name, str(out_dir),
-    ]
-    if body.get('refresh'):
-        cmd.append('--refresh')
+    kwargs = dict(
+        min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat,
+        mode=mode, name=name, out_dir=out_dir,
+        catalog=body.get('catalog', 'spectrum'),
+        schema=body.get('schema', '2023_01'),
+        refresh=bool(body.get('refresh')),
+        debug=bool(body.get('debug', False)),
+    )
 
-    # Stabiele job_id op basis van naam + modus zodat hetzelfde gebied
-    # niet meerdere keren tegelijk geprepareerd kan worden.
     job_id = str(uuid.uuid4())
-
     with _jobs_lock:
         _jobs[job_id] = {
             'status': 'pending',
@@ -212,7 +247,7 @@ def api_prepare():
             'out_dir': str(out_dir),
         }
 
-    threading.Thread(target=_run_prepare_job, args=(job_id, cmd), daemon=True).start()
+    threading.Thread(target=_run_prepare_job, args=(job_id, out_dir, kwargs), daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
 
@@ -246,36 +281,34 @@ def api_adjust():
         abort(400, 'Parameter "area_id" ontbreekt')
     if not isinstance(changes, list) or not changes:
         abort(400, 'Parameter "changes" moet een niet-lege array zijn')
+    if not _ADJUST_AVAILABLE:
+        abort(503, 'adjust-package niet beschikbaar')
 
-    src_dir = DATA_DIR
-    # Controleer of bronbestanden aanwezig zijn
-    network_file = src_dir / f'{area_id}-NETWORK-{mode}.geojson'
-    routes_file  = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
-    if not network_file.exists():
-        abort(404, f'Netwerkbestand niet gevonden: {network_file.name}')
+    src_dir     = DATA_DIR
+    routes_file = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
     if not routes_file.exists():
         abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
 
-    # Output rechtstreeks naar DATA_DIR (net als prepare)
     new_area_id  = str(uuid.uuid4())
     changes_file = DATA_DIR / f'{new_area_id}-changes.json'
     changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding='utf-8')
 
-    # adjust_runner leest .area-uuid uit 'folder' om te weten welke bronbestanden
-    # te gebruiken. Zet die daarom op de juiste area_id vóór de run.
+    # adjust_core leest .area-uuid uit 'folder' om bronbestanden te vinden.
     (DATA_DIR / '.area-uuid').write_text(area_id, encoding='utf-8')
 
-    # Gebruik --scenario-name zodat output in DATA_DIR/{new_area_id}/ terechtkomt
-    # en source_folder != output_folder (voorkomt PermissionError en dubbele run).
-    cmd = [
-        sys.executable, '-m', 'adjust.adjust_runner',
-        str(src_dir),               # folder (bronbestanden)
-        str(changes_file),          # changes (bestandspad)
-        '--routes', str(routes_file),
-        '--scenario-name', new_area_id,
-        '--new-area-id', new_area_id,
-        '--debug',                  # genereert ook COMPARE-bestand
-    ]
+    # Output in submap DATA_DIR/{new_area_id}/ zodat source != output
+    output_folder = DATA_DIR / new_area_id
+
+    kwargs = dict(
+        folder=src_dir,
+        changes=str(changes_file),
+        output_folder=output_folder,
+        routes_path=routes_file,
+        new_area_id=new_area_id,
+        min_link_trips=1.0,
+        refresh=False,
+        debug=True,
+    )
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:
@@ -290,61 +323,44 @@ def api_adjust():
         }
 
     threading.Thread(target=_run_adjust_job,
-                     args=(job_id, cmd, area_id, new_area_id, mode, scenario_name),
+                     args=(job_id, kwargs, area_id, new_area_id, mode, scenario_name),
                      daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
 
-def _run_adjust_job(job_id, cmd, src_area_id, new_area_id, mode, scenario_name):
-    """Voer adjust-pipeline uit; output staat al in DATA_DIR."""
+def _run_adjust_job(job_id, kwargs, src_area_id, new_area_id, mode, scenario_name):
+    """Voer adjust-pipeline direct uit in achtergrondthread."""
     with _jobs_lock:
         _jobs[job_id]['status'] = 'running'
+    stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            env=os.environ.copy(),
-        )
-        assert proc.stdout is not None
-        for line in iter(proc.stdout.readline, ''):
-            with _jobs_lock:
-                _jobs[job_id]['log'].append(line.rstrip())
-        proc.wait()
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            _adjust_run_pipeline(**kwargs)
+        stream.flush()
 
-        if proc.returncode == 0:
-            # Kopieer output-bestanden van submap naar DATA_DIR en verwijder submap
-            sub_dir = DATA_DIR / new_area_id
-            if sub_dir.is_dir():
-                import shutil as _shutil
-                for f in sub_dir.iterdir():
-                    if f.is_file():
-                        dest = DATA_DIR / f.name
-                        _shutil.copy2(str(f), str(dest))
-                _shutil.rmtree(str(sub_dir), ignore_errors=True)
+        # Kopieer output-bestanden van submap naar DATA_DIR
+        sub_dir = DATA_DIR / new_area_id
+        if sub_dir.is_dir():
+            for f in sub_dir.iterdir():
+                if f.is_file():
+                    shutil.copy2(str(f), str(DATA_DIR / f.name))
 
-            # Patch top-level properties in output-GeoJSON met scenario_name en new_area_id
-            if scenario_name:
-                _patch_geojson_properties(new_area_id, mode, scenario_name)
+        # Patch top-level properties in output-GeoJSON met scenario_name
+        if scenario_name:
+            _patch_geojson_properties(new_area_id, mode, scenario_name)
 
-            # Herstel .area-uuid naar new_area_id zodat een volgende adjust hierop aansluit
-            (DATA_DIR / '.area-uuid').write_text(new_area_id, encoding='utf-8')
+        # Herstel .area-uuid naar new_area_id zodat een volgende adjust hierop aansluit
+        (DATA_DIR / '.area-uuid').write_text(new_area_id, encoding='utf-8')
 
-            compare_file = DATA_DIR / f'{new_area_id}-COMPARE-{mode}.geojson'
-            compare_url  = (f'/api/geojson?areaId={new_area_id}&mode={mode}&type=COMPARE'
-                            if compare_file.exists() else None)
-            with _jobs_lock:
-                _jobs[job_id]['returncode']  = 0
-                _jobs[job_id]['status']      = 'done'
-                _jobs[job_id]['compare_url'] = compare_url
-        else:
-            with _jobs_lock:
-                _jobs[job_id]['returncode'] = proc.returncode
-                _jobs[job_id]['status']     = 'error'
+        compare_file = DATA_DIR / f'{new_area_id}-COMPARE-{mode}.geojson'
+        compare_url  = (f'/api/geojson?areaId={new_area_id}&mode={mode}&type=COMPARE'
+                        if compare_file.exists() else None)
+        with _jobs_lock:
+            _jobs[job_id]['returncode']  = 0
+            _jobs[job_id]['status']      = 'done'
+            _jobs[job_id]['compare_url'] = compare_url
     except Exception as exc:
+        stream.flush()
         with _jobs_lock:
             _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
             _jobs[job_id]['status']     = 'error'
@@ -410,6 +426,8 @@ def error_handler(e):
 
 if __name__ == '__main__':
     print(f'Data-map : {DATA_DIR}')
+    print(f'prepare  : {"beschikbaar" if _PREPARE_AVAILABLE else "NIET beschikbaar"}')
+    print(f'adjust   : {"beschikbaar" if _ADJUST_AVAILABLE else "NIET beschikbaar"}')
     print(f'Beschikbare gebieden: {_discover_areas()}')
     print(f'Server   : http://localhost:{args.port}')
     app.run(host='0.0.0.0', port=args.port, debug=True)

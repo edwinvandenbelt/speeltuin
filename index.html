@@ -855,10 +855,24 @@
 
   // ── Car-following parameters ──────────────────────────────────────────────
   //   Gebaseerd op vereenvoudigd IDM-achtig model.
-  const CF_MIN_GAP     = 8;    // minimale bumper-to-bumper afstand (m)
-  const CF_TIME_HEADWAY = 1.8; // gewenste tijdspanne tot voorligger (s)
-  const CF_ACCEL       = 2.5;  // maximale acceleratie (m/s²)
-  const CF_DECEL       = 4.0;  // comfortabele remvertraging (m/s²)
+  const CF_MIN_GAP  = 5;    // minimale bumper-to-bumper afstand (m)
+  const CAR_LENGTH  = 4.5;  // gemiddelde voertuiglengte (m)
+
+  // ── Parkeerparameters ─────────────────────────────────────────────────────
+  const MAX_VEHICLES = 5000;
+  const PARK_MEAN_S  = 5400;   // gemiddelde parkeertijd Nederland ~90 min (sec)
+  const PARK_STD_S   = 1800;   // standaarddeviatie parkeertijd (sec)
+  const PARK_MIN_S   = 120;    // minimale parkeertijd (sec)
+  // Aandeel initieel geparkeerde auto's per dagdeel
+  const PARK_RATIOS  = { mrh: 0.50, erh: 0.15, rest: 0.35 };
+
+  /** Box-Muller transform: normaalverdeeld getal met gegeven gemiddelde en std */
+  function normalRandom(mean, std) {
+    let u, v;
+    do { u = Math.random(); } while (u === 0);
+    do { v = Math.random(); } while (v === 0);
+    return mean + std * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
 
   // ── Applicatielogica ──────────────────────────────────────────────────────
 
@@ -1192,15 +1206,11 @@
       document.getElementById('legendBar').style.background = gradient;
       document.getElementById('legendLabel').textContent = label;
       let vMin = Infinity, vMax = -Infinity;
-          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
-            norm = Math.max(0, Math.min(1, v / 100));
-          } else {
-        for (const seg of segments) {
-          const v = getMetricValue(seg.props);
-          if (v != null && isFinite(v)) {
-            if (v < vMin) vMin = v;
-            if (v > vMax) vMax = v;
-          }
+      for (const seg of segments) {
+        const v = getMetricValue(seg.props);
+        if (v != null && isFinite(v)) {
+          if (v < vMin) vMin = v;
+          if (v > vMax) vMax = v;
         }
       }
       const fmt = unit === '%'
@@ -1261,10 +1271,21 @@
     const linkGeomMap   = new Map();
     // linkId → snelheid in m/s (voor per-link snelheidsmodel)
     const linkSpeedMap  = new Map();
+    // linkId → flow per dagdeel (vtg/u), wordt bijgewerkt via rebuildLinkFlowMap()
+    const linkFlowMap   = new Map();
     for (const seg of segments) {
       linkGeomMap.set(seg.props.linkId,  seg.coords);
       linkSpeedMap.set(seg.props.linkId, seg.speedMs);
     }
+
+    /** Herbouw linkFlowMap voor het huidige dagdeel (aanroepen na dagdeel-wijziging) */
+    function rebuildLinkFlowMap() {
+      linkFlowMap.clear();
+      for (const seg of segments) {
+        linkFlowMap.set(seg.props.linkId, segFlow(seg));
+      }
+    }
+    // Initiële vulling gebeurt na declaratie van `daypart` (verderop)
 
     // Netwerk-graph voor pathfinding (Dijkstra)
     // Alle links inclusief voedingslinks zodat zone-nodes bereikbaar zijn.
@@ -1475,6 +1496,7 @@
     let timeScale = 1;
     let threshold = 200;
     let daypart    = 'erh';
+    rebuildLinkFlowMap();  // Nu pas: daypart is gedeclareerd
     let widthScale = false;
     let colorMetric = 'flow';
     let cars      = [];
@@ -1532,7 +1554,7 @@
       for (let i = 0; i < linkObjs.length; i++) {
         const lo  = linkObjs[i];
         const len = segmentLength(lo.coords);
-        links.push({ length: len, speedMs: lo.speedMs });
+        links.push({ length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0 });
         boundaries.push(boundaries[boundaries.length - 1] + len);
         if (i > 0) mergedCoords.push(...lo.coords.slice(1));
       }
@@ -1599,73 +1621,194 @@
      *   - Auto-aantallen via flowToCarCount (ongewijzigd gedrag).
      *   - Elke auto heeft car.path = segment-object.
      */
+    /** Geeft het tijdsinterval (in gesimuleerde seconden) waarbinnen auto's op een route
+     *  gespreid vertrekken. Schaalt mee met timeScale zodat het er bij lage snelheid
+     *  ook goed uitziet. */
+    function parkDepartInterval() { return 60; }
+
+    /**
+     * Gewogen willekeurig sample: geef index terug op basis van weights-array.
+     * weights: array van niet-negatieve getallen.
+     */
+    function weightedSample(weights) {
+      const total = weights.reduce((s, w) => s + w, 0);
+      if (total <= 0) return Math.floor(Math.random() * weights.length);
+      let r = Math.random() * total;
+      for (let i = 0; i < weights.length; i++) {
+        r -= weights[i];
+        if (r <= 0) return i;
+      }
+      return weights.length - 1;
+    }
+
+    /**
+     * Bouw een pad-object + bijbehorende initiële offset, gewogen naar flow×length per link.
+     * Geeft { path, offset } of null als het pad ongeldig is.
+     * allLinkObjs: [{ coords, speedMs, flow }]
+     */
+    function buildWeightedPath(allLinkObjs) {
+      const path = buildPathFromLinks(allLinkObjs);
+      if (!path || path.length < 30) return null;
+
+      // Gewichten per link: flow × length
+      const linkWeights = path.links.map(l => Math.max(0, (l.flow || 0) * l.length));
+      const totalW = linkWeights.reduce((s, w) => s + w, 0);
+
+      let offset;
+      if (totalW > 0) {
+        // Kies een link proportioneel aan flow×length
+        const li = weightedSample(linkWeights);
+        // Kies een random positie binnen die link
+        const linkStart = path.boundaries[li] / path.length;
+        const linkEnd   = path.boundaries[li + 1] / path.length;
+        offset = linkStart + Math.random() * (linkEnd - linkStart);
+      } else {
+        offset = Math.random();
+      }
+      return { path, offset: Math.min(Math.max(offset, 0), 0.999) };
+    }
+
+    /**
+     * Bouw de auto-lijst opnieuw op.
+     *
+     * Route-modus:
+     *   - Totaal voertuigen via Little's Law: Σ(flow×length/speed) × 0.80, capped op MAX_VEHICLES
+     *   - Initiële verdeling (geparkeerd/rijdend/spawning) op basis van dagdeel (PARK_RATIOS)
+     *   - Gewogen plaatsing op links via flow×length
+     *   - ~30% krijgt route-chaining (pendingPath)
+     *
+     * Segment-modus (fallback):
+     *   - Filter segmenten op flow >= threshold.
+     *   - Auto-aantallen via flowToCarCount (ongewijzigd gedrag).
+     */
     function buildCarList(thresh) {
       const list = [];
 
       if (routeMode) {
-        const minWeight = thresh / 10000;          // slider 200 → trips ≥ 0.020
-        const zoom      = map.getZoom();
-        // Schaal het doelaantal auto's met de dagdeel-factor:
-        // ochtendspits ≈ 1.15×, avondspits = 1.0×, rest dag ≈ 0.30×
-        const N = Math.round(targetCarCount(zoom) * dpScales[daypart]);
+        const minWeight = thresh / 10000;
 
-        // Gefilterde routes + hun gewichtssom
-        const filtered = routeList.filter(r => r.weight >= minWeight);
-        const weightSum = filtered.reduce((s, r) => s + r.weight, 0) || 1;
+        // Stap 1: bouw alle route-paden
+        const routePaths = [];  // { path, route, isBoundary, canPark, allLinkObjs }
+        for (const route of routeList) {
+          if (route.weight < minWeight) continue;
 
-        for (const route of filtered) {
-          // Aantal auto's voor deze route: proportioneel aan gewicht
-          const count = Math.max(1, Math.round((route.weight / weightSum) * N));
+          const innerLinkObjs = route.innerIds.map(id => {
+            const coords  = linkGeomMap.get(id);
+            const speedMs = linkSpeedMap.get(id) ?? 10;
+            const flow    = linkFlowMap.get(id) ?? 0;
+            return coords ? { coords, speedMs, flow } : null;
+          }).filter(Boolean);
+
+          if (!innerLinkObjs.length) continue;
+
+          const approachSpeedMs = innerLinkObjs[0].speedMs;
+          const exitSpeedMs     = innerLinkObjs[innerLinkObjs.length - 1].speedMs;
+
+          let allLinkObjs = [...innerLinkObjs];
+
+          if (!route.fromBoundary) {
+            const fromZone = zoneMap.get(route.fromZoneId);
+            const fromNode = fromZone ? pickNode(fromZone.from) : null;
+            if (fromNode != null && fromNode !== route.midStartNode) {
+              const segs = dijkstraPath(fromNode, route.midStartNode);
+              if (segs && segs.length) {
+                const approachObjs = segs.map(s => ({ coords: s.coords, speedMs: approachSpeedMs, flow: 0 }));
+                allLinkObjs = [...approachObjs, ...allLinkObjs];
+              }
+            }
+          }
+
+          if (!route.toBoundary) {
+            const toZone = zoneMap.get(route.toZoneId);
+            const toNode = toZone ? pickNode(toZone.to) : null;
+            if (toNode != null && toNode !== route.midEndNode) {
+              const segs = dijkstraPath(route.midEndNode, toNode);
+              if (segs && segs.length) {
+                const exitObjs = segs.map(s => ({ coords: s.coords, speedMs: exitSpeedMs, flow: 0 }));
+                allLinkObjs = [...allLinkObjs, ...exitObjs];
+              }
+            }
+          }
+
+          const path = buildPathFromLinks(allLinkObjs);
+          if (!path || path.length < 30) continue;
+
+          const isBoundary = route.fromBoundary || route.toBoundary;
+          const canPark    = path.speedMs <= (50 / 3.6) && !isBoundary;
+
+          routePaths.push({ path, route, isBoundary, canPark, allLinkObjs });
+        }
+
+        if (!routePaths.length) return list;
+
+        // Stap 2: Little's Law – totaal voertuigen
+        // N = Σ_links(flow_l * length_l / (speedMs_l * 3600)) * 0.80
+        let littlesN = 0;
+        for (const seg of segments) {
+          const flow    = segFlow(seg);
+          const speedMs = seg.speedMs || 10;
+          if (flow > 0) littlesN += (flow * seg.length) / (speedMs * 3600);
+        }
+        littlesN = Math.min(Math.round(littlesN * 0.80), MAX_VEHICLES);
+        const N = Math.max(littlesN, 1);
+
+        // Stap 3: bereken per route de directe Little's Law count (flow×length/speed).
+        // Elke route krijgt zoveel auto's als zijn eigen density direct impliceert,
+        // ongeacht het totaal. Daarna schalen we terug als het totaal MAX_VEHICLES overschrijdt.
+        for (const rp of routePaths) {
+          let routeDensity = 0;
+          for (const lo of rp.allLinkObjs) {
+            const flow    = lo.flow || 0;
+            const speedMs = lo.speedMs || 10;
+            if (flow > 0) routeDensity += (flow * segmentLength(lo.coords)) / (speedMs * 3600);
+          }
+          rp.density = routeDensity;
+          rp.count   = Math.max(1, Math.round(routeDensity * 0.80));
+        }
+        const rawTotal  = routePaths.reduce((s, rp) => s + rp.count, 0);
+        const capScale  = rawTotal > MAX_VEHICLES ? MAX_VEHICLES / rawTotal : 1.0;
+        const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
+
+        for (const rp of routePaths) {
+          const count = Math.max(1, Math.round(rp.count * capScale));
+
+          // Zoek mogelijke chaining-partner (route die begint waar deze eindigt)
+          const endNode   = rp.route.midEndNode;
+          const chainCandidates = routePaths.filter(
+            other => other !== rp && other.route.midStartNode === endNode
+          );
 
           for (let i = 0; i < count; i++) {
-            // Bouw de per-link segmenten op:
-            //   aanloop (Dijkstra) + binnenste links + uitloop (Dijkstra)
-            // Dijkstra geeft nu [{ coords, speedMs }] terug.
+            const isParked = rp.canPark && Math.random() < parkRatio;
 
-            // Binnenste links: rechtstreeks uit route.innerIds + linkSpeedMap
-            const innerLinkObjs = route.innerIds.map(id => {
-              const coords  = linkGeomMap.get(id);
-              const speedMs = linkSpeedMap.get(id) ?? 10;
-              return coords ? { coords, speedMs } : null;
-            }).filter(Boolean);
+            // Gewogen startpositie (ook voor geparkeerde auto's — verspreid over de route)
+            const wp = buildWeightedPath(rp.allLinkObjs);
+            if (!wp) continue;
 
-            if (!innerLinkObjs.length) continue;
-
-            // Aanloop-/uitlooopsnelheid = snelheid van aangrenzende innerLink
-            const approachSpeedMs = innerLinkObjs[0].speedMs;
-            const exitSpeedMs     = innerLinkObjs[innerLinkObjs.length - 1].speedMs;
-
-            let allLinkObjs = [...innerLinkObjs];
-
-            if (!route.fromBoundary) {
-              const fromZone = zoneMap.get(route.fromZoneId);
-              const fromNode = fromZone ? pickNode(fromZone.from) : null;
-              if (fromNode != null && fromNode !== route.midStartNode) {
-                const segs = dijkstraPath(fromNode, route.midStartNode);
-                if (segs && segs.length) {
-                  // Overschrijf speedMs met aangrenzende innerLink-snelheid
-                  const approachObjs = segs.map(s => ({ coords: s.coords, speedMs: approachSpeedMs }));
-                  allLinkObjs = [...approachObjs, ...allLinkObjs];
-                }
-              }
+            // Route-chaining: ~30% van rijdende stadswegauto's krijgt een vervolgroute
+            let pendingPath = null;
+            if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
+              const partner = chainCandidates[Math.floor(Math.random() * chainCandidates.length)];
+              pendingPath = partner.path;
             }
 
-            if (!route.toBoundary) {
-              const toZone = zoneMap.get(route.toZoneId);
-              const toNode = toZone ? pickNode(toZone.to) : null;
-              if (toNode != null && toNode !== route.midEndNode) {
-                const segs = dijkstraPath(route.midEndNode, toNode);
-                if (segs && segs.length) {
-                  const exitObjs = segs.map(s => ({ coords: s.coords, speedMs: exitSpeedMs }));
-                  allLinkObjs = [...allLinkObjs, ...exitObjs];
-                }
-              }
-            }
+            // Geparkeerde auto's: resterende wachttijd uniform verdeeld over [0, PARK_MEAN_S].
+            // Ze staan er al een tijdje — niet allemaal tegelijk vertrekken.
+            const departAt = isParked
+              ? Math.random() * PARK_MEAN_S / timeScale
+              : 0;
 
-            const path = buildPathFromLinks(allLinkObjs);
-            if (!path || path.length < 30) continue;
-
-            list.push({ path, offset: Math.random(), speed: path.speedMs * 0.9, color: randomCarColor(), typeIdx: randomVehicleType() });
+            list.push({
+              path:     rp.path,
+              offset:   wp.offset,
+              speed:    rp.path.speedMs * 0.9,
+              color:    randomCarColor(),
+              typeIdx:  randomVehicleType(),
+              state:    isParked ? 'parked' : 'moving',
+              departAt,
+              canPark:  rp.canPark,
+              pendingPath,
+            });
           }
         }
       } else {
@@ -1673,10 +1816,21 @@
         for (const seg of segments) {
           if (seg.length < 30 || segFlow(seg) < thresh) continue;
           const count = flowToCarCount(segFlow(seg));
-          const path  = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs }]);
+          const flow  = segFlow(seg);
+          const path  = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs, flow }]);
+          const canPark = seg.speedMs <= (50 / 3.6);
           for (let i = 0; i < count; i++) {
-            const offset = (i / count + Math.random()) % 1;
-            list.push({ path, offset, speed: seg.speedMs * 0.9, color: randomCarColor(), typeIdx: randomVehicleType() });
+            const offset = (i / count + Math.random() * 0.05) % 1;
+            list.push({
+              path, offset,
+              speed:    path.speedMs * 0.9,
+              color:    randomCarColor(),
+              typeIdx:  randomVehicleType(),
+              state:    'moving',
+              departAt: 0,
+              canPark,
+              pendingPath: null,
+            });
           }
         }
       }
@@ -1684,16 +1838,58 @@
       return list;
     }
 
+    /** Na buildCarList: herpositioneer auto's per pad zodat ze minimaal MIN_GAP uit elkaar staan */
+    function enforceInitialSpacing(list) {
+      const byPath = new Map();
+      for (const car of list) {
+        let g = byPath.get(car.path);
+        if (!g) { g = []; byPath.set(car.path, g); }
+        g.push(car);
+      }
+      for (const [path, group] of byPath) {
+        group.sort((a, b) => a.offset - b.offset);
+        const minOff  = (CF_MIN_GAP + CAR_LENGTH) / path.length;
+        const maxCars = Math.max(1, Math.floor(1.0 / minOff));
+        // Verwijder overtollige auto's als het pad te kort is
+        if (group.length > maxCars) group.splice(maxCars);
+        // Herpositioneer gelijkmatig met kleine jitter; bewaar bestaande state
+        const step = 1.0 / group.length;
+        for (let i = 0; i < group.length; i++) {
+          // Geparkeerde auto's blijven op hun offset; rijdende auto's worden herverdeeld
+          if (group[i].state !== 'parked') {
+            group[i].offset = (i * step + Math.random() * step * 0.25) % 1.0;
+            group[i].speed  = path.speedMs * 0.9;
+          }
+        }
+      }
+      const kept = new Set();
+      for (const g of byPath.values()) for (const car of g) kept.add(car);
+      return list.filter(car => kept.has(car));
+    }
+
     /** Bereken positie/oriëntatie per auto vanuit car.path (unified interface) */
     function computeCarData() {
       if (carData.length !== cars.length) carData = new Array(cars.length);
+      const PARK_OFFSET_M = 3.5;
       for (let i = 0; i < cars.length; i++) {
         const c = cars[i];
+        if (c.state === 'spawning') {
+          // Onzichtbaar: buiten beeld plaatsen
+          carData[i] = { position: [0, 0, -9999], orientation: [0, 0, 0], color: [0,0,0,0], typeIdx: c.typeIdx };
+          continue;
+        }
         const [lon, lat, bearing] = interpolatePosition(
           c.path.coords, c.offset, c.path.length
         );
+        let pLon = lon, pLat = lat;
+        if (c.state === 'parked') {
+          const bearRad = (bearing + 90) * Math.PI / 180;
+          const cosLat  = Math.cos(lat * Math.PI / 180);
+          pLon = lon + (PARK_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
+          pLat = lat + (PARK_OFFSET_M / 110540) * Math.cos(bearRad);
+        }
         carData[i] = {
-          position:    [lon, lat, 0.75],
+          position:    [pLon, pLat, c.state === 'parked' ? 0.3 : 0.75],
           orientation: [0, 90 - bearing, 0],
           color:       c.color,
           typeIdx:     c.typeIdx,
@@ -1703,12 +1899,12 @@
 
     /**
      * Groepeer auto's per pad en sorteer op offset.
-     * Wordt elke animatieframe aangeroepen voor het car-following model.
-     * Resultaat: Map< path → Car[] gesorteerd op offset oplopend >
+     * @param {boolean} movingOnly  - als true, alleen auto's met state='moving'
      */
-    function buildPathGroups() {
+    function buildPathGroups(movingOnly = false) {
       const groups = new Map();
       for (const car of cars) {
+        if (movingOnly && car.state !== 'moving') continue;
         let g = groups.get(car.path);
         if (!g) { g = []; groups.set(car.path, g); }
         g.push(car);
@@ -1883,10 +2079,11 @@
 
     // ── 6. Initialisatie ────────────────────────────────────────────────────
 
-    cars = buildCarList(threshold);
+    cars = enforceInitialSpacing(buildCarList(threshold));
     computeCarData();
 
     const overlay = new MapboxOverlay({
+      interleaved: true,
       layers:     [makeNetworkLayer(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
     });
@@ -1899,62 +2096,76 @@
     function animate() {
       const now = performance.now() / 1000;
       if (!paused && lastT !== null) {
-        const dt = Math.min(now - lastT, 0.05) * timeScale;
+        const dt  = Math.min(now - lastT, 0.05) * timeScale;
+        const t   = now;   // huidige tijd in seconden (performance.now()/1000)
 
-        // ── Car-following model ─────────────────────────────────────────
-        // Groepeer auto's per pad en sorteer op offset (positie langs route).
-        // Voor elke auto: bereken gap tot voorligger en pas snelheid aan.
-        const groups = buildPathGroups();
-
-        for (const [path, group] of groups) {
-          const n = group.length;
-          for (let i = 0; i < n; i++) {
-            const car    = group[i];
-            const leader = group[(i + 1) % n];
-
-            // Doelsnelheid op basis van huidige link + positie binnen die link
-            const targetSpeedMs = computeLinkTargetSpeed(car);
-
-            // Gap in meters tot voorligger (met wrap-around op het pad)
-            let gap;
-            if (n === 1) {
-              gap = path.length;   // enige auto op dit pad: vrije baan
-            } else if (i < n - 1) {
-              gap = (leader.offset - car.offset) * path.length;
+        // ── Toestandsovergangen ──────────────────────────────────────────
+        for (const car of cars) {
+          if (car.state === 'parked' && t >= car.departAt) {
+            // Stadswegauto vertrekt vanuit parkeerstand
+            car.state  = 'moving';
+            car.speed  = 0;
+          } else if (car.state === 'spawning' && t >= car.departAt) {
+            // Snelwegauto / boundary: verschijn aan het begin van de route
+            car.offset = 0;
+            car.state  = 'moving';
+            car.speed  = 0;
+          } else if (car.state === 'moving' && car.offset >= 1.0) {
+            // Vervolgroute (route-chaining)?
+            if (car.pendingPath) {
+              car.path       = car.pendingPath;
+              car.pendingPath = null;
+              car.offset     = 0;
+              car.speed      = 0;
+            } else if (car.canPark) {
+              // Stadsweg: parkeer aan het einde en wacht voor volgende rit
+              car.offset   = 0.99;
+              car.speed    = 0;
+              car.state    = 'parked';
+              car.departAt = t + Math.max(PARK_MIN_S, normalRandom(PARK_MEAN_S, PARK_STD_S)) / timeScale;
             } else {
-              // Laatste auto in gesorteerde lijst — voorligger is eerste (wrap)
-              gap = (1.0 - car.offset + leader.offset) * path.length;
+              // Snelweg / boundary: verdwijnen en opnieuw spawnen aan het begin
+              car.offset   = 0;
+              car.speed    = 0;
+              car.state    = 'spawning';
+              car.departAt = t + 2 + Math.random() * 20;
             }
-
-            // Gewenste volgafstand
-            const effectiveSpeed = Math.max(car.speed, 1.0);
-            const desired = CF_MIN_GAP + CF_TIME_HEADWAY * effectiveSpeed;
-
-            if (gap >= desired) {
-              // Vrije baan: optrekken naar link-doelsnelheid
-              car.speed = Math.min(targetSpeedMs, car.speed + CF_ACCEL * dt);
-            } else if (gap > CF_MIN_GAP) {
-              // Nadert voorligger: snelheid proportioneel terugschroeven
-              const ratio       = (gap - CF_MIN_GAP) / (desired - CF_MIN_GAP);
-              const leaderSpeed = n === 1 ? targetSpeedMs : leader.speed;
-              const brakeTarget = leaderSpeed * ratio;
-              const brake       = Math.min(CF_DECEL * dt, car.speed - brakeTarget);
-              car.speed = Math.max(0, car.speed - brake);
-            } else {
-              // Bumper-to-bumper: volledig remmen
-              car.speed = Math.max(0, car.speed - CF_DECEL * dt);
-            }
-
-            // Vangnet: voorkom NaN/Infinity door numerieke fouten
-            if (!isFinite(car.speed)) car.speed = 0;
           }
         }
 
-        // ── Posities bijwerken ──────────────────────────────────────────
+        // ── Snelheid instellen (alleen rijdende auto's) ──────────────────
         for (const car of cars) {
-          const next = (car.offset + (car.speed * dt) / car.path.length) % 1.0;
-          // Vangnet: als offset NaN/Infinity wordt, reset naar willekeurige startpositie
-          car.offset = isFinite(next) ? next : Math.random();
+          if (car.state === 'moving') {
+            car.speed = computeLinkTargetSpeed(car);
+          }
+        }
+
+        // ── Posities bijwerken (alleen rijdende auto's) ──────────────────
+        for (const car of cars) {
+          if (car.state !== 'moving') continue;
+          const next = car.offset + (car.speed * dt) / car.path.length;
+          car.offset = isFinite(next) ? Math.min(next, 1.0) : car.offset;
+        }
+
+        // ── Minimale volgafstand afdwingen (alleen rijdende auto's) ──────
+        const groups = buildPathGroups(true);   // true = alleen 'moving'
+        for (const [path, group] of groups) {
+          const n = group.length;
+          if (n < 2) continue;
+          const minOff = (CF_MIN_GAP + CAR_LENGTH) / path.length;
+          for (let i = 0; i < n; i++) {
+            const car    = group[i];
+            const leader = group[(i + 1) % n];
+            if (i < n - 1) {
+              let leaderOff = leader.offset;
+              if (leaderOff < car.offset) leaderOff += 1.0;
+              const gap = leaderOff - car.offset;
+              if (gap < minOff) {
+                car.offset = Math.max(0, leaderOff - minOff);
+                car.speed  = Math.min(car.speed, leader.speed);
+              }
+            }
+          }
         }
 
         computeCarData();
@@ -1966,7 +2177,7 @@
 
     /** Herbouw auto-lijst (bij zoom-wijziging of drempel-aanpassing) */
     function rebuildCars() {
-      cars = buildCarList(threshold);
+      cars = enforceInitialSpacing(buildCarList(threshold));
       computeCarData();
     }
 
@@ -1984,10 +2195,9 @@
       animate();
     });
 
-    // Zoom-event: debounced herbouw zodat auto-dichtheid past bij zoomniveau
-    map.on('zoomend', debounce(() => {
-      if (routeMode) rebuildCars();
-    }, 300));
+    // Zoom-event: auto-dichtheid wordt niet herberekend bij panning/zoomen
+    // zodat de verkeersafwikkeling niet wordt gereset.
+    // map.on('zoomend', ...) bewust weggelaten.
 
     // ── 7b. Node-edit modus ─────────────────────────────────────────────────
 
@@ -2319,6 +2529,7 @@
           speedMs: p.speed > 0 ? p.speed / 3.6 : 10,
         });
       }
+      rebuildLinkFlowMap();
       dijkstraCache.clear();
 
       // Titel updaten
@@ -2585,6 +2796,7 @@
       daypart = btn.dataset.dp;
       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b === btn));
       updateLegend();
+      rebuildLinkFlowMap();
       // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
       // in segment-modus bepaalt het de flow-drempel per segment.
       rebuildCars();

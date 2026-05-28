@@ -1,0 +1,19 @@
+# GMT Calculation Library (lokale wheel — bevat prepare, adjust en alle pipeline-modules)
+./gmt_calculation_lib-0.1.1-py3-none-any.whl
+
+# Web framework
+flask>=3.1
+
+# AWS / S3 (gebruikt door network_fetcher, zone_fetcher, feedlink_fetcher)
+boto3>=1.42
+
+# Data-validatie (gebruikt door diverse pipeline-modules)
+pydantic>=2
+
+# HTTP (gebruikt door network_fetcher, zone_fetcher e.a.)
+requests>=2.33
+
+# Environment-variabelen vanuit .env
+python-dotenv>=1.2
+
+numpy>=2.0

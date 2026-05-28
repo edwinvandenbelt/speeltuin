@@ -3,3 +3,4 @@
 .area-uuid
 *.geojson
 *-changes.json
+.vscode/launch.json
