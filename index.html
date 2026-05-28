@@ -6,8 +6,8 @@
   <title>Verkeersnetwerk 3D — Rotterdam</title>
 
   <!-- MapLibre GL voor achtergrondkaart + 3D gebouwen -->
-  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-  <link  href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <link  href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet"/>
 
   <!-- deck.gl (bevat MapboxOverlay, GeoJsonLayer, SimpleMeshLayer) -->
   <script src="https://unpkg.com/deck.gl@8.9.0/dist.min.js"></script>
@@ -417,8 +417,8 @@
     </div>
 
     <div class="control">
-      <label>Tijdschaal <span id="scaleVal">10×</span></label>
-      <input type="range" id="timeScale" min="1" max="10" value="10" step="1"/>
+      <label>Tijdschaal <span id="scaleVal">1×</span></label>
+      <input type="range" id="timeScale" min="1" max="10" value="1" step="1"/>
     </div>
 
     <div class="control" id="threshControl">
@@ -1450,6 +1450,7 @@
       pitch:     58,
       bearing:   -10,
       antialias: true,
+      maxPitch:  85,
     });
 
     // Navigeer naar het gebied zodra de kaart klaar is
@@ -1458,10 +1459,20 @@
         [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]],
         { padding: 60, pitch: 58, bearing: -10, duration: 0 }
       );
+
+      // Realistische lucht
+      map.setSky({
+        'sky-color':             '#87b9e8',
+        'sky-horizon-blend':     0.5,
+        'horizon-color':         '#c8dff0',
+        'horizon-fog-blend':     0.1,
+        'fog-color':             '#d8e8f0',
+        'fog-ground-blend':      0.9,
+      });
     });
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
-    let timeScale = 10;
+    let timeScale = 1;
     let threshold = 200;
     let daypart    = 'erh';
     let widthScale = false;
@@ -1960,7 +1971,13 @@
     }
 
     // Onderdruk 'Image X could not be loaded'-waarschuwingen van OpenFreeMap's sprite-sheet
-    map.on('styleimagemissing', () => {});
+    // Onderdruk 'Image X could not be loaded'-waarschuwingen van de sprite-sheet
+    // door ontbrekende afbeeldingen te vervangen door een transparante 1×1 placeholder.
+    map.on('styleimagemissing', (e) => {
+      if (map.hasImage(e.id)) return;
+      const empty = { width: 1, height: 1, data: new Uint8Array(4) };
+      map.addImage(e.id, empty);
+    });
 
     map.on('load', () => {
       hideLaadscherm();
