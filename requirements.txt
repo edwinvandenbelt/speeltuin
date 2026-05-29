@@ -1,5 +1,5 @@
 # GMT Calculation Library (lokale wheel — bevat prepare, adjust en alle pipeline-modules)
-./gmt_calculation_lib-0.1.1-py3-none-any.whl
+./gmt_calculation_lib-0.1.1-py3-none-any.whl[prepare]
 
 # Web framework
 flask>=3.1

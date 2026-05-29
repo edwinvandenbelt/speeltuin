@@ -209,7 +209,7 @@
     }
 
     /* ── Node-dialoog ─────────────────────────────────────────────────── */
-    #nodeDialog {
+    #nodeDialog, #linkDialog {
       display: none;
       position: absolute;
       z-index: 50;
@@ -222,10 +222,27 @@
       box-shadow: 0 8px 32px rgba(0,0,0,0.6);
       backdrop-filter: blur(10px);
     }
-    #nodeDialog h3 {
+    #nodeDialog h3, #linkDialog h3 {
       font-size: 13px; color: #7ec8e3; margin-bottom: 14px;
       padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
     }
+    #linkDialogOk {
+      background: rgba(126,200,227,0.15); color: #7ec8e3;
+      border: 1px solid rgba(126,200,227,0.35);
+    }
+    #linkDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #linkDialogCancel {
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #linkDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    .speed-btn {
+      padding: 3px 7px; font-size: 11px; border-radius: 4px; cursor: pointer;
+      background: rgba(255,255,255,0.07); color: #c9d6e8;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .speed-btn:hover  { background: rgba(126,200,227,0.18); color: #7ec8e3; }
+    .speed-btn.active { background: rgba(126,200,227,0.30); color: #7ec8e3; border-color: rgba(126,200,227,0.6); }
     .node-field { margin-bottom: 12px; }
     .node-field label { font-size: 11px; color: #5a6272; display: block; margin-bottom: 4px; }
     .field-hint { font-size: 10px; color: #3d4454; font-weight: 400; }
@@ -439,10 +456,41 @@
     <button id="pauseBtn">&#9646;&#9646; Pauzeer</button>
 
     <button id="nodeEditBtn" class="edit-btn" title="Productie/attractie per knoop wijzigen">&#9673; Prod./Attr. bewerken</button>
+    <button id="linkEditBtn" class="edit-btn" title="Capaciteit per wegvak wijzigen">&#9632; Wegvakken bewerken</button>
 
     <div class="hint" id="hintText">
       Klik op een wegsegment voor details.<br>
       Scroll of pinch om in te zoomen.
+    </div>
+  </div>
+
+  <!-- ── Link bewerk-dialoog ────────────────────────────────────────────── -->
+  <div id="linkDialog">
+    <h3 id="linkDialogTitle">Wegvak</h3>
+    <div class="node-field">
+      <label>Capaciteit <span class="field-hint">vtg/u</span></label>
+      <div class="node-field-row">
+        <button id="linkCapMinus">−</button>
+        <input type="number" id="linkCapVal" min="0" step="50" placeholder="vtg/u"/>
+        <button id="linkCapPlus">+</button>
+      </div>
+    </div>
+    <div class="node-field">
+      <label>Snelheid instellen <span class="field-hint">past capaciteit aan</span></label>
+      <div id="linkSpeedBtns" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+        <button class="speed-btn" data-speed="15">15</button>
+        <button class="speed-btn" data-speed="30">30</button>
+        <button class="speed-btn" data-speed="40">40</button>
+        <button class="speed-btn" data-speed="50">50</button>
+        <button class="speed-btn" data-speed="60">60</button>
+        <button class="speed-btn" data-speed="70">70</button>
+        <button class="speed-btn" data-speed="100">100</button>
+        <button class="speed-btn" data-speed="120">120</button>
+      </div>
+    </div>
+    <div class="node-dialog-btns">
+      <button id="linkDialogCancel">Annuleren</button>
+      <button id="linkDialogOk">OK</button>
     </div>
   </div>
 
@@ -1919,6 +1967,7 @@
     // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
 
     let nodeEditActive = false;
+    let linkEditActive = false;
 
     function makeNetworkLayer() {
       // Bereken min/max voor de actieve metric
@@ -1943,7 +1992,7 @@
       return new GeoJsonLayer({
         id: 'network',
         data: geojson,
-        visible: !nodeEditActive && colorMetric !== 'compare',
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare',
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
@@ -1983,10 +2032,33 @@
             default:         return flowToRgba(norm);
           }
         },
-        pickable: true,
+        pickable: !linkEditActive,
         updateTriggers: {
           getLineColor: [daypart, colorMetric],
           getLineWidth: [daypart, colorMetric],
+        },
+      });
+    }
+
+    function makeLinkEditLayer() {
+      return new GeoJsonLayer({
+        id: 'link-edit',
+        data: geojson,
+        visible: linkEditActive,
+        pickable: linkEditActive,
+        stroked: true,
+        filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 14,
+        getLineWidth: 14,
+        getLineColor: f => {
+          const linkId = String(f.properties?.linkId ?? '');
+          const changed = pendingChanges.some(c => c._isLink && String(c.linkId) === linkId);
+          return changed ? [255, 200, 60, 220] : [255, 180, 80, 140];
+        },
+        updateTriggers: { getLineColor: [pendingChanges.length] },
+        onHover: info => {
+          map.getCanvas().style.cursor = (linkEditActive && info.object) ? 'pointer' : '';
         },
       });
     }
@@ -2083,12 +2155,30 @@
     cars = enforceInitialSpacing(buildCarList(threshold));
     computeCarData();
 
+    let pendingChanges   = [];       // [{ nodeId, zoneId, production, attraction, label }]
+
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers:     [makeNetworkLayer(), ...makeCarLayers([...carData])],
+      layers:     [makeNetworkLayer(), makeLinkEditLayer(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
+      onClick: (info, event) => {
+        if (!linkEditActive) return;
+        if (!info.object)    return;
+        if (info.layer?.id !== 'link-edit') return;
+        const pixel = info.pixel ?? [0, 0];
+        openLinkDialog(info.object, { x: pixel[0], y: pixel[1] });
+        return true;
+      },
     });
     map.addControl(overlay);
+
+    function updateOverlay(withCars = true) {
+      overlay.setProps({ layers: [
+        makeNetworkLayer(),
+        makeLinkEditLayer(),
+        ...makeCarLayers(withCars ? [...carData] : []),
+      ]});
+    }
 
     // ── 7. Animatielus ──────────────────────────────────────────────────────
     let lastT  = null;
@@ -2170,7 +2260,7 @@
         }
 
         computeCarData();
-        overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+        updateOverlay(true);
       }
       if (paused) lastT = null; else lastT = now;
       requestAnimationFrame(animate);
@@ -2202,7 +2292,6 @@
 
     // ── 7b. Node-edit modus ─────────────────────────────────────────────────
 
-    let pendingChanges   = [];       // [{ nodeId, zoneId, production, attraction, label }]
     let scenarioCounter  = 1;
     let activeNodeFeature = null;  // feature dat de dialoog opende
     let compareVisible   = false;
@@ -2211,6 +2300,8 @@
     // Helpers
     const NODE_SOURCE = 'edit-nodes-src';
     const NODE_LAYER  = 'edit-nodes-layer';
+    const LINK_SOURCE = 'edit-links-src';
+    const LINK_LAYER  = 'edit-links-layer';
     const CMP_SOURCE  = 'compare-src';
     const CMP_LAYER_INC = 'compare-inc';
     const CMP_LAYER_RED = 'compare-red';
@@ -2310,6 +2401,11 @@
         map.setLayoutProperty(NODE_LAYER, 'visibility', 'none');
     }
 
+    // ── Link-edit laag ──────────────────────────────────────────────────────
+
+    function addLinkLayer()    { updateOverlay(false); }
+    function removeLinkLayer() { updateOverlay(false); }
+
     // ── Node-dialoog ────────────────────────────────────────────────────────
 
     function openNodeDialog(feature, mapPoint) {
@@ -2340,6 +2436,53 @@
       activeNodeFeature = null;
     }
 
+    // ── Link-dialoog ─────────────────────────────────────────────────────────
+
+    let activeLinkFeature = null;
+    let activeLinkSpeed   = null;
+
+    function openLinkDialog(feature, mapPoint) {
+      activeLinkFeature = feature;
+      activeLinkSpeed   = null;
+      const p = feature.properties;
+      const linkId = p.linkId ?? p.id ?? '';
+      document.getElementById('linkDialogTitle').textContent =
+        p.name ? `Wegvak: ${p.name}` : `Link ${linkId}`;
+
+      const existing   = pendingChanges.find(c => c.linkId != null && String(c.linkId) === String(linkId));
+      const currentCap = p.capacity ?? 0;
+      const step       = Math.max(50, Math.round(currentCap / 20 / 50) * 50) || 50;
+
+      const inp = document.getElementById('linkCapVal');
+      inp.min   = 0;
+      inp.max   = '';
+      inp.step  = step;
+      inp.value = existing?.capacity ?? currentCap;
+
+      document.querySelector('#linkDialog .field-hint').textContent = 'vtg/u';
+
+      // Markeer actieve snelheidsknop op basis van bestaande wijziging of huidige snelheid
+      const activeSpeed = existing?.speed ?? p.speed ?? null;
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        btn.classList.toggle('active', activeSpeed != null && parseInt(btn.dataset.speed) === activeSpeed);
+      });
+
+      const dlg  = document.getElementById('linkDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 260 > window.innerWidth)  x = mapPoint.x + rect.left - 260;
+      if (y + 260 > window.innerHeight) y = window.innerHeight - 280;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeLinkDialog() {
+      document.getElementById('linkDialog').style.display = 'none';
+      activeLinkFeature = null;
+    }
+
     function stepValue(inputId, delta) {
       const inp = document.getElementById(inputId);
       const raw = inp.value.trim();
@@ -2352,10 +2495,60 @@
                 : String(newVal);
     }
 
+    // Snelheid → capaciteit (vtg/u per rijstrook, middenwaarde per klasse)
+    const SPEED_TO_CAP = { 15: 300, 30: 500, 40: 700, 50: 900, 60: 1100, 70: 1300, 100: 1900, 120: 2100 };
+
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.onclick = () => {
+        const spd = parseInt(btn.dataset.speed);
+        const cap = SPEED_TO_CAP[spd] ?? 900;
+        activeLinkSpeed = spd;
+        const inp = document.getElementById('linkCapVal');
+        inp.value = cap;
+        inp.step  = 100;
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', b === btn));
+      };
+    });
+
     document.getElementById('nodeProdMinus').onclick = () => stepValue('nodeProdVal', -100);
     document.getElementById('nodeProdPlus' ).onclick = () => stepValue('nodeProdVal', +100);
     document.getElementById('nodeAttrMinus').onclick = () => stepValue('nodeAttrVal', -100);
     document.getElementById('nodeAttrPlus' ).onclick = () => stepValue('nodeAttrVal', +100);
+
+    document.getElementById('linkCapMinus').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      const step = parseInt(inp.step) || 50;
+      inp.value = Math.max(0, (parseInt(inp.value) || 0) - step);
+    };
+    document.getElementById('linkCapPlus').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      const step = parseInt(inp.step) || 50;
+      inp.value = Math.max(0, (parseInt(inp.value) || 0) + step);
+    };
+
+    document.getElementById('linkDialogCancel').onclick = closeLinkDialog;
+
+    document.getElementById('linkDialogOk').onclick = () => {
+      if (!activeLinkFeature) return;
+      const p   = activeLinkFeature.properties;
+      const linkId = String(p.linkId ?? p.id ?? '');
+      const inp = document.getElementById('linkCapVal');
+      const raw = inp.value.trim();
+      const cap = parseInt(raw);
+      if (!raw || isNaN(cap) || cap < 0) { closeLinkDialog(); return; }
+
+      pendingChanges = pendingChanges.filter(c => c.linkId == null || String(c.linkId) !== linkId);
+      const entry = {
+        linkId,
+        capacity: cap,
+        _label:   p.name ? `Wegvak: ${p.name}` : `Link ${linkId}`,
+        _isLink:  true,
+      };
+      if (activeLinkSpeed != null) entry.speed = activeLinkSpeed;
+      pendingChanges.push(entry);
+      renderChangesList();
+      closeLinkDialog();
+    };
 
     document.getElementById('nodeDialogCancel').onclick = closeNodeDialog;
 
@@ -2408,8 +2601,13 @@
           return `=${s}`;
         };
         const parts = [];
-        if (c.production != null) parts.push(`prod: ${fmt(c.production)}`);
-        if (c.attraction != null) parts.push(`attr: ${fmt(c.attraction)}`);
+        if (c._isLink) {
+          parts.push(`cap: ${c.capacity.toLocaleString('nl')} vtg/u`);
+          if (c.speed != null) parts.push(`snelh: ${c.speed} km/h`);
+        } else {
+          if (c.production != null) parts.push(`prod: ${fmt(c.production)}`);
+          if (c.attraction != null) parts.push(`attr: ${fmt(c.attraction)}`);
+        }
 
         const item = document.createElement('div');
         item.className = 'change-item';
@@ -2437,8 +2635,11 @@
       status.style.display = 'block';
       status.textContent   = 'Adjust starten…';
 
-      // Bouw changes-array (strip _label / _zoneClass)
+      // Bouw changes-array (strip _label / _zoneClass / _isLink)
       const changes = pendingChanges.map(c => {
+        if (c._isLink) {
+          return { linkId: c.linkId, capacity: c.capacity };
+        }
         const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
         if (c.production != null) obj.production = c.production;
         if (c.attraction != null) obj.attraction = c.attraction;
@@ -2536,6 +2737,10 @@
           speedMs: p.speed > 0 ? p.speed / 3.6 : 10,
         });
       }
+      // Vervang geojson.features in-place zodat makeNetworkLayer de nieuwe flows ziet
+      geojson.features.length = 0;
+      newGeojson.features.forEach(f => geojson.features.push(f));
+
       rebuildLinkFlowMap();
       dijkstraCache.clear();
 
@@ -2630,10 +2835,11 @@
       // ── Overlay en autos bijwerken ────────────────────────────────────────
       // Stop bewerkingsmodus als die nog actief was
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
 
       updateLegend();
       rebuildCars();
-      overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+      updateOverlay(true);
 
       // URL bijwerken zonder pagina-reload (voor bookmarken / delen)
       const url = new URL(window.location.href);
@@ -2704,13 +2910,15 @@
         compareVisible = false;
         setCompareVisibility(false);
         updateLegend();
-        overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+        updateOverlay(true);
       }
     }
 
     // ── Node-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('nodeEditBtn').addEventListener('click', () => {
+      // Zet link-edit uit als die actief was
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
       document.getElementById('nodeEditBtn').textContent =
@@ -2724,7 +2932,7 @@
         paused = true;
         cars   = [];
         carData = [];
-        overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([])] });
+        updateOverlay(false);
         const pauseBtn = document.getElementById('pauseBtn');
         pauseBtn.classList.add('paused');
         pauseBtn.innerHTML = '&#9654; Hervat';
@@ -2737,6 +2945,40 @@
         const pauseBtn = document.getElementById('pauseBtn');
         pauseBtn.classList.remove('paused');
         pauseBtn.innerHTML = '&#9646;&#9646; Pauzeer';
+        rebuildCars();
+      }
+    });
+
+    // ── Link-edit knop ──────────────────────────────────────────────────────
+
+    document.getElementById('linkEditBtn').addEventListener('click', () => {
+      // Zet node-edit uit als die actief was
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      linkEditActive = !linkEditActive;
+      document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
+      document.getElementById('linkEditBtn').innerHTML =
+        linkEditActive ? '✕ Stop bewerken' : '&#9632; Wegvakken bewerken';
+      document.getElementById('hintText').innerHTML = linkEditActive
+        ? 'Klik op een wegvak om de capaciteit te wijzigen.'
+        : 'Klik op een wegsegment voor details.<br>Scroll of pinch om in te zoomen.';
+
+      if (linkEditActive) {
+        paused = true;
+        cars   = [];
+        carData = [];
+        updateOverlay(false);
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.classList.add('paused');
+        pauseBtn.innerHTML = '&#9654; Hervat';
+        map.once('idle', addLinkLayer);
+      } else {
+        removeLinkLayer();
+        closeLinkDialog();
+        paused = false;
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.classList.remove('paused');
+        pauseBtn.innerHTML = '&#9646;&#9646; Pauzeer';
+        updateOverlay(false);
         rebuildCars();
       }
     });
@@ -2758,7 +3000,7 @@
             colorMetric = 'flow';
             document.getElementById('colorMetric').value = 'flow';
             updateLegend();
-            overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+            updateOverlay(true);
             return;
           }
         }
@@ -2774,7 +3016,7 @@
         setCompareVisibility(false);
       }
       updateLegend();
-      overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+      updateOverlay(true);
     });
 
     document.getElementById('timeScale').addEventListener('input', e => {
@@ -2811,7 +3053,7 @@
       // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
       // in segment-modus bepaalt het de flow-drempel per segment.
       rebuildCars();
-      overlay.setProps({ layers: [makeNetworkLayer(), ...makeCarLayers([...carData])] });
+      updateOverlay(true);
     });
 
   })();
