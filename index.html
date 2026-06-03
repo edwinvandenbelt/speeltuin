@@ -1457,7 +1457,7 @@
       let cur = target;
       while (prev.has(cur)) {
         const { via, coords, speedMs } = prev.get(cur);
-        segs.unshift({ coords, speedMs });
+        segs.unshift({ coords, speedMs, toNode: cur });
         cur = via;
       }
       dijkstraCache.set(key, segs);
@@ -1631,6 +1631,7 @@
 
       const links      = [];
       const boundaries = [0];
+      const nodeIds    = [];   // nodeIds[i] = toNode van link i (null als onbekend)
       const mergedCoords = [...linkObjs[0].coords];
 
       for (let i = 0; i < linkObjs.length; i++) {
@@ -1638,6 +1639,7 @@
         const len = segmentLength(lo.coords);
         links.push({ length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0 });
         boundaries.push(boundaries[boundaries.length - 1] + len);
+        nodeIds.push(lo.toNode ?? null);
         if (i > 0) mergedCoords.push(...lo.coords.slice(1));
       }
 
@@ -1647,6 +1649,7 @@
         length:     totalLength,
         links,
         boundaries,
+        nodeIds,
         speedMs:    links[0].speedMs,  // fallback
       };
     }
@@ -1778,7 +1781,8 @@
             const coords  = linkGeomMap.get(id);
             const speedMs = linkSpeedMap.get(id) ?? 10;
             const flow    = linkFlowMap.get(id) ?? 0;
-            return coords ? { coords, speedMs, flow } : null;
+            const nodes   = nodeLinkMap.get(id);
+            return coords ? { coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
           }).filter(Boolean);
 
           if (!innerLinkObjs.length) continue;
@@ -1794,7 +1798,7 @@
             if (fromNode != null && fromNode !== route.midStartNode) {
               const segs = dijkstraPath(fromNode, route.midStartNode);
               if (segs && segs.length) {
-                const approachObjs = segs.map(s => ({ coords: s.coords, speedMs: approachSpeedMs, flow: 0 }));
+                const approachObjs = segs.map(s => ({ coords: s.coords, speedMs: approachSpeedMs, flow: 0, toNode: s.toNode ?? null }));
                 allLinkObjs = [...approachObjs, ...allLinkObjs];
               }
             }
@@ -1806,7 +1810,7 @@
             if (toNode != null && toNode !== route.midEndNode) {
               const segs = dijkstraPath(route.midEndNode, toNode);
               if (segs && segs.length) {
-                const exitObjs = segs.map(s => ({ coords: s.coords, speedMs: exitSpeedMs, flow: 0 }));
+                const exitObjs = segs.map(s => ({ coords: s.coords, speedMs: exitSpeedMs, flow: 0, toNode: s.toNode ?? null }));
                 allLinkObjs = [...allLinkObjs, ...exitObjs];
               }
             }
@@ -1890,6 +1894,10 @@
               departAt,
               canPark:  rp.canPark,
               pendingPath,
+              waitingAtNode:      null,
+              waitStartT:         null,
+              yieldOverrideUntil: null,
+              stopTarget:         null,
             });
           }
         }
@@ -1912,6 +1920,10 @@
               departAt: 0,
               canPark,
               pendingPath: null,
+              waitingAtNode:      null,
+              waitStartT:         null,
+              yieldOverrideUntil: null,
+              stopTarget:         null,
             });
           }
         }
@@ -2217,6 +2229,14 @@
     let lastT  = null;
     let paused = false;
 
+    // ── Kruispunt rechts-voor-links parameters ────────────────────────────
+    const YIELD_ZONE      = 25;   // meter: afstand tot kruispunt waarbinnen rechts-voorrang geldt
+    const DEADLOCK_WAIT_S =  3.0; // seconden: maximale wachttijd voor patstelling-doorbraak
+
+    // ── Periodieke hervalidatie van stilstaande auto's ────────────────────
+    let lastRevalidateT = 0;      // real-time (performance.now()/1000) van laatste hervalidatie
+    const REVALIDATE_INTERVAL = 2.0; // elke 2 seconden
+
     function animate() {
       const now = performance.now() / 1000;
       if (!paused && lastT !== null) {
@@ -2264,6 +2284,179 @@
           }
         }
 
+        // ── Kruispunt: wachtrijen per rijstrook + rechts-voor-links ─────
+        {
+          const realNow        = performance.now() / 1000;
+          const STOP_CLEARANCE = 2;                   // m vóór knooppunt (stoplijn)
+          const SLOT_SIZE      = CAR_LENGTH + CF_MIN_GAP; // m per wachtrij-slot
+
+          // nodeApproach: nodeId → Map(path → [{car, distToNode, bearing, bnd, linkIdx}])
+          // Alle rijdende auto's die binnen YIELD_ZONE van hun volgende knooppunt zijn.
+          const nodeApproach = new Map();
+          for (const car of cars) {
+            if (car.state !== 'moving') continue;
+            const path = car.path;
+            if (!path.nodeIds || !path.boundaries || path.boundaries.length < 2) continue;
+
+            const distM = car.offset * path.length;
+            const bnd   = path.boundaries;
+            let lo2 = 0, hi2 = bnd.length - 2;
+            while (lo2 < hi2) {
+              const mid = (lo2 + hi2 + 1) >> 1;
+              if (bnd[mid] <= distM) lo2 = mid; else hi2 = mid - 1;
+            }
+            const linkIdx    = Math.min(lo2, path.links.length - 1);
+            const nodeId     = path.nodeIds[linkIdx];
+            const distToNode = bnd[linkIdx + 1] - distM;
+            if (nodeId == null || distToNode > YIELD_ZONE) continue;
+
+            const [,, bearing] = interpolatePosition(path.coords, car.offset, path.length);
+            if (!nodeApproach.has(nodeId)) nodeApproach.set(nodeId, new Map());
+            const laneMap = nodeApproach.get(nodeId);
+            if (!laneMap.has(path)) laneMap.set(path, []);
+            laneMap.get(path).push({ car, distToNode, bearing, bnd, linkIdx });
+          }
+
+          // Verwerk elk kruispunt
+          for (const [nodeId, laneMap] of nodeApproach) {
+            // Sorteer elke rijstrook: index 0 = voorste auto (dichtst bij knooppunt)
+            for (const queue of laneMap.values()) {
+              queue.sort((a, b) => a.distToNode - b.distToNode);
+            }
+
+            // Front-auto per rijstrook (voor rechts-voor-links check)
+            const frontEntries = [...laneMap.values()].map(q => q[0]);
+
+            if (frontEntries.length < 2) {
+              // Slechts één rijstrook nadert: geen voorrang-conflict
+              for (const queue of laneMap.values()) {
+                for (const { car } of queue) {
+                  car.waitingAtNode = null;
+                  car.waitStartT    = null;
+                  car.stopTarget    = null;
+                }
+              }
+              continue;
+            }
+
+            // Rechts-voor-links: bepaal per front-auto of die moet wachten
+            const mustYieldMap = new Map(); // frontCar → bool
+            for (const { car, bearing } of frontEntries) {
+              if (car.yieldOverrideUntil && realNow < car.yieldOverrideUntil) {
+                mustYieldMap.set(car, false);
+                car.waitingAtNode = null;
+                continue;
+              }
+              const mustYield = frontEntries.some(other => {
+                if (other.car === car) return false;
+                // relAngle ∈ [30°,150°] → andere auto rijdt duidelijk van rechts in
+                const relAngle = (other.bearing - bearing + 540) % 360;
+                return relAngle >= 30 && relAngle <= 150;
+              });
+              mustYieldMap.set(car, mustYield);
+            }
+
+            // Wachtrij-beheer per rijstrook
+            for (const [path, queue] of laneMap) {
+              const frontCar   = queue[0].car;
+              const mustYield  = mustYieldMap.get(frontCar) ?? false;
+              const { bnd, linkIdx } = queue[0];
+              const nodeDistM  = bnd[linkIdx + 1]; // pad-afstand t/m het knooppunt
+
+              if (mustYield) {
+                // ── Wachtrij actief ──────────────────────────────────────
+                if (frontCar.waitingAtNode !== nodeId) {
+                  frontCar.waitingAtNode = nodeId;
+                  frontCar.waitStartT    = realNow;
+                }
+
+                for (let i = 0; i < queue.length; i++) {
+                  const { car } = queue[i];
+
+                  // Bereken exacte stoppositie voor deze wachtrij-sleuf
+                  const stopDistFromNode = STOP_CLEARANCE + i * SLOT_SIZE;
+                  const stopOffset = Math.max(0,
+                    (nodeDistM - stopDistFromNode) / path.length);
+                  car.stopTarget = stopOffset;
+
+                  // Rem lineair naar stoppositie (remzone = 10 m)
+                  const distToStop = (stopOffset - car.offset) * path.length;
+                  if (distToStop <= 0) {
+                    car.speed = 0;
+                  } else {
+                    const vRef = path.links[linkIdx].speedMs * 0.9;
+                    car.speed  = Math.min(car.speed,
+                      vRef * Math.min(1, distToStop / 10));
+                  }
+
+                  // Volgers ook in wachtstatus boeken
+                  if (i > 0 && car.waitingAtNode !== nodeId) {
+                    car.waitingAtNode = nodeId;
+                    car.waitStartT    = realNow;
+                  }
+                }
+
+              } else {
+                // ── Vrije doorgang: wis wachtrij-status voor hele rijstrook ─
+                for (const { car } of queue) {
+                  car.waitingAtNode = null;
+                  car.waitStartT    = null;
+                  car.stopTarget    = null;
+                }
+              }
+            }
+
+            // Patstelling: alle front-auto's wachten te lang → forceer de oudste
+            const allWaiting = frontEntries.every(({ car }) =>
+              mustYieldMap.get(car) === true &&
+              car.waitingAtNode === nodeId &&
+              car.waitStartT != null &&
+              (realNow - car.waitStartT) >= DEADLOCK_WAIT_S
+            );
+            if (allWaiting) {
+              const oldest = frontEntries.reduce((a, b) =>
+                (a.car.waitStartT ?? Infinity) < (b.car.waitStartT ?? Infinity) ? a : b
+              );
+              oldest.car.waitingAtNode      = null;
+              oldest.car.waitStartT         = null;
+              oldest.car.stopTarget         = null;
+              oldest.car.yieldOverrideUntil = realNow + 8;
+              oldest.car.speed = computeLinkTargetSpeed(oldest.car);
+            }
+          }
+
+          // Auto's waarvan het knooppunt niet meer in nodeApproach zit: status wissen
+          for (const car of cars) {
+            if (car.waitingAtNode != null && !nodeApproach.has(car.waitingAtNode)) {
+              car.waitingAtNode = null;
+              car.waitStartT    = null;
+              car.stopTarget    = null;
+            }
+          }
+
+          // Voorste auto's die te lang wachten verdwijnen; wachtrij schuift op
+          const QUEUE_TIMEOUT_S = 5;
+          const carsToRemove = new Set();
+          for (const [, laneMap] of nodeApproach) {
+            for (const queue of laneMap.values()) {
+              const { car } = queue[0];
+              if (
+                car.waitingAtNode != null &&
+                car.waitStartT    != null &&
+                (realNow - car.waitStartT) >= QUEUE_TIMEOUT_S
+              ) {
+                carsToRemove.add(car);
+              }
+            }
+          }
+          if (carsToRemove.size > 0) {
+            // Verwijder uit cars-array; carData wordt volgende frame herbouwd
+            for (let i = cars.length - 1; i >= 0; i--) {
+              if (carsToRemove.has(cars[i])) cars.splice(i, 1);
+            }
+          }
+        }
+
         // ── Posities bijwerken (alleen rijdende auto's) ──────────────────
         for (const car of cars) {
           if (car.state !== 'moving') continue;
@@ -2288,6 +2481,41 @@
                 car.offset = Math.max(0, leaderOff - minOff);
                 car.speed  = Math.min(car.speed, leader.speed);
               }
+            }
+          }
+        }
+
+        // ── Periodieke hervalidatie: stilstaande auto's die vrij zijn mogen rijden ─
+        if (now - lastRevalidateT >= REVALIDATE_INTERVAL) {
+          lastRevalidateT = now;
+
+          // Bouw per pad een gesorteerde lijst van rijdende auto's
+          const revalGroups = buildPathGroups(true);
+
+          for (const car of cars) {
+            if (car.state !== 'moving' || car.speed > 0) continue;
+
+            // Controleer of er een auto direct voor staat (gap-blokkering)
+            const group = revalGroups.get(car.path);
+            let blockedByLeader = false;
+            if (group && group.length > 1) {
+              const minOff = (CF_MIN_GAP + CAR_LENGTH) / car.path.length;
+              const idx    = group.indexOf(car);
+              if (idx >= 0 && idx < group.length - 1) {
+                const leader    = group[idx + 1];
+                let leaderOff   = leader.offset;
+                if (leaderOff < car.offset) leaderOff += 1.0;
+                blockedByLeader = (leaderOff - car.offset) < minOff * 1.5;
+              }
+            }
+
+            // Niet geblokkeerd door voorganger: wis wachtstatus en herstel snelheid
+            if (!blockedByLeader) {
+              car.waitingAtNode      = null;
+              car.waitStartT         = null;
+              car.yieldOverrideUntil = null;
+              car.stopTarget         = null;
+              car.speed = computeLinkTargetSpeed(car);
             }
           }
         }
