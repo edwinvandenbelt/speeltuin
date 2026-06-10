@@ -17,71 +17,99 @@
     html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1117; }
     #map { width: 100vw; height: 100vh; }
 
-    /* ── UI Panel ─────────────────────────────────────────────────────── */
-    #ui {
-      position: absolute; top: 16px; left: 16px; z-index: 10;
-      background: rgba(13, 17, 23, 0.91);
+    /* ── Toolbar ─────────────────────────────────────────────────────── */
+    #toolbar {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      z-index: 10;
+      display: flex; align-items: center; gap: 3px;
+      background: rgba(13, 17, 23, 0.93);
       color: #dde4f0;
-      padding: 18px 20px;
-      border-radius: 14px;
+      padding: 5px 10px;
+      border-radius: 10px;
       font-family: 'Segoe UI', system-ui, sans-serif;
       font-size: 13px;
-      width: 260px;
       border: 1px solid rgba(255,255,255,0.07);
       backdrop-filter: blur(10px);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      white-space: nowrap;
     }
-    #ui h2 {
-      font-size: 14px; font-weight: 600;
-      color: #7ec8e3; letter-spacing: 0.4px;
-      margin-bottom: 14px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
+    .tb-title {
+      font-size: 11px; color: #5a6272;
+      padding: 0 4px;
+      max-width: 180px;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .tb-sep {
+      width: 1px; height: 22px;
+      background: rgba(255,255,255,0.1);
+      margin: 0 3px; flex-shrink: 0;
+    }
+    .tb-btn {
+      width: 30px; height: 30px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+      color: #8896aa;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .tb-btn:hover { background: rgba(126,200,227,0.15); color: #b8d8e8; }
+    .tb-btn.active { background: rgba(126,200,227,0.22); color: #7ec8e3; border-color: rgba(126,200,227,0.45); }
+    .tb-select {
+      height: 30px;
+      background: #1a2233; color: #c9d6e8;
+      border: 1px solid rgba(126,200,227,0.25); border-radius: 6px;
+      padding: 0 8px; font-size: 12px; cursor: pointer;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      flex-shrink: 0;
+    }
+    .tb-scale { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .tb-scale-lbl { font-size: 11px; color: #5a6272; white-space: nowrap; }
+    .tb-scale-lbl b { color: #dde4f0; font-weight: 600; }
+    #timeScale { width: 70px; accent-color: #7ec8e3; cursor: pointer; }
+    #pauseBtn { font-size: 15px; color: #7ec8e3; border-color: rgba(126,200,227,0.3); background: rgba(126,200,227,0.1); }
+    #pauseBtn:hover { background: rgba(126,200,227,0.22); color: #7ec8e3; }
+    #pauseBtn.paused { background: rgba(255,200,80,0.13); color: #ffc850; border-color: rgba(255,200,80,0.35); }
+    #pauseBtn.paused:hover { background: rgba(255,200,80,0.22); }
+    .tb-add { border-color: rgba(100,220,150,0.2); color: #3a6050; background: rgba(100,220,150,0.04); cursor: not-allowed; opacity: 0.55; }
+    .tb-add:hover { background: rgba(100,220,150,0.04) !important; color: #3a6050 !important; }
+
+    /* ── Legend strip ────────────────────────────────────────────────── */
+    #legendStrip {
+      position: absolute; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(13,17,23,0.88);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      backdrop-filter: blur(8px);
+      min-width: 180px;
     }
     .legend-bar {
-      width: 100%; height: 9px; border-radius: 5px;
+      width: 100%; height: 7px; border-radius: 4px;
       margin-bottom: 3px;
     }
     .legend-labels {
       display: flex; justify-content: space-between;
       font-size: 10px; color: #5a6272;
-      margin-bottom: 14px;
     }
-    .control { margin-top: 14px; }
-    .control label {
-      font-size: 12px; color: #5a6272;
-      display: flex; justify-content: space-between;
-      margin-bottom: 5px;
-    }
-    .control label span { color: #dde4f0; font-weight: 600; }
-    input[type=range] { width: 100%; accent-color: #7ec8e3; cursor: pointer; }
-
-    #pauseBtn {
-      margin-top: 14px;
-      width: 100%;
-      padding: 7px 0;
-      background: rgba(126, 200, 227, 0.12);
-      color: #7ec8e3;
-      border: 1px solid rgba(126, 200, 227, 0.3);
-      border-radius: 7px;
-      font-size: 12px;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      cursor: pointer;
-      letter-spacing: 0.3px;
-      transition: background 0.15s, color 0.15s;
-    }
-    #pauseBtn:hover { background: rgba(126, 200, 227, 0.22); }
-    #pauseBtn.paused {
-      background: rgba(255, 200, 80, 0.13);
-      color: #ffc850;
-      border-color: rgba(255, 200, 80, 0.35);
-    }
-    #pauseBtn.paused:hover { background: rgba(255, 200, 80, 0.22); }
 
     .hint {
-      margin-top: 14px; padding-top: 10px;
-      border-top: 1px solid rgba(255,255,255,0.07);
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(13,17,23,0.82);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
       font-size: 11px; color: #3d4556; line-height: 1.5;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+      white-space: nowrap;
     }
 
     /* ── Nieuw-scherm ─────────────────────────────────────────────────── */
@@ -173,39 +201,19 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .dpBtn {
-      flex: 1;
-      padding: 5px 4px;
-      border-radius: 7px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.05);
-      color: #8896aa;
-      font-size: 11px;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-    }
-    .dpBtn:hover  { background: rgba(126,200,227,0.12); color: #b8d8e8; }
-    .dpBtn.active { background: rgba(126,200,227,0.22); color: #7ec8e3; border-color: rgba(126,200,227,0.45); }
+    .dpBtn { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
+    .dpBtn.active { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
 
     /* ── Edit-modus knoppen ───────────────────────────────────────────── */
     .edit-btn {
-      margin-top: 8px;
-      width: 100%;
-      padding: 7px 0;
-      border-radius: 7px;
-      font-size: 12px;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      cursor: pointer;
-      letter-spacing: 0.3px;
-      transition: background 0.15s, color 0.15s;
-      border: 1px solid rgba(255,180,80,0.35);
-      background: rgba(255,180,80,0.1);
-      color: #ffb450;
+      border-color: rgba(255,180,80,0.35) !important;
+      background: rgba(255,180,80,0.08) !important;
+      color: #ffb450 !important;
     }
-    .edit-btn:hover { background: rgba(255,180,80,0.2); }
+    .edit-btn:hover { background: rgba(255,180,80,0.2) !important; }
     .edit-btn.active {
-      background: rgba(255,180,80,0.25);
-      border-color: rgba(255,180,80,0.6);
+      background: rgba(255,180,80,0.25) !important;
+      border-color: rgba(255,180,80,0.6) !important;
     }
 
     /* ── Node-dialoog ─────────────────────────────────────────────────── */
@@ -411,57 +419,72 @@
     <div id="newMap"></div>
   </div>
 
-  <div id="ui">
-    <button id="homeBtn" onclick="window.location.href='/'" style="margin-bottom:8px;background:#2a3a4a;color:#8896aa" title="Home">&#8962;</button>
-    <h2 id="networkTitle">Verkeersnetwerk Rotterdam</h2>
+  <div id="toolbar">
+    <!-- Home -->
+    <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" title="Terug naar overzicht">&#8962;</button>
 
+    <div class="tb-sep"></div>
+
+    <!-- Netwerknaam -->
+    <span class="tb-title" id="networkTitle">Verkeersnetwerk Rotterdam</span>
+
+    <div class="tb-sep"></div>
+
+    <!-- Dagdeel: OS / AS / RD -->
+    <div id="daypartBtns" style="display:flex;gap:3px">
+      <button class="tb-btn dpBtn" data-dp="mrh" title="Ochtendspits">OS</button>
+      <button class="tb-btn dpBtn active" data-dp="erh" title="Avondspits">AS</button>
+      <button class="tb-btn dpBtn" data-dp="rest" title="Restdag">RD</button>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <!-- Kleur-metriek -->
+    <select id="colorMetric" class="tb-select" title="Kleur-metriek">
+      <option value="flow">Intensiteit</option>
+      <option value="flow_scaled">Intensiteit (geschaald)</option>
+      <option value="occupancy">Bezettingsgraad</option>
+      <option value="occupancy_scaled">Bezettingsgraad (geschaald)</option>
+      <option value="speed">Snelheid</option>
+      <option value="capacity">Capaciteit</option>
+      <option value="compare" id="compareOption" style="display:none">Vergelijking tonen</option>
+    </select>
+
+    <div class="tb-sep"></div>
+
+    <!-- Tijdschaal -->
+    <div class="tb-scale" title="Tijdschaal">
+      <span class="tb-scale-lbl">&#9200; <b id="scaleVal">1&times;</b></span>
+      <input type="range" id="timeScale" min="1" max="10" value="1" step="1" title="Tijdschaal aanpassen"/>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <!-- Simulatie & bewerkingsknoppen -->
+    <button class="tb-btn" id="pauseBtn" title="Pauzeer simulatie">&#9208;</button>
+    <button class="tb-btn edit-btn" id="nodeEditBtn" title="Productie/attractie per knoop wijzigen">&#9673;</button>
+    <button class="tb-btn edit-btn" id="linkEditBtn" title="Capaciteit per wegvak wijzigen">&#9644;</button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Dummy: toevoegen (nog niet beschikbaar) -->
+    <button class="tb-btn tb-add" id="addWegvakBtn" title="Wegvak toevoegen (nog niet beschikbaar)" disabled>&#8862;</button>
+    <button class="tb-btn tb-add" id="addKnoopBtn" title="Knoop toevoegen (nog niet beschikbaar)" disabled>&#8853;</button>
+  </div>
+
+  <!-- Legend strip -->
+  <div id="legendStrip">
     <div class="legend-bar" id="legendBar"></div>
     <div class="legend-labels">
       <span id="legendMin">0</span>
       <span id="legendLabel">Intensiteit</span>
       <span id="legendMax">–</span>
     </div>
+  </div>
 
-    <div class="control">
-      <select id="colorMetric" style="width:100%;background:#1a2233;color:#c9d6e8;border:1px solid rgba(126,200,227,0.25);border-radius:6px;padding:5px 8px;font-size:13px;cursor:pointer">
-        <option value="flow">Intensiteit</option>
-        <option value="flow_scaled">Intensiteit (geschaald)</option>
-        <option value="occupancy">Bezettingsgraad</option>
-        <option value="occupancy_scaled">Bezettingsgraad (geschaald)</option>
-        <option value="speed">Snelheid</option>
-        <option value="capacity">Capaciteit</option>
-        <option value="compare" id="compareOption" style="display:none">Vergelijking tonen</option>
-      </select>
-    </div>
-
-    <div class="control">
-      <label>Tijdschaal <span id="scaleVal">1×</span></label>
-      <input type="range" id="timeScale" min="1" max="10" value="1" step="1"/>
-    </div>
-
-    <div class="control" id="threshControl">
-      <label><span id="threshLabel">Min. flow drempel</span> <span id="threshVal">200</span></label>
-      <input type="range" id="threshold" min="0" max="2000" value="200" step="50"/>
-    </div>
-
-    <div class="control">
-      <label>Dagdeel</label>
-      <div id="daypartBtns" style="display:flex;gap:6px;margin-top:6px">
-        <button class="dpBtn" data-dp="mrh">Ochtendspits</button>
-        <button class="dpBtn active" data-dp="erh">Avondspits</button>
-        <button class="dpBtn" data-dp="rest">Rest dag</button>
-      </div>
-    </div>
-
-    <button id="pauseBtn">&#9646;&#9646; Pauzeer</button>
-
-    <button id="nodeEditBtn" class="edit-btn" title="Productie/attractie per knoop wijzigen">&#9673; Prod./Attr. bewerken</button>
-    <button id="linkEditBtn" class="edit-btn" title="Capaciteit per wegvak wijzigen">&#9632; Wegvakken bewerken</button>
-
-    <div class="hint" id="hintText">
-      Klik op een wegsegment voor details.<br>
-      Scroll of pinch om in te zoomen.
-    </div>
+  <!-- Hint tekst -->
+  <div class="hint" id="hintText">
+    Klik op een wegsegment voor details.&nbsp;&nbsp;Scroll of pinch om in te zoomen.
   </div>
 
   <!-- ── Link bewerk-dialoog ────────────────────────────────────────────── -->
@@ -822,6 +845,15 @@
     const a = Math.sin(dLat / 2) ** 2
       + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  /**
+   * Berekent de kompassrichting (0=N, 90=O, 180=Z, 270=W) van c1 naar c2.
+   * Corrigeert voor Mercator (lengtegraden schalen met cos(lat)).
+   */
+  function segmentBearing([lon1, lat1], [lon2, lat2]) {
+    const cosLat = Math.cos((lat1 + lat2) * Math.PI / 360);
+    return (Math.atan2((lon2 - lon1) * cosLat, lat2 - lat1) * 180 / Math.PI + 360) % 360;
   }
 
   function segmentLength(coords) {
@@ -1533,12 +1565,6 @@
 
       totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
       routeMode = routeList.length > 0;
-
-      if (routeMode) {
-        document.getElementById('threshLabel').textContent = 'Min. route-intensiteit';
-        document.getElementById('threshVal').textContent   = '0.020';
-        document.getElementById('threshold').value         = 200;
-      }
     } catch (e) {
       console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
     }
@@ -1576,7 +1602,11 @@
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
     let timeScale = 1;
-    let threshold = 200;
+    let threshold = 0;
+    /** Weegfactoren dagdeel → uurintensiteit.
+     *  OS=2u, AS=2u, restdag=20u; wegingsbasis 14.4
+     *  Formule: (weging/duur) / 14.4  */
+    const DP_FRACTION = { mrh: (2/2)/14.4, erh: (2/2)/14.4, rest: (10.4/20)/14.4 };
     let daypart    = 'erh';
     rebuildLinkFlowMap();  // Nu pas: daypart is gedeclareerd
     let widthScale = false;
@@ -1584,11 +1614,19 @@
     let cars      = [];
     let carData   = [];
 
+    /** Uurintensiteit voor het actieve dagdeel.
+     *  Als dp[daypart] gevuld (>0): direct teruggeven.
+     *  Anders (bijv. Tampere: dp=0 maar flow24hrs gevuld): fractie van flow24hrs. */
+    function dpFlowOf(props) {
+      const dp = props.flowsPerDaypart;
+      if (dp && dp[daypart]) return dp[daypart];
+      const base = props.flow24hrs ?? props.flow ?? 0;
+      return base * (DP_FRACTION[daypart] ?? (1/14.4));
+    }
+
     /** Flow voor het actieve dagdeel (segment-modus) */
     function segFlow(seg) {
-      const dp = seg.props.flowsPerDaypart;
-      if (dp && dp[daypart] != null) return dp[daypart];
-      return seg.flow;
+      return dpFlowOf(seg.props);
     }
 
     /** Waarde van de actieve metric voor een feature-properties object */
@@ -1596,14 +1634,12 @@
       switch (colorMetric) {
         case 'flow':
         case 'flow_scaled': {
-          const dp = p.flowsPerDaypart;
-          return (dp && dp[daypart] != null) ? dp[daypart] : p.flow;
+          return dpFlowOf(p);
         }
         case 'occupancy':
         case 'occupancy_scaled': {
-          const dp = p.flowsPerDaypart;
-          const v  = (dp && dp[daypart] != null) ? dp[daypart] : null;
-          return (v != null && p.capacity > 0) ? (v / p.capacity) * 100 : null;
+          const v = dpFlowOf(p);
+          return p.capacity > 0 ? (v / p.capacity) * 100 : null;
         }
         case 'speed':    return p.speed ?? null;
         case 'capacity': return p.capacity ?? null;
@@ -1629,28 +1665,42 @@
     function buildPathFromLinks(linkObjs) {
       if (!linkObjs.length) return null;
 
-      const links      = [];
-      const boundaries = [0];
-      const nodeIds    = [];   // nodeIds[i] = toNode van link i (null als onbekend)
+      const links           = [];
+      const boundaries      = [0];
+      const nodeIds         = [];   // nodeIds[i] = toNode van link i (null als onbekend)
+      const approachBearings = [];  // approachBearings[i] = echte aanrijrichting link i
+                                    // → op-één-na-laatste segment (vóór knik naar knooppunt)
       const mergedCoords = [...linkObjs[0].coords];
 
       for (let i = 0; i < linkObjs.length; i++) {
-        const lo  = linkObjs[i];
-        const len = segmentLength(lo.coords);
+        const lo    = linkObjs[i];
+        const coords = lo.coords;
+        const len   = segmentLength(coords);
         links.push({ length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0 });
         boundaries.push(boundaries[boundaries.length - 1] + len);
         nodeIds.push(lo.toNode ?? null);
-        if (i > 0) mergedCoords.push(...lo.coords.slice(1));
+        if (i > 0) mergedCoords.push(...coords.slice(1));
+
+        // Aanrijrichting: gebruik op-één-na-laatste segment om de kunstmatige knik
+        // naar het knooppuntmiddelpunt (diamantvorm) te vermijden.
+        // coords.length >= 3 → neem coords[n-3]→coords[n-2]  (vóór de knik)
+        // coords.length == 2 → neem het enige beschikbare segment
+        if (coords.length >= 3) {
+          approachBearings.push(segmentBearing(coords[coords.length - 3], coords[coords.length - 2]));
+        } else {
+          approachBearings.push(segmentBearing(coords[0], coords[coords.length - 1]));
+        }
       }
 
       const totalLength = boundaries[boundaries.length - 1];
       return {
-        coords:     mergedCoords,
-        length:     totalLength,
+        coords:          mergedCoords,
+        length:          totalLength,
         links,
         boundaries,
         nodeIds,
-        speedMs:    links[0].speedMs,  // fallback
+        approachBearings,
+        speedMs:         links[0].speedMs,  // fallback
       };
     }
 
@@ -1764,7 +1814,9 @@
      *
      * Segment-modus (fallback):
      *   - Filter segmenten op flow >= threshold.
-     *   - Auto-aantallen via flowToCarCount (ongewijzigd gedrag).
+     *   - Aantal auto's via Little's Law: N = round(flow × lengte / (speedMs × 3600)).
+     *   - Spawn-vertraging per auto: N × (3600/flow) − traversaalTijd → effectieve doorvoer = flow.
+     *   - Auto's starten gespreid over één cyclus (geen burst bij initialisatie).
      */
     function buildCarList(thresh) {
       const list = [];
@@ -1902,24 +1954,35 @@
           }
         }
       } else {
-        // Segment-modus: uniform path-formaat met één link
+        // Segment-modus: één link per pad.
+        // Aantal auto's via Little's Law: N = flow × traversaalTijd / 3600
+        // Spawn-vertraging: N × (3600/flow) − traversaalTijd  → auto verschijnt precies met
+        // tussentijd 3600/flow seconden, zodat de zichtbare doorvoer overeenkomt met de flow.
+        const now = performance.now() / 1000;
         for (const seg of segments) {
           if (seg.length < 30 || segFlow(seg) < thresh) continue;
-          const count = flowToCarCount(segFlow(seg));
-          const flow  = segFlow(seg);
-          const path  = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs, flow }]);
-          const canPark = seg.speedMs <= (50 / 3.6);
+          const flow         = segFlow(seg);
+          const traversalTime = seg.length / seg.speedMs;          // seconden
+          const count        = Math.round(flow * traversalTime / 3600);
+          if (count < 1) continue;
+          const path       = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs, flow }]);
+          // Tijd dat de auto onzichtbaar is (spawning) zodat effectieve doorvoer = flow
+          const spawnDelay = Math.max(0, count * (3600 / flow) - traversalTime);
+          const cycleTime  = traversalTime + spawnDelay;
           for (let i = 0; i < count; i++) {
-            const offset = (i / count + Math.random() * 0.05) % 1;
+            // Spreid N auto's gelijkmatig over één cyclus
+            const departAt = now + (i / count) * cycleTime / timeScale;
             list.push({
-              path, offset,
-              speed:    path.speedMs * 0.9,
+              path,
+              offset:   0,
+              speed:    0,
               color:    randomCarColor(),
               typeIdx:  randomVehicleType(),
-              state:    'moving',
-              departAt: 0,
-              canPark,
-              pendingPath: null,
+              state:    'spawning',
+              departAt,
+              canPark:  false,     // geen parkeren in segment-modus
+              spawnDelay,
+              pendingPath:        null,
               waitingAtNode:      null,
               waitStartT:         null,
               yieldOverrideUntil: null,
@@ -2045,16 +2108,15 @@
         getLineWidth: f => {
           const lanes = f.properties.lanes || 1;
           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
-            const dp = f.properties.flowsPerDaypart;
             let v;
             if (colorMetric === 'occupancy_scaled') {
-              const flow = (dp && dp[daypart] != null) ? dp[daypart] : null;
-              v = (flow != null && f.properties.capacity > 0) ? (flow / f.properties.capacity) * 100 : 0;
+              const flow = dpFlowOf(f.properties);
+              v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
               // Logaritmische schaal op 0–100
               const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
               return Math.max(1.5, t * lanes * 12);
             } else {
-              v = (dp && dp[daypart] != null) ? dp[daypart] : f.properties.flow;
+              v = dpFlowOf(f.properties);
               const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
               return Math.max(1.5, t * lanes * 12);
             }
@@ -2161,8 +2223,8 @@
       const p  = object.properties;
       const dp = p.flowsPerDaypart || {};
       const dpLabels = { mrh: 'Ochtendspits', erh: 'Avondspits', rest: 'Rest dag' };
-      const dpFlow = dp[daypart] ?? null;
-      const occ = (p.capacity > 0 && dpFlow != null)
+      const dpFlow = dpFlowOf(p);
+      const occ = p.capacity > 0
         ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
       return {
         html: `
@@ -2173,7 +2235,7 @@
             <div><span style="color:#5a6272">Dagdeel: </span>
               <b>${dpLabels[daypart]}</b></div>
             <div><span style="color:#5a6272">Flow (dagdeel): </span>
-              <b>${dp[daypart] != null ? dp[daypart].toFixed(0) : '–'} vtg/u</b></div>
+              <b>${dpFlow.toFixed(0)} vtg/u</b></div>
             <div><span style="color:#5a6272">Flow (totaal/24u): </span>
               <b>${p.flow?.toFixed(0)} vtg/24u</b></div>
             <div><span style="color:#5a6272">Snelheid: </span>
@@ -2268,11 +2330,12 @@
               car.state    = 'parked';
               car.departAt = t + Math.max(PARK_MIN_S, normalRandom(PARK_MEAN_S, PARK_STD_S)) / timeScale;
             } else {
-              // Snelweg / boundary: verdwijnen en opnieuw spawnen aan het begin
+              // Snelweg / boundary / segment-modus: verdwijnen en opnieuw spawnen aan het begin.
+              // Gebruik car.spawnDelay als die bekend is (segment-modus), anders 2–22 s willekeurig.
               car.offset   = 0;
               car.speed    = 0;
               car.state    = 'spawning';
-              car.departAt = t + 2 + Math.random() * 20;
+              car.departAt = t + (car.spawnDelay != null ? car.spawnDelay : 2 + Math.random() * 20) / timeScale;
             }
           }
         }
@@ -2310,7 +2373,13 @@
             const distToNode = bnd[linkIdx + 1] - distM;
             if (nodeId == null || distToNode > YIELD_ZONE) continue;
 
-            const [,, bearing] = interpolatePosition(path.coords, car.offset, path.length);
+            // Gebruik de vooraf berekende aanrijrichting van dit wegvak —
+            // gebaseerd op het op-één-na-laatste segment, vóór de kunstmatige
+            // knik naar het knooppuntmiddelpunt (vermijdt diamantvorm-artefact).
+            const bearing = path.approachBearings
+              ? path.approachBearings[linkIdx]
+              : interpolatePosition(path.coords, car.offset, path.length)[2];
+
             if (!nodeApproach.has(nodeId)) nodeApproach.set(nodeId, new Map());
             const laneMap = nodeApproach.get(nodeId);
             if (!laneMap.has(path)) laneMap.set(path, []);
@@ -2434,8 +2503,7 @@
             }
           }
 
-          // Voorste auto's die te lang wachten verdwijnen; wachtrij schuift op
-          const QUEUE_TIMEOUT_S = 5;
+          // Voorste auto's die langer dan 8 seconden wachten verdwijnen; wachtrij schuift op
           const carsToRemove = new Set();
           for (const [, laneMap] of nodeApproach) {
             for (const queue of laneMap.values()) {
@@ -2443,14 +2511,13 @@
               if (
                 car.waitingAtNode != null &&
                 car.waitStartT    != null &&
-                (realNow - car.waitStartT) >= QUEUE_TIMEOUT_S
+                (realNow - car.waitStartT) >= 8
               ) {
                 carsToRemove.add(car);
               }
             }
           }
           if (carsToRemove.size > 0) {
-            // Verwijder uit cars-array; carData wordt volgende frame herbouwd
             for (let i = cars.length - 1; i >= 0; i--) {
               if (carsToRemove.has(cars[i])) cars.splice(i, 1);
             }
@@ -3183,7 +3250,7 @@
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
       document.getElementById('nodeEditBtn').textContent =
-        nodeEditActive ? '✕ Stop bewerken' : '⬤ Prod./Attr. bewerken';
+        nodeEditActive ? '✕' : '◉';
       document.getElementById('hintText').innerHTML = nodeEditActive
         ? 'Klik op een knoop (cirkel) om productie of attractie te wijzigen.'
         : 'Klik op een wegsegment voor details.<br>Scroll of pinch om in te zoomen.';
@@ -3196,7 +3263,7 @@
         updateOverlay(false);
         const pauseBtn = document.getElementById('pauseBtn');
         pauseBtn.classList.add('paused');
-        pauseBtn.innerHTML = '&#9654; Hervat';
+        pauseBtn.innerHTML = '&#9654;';
         map.once('idle', addNodeLayer);
       } else {
         removeNodeLayer();
@@ -3205,7 +3272,7 @@
         paused = false;
         const pauseBtn = document.getElementById('pauseBtn');
         pauseBtn.classList.remove('paused');
-        pauseBtn.innerHTML = '&#9646;&#9646; Pauzeer';
+        pauseBtn.innerHTML = '&#9208;';
         rebuildCars();
       }
     });
@@ -3218,7 +3285,7 @@
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
       document.getElementById('linkEditBtn').innerHTML =
-        linkEditActive ? '✕ Stop bewerken' : '&#9632; Wegvakken bewerken';
+        linkEditActive ? '✕' : '&#9644;';
       document.getElementById('hintText').innerHTML = linkEditActive
         ? 'Klik op een wegvak om de capaciteit te wijzigen.'
         : 'Klik op een wegsegment voor details.<br>Scroll of pinch om in te zoomen.';
@@ -3230,7 +3297,7 @@
         updateOverlay(false);
         const pauseBtn = document.getElementById('pauseBtn');
         pauseBtn.classList.add('paused');
-        pauseBtn.innerHTML = '&#9654; Hervat';
+        pauseBtn.innerHTML = '&#9654;';
         map.once('idle', addLinkLayer);
       } else {
         removeLinkLayer();
@@ -3238,7 +3305,7 @@
         paused = false;
         const pauseBtn = document.getElementById('pauseBtn');
         pauseBtn.classList.remove('paused');
-        pauseBtn.innerHTML = '&#9646;&#9646; Pauzeer';
+        pauseBtn.innerHTML = '&#9208;';
         updateOverlay(false);
         rebuildCars();
       }
@@ -3285,23 +3352,11 @@
       document.getElementById('scaleVal').textContent = timeScale + '×';
     });
 
-    document.getElementById('threshold').addEventListener('input', e => {
-      threshold = +e.target.value;
-      if (routeMode) {
-        // Toon als trips-drempel: slider/10000
-        const tripsVal = (threshold / 10000).toFixed(3);
-        document.getElementById('threshVal').textContent = tripsVal;
-      } else {
-        document.getElementById('threshVal').textContent = threshold.toLocaleString('nl');
-      }
-      rebuildCars();
-    });
-
     document.getElementById('pauseBtn').addEventListener('click', () => {
       paused = !paused;
       const btn = document.getElementById('pauseBtn');
       btn.classList.toggle('paused', paused);
-      btn.innerHTML = paused ? '&#9654; Hervat' : '&#9646;&#9646; Pauzeer';
+      btn.innerHTML = paused ? '&#9654;' : '&#9208;';
     });
 
     document.getElementById('daypartBtns').addEventListener('click', e => {
