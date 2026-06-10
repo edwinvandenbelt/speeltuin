@@ -77,6 +77,8 @@
     #pauseBtn.paused:hover { background: rgba(255,200,80,0.22); }
     .tb-add { border-color: rgba(100,220,150,0.2); color: #3a6050; background: rgba(100,220,150,0.04); cursor: not-allowed; opacity: 0.55; }
     .tb-add:hover { background: rgba(100,220,150,0.04) !important; color: #3a6050 !important; }
+    .lang-btn { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; }
+    .lang-btn.active { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
 
     /* ── Legend strip ────────────────────────────────────────────────── */
     #legendStrip {
@@ -96,20 +98,6 @@
     .legend-labels {
       display: flex; justify-content: space-between;
       font-size: 10px; color: #5a6272;
-    }
-
-    .hint {
-      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-      z-index: 10;
-      background: rgba(13,17,23,0.82);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 8px;
-      padding: 6px 14px;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-size: 11px; color: #3d4556; line-height: 1.5;
-      pointer-events: none;
-      backdrop-filter: blur(6px);
-      white-space: nowrap;
     }
 
     /* ── Nieuw-scherm ─────────────────────────────────────────────────── */
@@ -378,29 +366,29 @@
   <!-- ── Nieuw gebied aanmaken ──────────────────────────────────────────── -->
   <div id="newScreen">
     <div id="newPanel">
-      <h2>Nieuw gebied</h2>
+      <h2 data-i18n="newAreaH2">Nieuw gebied</h2>
 
-      <label>Naam
-        <input type="text" id="newName" placeholder="bijv. Merwehaven"/>
+      <label><span data-i18n="newAreaName">Naam</span>
+        <input type="text" id="newName" placeholder="bijv. Merwehaven" data-i18n-ph="newAreaNamePh"/>
       </label>
 
-      <label>Transportmodus
+      <label><span data-i18n="newAreaMode">Transportmodus</span>
         <select id="newMode">
-          <option value="CAR">Auto (CAR)</option>
-          <option value="BIKE">Fiets (BIKE)</option>
-          <option value="PEDESTRIAN">Voetganger (PEDESTRIAN)</option>
+          <option value="CAR" data-i18n="newAreaCar">Auto (CAR)</option>
+          <option value="BIKE" data-i18n="newAreaBike">Fiets (BIKE)</option>
+          <option value="PEDESTRIAN" data-i18n="newAreaPed">Voetganger (PEDESTRIAN)</option>
         </select>
       </label>
 
-      <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa">
+      <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa" data-i18n="newAreaBboxHint">
         Teken een rechthoek op de kaart om de bbox te bepalen.
         Klik voor de eerste hoek, klik nogmaals voor de tweede.
       </label>
 
-      <div id="bboxDisplay">Geen bbox getekend</div>
+      <div id="bboxDisplay" data-i18n="newAreaNoBbox">Geen bbox getekend</div>
 
       <div style="display:flex;gap:8px">
-        <button class="new-btn" id="newClearBtn" style="flex:1">Wis bbox</button>
+        <button class="new-btn" id="newClearBtn" style="flex:1" data-i18n="newAreaClearBbox">Wis bbox</button>
       </div>
 
       <!-- Voortgang -->
@@ -411,9 +399,9 @@
       </div>
 
       <div style="display:flex;gap:8px;margin-top:auto">
-        <button class="new-btn secondary" id="newHomeBtn" style="flex:1" onclick="window.location.href='/'">&#8962; Overzicht</button>
-        <button class="new-btn secondary" id="newCancelBtn" style="flex:1">Annuleren</button>
-        <button class="new-btn" id="newSubmitBtn" style="flex:2">Aanmaken</button>
+        <button class="new-btn secondary" id="newHomeBtn" style="flex:1" onclick="window.location.href='/'" data-i18n="newAreaHome">&#8962; Overzicht</button>
+        <button class="new-btn secondary" id="newCancelBtn" style="flex:1" data-i18n="newAreaCancel">Annuleren</button>
+        <button class="new-btn" id="newSubmitBtn" style="flex:2" data-i18n="newAreaSubmit">Aanmaken</button>
       </div>
     </div>
     <div id="newMap"></div>
@@ -421,7 +409,7 @@
 
   <div id="toolbar">
     <!-- Home -->
-    <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" title="Terug naar overzicht">&#8962;</button>
+    <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" data-i18n-title="homeTitle" title="Terug naar overzicht">&#8962;</button>
 
     <div class="tb-sep"></div>
 
@@ -432,44 +420,51 @@
 
     <!-- Dagdeel: OS / AS / RD -->
     <div id="daypartBtns" style="display:flex;gap:3px">
-      <button class="tb-btn dpBtn" data-dp="mrh" title="Ochtendspits">OS</button>
-      <button class="tb-btn dpBtn active" data-dp="erh" title="Avondspits">AS</button>
-      <button class="tb-btn dpBtn" data-dp="rest" title="Restdag">RD</button>
+      <button class="tb-btn dpBtn" data-dp="mrh" data-i18n="dpMrhLabel" data-i18n-title="dpMrhTitle" title="Ochtendspits">OS</button>
+      <button class="tb-btn dpBtn active" data-dp="erh" data-i18n="dpErhLabel" data-i18n-title="dpErhTitle" title="Avondspits">AS</button>
+      <button class="tb-btn dpBtn" data-dp="rest" data-i18n="dpRestLabel" data-i18n-title="dpRestTitle" title="Restdag">RD</button>
     </div>
 
     <div class="tb-sep"></div>
 
     <!-- Kleur-metriek -->
-    <select id="colorMetric" class="tb-select" title="Kleur-metriek">
-      <option value="flow">Intensiteit</option>
-      <option value="flow_scaled">Intensiteit (geschaald)</option>
-      <option value="occupancy">Bezettingsgraad</option>
-      <option value="occupancy_scaled">Bezettingsgraad (geschaald)</option>
-      <option value="speed">Snelheid</option>
-      <option value="capacity">Capaciteit</option>
-      <option value="compare" id="compareOption" style="display:none">Vergelijking tonen</option>
+    <select id="colorMetric" class="tb-select" data-i18n-title="metricTitle" title="Kleur-metriek">
+      <option value="flow" data-i18n="metricFlow">Intensiteit</option>
+      <option value="flow_scaled" data-i18n="metricFlowScaled">Intensiteit (geschaald)</option>
+      <option value="occupancy" data-i18n="metricOccupancy">Bezettingsgraad</option>
+      <option value="occupancy_scaled" data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</option>
+      <option value="speed" data-i18n="metricSpeed">Snelheid</option>
+      <option value="capacity" data-i18n="metricCapacity">Capaciteit</option>
+      <option value="compare" id="compareOption" data-i18n="metricCompare" style="display:none">Vergelijking tonen</option>
     </select>
 
     <div class="tb-sep"></div>
 
     <!-- Tijdschaal -->
-    <div class="tb-scale" title="Tijdschaal">
+    <div class="tb-scale" data-i18n-title="timeScaleTitle" title="Tijdschaal">
       <span class="tb-scale-lbl">&#9200; <b id="scaleVal">1&times;</b></span>
-      <input type="range" id="timeScale" min="1" max="10" value="1" step="1" title="Tijdschaal aanpassen"/>
+      <input type="range" id="timeScale" min="1" max="10" value="1" step="1" data-i18n-title="timeScaleRangeTitle" title="Tijdschaal aanpassen"/>
     </div>
 
     <div class="tb-sep"></div>
 
     <!-- Simulatie & bewerkingsknoppen -->
-    <button class="tb-btn" id="pauseBtn" title="Pauzeer simulatie">&#9208;</button>
-    <button class="tb-btn edit-btn" id="nodeEditBtn" title="Productie/attractie per knoop wijzigen">&#9673;</button>
-    <button class="tb-btn edit-btn" id="linkEditBtn" title="Capaciteit per wegvak wijzigen">&#9644;</button>
+    <button class="tb-btn" id="pauseBtn" data-i18n-title="pauseTitle" title="Pauzeer simulatie">&#9208;</button>
+    <button class="tb-btn edit-btn" id="nodeEditBtn" data-i18n-title="nodeEditTitle" title="Productie/attractie per knoop wijzigen">&#9673;</button>
+    <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
 
     <div class="tb-sep"></div>
 
     <!-- Dummy: toevoegen (nog niet beschikbaar) -->
-    <button class="tb-btn tb-add" id="addWegvakBtn" title="Wegvak toevoegen (nog niet beschikbaar)" disabled>&#8862;</button>
-    <button class="tb-btn tb-add" id="addKnoopBtn" title="Knoop toevoegen (nog niet beschikbaar)" disabled>&#8853;</button>
+    <button class="tb-btn tb-add" id="addWegvakBtn" data-i18n-title="addWegvakTitle" title="Wegvak toevoegen (nog niet beschikbaar)" disabled>&#8862;</button>
+    <button class="tb-btn tb-add" id="addKnoopBtn" data-i18n-title="addKnoopTitle" title="Knoop toevoegen (nog niet beschikbaar)" disabled>&#8853;</button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Taal -->
+    <button class="tb-btn lang-btn" data-lang="NL" onclick="applyLang('NL')" title="Nederlands">NL</button>
+    <button class="tb-btn lang-btn" data-lang="EN" onclick="applyLang('EN')" title="English">EN</button>
+    <button class="tb-btn lang-btn" data-lang="FI" onclick="applyLang('FI')" title="Suomi">FI</button>
   </div>
 
   <!-- Legend strip -->
@@ -482,24 +477,19 @@
     </div>
   </div>
 
-  <!-- Hint tekst -->
-  <div class="hint" id="hintText">
-    Klik op een wegsegment voor details.&nbsp;&nbsp;Scroll of pinch om in te zoomen.
-  </div>
-
   <!-- ── Link bewerk-dialoog ────────────────────────────────────────────── -->
   <div id="linkDialog">
     <h3 id="linkDialogTitle">Wegvak</h3>
     <div class="node-field">
-      <label>Capaciteit <span class="field-hint">vtg/u</span></label>
+      <label><span data-i18n="linkDialogCap">Capaciteit</span> <span class="field-hint" data-i18n="linkDialogCapUnit">vtg/u</span></label>
       <div class="node-field-row">
         <button id="linkCapMinus">−</button>
-        <input type="number" id="linkCapVal" min="0" step="50" placeholder="vtg/u"/>
+        <input type="number" id="linkCapVal" min="0" step="50" data-i18n-ph="linkDialogCapUnit" placeholder="vtg/u"/>
         <button id="linkCapPlus">+</button>
       </div>
     </div>
     <div class="node-field">
-      <label>Snelheid instellen <span class="field-hint">past capaciteit aan</span></label>
+      <label><span data-i18n="linkDialogSpeed">Snelheid instellen</span> <span class="field-hint" data-i18n="linkDialogSpeedHint">past capaciteit aan</span></label>
       <div id="linkSpeedBtns" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
         <button class="speed-btn" data-speed="15">15</button>
         <button class="speed-btn" data-speed="30">30</button>
@@ -512,8 +502,8 @@
       </div>
     </div>
     <div class="node-dialog-btns">
-      <button id="linkDialogCancel">Annuleren</button>
-      <button id="linkDialogOk">OK</button>
+      <button id="linkDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="linkDialogOk" data-i18n="dialogOk">OK</button>
     </div>
   </div>
 
@@ -521,43 +511,291 @@
   <div id="nodeDialog">
     <h3 id="nodeDialogTitle">Knoop</h3>
     <div class="node-field">
-      <label>Productie <span class="field-hint">+300 = delta &nbsp;|&nbsp; 1200 = absoluut (≥0)</span></label>
+      <label><span data-i18n="nodeDialogProd">Productie</span> <span class="field-hint" data-i18n="nodeDialogProdHint">+300 = delta &nbsp;|&nbsp; 1200 = absoluut (≥0)</span></label>
       <div class="node-field-row">
         <button id="nodeProdMinus">−</button>
-        <input type="text" id="nodeProdVal" placeholder="+300 of 1200"/>
+        <input type="text" id="nodeProdVal" placeholder="+300 of 1200" data-i18n-ph="nodeDialogProdPh"/>
         <button id="nodeProdPlus">+</button>
       </div>
     </div>
     <div class="node-field">
-      <label>Attractie <span class="field-hint">+300 = delta &nbsp;|&nbsp; 800 = absoluut (≥0)</span></label>
+      <label><span data-i18n="nodeDialogAttr">Attractie</span> <span class="field-hint" data-i18n="nodeDialogAttrHint">+300 = delta &nbsp;|&nbsp; 800 = absoluut (≥0)</span></label>
       <div class="node-field-row">
         <button id="nodeAttrMinus">−</button>
-        <input type="text" id="nodeAttrVal" placeholder="+300 of 800"/>
+        <input type="text" id="nodeAttrVal" placeholder="+300 of 800" data-i18n-ph="nodeDialogAttrPh"/>
         <button id="nodeAttrPlus">+</button>
       </div>
     </div>
     <div class="node-dialog-btns">
-      <button id="nodeDialogCancel">Annuleren</button>
-      <button id="nodeDialogOk">OK</button>
+      <button id="nodeDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="nodeDialogOk" data-i18n="dialogOk">OK</button>
     </div>
   </div>
 
   <!-- ── Wijzigingenlijst ───────────────────────────────────────────────── -->
   <div id="changesPanel">
     <div id="changesPanelHeader">
-      <span>Wijzigingen</span>
+      <span data-i18n="changesTitle">Wijzigingen</span>
       <span id="changesCount" style="color:#5a6272;font-weight:400">0</span>
     </div>
     <div id="changesList"></div>
     <div id="changesPanelFooter">
-      <input type="text" id="scenarioNameInput" placeholder="Scenario-naam"/>
-      <button id="applyChangesBtn">&#9654; Doorvoeren</button>
+      <input type="text" id="scenarioNameInput" placeholder="Scenario-naam" data-i18n-ph="scenarioNamePh"/>
+      <button id="applyChangesBtn" data-i18n="applyBtn">&#9654; Doorvoeren</button>
       <div id="applyStatus"></div>
     </div>
   </div>
 
   <script>
   'use strict';
+
+  // ── Vertalingen ───────────────────────────────────────────────────────────
+  const TRANSLATIONS = {
+    NL: {
+      // Toolbar
+      homeTitle:'Terug naar overzicht',
+      dpMrhLabel:'OS', dpMrhTitle:'Ochtendspits',
+      dpErhLabel:'AS', dpErhTitle:'Avondspits',
+      dpRestLabel:'RD', dpRestTitle:'Restdag',
+      metricTitle:'Kleur-metriek',
+      timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
+      pauseTitle:'Pauzeer simulatie',
+      nodeEditTitle:'Productie/attractie per knoop wijzigen',
+      linkEditTitle:'Capaciteit per wegvak wijzigen',
+      addWegvakTitle:'Wegvak toevoegen (nog niet beschikbaar)',
+      addKnoopTitle:'Knoop toevoegen (nog niet beschikbaar)',
+      // Metriek-opties
+      metricFlow:'Intensiteit', metricFlowScaled:'Intensiteit (geschaald)',
+      metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
+      metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricCompare:'Vergelijking tonen',
+      // Laadscherm
+      loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
+      loaderZones:'Zones laden\u2026', loaderRoutes:'Routes laden\u2026', loaderMap:'Kaart laden\u2026',
+      // Gebiedskeuze
+      areaTitle:'Verkeersnetwerk-visualisatie', areaSubtitle:'Kies een gebied om te laden:',
+      areaNotFound:'Geen gebieden gevonden. Start de server met --data <map>.',
+      areaConnError:'Verbinding met server mislukt.',
+      areaDelTitle: n => `Verwijder ${n}`,
+      areaDelConfirm: (n, m) => `Gebied \u201c${n}\u201d (${m}) definitief verwijderen?`,
+      areaDelError: e => `Verwijderen mislukt: ${e}`,
+      newAreaBtn:'+ Nieuw gebied aanmaken',
+      // Nieuw-gebied scherm
+      newAreaH2:'Nieuw gebied', newAreaName:'Naam', newAreaNamePh:'bijv. Merwehaven',
+      newAreaMode:'Transportmodus', newAreaCar:'Auto (CAR)', newAreaBike:'Fiets (BIKE)',
+      newAreaPed:'Voetganger (PEDESTRIAN)',
+      newAreaBboxHint:'Teken een rechthoek op de kaart om de bbox te bepalen. Klik voor de eerste hoek, klik nogmaals voor de tweede.',
+      newAreaNoBbox:'Geen bbox getekend', newAreaClearBbox:'Wis bbox',
+      newAreaHome:'\u2302 Overzicht', newAreaCancel:'Annuleren', newAreaSubmit:'Aanmaken',
+      newAreaStatusStart:'Pipeline starten\u2026', newAreaStatusConn:'Verbinding mislukt.',
+      newAreaStatusRunning:'Pipeline actief\u2026', newAreaStatusDone:'Klaar! Gebied is beschikbaar.',
+      newAreaStatusBack:'Terug naar overzicht', newAreaStatusError: c => `Fout (exitcode ${c}).`,
+      newAreaAlertName:'Voer een naam in.', newAreaAlertBbox:'Teken eerst een bbox op de kaart.',
+      // Link-dialoog
+      linkDialogDefault:'Wegvak', linkDialogName: n => `Wegvak: ${n}`, linkDialogId: id => `Link ${id}`,
+      linkDialogCap:'Capaciteit', linkDialogCapUnit:'vtg/u',
+      linkDialogSpeed:'Snelheid instellen', linkDialogSpeedHint:'past capaciteit aan',
+      // Node-dialoog
+      nodeDialogDefault:'Knoop',
+      nodeDialogProd:'Productie', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut (\u22650)',
+      nodeDialogProdPh:'+300 of 1200',
+      nodeDialogAttr:'Attractie', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut (\u22650)',
+      nodeDialogAttrPh:'+300 of 800',
+      // Gedeeld dialoog
+      dialogCancel:'Annuleren', dialogOk:'OK',
+      // Wijzigingenlijst
+      changesTitle:'Wijzigingen', scenarioNamePh:'Scenario-naam', applyBtn:'\u25b6 Doorvoeren',
+      applyStart:'Adjust starten\u2026', applyRunning:'Bezig\u2026', applyDone:'Klaar!',
+      applyError: c => `Onbekende fout (returncode: ${c})`, applyFetchError: e => `Fout: ${e}`,
+      changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
+      changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeItemDel:'Verwijder',
+      // Legenda
+      legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad',
+      legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
+      legendUnit:'vtg/u',
+      // Tooltip
+      tooltipSegment: id => `Segment #${id}`,
+      tooltipDaypart:'Dagdeel', tooltipFlow:'Flow (dagdeel)', tooltipFlowTotal:'Flow (totaal/24u)',
+      tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg/24u',
+      tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
+      tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'Bezettingsgraad', tooltipLength:'Lengte',
+      dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
+      // Netwerktitel
+      networkTitle: n => `Verkeersnetwerk ${n}`, pageTitle: n => `Verkeersnetwerk ${n}`,
+      numberLocale:'nl',
+    },
+    EN: {
+      homeTitle:'Back to overview',
+      dpMrhLabel:'AM', dpMrhTitle:'Morning peak',
+      dpErhLabel:'PM', dpErhTitle:'Evening peak',
+      dpRestLabel:'OP', dpRestTitle:'Off-peak',
+      metricTitle:'Color metric',
+      timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
+      pauseTitle:'Pause simulation',
+      nodeEditTitle:'Edit production/attraction per node',
+      linkEditTitle:'Edit capacity per road link',
+      addWegvakTitle:'Add road link (not yet available)',
+      addKnoopTitle:'Add node (not yet available)',
+      metricFlow:'Intensity', metricFlowScaled:'Intensity (scaled)',
+      metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
+      metricSpeed:'Speed', metricCapacity:'Capacity', metricCompare:'Show comparison',
+      loaderInit:'Loading GeoJSON\u2026', loaderNetwork:'Loading network data\u2026',
+      loaderZones:'Loading zones\u2026', loaderRoutes:'Loading routes\u2026', loaderMap:'Loading map\u2026',
+      areaTitle:'Traffic network visualisation', areaSubtitle:'Select an area to load:',
+      areaNotFound:'No areas found. Start the server with --data <dir>.',
+      areaConnError:'Connection to server failed.',
+      areaDelTitle: n => `Delete ${n}`,
+      areaDelConfirm: (n, m) => `Permanently delete area \u201c${n}\u201d (${m})?`,
+      areaDelError: e => `Deletion failed: ${e}`,
+      newAreaBtn:'+ Create new area',
+      newAreaH2:'New area', newAreaName:'Name', newAreaNamePh:'e.g. Merwehaven',
+      newAreaMode:'Transport mode', newAreaCar:'Car (CAR)', newAreaBike:'Bicycle (BIKE)',
+      newAreaPed:'Pedestrian (PEDESTRIAN)',
+      newAreaBboxHint:'Draw a rectangle on the map to set the bounding box. Click for the first corner, click again for the second.',
+      newAreaNoBbox:'No bounding box drawn', newAreaClearBbox:'Clear bbox',
+      newAreaHome:'\u2302 Overview', newAreaCancel:'Cancel', newAreaSubmit:'Create',
+      newAreaStatusStart:'Starting pipeline\u2026', newAreaStatusConn:'Connection failed.',
+      newAreaStatusRunning:'Pipeline running\u2026', newAreaStatusDone:'Done! Area is available.',
+      newAreaStatusBack:'Back to overview', newAreaStatusError: c => `Error (exit code ${c}).`,
+      newAreaAlertName:'Please enter a name.', newAreaAlertBbox:'Please draw a bounding box on the map first.',
+      linkDialogDefault:'Road link', linkDialogName: n => `Road link: ${n}`, linkDialogId: id => `Link ${id}`,
+      linkDialogCap:'Capacity', linkDialogCapUnit:'veh/h',
+      linkDialogSpeed:'Set speed', linkDialogSpeedHint:'adjusts capacity',
+      nodeDialogDefault:'Node',
+      nodeDialogProd:'Production', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute (\u22650)',
+      nodeDialogProdPh:'+300 or 1200',
+      nodeDialogAttr:'Attraction', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute (\u22650)',
+      nodeDialogAttrPh:'+300 or 800',
+      dialogCancel:'Cancel', dialogOk:'OK',
+      changesTitle:'Changes', scenarioNamePh:'Scenario name', applyBtn:'\u25b6 Apply',
+      applyStart:'Starting adjust\u2026', applyRunning:'Processing\u2026', applyDone:'Done!',
+      applyError: c => `Unknown error (return code: ${c})`, applyFetchError: e => `Error: ${e}`,
+      changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `speed: ${v} km/h`,
+      changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeItemDel:'Delete',
+      legendFlow:'Intensity', legendOccupancy:'Occupancy',
+      legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
+      legendUnit:'veh/h',
+      tooltipSegment: id => `Segment #${id}`,
+      tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
+      tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh/24h',
+      tooltipSpeed:'Speed', tooltipLanes:'Lanes',
+      tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'Occupancy', tooltipLength:'Length',
+      dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
+      networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
+      numberLocale:'en-GB',
+    },
+    FI: {
+      homeTitle:'Takaisin yleiskatsaukseen',
+      dpMrhLabel:'AR', dpMrhTitle:'Aamuruuhka',
+      dpErhLabel:'IR', dpErhTitle:'Iltaruuhka',
+      dpRestLabel:'MA', dpRestTitle:'Muu aika',
+      metricTitle:'V\xe4rimitta',
+      timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
+      pauseTitle:'Pys\xe4yt\xe4 simulaatio',
+      nodeEditTitle:'Muokkaa solmupisteen tuotantoa/houkuttelevuutta',
+      linkEditTitle:'Muokkaa tiejakson kapasiteettia',
+      addWegvakTitle:'Lis\xe4\xe4 tiejakso (ei viel\xe4 saatavilla)',
+      addKnoopTitle:'Lis\xe4\xe4 solmupiste (ei viel\xe4 saatavilla)',
+      metricFlow:'Intensiteetti', metricFlowScaled:'Intensiteetti (skaalattu)',
+      metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
+      metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricCompare:'N\xe4yt\xe4 vertailu',
+      loaderInit:'Ladataan GeoJSON\u2026', loaderNetwork:'Ladataan verkkodata\u2026',
+      loaderZones:'Ladataan alueita\u2026', loaderRoutes:'Ladataan reittej\xe4\u2026', loaderMap:'Ladataan karttaa\u2026',
+      areaTitle:'Liikenneverkkovisualisointi', areaSubtitle:'Valitse alue ladattavaksi:',
+      areaNotFound:'Alueita ei l\xf6ydy. K\xe4ynnist\xe4 palvelin --data <kansio> -valitsimella.',
+      areaConnError:'Yhteys palvelimeen ep\xe4onnistui.',
+      areaDelTitle: n => `Poista ${n}`,
+      areaDelConfirm: (n, m) => `Poistetaanko alue \u201c${n}\u201d (${m}) pysyv\xe4sti?`,
+      areaDelError: e => `Poisto ep\xe4onnistui: ${e}`,
+      newAreaBtn:'+ Luo uusi alue',
+      newAreaH2:'Uusi alue', newAreaName:'Nimi', newAreaNamePh:'esim. Merwehaven',
+      newAreaMode:'Kulkutapa', newAreaCar:'Auto (CAR)', newAreaBike:'Polkupy\xf6r\xe4 (BIKE)',
+      newAreaPed:'Jalankulkija (PEDESTRIAN)',
+      newAreaBboxHint:'Piirrä suorakulmio kartalle rajausalueen m\xe4\xe4ritt\xe4miseksi. Napsauta ensimm\xe4ist\xe4 kulmaa, napsauta uudelleen toista.',
+      newAreaNoBbox:'Rajausaluetta ei ole piirretty', newAreaClearBbox:'Tyhjenн\xe4 rajaus',
+      newAreaHome:'\u2302 Yleiskatsaus', newAreaCancel:'Peruuta', newAreaSubmit:'Luo',
+      newAreaStatusStart:'K\xe4ynnistet\xe4\xe4n putkilinjaa\u2026', newAreaStatusConn:'Yhteys ep\xe4onnistui.',
+      newAreaStatusRunning:'Putkilinja k\xe4ynniss\xe4\u2026', newAreaStatusDone:'Valmis! Alue on k\xe4ytett\xe4viss\xe4.',
+      newAreaStatusBack:'Takaisin yleiskatsaukseen', newAreaStatusError: c => `Virhe (paluuarvo ${c}).`,
+      newAreaAlertName:'Sy\xf6t\xe4 nimi.', newAreaAlertBbox:'Piirrä ensin rajausalue kartalle.',
+      linkDialogDefault:'Tiejakso', linkDialogName: n => `Tiejakso: ${n}`, linkDialogId: id => `Tiejakso ${id}`,
+      linkDialogCap:'Kapasiteetti', linkDialogCapUnit:'ajon/h',
+      linkDialogSpeed:'Aseta nopeus', linkDialogSpeedHint:'s\xe4\xe4t\xe4\xe4 kapasiteettia',
+      nodeDialogDefault:'Solmupiste',
+      nodeDialogProd:'Tuotanto', nodeDialogProdHint:'+300 = muutos\u00a0|\u00a01200 = absoluuttinen (\u22650)',
+      nodeDialogProdPh:'+300 tai 1200',
+      nodeDialogAttr:'Houkuttelevuus', nodeDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen (\u22650)',
+      nodeDialogAttrPh:'+300 tai 800',
+      dialogCancel:'Peruuta', dialogOk:'OK',
+      changesTitle:'Muutokset', scenarioNamePh:'Skenaarion nimi', applyBtn:'\u25b6 K\xe4yt\xe4',
+      applyStart:'K\xe4ynnistet\xe4\xe4n s\xe4\xe4t\xf6\xe4\u2026', applyRunning:'K\xe4sitell\xe4\xe4n\u2026', applyDone:'Valmis!',
+      applyError: c => `Tuntematon virhe (paluuarvo: ${c})`, applyFetchError: e => `Virhe: ${e}`,
+      changeCapLabel: (v, u) => `kap: ${v} ${u}`, changeSpeedLabel: v => `nopeus: ${v} km/h`,
+      changeProdLabel: v => `tuot: ${v}`, changeAttrLabel: v => `houk: ${v}`,
+      changeItemDel:'Poista',
+      legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste',
+      legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
+      legendUnit:'ajon/h',
+      tooltipSegment: id => `Segmentti #${id}`,
+      tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
+      tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon/24h',
+      tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
+      tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'Kuormitusaste', tooltipLength:'Pituus',
+      dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika',
+      networkTitle: n => `Liikenneverkko ${n}`, pageTitle: n => `Liikenneverkko ${n}`,
+      numberLocale:'fi',
+    },
+  };
+
+  let currentLang = localStorage.getItem('ui-lang') || 'NL';
+
+  function T(key, ...args) {
+    const val = (TRANSLATIONS[currentLang] || TRANSLATIONS.NL)[key];
+    if (typeof val === 'function') return val(...args);
+    return val ?? key;
+  }
+
+  function applyLang(lang) {
+    if (!TRANSLATIONS[lang]) return;
+    currentLang = lang;
+    localStorage.setItem('ui-lang', lang);
+
+    // Taal-knoppen actief zetten
+    document.querySelectorAll('.lang-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.lang === lang));
+
+    // data-i18n → textContent
+    document.querySelectorAll('[data-i18n]').forEach(el =>
+      el.textContent = T(el.dataset.i18n));
+
+    // data-i18n-title → title
+    document.querySelectorAll('[data-i18n-title]').forEach(el =>
+      el.title = T(el.dataset.i18nTitle));
+
+    // data-i18n-ph → placeholder
+    document.querySelectorAll('[data-i18n-ph]').forEach(el =>
+      el.placeholder = T(el.dataset.i18nPh));
+
+    // Legenda-label (afhankelijk van geselecteerde metriek)
+    const metric = document.getElementById('colorMetric')?.value;
+    const legendKeyMap = {
+      flow:'legendFlow', flow_scaled:'legendFlow',
+      occupancy:'legendOccupancy', occupancy_scaled:'legendOccupancy',
+      speed:'legendSpeed', capacity:'legendCapacity', compare:'legendCompare',
+    };
+    const legEl = document.getElementById('legendLabel');
+    if (legEl && metric) legEl.textContent = T(legendKeyMap[metric] || 'legendFlow');
+
+    // Netwerktitel (dynamische naam bewaard in window._networkName)
+    if (window._networkName) {
+      document.getElementById('networkTitle').textContent = T('networkTitle', window._networkName);
+      document.title = T('pageTitle', window._networkName);
+    }
+  }
+
+  // Pas taal direct toe op statische DOM-elementen
+  applyLang(currentLang);
 
   // ── Parameters uit URL (bijv. /?areaId=xxx&mode=CAR) ─────────────────────
   const _params = new URLSearchParams(window.location.search);
@@ -569,8 +807,8 @@
     const loader = document.getElementById('loader');
     loader.innerHTML = `
       <div style="text-align:center;font-family:'Segoe UI',sans-serif;color:#c9d6e8;max-width:420px;padding:24px">
-        <h2 style="color:#7ec8e3;margin:0 0 8px;font-size:20px">Verkeersnetwerk-visualisatie</h2>
-        <p style="color:#5a6272;font-size:13px;margin:0 0 24px">Kies een gebied om te laden:</p>
+        <h2 style="color:#7ec8e3;margin:0 0 8px;font-size:20px">${T('areaTitle')}</h2>
+        <p style="color:#5a6272;font-size:13px;margin:0 0 24px">${T('areaSubtitle')}</p>
         <div id="areaButtons" style="display:flex;flex-direction:column;gap:8px"></div>
         <p id="areaError" style="display:none;color:#ff6b6b;font-size:13px;margin-top:16px"></p>
       </div>`;
@@ -580,8 +818,7 @@
       .then(areas => {
         const container = document.getElementById('areaButtons');
         if (!areas.length) {
-          document.getElementById('areaError').textContent =
-            'Geen gebieden gevonden. Start de server met --data <map>.';
+          document.getElementById('areaError').textContent = T('areaNotFound');
           document.getElementById('areaError').style.display = 'block';
         } else {
           areas.forEach(({ areaId, mode, name }) => {
@@ -602,7 +839,7 @@
 
             const delBtn = document.createElement('button');
             delBtn.textContent = '✕';
-            delBtn.title = `Verwijder ${name}`;
+            delBtn.title = T('areaDelTitle', name);
             delBtn.style.cssText = `background:transparent;color:#4a5568;border:1px solid rgba(255,255,255,0.1);
               border-radius:7px;padding:10px 14px;font-size:14px;cursor:pointer;
               transition:background .15s,color .15s;flex-shrink:0`;
@@ -617,13 +854,13 @@
               delBtn.style.borderColor = 'rgba(255,255,255,0.1)';
             };
             delBtn.onclick = async () => {
-              if (!confirm(`Gebied "${name}" (${mode}) definitief verwijderen?`)) return;
+              if (!confirm(T('areaDelConfirm', name, mode))) return;
               const res = await fetch(`/api/areas/${encodeURIComponent(areaId)}`, { method: 'DELETE' });
               if (res.ok) {
                 row.remove();
               } else {
                 const data = await res.json().catch(() => ({}));
-                alert(`Verwijderen mislukt: ${data.error || res.statusText}`);
+                alert(T('areaDelError', data.error || res.statusText));
               }
             };
 
@@ -635,7 +872,7 @@
 
         // "Nieuw"-knop altijd toevoegen
         const newBtn = document.createElement('button');
-        newBtn.textContent = '+ Nieuw gebied aanmaken';
+        newBtn.textContent = T('newAreaBtn');
         newBtn.style.cssText = `background:transparent;color:#7ec8e3;
           border:1px dashed rgba(126,200,227,0.4);
           border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
@@ -646,7 +883,7 @@
         container.appendChild(newBtn);
       })
       .catch(() => {
-        document.getElementById('areaError').textContent = 'Verbinding met server mislukt.';
+        document.getElementById('areaError').textContent = T('areaConnError');
         document.getElementById('areaError').style.display = 'block';
       });
 
@@ -697,7 +934,7 @@
            min lat: <b>${bbox.minLat.toFixed(5)}</b><br>
            max lon: <b>${bbox.maxLon.toFixed(5)}</b><br>
            max lat: <b>${bbox.maxLat.toFixed(5)}</b>`
-        : 'Geen bbox getekend';
+        : T('newAreaNoBbox');
     }
 
     newMap.on('load', () => {
@@ -753,8 +990,8 @@
 
     document.getElementById('newSubmitBtn').onclick = async () => {
       const name = document.getElementById('newName').value.trim();
-      if (!name) { alert('Voer een naam in.'); return; }
-      if (!bbox)  { alert('Teken eerst een bbox op de kaart.'); return; }
+      if (!name) { alert(T('newAreaAlertName')); return; }
+      if (!bbox)  { alert(T('newAreaAlertBbox')); return; }
 
       const mode   = document.getElementById('newMode').value;
 
@@ -765,7 +1002,7 @@
       const fillEl     = document.getElementById('newProgressFill');
       progressEl.style.display = 'flex';
       document.getElementById('newSubmitBtn').disabled = true;
-      statusEl.textContent = 'Pipeline starten…';
+      statusEl.textContent = T('newAreaStatusStart');
       fillEl.style.width = '5%';
 
       const body = {
@@ -784,7 +1021,7 @@
         jobId = data.job_id;
       } catch (e) {
         statusEl.style.color = '#ff6b6b';
-        statusEl.textContent = 'Verbinding mislukt.';
+        statusEl.textContent = T('newAreaStatusConn');
         return;
       }
 
@@ -804,23 +1041,23 @@
           }
 
           if (job.status === 'running') {
-            statusEl.textContent = 'Pipeline actief…';
+            statusEl.textContent = T('newAreaStatusRunning');
             fillEl.style.width = '60%';
           } else if (job.status === 'done') {
             clearInterval(poll);
             fillEl.style.width = '100%';
             fillEl.style.animation = 'none';
             statusEl.style.color = '#00e676';
-            statusEl.textContent = 'Klaar! Gebied is beschikbaar.';
+            statusEl.textContent = T('newAreaStatusDone');
             document.getElementById('newSubmitBtn').disabled = false;
-            document.getElementById('newSubmitBtn').textContent = 'Terug naar overzicht';
+            document.getElementById('newSubmitBtn').textContent = T('newAreaStatusBack');
             document.getElementById('newSubmitBtn').onclick = () => window.location.reload();
           } else if (job.status === 'error') {
             clearInterval(poll);
             fillEl.style.background = '#ff1744';
             fillEl.style.animation = 'none';
             statusEl.style.color = '#ff6b6b';
-            statusEl.textContent = `Fout (exitcode ${job.returncode}).`;
+            statusEl.textContent = T('newAreaStatusError', job.returncode);
             document.getElementById('newSubmitBtn').disabled = false;
           }
         } catch (_) {}
@@ -1294,7 +1531,7 @@
   (async () => {
 
     // ── 1. Netwerkdata laden ────────────────────────────────────────────────
-    setLoaderMsg('Netwerkdata laden…');
+    setLoaderMsg(T('loaderNetwork'));
     const geojson = await fetch(GEOJSON_FILE).then(r => r.json());
 
     const features = geojson.features.filter(
@@ -1308,17 +1545,18 @@
 
     /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
     function updateLegend() {
+      const unit = T('legendUnit');
       const metricMeta = {
-        flow:             { label: 'Intensiteit',                 unit: 'vtg/u',  gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        flow_scaled:      { label: 'Intensiteit',                 unit: 'vtg/u',  gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        occupancy:        { label: 'Bezettingsgraad',             unit: '%',       gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        occupancy_scaled: { label: 'Bezettingsgraad',             unit: '%',       gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        speed:            { label: 'Snelheid',                    unit: 'km/h',   gradient: 'linear-gradient(to right, #ff1744, #ffea00, #2196f3)' },
-        capacity:         { label: 'Capaciteit',                  unit: 'vtg/u',  gradient: 'linear-gradient(to right, #90caf9, #1565c0)' },
+        flow:             { labelKey: 'legendFlow',      unit,       gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        flow_scaled:      { labelKey: 'legendFlow',      unit,       gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        occupancy:        { labelKey: 'legendOccupancy', unit: '%',  gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        occupancy_scaled: { labelKey: 'legendOccupancy', unit: '%',  gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        speed:            { labelKey: 'legendSpeed',     unit: 'km/h', gradient: 'linear-gradient(to right, #ff1744, #ffea00, #2196f3)' },
+        capacity:         { labelKey: 'legendCapacity',  unit,       gradient: 'linear-gradient(to right, #90caf9, #1565c0)' },
       };
-      const { label, unit, gradient } = metricMeta[colorMetric] || metricMeta.flow;
+      const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
       document.getElementById('legendBar').style.background = gradient;
-      document.getElementById('legendLabel').textContent = label;
+      document.getElementById('legendLabel').textContent = T(labelKey);
       let vMin = Infinity, vMax = -Infinity;
       for (const seg of segments) {
         const v = getMetricValue(seg.props);
@@ -1327,17 +1565,18 @@
           if (v > vMax) vMax = v;
         }
       }
-      const fmt = unit === '%'
+      const fmt = u === '%'
         ? v => Math.round(v) + ' %'
-        : v => Math.round(v).toLocaleString('nl') + ' ' + unit;
+        : v => Math.round(v).toLocaleString(T('numberLocale')) + ' ' + u;
       document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
       document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
     }
 
     // Netwerknaam instellen vanuit GeoJSON top-level properties
     const networkName = geojson.properties?.name || AREA_ID;
-    document.getElementById('networkTitle').textContent = `Verkeersnetwerk ${networkName}`;
-    document.title = `Verkeersnetwerk ${networkName}`;
+    window._networkName = networkName;
+    document.getElementById('networkTitle').textContent = T('networkTitle', networkName);
+    document.title = T('pageTitle', networkName);
 
     // Bepaal bbox voor kaartnavigatie: uit properties of berekend uit features
     let areaBounds = geojson.properties?.bbox;  // [minLon, minLat, maxLon, maxLat]
@@ -1422,7 +1661,7 @@
     }
 
     // Zone-data laden: fromNodeProportions / toNodeProportions
-    setLoaderMsg('Zones laden…');
+    setLoaderMsg(T('loaderZones'));
     const zoneMap = new Map();   // zoneId → { from: {nodeId: prop}, to: {nodeId: prop} }
     let zoneFeaturesRaw = [];    // alle zone-features (voor node-laag)
     try {
@@ -1496,7 +1735,7 @@
       return segs;
     }
 
-    setLoaderMsg('Routes laden…');
+    setLoaderMsg(T('loaderRoutes'));
     let routeMode        = false;
     let routeList        = [];
     let totalRouteWeight = 1;
@@ -1570,7 +1809,7 @@
     }
 
     // ── 3. MapLibre kaart ───────────────────────────────────────────────────
-    setLoaderMsg('Kaart laden…');
+    setLoaderMsg(T('loaderMap'));
     const map = new maplibregl.Map({
       container: 'map',
       style:     'https://tiles.openfreemap.org/styles/liberty',
@@ -2222,31 +2461,32 @@
       if (!object) return null;
       const p  = object.properties;
       const dp = p.flowsPerDaypart || {};
-      const dpLabels = { mrh: 'Ochtendspits', erh: 'Avondspits', rest: 'Rest dag' };
+      const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
       const dpFlow = dpFlowOf(p);
       const occ = p.capacity > 0
         ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
+      const loc = T('numberLocale');
       return {
         html: `
           <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
             <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
-              Segment #${Math.abs(p.linkId)}
+              ${T('tooltipSegment', Math.abs(p.linkId))}
             </div>
-            <div><span style="color:#5a6272">Dagdeel: </span>
+            <div><span style="color:#5a6272">${T('tooltipDaypart')}: </span>
               <b>${dpLabels[daypart]}</b></div>
-            <div><span style="color:#5a6272">Flow (dagdeel): </span>
-              <b>${dpFlow.toFixed(0)} vtg/u</b></div>
-            <div><span style="color:#5a6272">Flow (totaal/24u): </span>
-              <b>${p.flow?.toFixed(0)} vtg/24u</b></div>
-            <div><span style="color:#5a6272">Snelheid: </span>
+            <div><span style="color:#5a6272">${T('tooltipFlow')}: </span>
+              <b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+            <div><span style="color:#5a6272">${T('tooltipFlowTotal')}: </span>
+              <b>${p.flow?.toFixed(0)} ${T('tooltipFlow24Unit')}</b></div>
+            <div><span style="color:#5a6272">${T('tooltipSpeed')}: </span>
               <b>${p.speed} km/h</b></div>
-            <div><span style="color:#5a6272">Rijstroken: </span>
+            <div><span style="color:#5a6272">${T('tooltipLanes')}: </span>
               <b>${p.lanes}</b></div>
-            <div><span style="color:#5a6272">Capaciteit: </span>
-              <b>${p.capacity?.toLocaleString('nl')} vtg/u</b></div>
-            <div><span style="color:#5a6272">Bezettingsgraad: </span>
+            <div><span style="color:#5a6272">${T('tooltipCap')}: </span>
+              <b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
+            <div><span style="color:#5a6272">${T('tooltipOccup')}: </span>
               <b>${occ}</b></div>
-            <div><span style="color:#5a6272">Lengte: </span>
+            <div><span style="color:#5a6272">${T('tooltipLength')}: </span>
               <b>${p.length?.toFixed(0)} m</b></div>
           </div>`,
         style: {
@@ -2775,7 +3015,7 @@
       const p = feature.properties;
       const linkId = p.linkId ?? p.id ?? '';
       document.getElementById('linkDialogTitle').textContent =
-        p.name ? `Wegvak: ${p.name}` : `Link ${linkId}`;
+        p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId);
 
       const existing   = pendingChanges.find(c => c.linkId != null && String(c.linkId) === String(linkId));
       const currentCap = p.capacity ?? 0;
@@ -2787,7 +3027,7 @@
       inp.step  = step;
       inp.value = existing?.capacity ?? currentCap;
 
-      document.querySelector('#linkDialog .field-hint').textContent = 'vtg/u';
+      document.querySelector('#linkDialog .field-hint').textContent = T('linkDialogCapUnit');
 
       // Markeer actieve snelheidsknop op basis van bestaande wijziging of huidige snelheid
       const activeSpeed = existing?.speed ?? p.speed ?? null;
@@ -2869,7 +3109,7 @@
       const entry = {
         linkId,
         capacity: cap,
-        _label:   p.name ? `Wegvak: ${p.name}` : `Link ${linkId}`,
+        _label:   p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
         _isLink:  true,
       };
       if (activeLinkSpeed != null) entry.speed = activeLinkSpeed;
@@ -2930,11 +3170,11 @@
         };
         const parts = [];
         if (c._isLink) {
-          parts.push(`cap: ${c.capacity.toLocaleString('nl')} vtg/u`);
-          if (c.speed != null) parts.push(`snelh: ${c.speed} km/h`);
+          parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+          if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
         } else {
-          if (c.production != null) parts.push(`prod: ${fmt(c.production)}`);
-          if (c.attraction != null) parts.push(`attr: ${fmt(c.attraction)}`);
+          if (c.production != null) parts.push(T('changeProdLabel', fmt(c.production)));
+          if (c.attraction != null) parts.push(T('changeAttrLabel', fmt(c.attraction)));
         }
 
         const item = document.createElement('div');
@@ -2944,7 +3184,7 @@
             ${c._label || c.zoneId}
             <span>${parts.join(' · ')}</span>
           </div>
-          <button class="change-item-del" title="Verwijder">×</button>`;
+          <button class="change-item-del" title="${T('changeItemDel')}">×</button>`;
         item.querySelector('.change-item-del').onclick = () => {
           pendingChanges.splice(i, 1);
           renderChangesList();
@@ -2961,7 +3201,7 @@
       const status = document.getElementById('applyStatus');
       btn.disabled = true;
       status.style.display = 'block';
-      status.textContent   = 'Adjust starten…';
+      status.textContent   = T('applyStart');
 
       // Bouw changes-array (strip _label / _zoneClass / _isLink)
       const changes = pendingChanges.map(c => {
@@ -2988,19 +3228,18 @@
 
         // Poll tot done/error
         status.style.display = 'block';
-        status.textContent = 'Bezig…';
+        status.textContent = T('applyRunning');
         const poll = setInterval(async () => {
           const sr = await fetch(`/api/adjust/${job_id}`);
           const sj = await sr.json();
           if (sj.status === 'running' || sj.status === 'pending') {
-            status.textContent = 'Bezig…';
+            status.textContent = T('applyRunning');
           } else if (sj.status === 'done') {
-            status.textContent = 'Klaar!';
+            status.textContent = T('applyDone');
           } else {
-            // Toon de laatste niet-lege logregels als foutdetail
             const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
             status.style.color = '#ff6b6b';
-            status.textContent = errLines.length ? errLines.join('\n') : 'Onbekende fout (returncode: ' + sj.returncode + ')';
+            status.textContent = errLines.length ? errLines.join('\n') : T('applyError', sj.returncode);
           }
           if (sj.status === 'done' || sj.status === 'error') {
             clearInterval(poll);
@@ -3016,7 +3255,7 @@
           }
         }, 1500);
       } catch (err) {
-        status.textContent = `Fout: ${err.message}`;
+        status.textContent = T('applyFetchError', err.message);
         btn.disabled = false;
       }
     });
@@ -3074,8 +3313,9 @@
 
       // Titel updaten
       const newName = newGeojson.properties?.name || newAreaId;
-      document.getElementById('networkTitle').textContent = `Verkeersnetwerk ${newName}`;
-      document.title = `Verkeersnetwerk ${newName}`;
+      window._networkName = newName;
+      document.getElementById('networkTitle').textContent = T('networkTitle', newName);
+      document.title = T('pageTitle', newName);
 
       // ── Zones ────────────────────────────────────────────────────────────
       try {
@@ -3251,9 +3491,6 @@
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
       document.getElementById('nodeEditBtn').textContent =
         nodeEditActive ? '✕' : '◉';
-      document.getElementById('hintText').innerHTML = nodeEditActive
-        ? 'Klik op een knoop (cirkel) om productie of attractie te wijzigen.'
-        : 'Klik op een wegsegment voor details.<br>Scroll of pinch om in te zoomen.';
 
       if (nodeEditActive) {
         // Stop animatie en verwijder voertuigen uit beeld
@@ -3286,9 +3523,6 @@
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
       document.getElementById('linkEditBtn').innerHTML =
         linkEditActive ? '✕' : '&#9644;';
-      document.getElementById('hintText').innerHTML = linkEditActive
-        ? 'Klik op een wegvak om de capaciteit te wijzigen.'
-        : 'Klik op een wegsegment voor details.<br>Scroll of pinch om in te zoomen.';
 
       if (linkEditActive) {
         paused = true;
