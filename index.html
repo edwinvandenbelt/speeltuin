@@ -232,13 +232,22 @@
       border: 1px solid rgba(255,255,255,0.1);
     }
     #linkDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
-    .speed-btn {
-      padding: 3px 7px; font-size: 11px; border-radius: 4px; cursor: pointer;
-      background: rgba(255,255,255,0.07); color: #c9d6e8;
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-    .speed-btn:hover  { background: rgba(126,200,227,0.18); color: #7ec8e3; }
-    .speed-btn.active { background: rgba(126,200,227,0.30); color: #7ec8e3; border-color: rgba(126,200,227,0.6); }
+     .speed-btn, .link-poly-speed-btn {
+       padding: 3px 7px; font-size: 11px; border-radius: 4px; cursor: pointer;
+       background: rgba(255,255,255,0.07); color: #c9d6e8;
+       border: 1px solid rgba(255,255,255,0.15);
+     }
+     .speed-btn:hover, .link-poly-speed-btn:hover  { background: rgba(126,200,227,0.18); color: #7ec8e3; }
+      .speed-btn.active, .link-poly-speed-btn.active { background: rgba(126,200,227,0.30); color: #7ec8e3; border-color: rgba(126,200,227,0.6); }
+      /* Afsluitingsknop (verboden in te rijden) */
+      .link-close-btn {
+        padding: 4px 6px; border-radius: 4px; cursor: pointer; line-height: 0;
+        background: rgba(180,20,20,0.12); color: #ff6666;
+        border: 1px solid rgba(180,20,20,0.28);
+      }
+      .link-close-btn:hover  { background: rgba(200,30,30,0.27); border-color: rgba(220,50,50,0.55); }
+      .link-close-btn.active { background: rgba(200,30,30,0.45); border-color: rgba(255,80,80,0.85);
+                                box-shadow: 0 0 7px rgba(220,30,30,0.45); }
     .node-field { margin-bottom: 12px; }
     .node-field label { font-size: 11px; color: #5a6272; display: block; margin-bottom: 4px; }
     .field-hint { font-size: 10px; color: #3d4454; font-weight: 400; }
@@ -303,7 +312,11 @@
       padding: 6px 16px;
       font-size: 12px; color: #c9d6e8;
       border-bottom: 1px solid rgba(255,255,255,0.04);
+      cursor: pointer;
+      transition: background 0.12s;
     }
+    .change-item:hover { background: rgba(255,255,255,0.04); }
+    .change-item.highlighted { background: rgba(255,180,80,0.13); }
     .change-item:last-child { border-bottom: none; }
     .change-item-label { flex: 1; line-height: 1.4; }
     .change-item-label span { color: #5a6272; font-size: 11px; display: block; }
@@ -434,6 +447,88 @@
       border: 1px solid rgba(255,255,255,0.1);
     }
     #polygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+
+    /* ── Link-selectiemodus popup ─────────────────────────────────────────── */
+    #linkSelectPopup {
+      display: none;
+      position: fixed; left: 16px; top: 70px;
+      z-index: 50;
+      background: rgba(13,17,23,0.97);
+      border: 1px solid rgba(255,180,80,0.3);
+      border-radius: 12px;
+      padding: 14px 16px; width: 200px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+    }
+    #linkSelectPopup h4 {
+      margin: 0 0 10px;
+      font-size: 11px; color: #ffb450; font-weight: 600;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .lsm-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; cursor: pointer;
+      font-size: 12px; color: #c9d6e8;
+    }
+    .lsm-option:hover { color: #ffb450; }
+    .lsm-option input[type=radio] { accent-color: #ffb450; cursor: pointer; flex-shrink: 0; }
+    #linkPolygonHint {
+      display: none;
+      font-size: 10px; color: #5a6272;
+      margin-top: 8px; line-height: 1.5;
+      padding: 6px 8px;
+      background: rgba(255,255,255,0.03); border-radius: 6px;
+    }
+    .link-poly-ctrl-btn {
+      display: none; width: 100%;
+      padding: 6px 0; border-radius: 6px;
+      font-size: 11px; cursor: pointer;
+      font-family: 'Segoe UI', sans-serif;
+      margin-top: 5px; transition: background 0.15s;
+    }
+    #linkPolygonFinishBtn {
+      background: rgba(255,180,80,0.15); color: #ffb450;
+      border: 1px solid rgba(255,180,80,0.4);
+    }
+    #linkPolygonFinishBtn:hover { background: rgba(255,180,80,0.28); }
+    #linkPolygonClearBtn {
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #linkPolygonClearBtn:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+
+    /* ── Link polygon aanpassing dialoog ─────────────────────────────────── */
+    #linkPolygonDialog {
+      display: none;
+      position: fixed; left: 16px; top: 70px;
+      z-index: 51;
+      background: rgba(13,17,23,0.97);
+      border: 1px solid rgba(126,200,227,0.25);
+      border-radius: 12px;
+      padding: 18px 20px; width: 260px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+    }
+    #linkPolygonDialog h3 {
+      font-size: 13px; color: #7ec8e3; margin-bottom: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    #linkPolygonLinkInfo { font-size: 11px; color: #ffb450; margin-bottom: 12px; }
+    .link-poly-per-link {
+      font-size: 10px; color: #5a6272; margin-top: 2px; min-height: 14px;
+    }
+    #linkPolygonDialogOk {
+      background: rgba(126,200,227,0.15); color: #7ec8e3;
+      border: 1px solid rgba(126,200,227,0.35);
+    }
+    #linkPolygonDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #linkPolygonDialogCancel {
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #linkPolygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
   </style>
 </head>
 
@@ -581,11 +676,68 @@
         <button class="speed-btn" data-speed="70">70</button>
         <button class="speed-btn" data-speed="100">100</button>
         <button class="speed-btn" data-speed="120">120</button>
+        <button class="link-close-btn" id="linkCloseBtn" data-i18n-title="linkCloseBtnTitle">
+          <svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#cc1111"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="white" stroke-width="2.5"/><rect x="5.5" y="9.5" width="13" height="5" rx="2" fill="white"/></svg>
+        </button>
       </div>
     </div>
     <div class="node-dialog-btns">
       <button id="linkDialogCancel" data-i18n="dialogCancel">Annuleren</button>
       <button id="linkDialogOk" data-i18n="dialogOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ── Link-selectiemodus popup ──────────────────────────────────────────── -->
+  <div id="linkSelectPopup">
+    <h4 data-i18n="linkSelectTitle">Selectiemodus</h4>
+    <label class="lsm-option">
+      <input type="radio" name="linkSelectMode" value="click" checked/>
+      <span data-i18n="linkSelectClick">Klik op een wegvak</span>
+    </label>
+    <label class="lsm-option">
+      <input type="radio" name="linkSelectMode" value="polygon"/>
+      <span data-i18n="linkSelectPolygon">Polygon tekenen</span>
+    </label>
+    <div id="linkPolygonHint" data-i18n="linkPolygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
+    <button class="link-poly-ctrl-btn" id="linkPolygonFinishBtn" data-i18n="linkPolygonFinishBtn">&#10003; Polygon afsluiten</button>
+    <button class="link-poly-ctrl-btn" id="linkPolygonClearBtn" data-i18n="linkPolygonClearBtn">&#10005; Wis polygon</button>
+  </div>
+
+  <!-- ── Link polygon aanpassing dialoog ───────────────────────────────────── -->
+   <div id="linkPolygonDialog">
+    <h3 data-i18n="linkPolygonDialogTitle">Polygon capaciteitswijziging</h3>
+    <div id="linkPolygonLinkInfo"></div>
+    <div class="node-field">
+      <label>
+        <span data-i18n="linkPolygonDialogCap">Capaciteit</span>
+        <span class="field-hint" data-i18n="linkPolygonDialogCapHint">800 = absoluut&nbsp;|&nbsp;80% = factor</span>
+      </label>
+      <div class="node-field-row">
+        <button id="linkPolyCapMinus">&#8722;</button>
+        <input type="text" id="linkPolyCapVal" placeholder="800 of 80%"/>
+        <button id="linkPolyCapPlus">+</button>
+      </div>
+      <div id="linkPolygonPerLinkCap" class="link-poly-per-link"></div>
+    </div>
+    <div class="node-field">
+      <label><span data-i18n="linkDialogSpeed">Snelheid instellen</span> <span class="field-hint" data-i18n="linkDialogSpeedHint">past capaciteit aan</span></label>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+        <button class="link-poly-speed-btn" data-speed="15">15</button>
+        <button class="link-poly-speed-btn" data-speed="30">30</button>
+        <button class="link-poly-speed-btn" data-speed="40">40</button>
+        <button class="link-poly-speed-btn" data-speed="50">50</button>
+        <button class="link-poly-speed-btn" data-speed="60">60</button>
+        <button class="link-poly-speed-btn" data-speed="70">70</button>
+        <button class="link-poly-speed-btn" data-speed="100">100</button>
+        <button class="link-poly-speed-btn" data-speed="120">120</button>
+        <button class="link-close-btn" id="linkPolyCloseBtn" data-i18n-title="linkCloseBtnTitle">
+          <svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#cc1111"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="white" stroke-width="2.5"/><rect x="5.5" y="9.5" width="13" height="5" rx="2" fill="white"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="node-dialog-btns">
+      <button id="linkPolygonDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="linkPolygonDialogOk" data-i18n="dialogOk">OK</button>
     </div>
   </div>
 
@@ -756,6 +908,22 @@
       polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut',
       polygonPerNodeLabel: v => `\u2192 per knoop: ${v}`,
       polygonNoNodes:'Geen knopen gevonden in de polygon.',
+      // Link polygon-selectie
+      linkSelectTitle:'Selectiemodus',
+      linkSelectClick:'Klik op een wegvak',
+      linkSelectPolygon:'Polygon tekenen',
+      linkPolygonHint:"Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.",
+      linkPolygonFinishBtn:'\u2713 Polygon afsluiten',
+      linkPolygonClearBtn:'\u2715 Wis polygon',
+      linkPolygonDialogTitle:'Polygon capaciteitswijziging',
+      linkPolygonLinkInfoLabel: n => n === 1 ? `${n} wegvak geselecteerd` : `${n} wegvakken geselecteerd`,
+      linkPolygonDialogCap:'Capaciteit',
+      linkPolygonDialogCapHint:'800 = absoluut\u00a0|\u00a080% = factor',
+      linkPolygonDialogCapUnit:'vtg/u',
+      linkPolygonPerLinkLabel: v => `\u2192 gemiddeld na wijziging: ${v}\u00a0vtg/u`,
+      linkPolygonNoLinks:'Geen wegvakken gevonden in de polygon.',
+      linkCloseBtnTitle:'Weg afsluiten (capaciteit = 0)',
+      changeClosedLabel:'afgesloten (cap = 0)',
       // Legenda
       legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad',
       legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
@@ -835,6 +1003,22 @@
       polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute',
       polygonPerNodeLabel: v => `\u2192 per node: ${v}`,
       polygonNoNodes:'No nodes found within the polygon.',
+      // Link polygon selection
+      linkSelectTitle:'Selection mode',
+      linkSelectClick:'Click on a road link',
+      linkSelectPolygon:'Draw a polygon',
+      linkPolygonHint:"Click to place vertices. Use 'Finish' when the polygon is complete.",
+      linkPolygonFinishBtn:'\u2713 Finish polygon',
+      linkPolygonClearBtn:'\u2715 Clear polygon',
+      linkPolygonDialogTitle:'Polygon capacity change',
+      linkPolygonLinkInfoLabel: n => n === 1 ? `${n} link selected` : `${n} links selected`,
+      linkPolygonDialogCap:'Capacity',
+      linkPolygonDialogCapHint:'800 = absolute\u00a0|\u00a080% = factor',
+      linkPolygonDialogCapUnit:'veh/h',
+      linkPolygonPerLinkLabel: v => `\u2192 average after change: ${v}\u00a0veh/h`,
+      linkPolygonNoLinks:'No road links found within the polygon.',
+      linkCloseBtnTitle:'Close road (capacity = 0)',
+      changeClosedLabel:'closed (cap = 0)',
       legendFlow:'Intensity', legendOccupancy:'Occupancy',
       legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
       legendUnit:'veh/h',
@@ -911,6 +1095,22 @@
       polygonDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen',
       polygonPerNodeLabel: v => `\u2192 per solmupiste: ${v}`,
       polygonNoNodes:'Solmupisteit\xe4 ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
+      // Linkin monikulmio-valinta
+      linkSelectTitle:'Valintamoodi',
+      linkSelectClick:'Napsauta tiejaksoa',
+      linkSelectPolygon:'Piirrä monikulmio',
+      linkPolygonHint:"Napsauta lis\xe4t\xe4ksesi k\xe4rkipisteit\xe4. K\xe4yt\xe4 'Valmis' kun monikulmio on valmis.",
+      linkPolygonFinishBtn:'\u2713 Valmis monikulmio',
+      linkPolygonClearBtn:'\u2715 Tyhjenн\xe4',
+      linkPolygonDialogTitle:'Monikulmio kapasiteettimuutos',
+      linkPolygonLinkInfoLabel: n => `${n} tiejaksoa valittu`,
+      linkPolygonDialogCap:'Kapasiteetti',
+      linkPolygonDialogCapHint:'800 = absoluuttinen\u00a0|\u00a080% = kerroin',
+      linkPolygonDialogCapUnit:'ajon/h',
+      linkPolygonPerLinkLabel: v => `\u2192 keskiarvo muutoksen j\xe4lkeen: ${v}\u00a0ajon/h`,
+      linkPolygonNoLinks:'Tiejaksoja ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
+      linkCloseBtnTitle:'Sulje tie (kapasiteetti = 0)',
+      changeClosedLabel:'suljettu (kap = 0)',
       legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste',
       legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
       legendUnit:'ajon/h',
@@ -1305,12 +1505,14 @@
 
   // ── Kleur- & dichtheidsfuncties ───────────────────────────────────────────
 
-  /** norm ∈ [0,1] → RGBA groen → geel → rood */
-  function flowToRgba(norm) {
-    const r = Math.min(255, Math.round(norm * 2 * 255));
-    const g = Math.min(255, Math.round((1 - norm) * 2 * 255));
-    return [r, g, 12, 210];
-  }
+    /** norm ∈ [0,1] → RGBA groen → geel → rood.
+     *  Wortel-gamma: geel verschuift naar norm ≈ 0.25 voor meer kleuronderscheid bij lage intensiteiten. */
+    function flowToRgba(norm) {
+      const t = Math.sqrt(norm);  // gamma 0.5 → geel op ~25 % van de schaal
+      const r = Math.min(255, Math.round(t * 2 * 255));
+      const g = Math.min(255, Math.round((1 - t) * 2 * 255));
+      return [r, g, 12, 210];
+    }
 
   // Groen→geel→rood (zelfde als flow, herbruikbaar voor bezettingsgraad)
   function greenRedRgba(norm) { return flowToRgba(norm); }
@@ -1723,30 +1925,39 @@
     /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
     function updateLegend() {
       const unit = T('legendUnit');
+      // Gradient voor flow-metrics: geel op 25 % zodat lage waarden duidelijk onderscheid geven
+      const flowGradient = 'linear-gradient(to right, #00e676, #ffea00 25%, #ff1744)';
       const metricMeta = {
-        flow:             { labelKey: 'legendFlow',      unit,       gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        flow_scaled:      { labelKey: 'legendFlow',      unit,       gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        occupancy:        { labelKey: 'legendOccupancy', unit: '%',  gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        occupancy_scaled: { labelKey: 'legendOccupancy', unit: '%',  gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        flow:             { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
+        flow_scaled:      { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
+        occupancy:        { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        occupancy_scaled: { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
         speed:            { labelKey: 'legendSpeed',     unit: 'km/h', gradient: 'linear-gradient(to right, #ff1744, #ffea00, #2196f3)' },
-        capacity:         { labelKey: 'legendCapacity',  unit,       gradient: 'linear-gradient(to right, #90caf9, #1565c0)' },
+        capacity:         { labelKey: 'legendCapacity',  unit,         gradient: 'linear-gradient(to right, #90caf9, #1565c0)' },
       };
       const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
       document.getElementById('legendBar').style.background = gradient;
       document.getElementById('legendLabel').textContent = T(labelKey);
-      let vMin = Infinity, vMax = -Infinity;
-      for (const seg of segments) {
-        const v = getMetricValue(seg.props);
-        if (v != null && isFinite(v)) {
-          if (v < vMin) vMin = v;
-          if (v > vMax) vMax = v;
-        }
-      }
       const fmt = u === '%'
         ? v => Math.round(v) + ' %'
         : v => Math.round(v).toLocaleString(T('numberLocale')) + ' ' + u;
-      document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
-      document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
+      if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+        // Vaste globale schaal: 0 t/m het netwerk-maximum over alle dagdelen
+        document.getElementById('legendMin').textContent = fmt(0);
+        document.getElementById('legendMax').textContent = fmt(globalMaxFlow);
+      } else {
+        // Andere metrics: scan segmenten voor het actieve dagdeel
+        let vMin = Infinity, vMax = -Infinity;
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < vMin) vMin = v;
+            if (v > vMax) vMax = v;
+          }
+        }
+        document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
+        document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
+      }
     }
 
     // Netwerknaam instellen vanuit GeoJSON top-level properties
@@ -2044,6 +2255,23 @@
     function segFlow(seg) {
       return dpFlowOf(seg.props);
     }
+
+    /** Globaal maximum uurintensiteit (vtg/h) over álle dagdelen en álle wegvakken.
+     *  Wordt als vaste schaalbovengrens gebruikt, zodat kleuren per dagdeel vergelijkbaar zijn. */
+    const globalMaxFlow = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        for (const dp of Object.keys(DP_FRACTION)) {
+          const props   = seg.props;
+          const dpFlows = props.flowsPerDaypart;
+          const v = (dpFlows && dpFlows[dp])
+            ? dpFlows[dp]
+            : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
+          if (v > mx) mx = v;
+        }
+      }
+      return mx || 1;
+    })();
 
     /** Waarde van de actieve metric voor een feature-properties object */
     function getMetricValue(p) {
@@ -2496,6 +2724,10 @@
     let polygonVertices  = [];       // [[lon, lat], ...]
     let polygonNodesInside = [];     // zone-knopen binnen de gesloten polygon
 
+    let linkSelectMode        = 'click';  // 'click' | 'polygon'
+    let linkPolygonVertices   = [];       // [[lon, lat], ...]
+    let linkPolygonLinksInside = [];      // link-features binnen de gesloten polygon
+
     function makeNetworkLayer() {
       // Bereken min/max voor de actieve metric
       let metricMin = Infinity, metricMax = -Infinity;
@@ -2546,8 +2778,11 @@
           const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
           let norm;
-      if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
+          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
             norm = Math.max(0, Math.min(1, v / 100));
+          } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+            // Vaste globale schaal: 0 t/m globalMaxFlow — vergelijkbaar over alle dagdelen
+            norm = Math.max(0, Math.min(1, v / globalMaxFlow));
           } else {
             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
           }
@@ -2585,6 +2820,7 @@
         updateTriggers: { getLineColor: [pendingChanges.length] },
         onHover: info => {
           if (nodeEditActive && nodeSelectMode === 'polygon') return;
+          if (linkEditActive && linkSelectMode === 'polygon') return;
           map.getCanvas().style.cursor = (linkEditActive && info.object) ? 'pointer' : '';
         },
       });
@@ -2691,6 +2927,7 @@
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
+        if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
         if (linkEditActive && isHovering) return 'pointer';
         return '';
       },
@@ -2713,7 +2950,7 @@
           }
           return false; // niets gepickt → laat map.on('click') het afhandelen
         }
-        if (!linkEditActive) return;
+        if (!linkEditActive || linkSelectMode !== 'click') return;
         if (!info.object)    return;
         if (info.layer?.id !== 'link-edit') return;
         const pixel = info.pixel ?? [0, 0];
@@ -2723,13 +2960,22 @@
     });
     map.addControl(overlay);
 
-    function updateOverlay(withCars = true) {
-      overlay.setProps({ layers: [
-        makeNetworkLayer(),
-        makeLinkEditLayer(),
-        ...makeCarLayers(withCars ? [...carData] : []),
-      ]});
+    // Initialiseer afsluiting-symbolen zodra de kaart-stijl gereed is (ook zonder edit-modus)
+    if (map.isStyleLoaded()) {
+      initClosedLinksLayer();
+    } else {
+      const _onMapReady = () => { map.off('idle', _onMapReady); initClosedLinksLayer(); };
+      map.on('idle', _onMapReady);
     }
+
+     function updateOverlay(withCars = true) {
+       overlay.setProps({ layers: [
+         makeNetworkLayer(),
+         makeLinkEditLayer(),
+         ...makeCarLayers(withCars ? [...carData] : []),
+       ]});
+     }
+
 
     // ── 7. Animatielus ──────────────────────────────────────────────────────
     let lastT  = null;
@@ -3084,6 +3330,17 @@
     const POLY_FILL_LAYER = 'poly-draw-fill';
     const POLY_LINE_LAYER = 'poly-draw-line';
 
+    const HL_SOURCE     = 'highlight-src';
+    const HL_LINE_LAYER = 'highlight-line';
+    const HL_POINT_LAYER= 'highlight-point';
+
+    // ── Afgesloten wegvakken symboollaag ───────────────────────────────────────
+    const CLOSED_SOURCE = 'closed-links-src';
+    const CLOSED_LAYER  = 'closed-links-layer';
+    const CLOSED_ICON   = 'no-entry';
+
+    let highlightedChangeIndex = null;
+
     function addNodeLayer() {
       initPolygonDrawLayers();
       // 1. BOUNDARY + NODE zones (met productie/attractie-info)
@@ -3182,7 +3439,7 @@
 
     // ── Link-edit laag ──────────────────────────────────────────────────────
 
-    function addLinkLayer()    { updateOverlay(false); }
+     function addLinkLayer()    { initPolygonDrawLayers(); updateOverlay(false); }
     function removeLinkLayer() { updateOverlay(false); }
 
     // ── Polygon tekenlogica ────────────────────────────────────────────────
@@ -3199,25 +3456,140 @@
       return inside;
     }
 
-    /** Initialiseer MapLibre-lagen voor polygon tekenen (idempotent). */
-    function initPolygonDrawLayers() {
-      if (map.getSource(POLY_SOURCE)) return;
-      map.addSource(POLY_SOURCE, {
+     /** Initialiseer MapLibre-lagen voor polygon tekenen (idempotent). */
+     function initPolygonDrawLayers() {
+       if (map.getSource(POLY_SOURCE)) return;
+       map.addSource(POLY_SOURCE, {
+         type: 'geojson',
+         data: { type: 'FeatureCollection', features: [] },
+       });
+       map.addLayer({
+         id: POLY_FILL_LAYER, type: 'fill', source: POLY_SOURCE,
+         filter: ['==', '$type', 'Polygon'],
+         paint: { 'fill-color': '#ffb450', 'fill-opacity': 0.12 },
+       });
+       map.addLayer({
+         id: POLY_LINE_LAYER, type: 'line', source: POLY_SOURCE,
+         paint: { 'line-color': '#ffb450', 'line-width': 2, 'line-dasharray': [5, 3] },
+       });
+        initHighlightLayers();
+        initClosedLinksLayer();
+      }
+
+      /** Initialiseer MapLibre-lagen voor wijziging-highlight (idempotent). */
+      function initHighlightLayers() {
+        if (map.getSource(HL_SOURCE)) return;
+        map.addSource(HL_SOURCE, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        // Lijn-highlight (voor wegvakken): rode glow via gestapelde lijnen
+        map.addLayer({
+          id: HL_LINE_LAYER + '-glow', type: 'line', source: HL_SOURCE,
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': 'rgba(210, 30, 30, 0.45)',
+            'line-width': 18,
+            'line-blur': 6,
+          },
+        });
+        map.addLayer({
+          id: HL_LINE_LAYER, type: 'line', source: HL_SOURCE,
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': '#e83333',
+            'line-width': 5,
+            'line-opacity': 0.95,
+          },
+        });
+        // Punt-highlight (voor knopen): rode glow via gestapelde cirkels
+        map.addLayer({
+          id: HL_POINT_LAYER, type: 'circle', source: HL_SOURCE,
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': 18,
+            'circle-color': 'rgba(210, 30, 30, 0.18)',
+            'circle-blur': 0.7,
+            'circle-stroke-width': 3,
+            'circle-stroke-color': '#dc1e1e',
+            'circle-stroke-opacity': 0.95,
+          },
+        });
+      }
+
+    /**
+     * Maak een "verboden in te rijden"-bord als HTMLCanvasElement (64×64, pixelRatio 2→ 32 logisch px).
+     * Rood gevuld cirkel · wit kader-ring · witte horizontale balk.
+     */
+    function createNoEntryIcon(size = 64) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const cx = size / 2, r = size / 2 - 2;
+      // Rode achtergrond
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#cc1111'; ctx.fill();
+      // Witte rand-ring
+      ctx.beginPath(); ctx.arc(cx, cx, r - 3, 0, Math.PI * 2);
+      ctx.strokeStyle = 'white'; ctx.lineWidth = 4; ctx.stroke();
+      // Witte horizontale balk
+      const bw = r * 1.1, bh = r * 0.44;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx - bw / 2, cx - bh / 2, bw, bh, bh / 3);
+      else { ctx.rect(cx - bw / 2, cx - bh / 2, bw, bh); }
+      ctx.fillStyle = 'white'; ctx.fill();
+      // MapLibre verwacht ImageData (geen HTMLCanvasElement)
+      return ctx.getImageData(0, 0, size, size);
+    }
+
+    /** Initialiseer MapLibre-lagen voor afgesloten wegvakken (idempotent). */
+    function initClosedLinksLayer() {
+      if (map.getSource(CLOSED_SOURCE)) return;
+      if (!map.hasImage(CLOSED_ICON))
+        map.addImage(CLOSED_ICON, createNoEntryIcon(64), { pixelRatio: 2 });
+      map.addSource(CLOSED_SOURCE, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
       map.addLayer({
-        id: POLY_FILL_LAYER, type: 'fill', source: POLY_SOURCE,
-        filter: ['==', '$type', 'Polygon'],
-        paint: { 'fill-color': '#ffb450', 'fill-opacity': 0.12 },
+        id: CLOSED_LAYER, type: 'symbol', source: CLOSED_SOURCE,
+        layout: {
+          'icon-image': CLOSED_ICON,
+          'icon-size': 1.0,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
       });
-      map.addLayer({
-        id: POLY_LINE_LAYER, type: 'line', source: POLY_SOURCE,
-        paint: { 'line-color': '#ffb450', 'line-width': 2, 'line-dasharray': [5, 3] },
-      });
+      updateClosedLinksLayer();
     }
 
-    /** Teken de huidige polygon-vertices op de kaart. */
+    /**
+     * Herbereken welke wegvakken capaciteit = 0 hebben (origineel of via pendingChanges)
+     * en zet het middenpunt ervan in CLOSED_SOURCE zodat het bord zichtbaar wordt.
+     */
+    function updateClosedLinksLayer() {
+      if (!map.getSource(CLOSED_SOURCE)) return;
+      const capOverride = new Map();
+      for (const ch of pendingChanges) {
+        if (ch._isLink) capOverride.set(String(ch.linkId), ch.capacity);
+      }
+      const pts = [];
+      for (const f of geojson.features) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = String(f.properties?.linkId ?? f.properties?.id ?? '');
+        const cap = capOverride.has(linkId)
+          ? capOverride.get(linkId)
+          : (f.properties?.capacity ?? 1);
+        if (cap !== 0) continue;
+        const coords = f.geometry.coordinates;
+        pts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords[Math.floor(coords.length / 2)] },
+          properties: {},
+        });
+      }
+      map.getSource(CLOSED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+    }
     function updatePolygonDraw() {
       if (!map.getSource(POLY_SOURCE)) {
         console.log('[poly] updatePolygonDraw: POLY_SOURCE bestaat nog niet');
@@ -3307,11 +3679,104 @@
       document.getElementById('nodeSelectPopup').style.display  = 'none';
     }
 
-    function closePolygonDialog() {
-      document.getElementById('polygonDialog').style.display = 'none';
-      clearPolygonDraw();
-      if (nodeEditActive)
-        document.getElementById('nodeSelectPopup').style.display = 'block';
+     function closePolygonDialog() {
+       document.getElementById('polygonDialog').style.display = 'none';
+       clearPolygonDraw();
+       if (nodeEditActive)
+         document.getElementById('nodeSelectPopup').style.display = 'block';
+     }
+
+    // ── Link polygon tekenlogica ───────────────────────────────────────────
+
+    /** Teken de huidige link polygon-vertices op de kaart (hergebruikt POLY_SOURCE). */
+    function updateLinkPolygonDraw() {
+      if (!map.getSource(POLY_SOURCE)) return;
+      const v = linkPolygonVertices;
+      if (!v.length) {
+        map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+      const features = [];
+      if (v.length >= 3)
+        features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...v, v[0]]] } });
+      if (v.length >= 2)
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: v } });
+      map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Wis link polygon-vertices en teken-laag; verberg hulpknoppen. */
+    function clearLinkPolygonDraw() {
+      linkPolygonVertices  = [];
+      linkPolygonLinksInside = [];
+      updateLinkPolygonDraw();
+      document.getElementById('linkPolygonFinishBtn').style.display = 'none';
+      document.getElementById('linkPolygonClearBtn').style.display  = 'none';
+    }
+
+     /**
+      * Controleer of ALLE coördinaten van een link binnen de polygon liggen.
+      */
+     function linkFullyInPolygon(coords, poly) {
+       if (!coords || !coords.length) return false;
+       return coords.every(c => pointInPolygon(c, poly));
+     }
+
+     /**
+      * Sluit de getekende polygon af: zoek wegvakken die volledig
+      * binnen de polygon liggen en open het aanpassingsdialoog.
+      */
+     function finishLinkPolygon() {
+       if (linkPolygonVertices.length < 3) return;
+
+       linkPolygonLinksInside = geojson.features.filter(f => {
+         if (f.geometry?.type !== 'LineString') return false;
+         return linkFullyInPolygon(f.geometry.coordinates, linkPolygonVertices);
+       });
+
+      if (!linkPolygonLinksInside.length) {
+        alert(T('linkPolygonNoLinks'));
+        return;
+      }
+      openLinkPolygonDialog();
+    }
+
+    function openLinkPolygonDialog() {
+      const n = linkPolygonLinksInside.length;
+      document.getElementById('linkPolygonLinkInfo').textContent = T('linkPolygonLinkInfoLabel', n);
+      document.getElementById('linkPolyCapVal').value            = '';
+      document.getElementById('linkPolygonPerLinkCap').textContent = '';
+      document.querySelectorAll('.link-poly-speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkPolyCloseBtn').classList.remove('active');
+      document.getElementById('linkPolygonDialog').style.display  = 'block';
+      document.getElementById('linkSelectPopup').style.display    = 'none';
+    }
+
+    function closeLinkPolygonDialog() {
+      document.getElementById('linkPolygonDialog').style.display = 'none';
+      clearLinkPolygonDraw();
+      if (linkEditActive)
+        document.getElementById('linkSelectPopup').style.display = 'block';
+    }
+
+    /** Werk de gemiddelde capaciteit-preview bij terwijl de gebruiker typt. */
+    function updateLinkPolyCapDisplay() {
+      const raw = document.getElementById('linkPolyCapVal').value.trim();
+      const n   = linkPolygonLinksInside.length;
+      const hint = document.getElementById('linkPolygonPerLinkCap');
+      if (!raw || !n) { hint.textContent = ''; return; }
+      const isPct = raw.endsWith('%');
+      if (isPct) {
+        const factor = parseFloat(raw) / 100;
+        if (isNaN(factor) || !isFinite(factor)) { hint.textContent = ''; return; }
+        const avg = linkPolygonLinksInside.reduce((s, f) =>
+          s + (f.properties?.capacity ?? 0), 0) / n;
+        const avgAfter = Math.round(avg * factor);
+        hint.textContent = T('linkPolygonPerLinkLabel', avgAfter.toLocaleString(T('numberLocale')));
+      } else {
+        const cap = parseInt(raw);
+        if (isNaN(cap) || cap < 0) { hint.textContent = ''; return; }
+        hint.textContent = T('linkPolygonPerLinkLabel', cap.toLocaleString(T('numberLocale')));
+      }
     }
 
     /** Werk de "per knoop"-preview bij terwijl de gebruiker typt. */
@@ -3379,10 +3844,14 @@
       document.querySelector('#linkDialog .field-hint').textContent = T('linkDialogCapUnit');
 
       // Markeer actieve snelheidsknop op basis van bestaande wijziging of huidige snelheid
-      const activeSpeed = existing?.speed ?? p.speed ?? null;
+      const currentCapForDialog = existing?.capacity ?? currentCap;
+      const isClosed  = currentCapForDialog === 0;
+      const activeSpeed = isClosed ? null : (existing?.speed ?? p.speed ?? null);
       document.querySelectorAll('.speed-btn').forEach(btn => {
-        btn.classList.toggle('active', activeSpeed != null && parseInt(btn.dataset.speed) === activeSpeed);
+        btn.classList.toggle('active',
+          !isClosed && activeSpeed != null && parseInt(btn.dataset.speed) === activeSpeed);
       });
+      document.getElementById('linkCloseBtn').classList.toggle('active', isClosed);
 
       const dlg  = document.getElementById('linkDialog');
       dlg.style.display = 'block';
@@ -3424,8 +3893,18 @@
         inp.value = cap;
         inp.step  = 100;
         document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('linkCloseBtn').classList.remove('active');
       };
     });
+
+    document.getElementById('linkCloseBtn').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      inp.value = 0;
+      inp.step  = 50;
+      activeLinkSpeed = null;
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkCloseBtn').classList.add('active');
+    };
 
     document.getElementById('nodeProdMinus').onclick = () => stepValue('nodeProdVal', -100);
     document.getElementById('nodeProdPlus' ).onclick = () => stepValue('nodeProdVal', +100);
@@ -3494,7 +3973,70 @@
 
     // ── Wijzigingenlijst ────────────────────────────────────────────────────
 
-    function renderChangesList() {
+     // ── Highlight vanuit wijzigingslijst ────────────────────────────────────
+
+      function clearHighlight() {
+        highlightedChangeIndex = null;
+        if (map.getSource(HL_SOURCE))
+          map.getSource(HL_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        document.querySelectorAll('.change-item.highlighted')
+          .forEach(el => el.classList.remove('highlighted'));
+      }
+
+     /**
+      * Licht de kaartfeature op die hoort bij pendingChanges[idx].
+      * Tweede klik op hetzelfde item: highlight uitzetten.
+      */
+     function highlightChange(idx) {
+       if (highlightedChangeIndex === idx) { clearHighlight(); return; }
+       clearHighlight();
+       const c = pendingChanges[idx];
+       if (!c || !map.getSource(HL_SOURCE)) return;
+
+       let geometry = null;
+       let center   = null;
+
+       if (c._isLink) {
+         // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
+         const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
+         if (coords && coords.length >= 2) {
+           geometry = { type: 'LineString', coordinates: coords };
+           // Vlieg naar het middenpunt van de lijn
+           const mid = Math.floor(coords.length / 2);
+           center = coords[mid];
+         }
+       } else {
+         // Knoop: zoek eerst in zoneFeaturesRaw, dan in nodeCoords
+         const zoneId = c.zoneId ?? c.nodeId;
+         let coord = null;
+         const zf = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(zoneId));
+         if (zf) {
+           const p = zf.properties;
+           const lon = p.centroidLon ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[0] : null);
+           const lat = p.centroidLat ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[1] : null);
+           if (lon != null) coord = [lon, lat];
+         }
+         if (!coord) coord = nodeCoords.get(Number(zoneId)) ?? nodeCoords.get(zoneId);
+         if (coord) {
+           geometry = { type: 'Point', coordinates: coord };
+           center   = coord;
+         }
+       }
+
+       if (!geometry) return;
+
+       map.getSource(HL_SOURCE).setData({
+         type: 'FeatureCollection',
+         features: [{ type: 'Feature', geometry, properties: {} }],
+       });
+
+       if (center)
+         map.easeTo({ center, speed: 1.2, essential: true });
+
+       highlightedChangeIndex = idx;
+     }
+
+     function renderChangesList() {
       const panel = document.getElementById('changesPanel');
       const list  = document.getElementById('changesList');
       const count = document.getElementById('changesCount');
@@ -3519,27 +4061,36 @@
         };
         const parts = [];
         if (c._isLink) {
-          parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
-          if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
+          if (c.capacity === 0) {
+            parts.push(T('changeClosedLabel'));
+          } else {
+            parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+            if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
+          }
         } else {
           if (c.production != null) parts.push(T('changeProdLabel', fmt(c.production)));
           if (c.attraction != null) parts.push(T('changeAttrLabel', fmt(c.attraction)));
         }
 
         const item = document.createElement('div');
-        item.className = 'change-item';
+        item.className = 'change-item' + (highlightedChangeIndex === i ? ' highlighted' : '');
         item.innerHTML = `
           <div class="change-item-label">
             ${c._label || c.zoneId}
             <span>${parts.join(' · ')}</span>
           </div>
           <button class="change-item-del" title="${T('changeItemDel')}">×</button>`;
-        item.querySelector('.change-item-del').onclick = () => {
+        item.querySelector('.change-item-del').onclick = e => {
+          e.stopPropagation();
+          if (highlightedChangeIndex === i) clearHighlight();
+          else if (highlightedChangeIndex > i) highlightedChangeIndex--;
           pendingChanges.splice(i, 1);
           renderChangesList();
         };
+        item.onclick = () => highlightChange(i);
         list.appendChild(item);
       });
+      updateClosedLinksLayer();
     }
 
     // ── Doorvoeren (adjust) ──────────────────────────────────────────────────
@@ -3594,8 +4145,9 @@
             clearInterval(poll);
             btn.disabled = false;
             if (sj.status === 'done') {
-              scenarioCounter++;
-              pendingChanges = [];
+               scenarioCounter++;
+               clearHighlight();
+               pendingChanges = [];
               document.getElementById('scenarioNameInput').value = '';
               renderChangesList();
               // Laad nieuw netwerk en optioneel COMPARE-laag
@@ -3755,6 +4307,7 @@
       if (linkEditActive) document.getElementById('linkEditBtn').click();
 
       updateLegend();
+      updateClosedLinksLayer();
       rebuildCars();
       updateOverlay(true);
 
@@ -3895,9 +4448,22 @@
         pauseBtn.classList.add('paused');
         pauseBtn.innerHTML = '&#9654;';
         map.once('idle', addLinkLayer);
+        // Toon selectiemodus popup; reset naar klik-modus
+        linkSelectMode = 'click';
+        document.querySelector('input[name="linkSelectMode"][value="click"]').checked = true;
+        document.getElementById('linkPolygonHint').style.display       = 'none';
+        document.getElementById('linkPolygonFinishBtn').style.display  = 'none';
+        document.getElementById('linkPolygonClearBtn').style.display   = 'none';
+        document.getElementById('linkSelectPopup').style.display       = 'block';
       } else {
         removeLinkLayer();
         closeLinkDialog();
+        // Verberg popup en reset polygon
+        document.getElementById('linkSelectPopup').style.display   = 'none';
+        document.getElementById('linkPolygonDialog').style.display = 'none';
+        clearLinkPolygonDraw();
+        linkSelectMode = 'click';
+        map.getCanvas().style.cursor = '';
         paused = false;
         const pauseBtn = document.getElementById('pauseBtn');
         pauseBtn.classList.remove('paused');
@@ -3923,6 +4489,8 @@
     // Cursor handhaving in polygon-modus (voorkomt overschrijving door deck.gl)
     map.on('mousemove', () => {
       if (nodeEditActive && nodeSelectMode === 'polygon')
+        map.getCanvas().style.cursor = 'crosshair';
+      if (linkEditActive && linkSelectMode === 'polygon')
         map.getCanvas().style.cursor = 'crosshair';
     });
 
@@ -3961,33 +4529,153 @@
     document.getElementById('polyProdVal').addEventListener('input', updatePolyPerNodeDisplay);
     document.getElementById('polyAttrVal').addEventListener('input', updatePolyPerNodeDisplay);
 
-    document.getElementById('polygonDialogCancel').addEventListener('click', closePolygonDialog);
+     document.getElementById('polygonDialogCancel').addEventListener('click', closePolygonDialog);
 
-    document.getElementById('polygonDialogOk').addEventListener('click', () => {
-      const n = polygonNodesInside.length;
-      if (!n) { closePolygonDialog(); return; }
+     document.getElementById('polygonDialogOk').addEventListener('click', () => {
+       const n = polygonNodesInside.length;
+       if (!n) { closePolygonDialog(); return; }
 
-      const prodRaw = document.getElementById('polyProdVal').value.trim();
-      const attrRaw = document.getElementById('polyAttrVal').value.trim();
-      if (!prodRaw && !attrRaw) { closePolygonDialog(); return; }
+       const prodRaw = document.getElementById('polyProdVal').value.trim();
+       const attrRaw = document.getElementById('polyAttrVal').value.trim();
+       if (!prodRaw && !attrRaw) { closePolygonDialog(); return; }
 
-      const perProd = calcPerNode(prodRaw, n);
-      const perAttr = calcPerNode(attrRaw, n);
-      if (!perProd && !perAttr) { closePolygonDialog(); return; }
+       const perProd = calcPerNode(prodRaw, n);
+       const perAttr = calcPerNode(attrRaw, n);
+       if (!perProd && !perAttr) { closePolygonDialog(); return; }
 
-      for (const node of polygonNodesInside) {
-        // Verwijder eventueel bestaande wijziging voor dit id
-        pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== node.zoneId);
-        const change = { zoneId: node.zoneId };
-        if (perProd) change.production = perProd;
-        if (perAttr) change.attraction = perAttr;
-        change._label     = node.zoneName;
-        change._zoneClass = node.zoneClass;
-        pendingChanges.push(change);
-      }
-      renderChangesList();
-      closePolygonDialog();
+       for (const node of polygonNodesInside) {
+         // Verwijder eventueel bestaande wijziging voor dit id
+         pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== node.zoneId);
+         const change = { zoneId: node.zoneId };
+         if (perProd) change.production = perProd;
+         if (perAttr) change.attraction = perAttr;
+         change._label     = node.zoneName;
+         change._zoneClass = node.zoneClass;
+         pendingChanges.push(change);
+       }
+       renderChangesList();
+       closePolygonDialog();
+     });
+
+    // ── Link polygon-selectiemodus handlers ─────────────────────────────────
+
+    // Radiobutton: wissel tussen klik- en polygon-modus
+    document.querySelectorAll('input[name="linkSelectMode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        linkSelectMode = radio.value;
+        const isPoly = linkSelectMode === 'polygon';
+        document.getElementById('linkPolygonHint').style.display = isPoly ? 'block' : 'none';
+        if (!isPoly) clearLinkPolygonDraw();
+        map.getCanvas().style.cursor = isPoly ? 'crosshair' : '';
+      });
     });
+
+    // Link polygon-klik: capture-fase listener op document.
+    document.addEventListener('click', e => {
+      if (!linkEditActive || linkSelectMode !== 'polygon') return;
+      const dlg = document.getElementById('linkPolygonDialog');
+      if (dlg.style.display === 'block') return;
+      if (e.target !== map.getCanvas()) return;
+      const rect = map.getContainer().getBoundingClientRect();
+      const lngLat = map.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      linkPolygonVertices.push([lngLat.lng, lngLat.lat]);
+      updateLinkPolygonDraw();
+      if (linkPolygonVertices.length >= 1)
+        document.getElementById('linkPolygonClearBtn').style.display  = 'block';
+      if (linkPolygonVertices.length >= 3)
+        document.getElementById('linkPolygonFinishBtn').style.display = 'block';
+      e.stopImmediatePropagation();
+    }, true);
+
+    document.getElementById('linkPolygonFinishBtn').addEventListener('click', finishLinkPolygon);
+    document.getElementById('linkPolygonClearBtn').addEventListener('click', clearLinkPolygonDraw);
+
+    // Link polygon-dialoog: +/- knoppen
+    document.getElementById('linkPolyCapMinus').addEventListener('click', () => {
+      const inp = document.getElementById('linkPolyCapVal');
+      const val = inp.value.trim();
+      if (val.endsWith('%')) {
+        const pct = parseFloat(val);
+        if (!isNaN(pct)) inp.value = Math.max(0, Math.round(pct - 10)) + '%';
+      } else {
+        inp.value = Math.max(0, (parseInt(val) || 0) - 100);
+      }
+      updateLinkPolyCapDisplay();
+    });
+    document.getElementById('linkPolyCapPlus').addEventListener('click', () => {
+      const inp = document.getElementById('linkPolyCapVal');
+      const val = inp.value.trim();
+      if (val.endsWith('%')) {
+        const pct = parseFloat(val);
+        if (!isNaN(pct)) inp.value = Math.min(200, Math.round(pct + 10)) + '%';
+      } else {
+        inp.value = (parseInt(val) || 0) + 100;
+      }
+      updateLinkPolyCapDisplay();
+    });
+
+    document.getElementById('linkPolyCapVal').addEventListener('input', updateLinkPolyCapDisplay);
+
+    // Snelheid-knoppen in het polygon-dialoog
+    document.querySelectorAll('.link-poly-speed-btn').forEach(btn => {
+      btn.onclick = () => {
+        const spd = parseInt(btn.dataset.speed);
+        const cap = SPEED_TO_CAP[spd] ?? 900;
+        document.getElementById('linkPolyCapVal').value = cap;
+        document.querySelectorAll('.link-poly-speed-btn').forEach(b =>
+          b.classList.toggle('active', b === btn));
+        document.getElementById('linkPolyCloseBtn').classList.remove('active');
+        updateLinkPolyCapDisplay();
+      };
+    });
+
+    document.getElementById('linkPolyCloseBtn').onclick = () => {
+      document.getElementById('linkPolyCapVal').value = 0;
+      document.querySelectorAll('.link-poly-speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkPolyCloseBtn').classList.add('active');
+      updateLinkPolyCapDisplay();
+    };
+
+    document.getElementById('linkPolygonDialogCancel').addEventListener('click', closeLinkPolygonDialog);
+
+     document.getElementById('linkPolygonDialogOk').addEventListener('click', () => {
+       const n = linkPolygonLinksInside.length;
+       if (!n) { closeLinkPolygonDialog(); return; }
+
+       const raw = document.getElementById('linkPolyCapVal').value.trim();
+       if (!raw) { closeLinkPolygonDialog(); return; }
+
+       const isPct = raw.endsWith('%');
+       let factor = null, absVal = null;
+       if (isPct) {
+         factor = parseFloat(raw) / 100;
+         if (isNaN(factor) || factor < 0) { closeLinkPolygonDialog(); return; }
+       } else {
+         absVal = parseInt(raw);
+         if (isNaN(absVal) || absVal < 0) { closeLinkPolygonDialog(); return; }
+       }
+
+       const activeSpeedBtn = document.querySelector('.link-poly-speed-btn.active');
+       const polySpeed = activeSpeedBtn ? parseInt(activeSpeedBtn.dataset.speed) : null;
+
+       for (const feature of linkPolygonLinksInside) {
+         const p = feature.properties;
+         const linkId = String(p.linkId ?? p.id ?? '');
+         const currentCap = p.capacity ?? 0;
+         const newCap = isPct ? Math.round(currentCap * factor) : absVal;
+         pendingChanges = pendingChanges.filter(c => c.linkId == null || String(c.linkId) !== linkId);
+         const entry = {
+           linkId,
+           capacity: newCap,
+           _label:  p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+           _isLink: true,
+         };
+         if (polySpeed != null) entry.speed = polySpeed;
+         pendingChanges.push(entry);
+       }
+       renderChangesList();
+       closeLinkPolygonDialog();
+     });
 
     // ── 8. UI-handlers ──────────────────────────────────────────────────────
 
