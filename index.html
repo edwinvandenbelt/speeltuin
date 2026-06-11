@@ -352,6 +352,88 @@
     }
     .compare-btn:hover { background: rgba(100,220,150,0.18); }
     .compare-btn.active { background: rgba(100,220,150,0.22); border-color: rgba(100,220,150,0.6); }
+
+    /* ── Node-selectiemodus popup ─────────────────────────────────────────── */
+    #nodeSelectPopup {
+      display: none;
+      position: fixed; left: 16px; top: 70px;
+      z-index: 50;
+      background: rgba(13,17,23,0.97);
+      border: 1px solid rgba(255,180,80,0.3);
+      border-radius: 12px;
+      padding: 14px 16px; width: 200px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+    }
+    #nodeSelectPopup h4 {
+      margin: 0 0 10px;
+      font-size: 11px; color: #ffb450; font-weight: 600;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .nsm-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; cursor: pointer;
+      font-size: 12px; color: #c9d6e8;
+    }
+    .nsm-option:hover { color: #ffb450; }
+    .nsm-option input[type=radio] { accent-color: #ffb450; cursor: pointer; flex-shrink: 0; }
+    #polygonHint {
+      display: none;
+      font-size: 10px; color: #5a6272;
+      margin-top: 8px; line-height: 1.5;
+      padding: 6px 8px;
+      background: rgba(255,255,255,0.03); border-radius: 6px;
+    }
+    .poly-ctrl-btn {
+      display: none; width: 100%;
+      padding: 6px 0; border-radius: 6px;
+      font-size: 11px; cursor: pointer;
+      font-family: 'Segoe UI', sans-serif;
+      margin-top: 5px; transition: background 0.15s;
+    }
+    #polygonFinishBtn {
+      background: rgba(255,180,80,0.15); color: #ffb450;
+      border: 1px solid rgba(255,180,80,0.4);
+    }
+    #polygonFinishBtn:hover { background: rgba(255,180,80,0.28); }
+    #polygonClearBtn {
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #polygonClearBtn:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+
+    /* ── Polygon aanpassing dialoog ───────────────────────────────────────── */
+    #polygonDialog {
+      display: none;
+      position: fixed; left: 16px; top: 70px;
+      z-index: 51;
+      background: rgba(13,17,23,0.97);
+      border: 1px solid rgba(126,200,227,0.25);
+      border-radius: 12px;
+      padding: 18px 20px; width: 260px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+    }
+    #polygonDialog h3 {
+      font-size: 13px; color: #7ec8e3; margin-bottom: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    #polygonNodeInfo { font-size: 11px; color: #ffb450; margin-bottom: 12px; }
+    .poly-per-node {
+      font-size: 10px; color: #5a6272; margin-top: 2px; min-height: 14px;
+    }
+    #polygonDialogOk {
+      background: rgba(126,200,227,0.15); color: #7ec8e3;
+      border: 1px solid rgba(126,200,227,0.35);
+    }
+    #polygonDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #polygonDialogCancel {
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #polygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
   </style>
 </head>
 
@@ -532,6 +614,56 @@
     </div>
   </div>
 
+  <!-- ── Node-selectiemodus popup ─────────────────────────────────────────── -->
+  <div id="nodeSelectPopup">
+    <h4 data-i18n="nodeSelectTitle">Selectiemodus</h4>
+    <label class="nsm-option">
+      <input type="radio" name="nodeSelectMode" value="click" checked/>
+      <span data-i18n="nodeSelectClick">Klik op een knoop</span>
+    </label>
+    <label class="nsm-option">
+      <input type="radio" name="nodeSelectMode" value="polygon"/>
+      <span data-i18n="nodeSelectPolygon">Polygon tekenen</span>
+    </label>
+    <div id="polygonHint" data-i18n="polygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
+    <button class="poly-ctrl-btn" id="polygonFinishBtn" data-i18n="polygonFinishBtn">&#10003; Polygon afsluiten</button>
+    <button class="poly-ctrl-btn" id="polygonClearBtn" data-i18n="polygonClearBtn">&#10005; Wis polygon</button>
+  </div>
+
+  <!-- ── Polygon aanpassing dialoog ──────────────────────────────────────── -->
+  <div id="polygonDialog">
+    <h3 data-i18n="polygonDialogTitle">Polygon aanpassing</h3>
+    <div id="polygonNodeInfo"></div>
+    <div class="node-field">
+      <label>
+        <span data-i18n="polygonDialogProd">Productie (totaal)</span>
+        <span class="field-hint" data-i18n="polygonDialogProdHint">+300 = delta&nbsp;|&nbsp;1200 = absoluut</span>
+      </label>
+      <div class="node-field-row">
+        <button id="polyProdMinus">&#8722;</button>
+        <input type="text" id="polyProdVal" data-i18n-ph="nodeDialogProdPh" placeholder="+300 of 1200"/>
+        <button id="polyProdPlus">+</button>
+      </div>
+      <div id="polygonPerNodeProd" class="poly-per-node"></div>
+    </div>
+    <div class="node-field">
+      <label>
+        <span data-i18n="polygonDialogAttr">Attractie (totaal)</span>
+        <span class="field-hint" data-i18n="polygonDialogAttrHint">+300 = delta&nbsp;|&nbsp;800 = absoluut</span>
+      </label>
+      <div class="node-field-row">
+        <button id="polyAttrMinus">&#8722;</button>
+        <input type="text" id="polyAttrVal" data-i18n-ph="nodeDialogAttrPh" placeholder="+300 of 800"/>
+        <button id="polyAttrPlus">+</button>
+      </div>
+      <div id="polygonPerNodeAttr" class="poly-per-node"></div>
+    </div>
+    <div class="node-dialog-btns">
+      <button id="polygonDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="polygonDialogOk" data-i18n="dialogOk">OK</button>
+    </div>
+  </div>
+
   <!-- ── Wijzigingenlijst ───────────────────────────────────────────────── -->
   <div id="changesPanel">
     <div id="changesPanelHeader">
@@ -609,6 +741,21 @@
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
       changeItemDel:'Verwijder',
+      // Polygon-selectie
+      nodeSelectTitle:'Selectiemodus',
+      nodeSelectClick:'Klik op een knoop',
+      nodeSelectPolygon:'Polygon tekenen',
+      polygonHint:"Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.",
+      polygonFinishBtn:'\u2713 Polygon afsluiten',
+      polygonClearBtn:'\u2715 Wis polygon',
+      polygonDialogTitle:'Polygon aanpassing',
+      polygonNodeInfoLabel: n => n === 1 ? `${n} knoop geselecteerd` : `${n} knopen geselecteerd`,
+      polygonDialogProd:'Productie (totaal)',
+      polygonDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut',
+      polygonDialogAttr:'Attractie (totaal)',
+      polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut',
+      polygonPerNodeLabel: v => `\u2192 per knoop: ${v}`,
+      polygonNoNodes:'Geen knopen gevonden in de polygon.',
       // Legenda
       legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad',
       legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
@@ -673,6 +820,21 @@
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `speed: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
       changeItemDel:'Delete',
+      // Polygon selection
+      nodeSelectTitle:'Selection mode',
+      nodeSelectClick:'Click on a node',
+      nodeSelectPolygon:'Draw a polygon',
+      polygonHint:"Click to place vertices. Use 'Finish' when the polygon is complete.",
+      polygonFinishBtn:'\u2713 Finish polygon',
+      polygonClearBtn:'\u2715 Clear polygon',
+      polygonDialogTitle:'Polygon adjustment',
+      polygonNodeInfoLabel: n => n === 1 ? `${n} node selected` : `${n} nodes selected`,
+      polygonDialogProd:'Production (total)',
+      polygonDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute',
+      polygonDialogAttr:'Attraction (total)',
+      polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute',
+      polygonPerNodeLabel: v => `\u2192 per node: ${v}`,
+      polygonNoNodes:'No nodes found within the polygon.',
       legendFlow:'Intensity', legendOccupancy:'Occupancy',
       legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
       legendUnit:'veh/h',
@@ -734,6 +896,21 @@
       changeCapLabel: (v, u) => `kap: ${v} ${u}`, changeSpeedLabel: v => `nopeus: ${v} km/h`,
       changeProdLabel: v => `tuot: ${v}`, changeAttrLabel: v => `houk: ${v}`,
       changeItemDel:'Poista',
+      // Monikulmio-valinta
+      nodeSelectTitle:'Valintamoodi',
+      nodeSelectClick:'Napsauta solmupistett\xe4',
+      nodeSelectPolygon:'Piirrä monikulmio',
+      polygonHint:"Napsauta lisätäksesi kärkipisteitä. Käytä 'Valmis' kun monikulmio on valmis.",
+      polygonFinishBtn:'\u2713 Valmis monikulmio',
+      polygonClearBtn:'\u2715 Tyhjennä',
+      polygonDialogTitle:'Monikulmio s\xe4\xe4t\xf6',
+      polygonNodeInfoLabel: n => `${n} solmupistett\xe4 valittu`,
+      polygonDialogProd:'Tuotanto (yhteens\xe4)',
+      polygonDialogProdHint:'+300 = muutos\u00a0|\u00a01200 = absoluuttinen',
+      polygonDialogAttr:'Houkuttelevuus (yhteens\xe4)',
+      polygonDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen',
+      polygonPerNodeLabel: v => `\u2192 per solmupiste: ${v}`,
+      polygonNoNodes:'Solmupisteit\xe4 ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
       legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste',
       legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
       legendUnit:'ajon/h',
@@ -2315,6 +2492,9 @@
 
     let nodeEditActive = false;
     let linkEditActive = false;
+    let nodeSelectMode   = 'click';  // 'click' | 'polygon'
+    let polygonVertices  = [];       // [[lon, lat], ...]
+    let polygonNodesInside = [];     // zone-knopen binnen de gesloten polygon
 
     function makeNetworkLayer() {
       // Bereken min/max voor de actieve metric
@@ -2404,6 +2584,7 @@
         },
         updateTriggers: { getLineColor: [pendingChanges.length] },
         onHover: info => {
+          if (nodeEditActive && nodeSelectMode === 'polygon') return;
           map.getCanvas().style.cursor = (linkEditActive && info.object) ? 'pointer' : '';
         },
       });
@@ -2508,7 +2689,30 @@
       interleaved: true,
       layers:     [makeNetworkLayer(), makeLinkEditLayer(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
+      getCursor: ({ isDragging, isHovering }) => {
+        if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
+        if (linkEditActive && isHovering) return 'pointer';
+        return '';
+      },
       onClick: (info, event) => {
+        // Polygon-modus: hoekpunt toevoegen als een deck.gl-object geraakt werd.
+        // Voor lege kaartgebieden fired deck.gl onClick niet (interleaved mode),
+        // of retourneert het false – map.on('click') neemt dat over.
+        if (nodeEditActive && nodeSelectMode === 'polygon') {
+          if (info.picked) {
+            if (document.getElementById('polygonDialog').style.display !== 'block') {
+              const coord = info.coordinate ?? [0, 0];
+              polygonVertices.push([coord[0], coord[1]]);
+              updatePolygonDraw();
+              if (polygonVertices.length >= 1)
+                document.getElementById('polygonClearBtn').style.display  = 'block';
+              if (polygonVertices.length >= 3)
+                document.getElementById('polygonFinishBtn').style.display = 'block';
+            }
+            return true; // stop propagation → voorkom dubbel-fire via map.on('click')
+          }
+          return false; // niets gepickt → laat map.on('click') het afhandelen
+        }
         if (!linkEditActive) return;
         if (!info.object)    return;
         if (info.layer?.id !== 'link-edit') return;
@@ -2875,7 +3079,13 @@
     const CMP_LAYER_RED = 'compare-red';
     const CMP_LAYER_MAT = 'compare-mat';
 
+    // ── Polygon tekenlaag ──────────────────────────────────────────────────
+    const POLY_SOURCE     = 'poly-draw-src';
+    const POLY_FILL_LAYER = 'poly-draw-fill';
+    const POLY_LINE_LAYER = 'poly-draw-line';
+
     function addNodeLayer() {
+      initPolygonDrawLayers();
       // 1. BOUNDARY + NODE zones (met productie/attractie-info)
       const zonePts = zoneFeaturesRaw
         .filter(f => {
@@ -2947,16 +3157,17 @@
         });
 
         map.on('click', NODE_LAYER, e => {
-          if (!nodeEditActive) return;
+          if (!nodeEditActive || nodeSelectMode !== 'click') return;
           const f = e.features[0];
           openNodeDialog(f, e.point);
           e.originalEvent.stopPropagation();
         });
         map.on('mouseenter', NODE_LAYER, () => {
-          if (nodeEditActive) map.getCanvas().style.cursor = 'pointer';
+          if (nodeEditActive && nodeSelectMode === 'click') map.getCanvas().style.cursor = 'pointer';
         });
         map.on('mouseleave', NODE_LAYER, () => {
-          map.getCanvas().style.cursor = '';
+          map.getCanvas().style.cursor =
+            (nodeEditActive && nodeSelectMode === 'polygon') ? 'crosshair' : '';
         });
       } else {
         map.getSource(NODE_SOURCE).setData({ type: 'FeatureCollection', features: pts });
@@ -2973,6 +3184,144 @@
 
     function addLinkLayer()    { updateOverlay(false); }
     function removeLinkLayer() { updateOverlay(false); }
+
+    // ── Polygon tekenlogica ────────────────────────────────────────────────
+
+    /** Ray-casting point-in-polygon. verts = [[lon,lat],...] */
+    function pointInPolygon([px, py], verts) {
+      let inside = false;
+      for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+        const [xi, yi] = verts[i], [xj, yj] = verts[j];
+        if ((yi > py) !== (yj > py) &&
+            px < ((xj - xi) * (py - yi) / (yj - yi) + xi))
+          inside = !inside;
+      }
+      return inside;
+    }
+
+    /** Initialiseer MapLibre-lagen voor polygon tekenen (idempotent). */
+    function initPolygonDrawLayers() {
+      if (map.getSource(POLY_SOURCE)) return;
+      map.addSource(POLY_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: POLY_FILL_LAYER, type: 'fill', source: POLY_SOURCE,
+        filter: ['==', '$type', 'Polygon'],
+        paint: { 'fill-color': '#ffb450', 'fill-opacity': 0.12 },
+      });
+      map.addLayer({
+        id: POLY_LINE_LAYER, type: 'line', source: POLY_SOURCE,
+        paint: { 'line-color': '#ffb450', 'line-width': 2, 'line-dasharray': [5, 3] },
+      });
+    }
+
+    /** Teken de huidige polygon-vertices op de kaart. */
+    function updatePolygonDraw() {
+      if (!map.getSource(POLY_SOURCE)) {
+        console.log('[poly] updatePolygonDraw: POLY_SOURCE bestaat nog niet');
+        return;
+      }
+      const v = polygonVertices;
+      if (!v.length) {
+        map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+      const features = [];
+      if (v.length >= 3)
+        features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...v, v[0]]] } });
+      if (v.length >= 2)
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: v } });
+      map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Wis polygon-vertices en teken-laag; verberg hulpknoppen. */
+    function clearPolygonDraw() {
+      polygonVertices = [];
+      polygonNodesInside = [];
+      updatePolygonDraw();
+      document.getElementById('polygonFinishBtn').style.display = 'none';
+      document.getElementById('polygonClearBtn').style.display  = 'none';
+    }
+
+    /**
+     * Sluit de getekende polygon af: zoek knopen binnen de polygon en
+     * open het aanpassingsdialoog.
+     */
+    function finishPolygon() {
+      if (polygonVertices.length < 3) return;
+
+      // 1. Zone-knopen (BOUNDARY + NODE) uit zoneFeaturesRaw
+      const zonePts = zoneFeaturesRaw
+        .filter(f => { const cl = f.properties?.zoneClass; return cl === 'BOUNDARY' || cl === 'NODE'; })
+        .map(f => {
+          const p = f.properties;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) return null;
+          return { zoneId: String(p.zoneId), zoneClass: p.zoneClass,
+                   zoneName: p.zoneName || String(p.zoneId), lon, lat };
+        })
+        .filter(Boolean);
+
+      // 2. Netwerk-knopen (grijze bolletjes) uit nodeCoords — zelfde logica als addNodeLayer
+      const zoneNodeIds = new Set(zonePts.map(pt => pt.zoneId));
+      const networkPts = [];
+      for (const [nodeId, coord] of nodeCoords) {
+        if (zoneNodeIds.has(String(nodeId))) continue;
+        networkPts.push({ zoneId: String(nodeId), zoneClass: 'NETWORK_NODE',
+                          zoneName: `node ${nodeId}`, lon: coord[0], lat: coord[1] });
+      }
+
+      const pts = [...zonePts, ...networkPts];
+      polygonNodesInside = pts.filter(pt => pointInPolygon([pt.lon, pt.lat], polygonVertices));
+
+      if (!polygonNodesInside.length) {
+        alert(T('polygonNoNodes'));
+        return;
+      }
+      openPolygonDialog();
+    }
+
+    /** Bereken de per-knoop-waarde (string) gegeven een totaalwaarde en n knopen. */
+    function calcPerNode(rawVal, n) {
+      if (!rawVal || n === 0) return null;
+      const s = rawVal.trim();
+      const isDelta = s.startsWith('+') || s.startsWith('-');
+      const num = parseFloat(s);
+      if (isNaN(num) || !isFinite(num)) return null;
+      const perNode = Math.round(num / n);
+      if (isDelta) return perNode >= 0 ? `+${perNode}` : String(perNode);
+      return String(perNode);
+    }
+
+    function openPolygonDialog() {
+      const n = polygonNodesInside.length;
+      document.getElementById('polygonNodeInfo').textContent = T('polygonNodeInfoLabel', n);
+      document.getElementById('polyProdVal').value = '';
+      document.getElementById('polyAttrVal').value = '';
+      document.getElementById('polygonPerNodeProd').textContent = '';
+      document.getElementById('polygonPerNodeAttr').textContent = '';
+      document.getElementById('polygonDialog').style.display    = 'block';
+      document.getElementById('nodeSelectPopup').style.display  = 'none';
+    }
+
+    function closePolygonDialog() {
+      document.getElementById('polygonDialog').style.display = 'none';
+      clearPolygonDraw();
+      if (nodeEditActive)
+        document.getElementById('nodeSelectPopup').style.display = 'block';
+    }
+
+    /** Werk de "per knoop"-preview bij terwijl de gebruiker typt. */
+    function updatePolyPerNodeDisplay() {
+      const n  = polygonNodesInside.length;
+      const pp = calcPerNode(document.getElementById('polyProdVal').value, n);
+      const pa = calcPerNode(document.getElementById('polyAttrVal').value, n);
+      document.getElementById('polygonPerNodeProd').textContent = pp ? T('polygonPerNodeLabel', pp) : '';
+      document.getElementById('polygonPerNodeAttr').textContent = pa ? T('polygonPerNodeLabel', pa) : '';
+    }
 
     // ── Node-dialoog ────────────────────────────────────────────────────────
 
@@ -3502,9 +3851,22 @@
         pauseBtn.classList.add('paused');
         pauseBtn.innerHTML = '&#9654;';
         map.once('idle', addNodeLayer);
+        // Toon selectiemodus popup; reset naar klik-modus
+        nodeSelectMode = 'click';
+        document.querySelector('input[name="nodeSelectMode"][value="click"]').checked = true;
+        document.getElementById('polygonHint').style.display       = 'none';
+        document.getElementById('polygonFinishBtn').style.display  = 'none';
+        document.getElementById('polygonClearBtn').style.display   = 'none';
+        document.getElementById('nodeSelectPopup').style.display   = 'block';
       } else {
         removeNodeLayer();
         closeNodeDialog();
+        // Verberg popup en reset polygon
+        document.getElementById('nodeSelectPopup').style.display  = 'none';
+        document.getElementById('polygonDialog').style.display    = 'none';
+        clearPolygonDraw();
+        nodeSelectMode = 'click';
+        map.getCanvas().style.cursor = '';
         // Hervat animatie
         paused = false;
         const pauseBtn = document.getElementById('pauseBtn');
@@ -3543,6 +3905,88 @@
         updateOverlay(false);
         rebuildCars();
       }
+    });
+
+    // ── Polygon-selectiemodus handlers ──────────────────────────────────────
+
+    // Radiobutton: wissel tussen klik- en polygon-modus
+    document.querySelectorAll('input[name="nodeSelectMode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        nodeSelectMode = radio.value;
+        const isPoly = nodeSelectMode === 'polygon';
+        document.getElementById('polygonHint').style.display = isPoly ? 'block' : 'none';
+        if (!isPoly) clearPolygonDraw();
+        map.getCanvas().style.cursor = isPoly ? 'crosshair' : '';
+      });
+    });
+
+    // Cursor handhaving in polygon-modus (voorkomt overschrijving door deck.gl)
+    map.on('mousemove', () => {
+      if (nodeEditActive && nodeSelectMode === 'polygon')
+        map.getCanvas().style.cursor = 'crosshair';
+    });
+
+    // Polygon-klik: capture-fase listener op document.
+    // Fired vóór MapLibre én deck.gl, dus nooit te onderscheppen.
+    // e.target-check zorgt dat alleen kaart-klikken (niet UI-knoppen) hoekpunten toevoegen.
+    document.addEventListener('click', e => {
+      console.log('[poly] click capture — nodeEditActive:', nodeEditActive,
+        '| nodeSelectMode:', nodeSelectMode, '| target:', e.target?.tagName, e.target?.id || '');
+      if (!nodeEditActive || nodeSelectMode !== 'polygon') return;
+      const dlg = document.getElementById('polygonDialog');
+      if (dlg.style.display === 'block') { console.log('[poly] geblokkeerd: dialoog open'); return; }
+      if (e.target !== map.getCanvas()) { console.log('[poly] geblokkeerd: target is niet de kaart-canvas'); return; }
+      const rect = map.getContainer().getBoundingClientRect();
+      const lngLat = map.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      polygonVertices.push([lngLat.lng, lngLat.lat]);
+      console.log('[poly] hoekpunt toegevoegd:', lngLat, '| totaal:', polygonVertices.length);
+      updatePolygonDraw();
+      if (polygonVertices.length >= 1)
+        document.getElementById('polygonClearBtn').style.display  = 'block';
+      if (polygonVertices.length >= 3)
+        document.getElementById('polygonFinishBtn').style.display = 'block';
+      e.stopImmediatePropagation(); // voorkom dubbel-fire via MapLibre/deck.gl
+    }, true); // capture=true → fired als eerste
+
+    document.getElementById('polygonFinishBtn').addEventListener('click', finishPolygon);
+    document.getElementById('polygonClearBtn').addEventListener('click', clearPolygonDraw);
+
+    // Polygon-dialoog: +/- knoppen
+    document.getElementById('polyProdMinus').addEventListener('click', () => stepValue('polyProdVal', -100));
+    document.getElementById('polyProdPlus' ).addEventListener('click', () => stepValue('polyProdVal', +100));
+    document.getElementById('polyAttrMinus').addEventListener('click', () => stepValue('polyAttrVal', -100));
+    document.getElementById('polyAttrPlus' ).addEventListener('click', () => stepValue('polyAttrVal', +100));
+
+    // Live per-knoop preview
+    document.getElementById('polyProdVal').addEventListener('input', updatePolyPerNodeDisplay);
+    document.getElementById('polyAttrVal').addEventListener('input', updatePolyPerNodeDisplay);
+
+    document.getElementById('polygonDialogCancel').addEventListener('click', closePolygonDialog);
+
+    document.getElementById('polygonDialogOk').addEventListener('click', () => {
+      const n = polygonNodesInside.length;
+      if (!n) { closePolygonDialog(); return; }
+
+      const prodRaw = document.getElementById('polyProdVal').value.trim();
+      const attrRaw = document.getElementById('polyAttrVal').value.trim();
+      if (!prodRaw && !attrRaw) { closePolygonDialog(); return; }
+
+      const perProd = calcPerNode(prodRaw, n);
+      const perAttr = calcPerNode(attrRaw, n);
+      if (!perProd && !perAttr) { closePolygonDialog(); return; }
+
+      for (const node of polygonNodesInside) {
+        // Verwijder eventueel bestaande wijziging voor dit id
+        pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== node.zoneId);
+        const change = { zoneId: node.zoneId };
+        if (perProd) change.production = perProd;
+        if (perAttr) change.attraction = perAttr;
+        change._label     = node.zoneName;
+        change._zoneClass = node.zoneClass;
+        pendingChanges.push(change);
+      }
+      renderChangesList();
+      closePolygonDialog();
     });
 
     // ── 8. UI-handlers ──────────────────────────────────────────────────────
