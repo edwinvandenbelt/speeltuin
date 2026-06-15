@@ -329,7 +329,7 @@ def api_adjust():
         new_area_id=new_area_id,
         min_link_trips=1.0,
         refresh=False,
-        debug=True,
+        debug=bool(body.get('debug', False)),
     )
 
     job_id = str(uuid.uuid4())

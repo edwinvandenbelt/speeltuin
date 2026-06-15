@@ -346,6 +346,11 @@
     #applyChangesBtn:hover { background: rgba(255,180,80,0.28); }
     #applyChangesBtn:disabled { opacity: 0.4; cursor: not-allowed; }
     #applyStatus { font-size: 11px; color: #7ec8e3; margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
+    #adjustDebugLabel {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 11px; color: #7a8699; cursor: pointer;
+      margin-bottom: 8px;
+    }
 
     /* ── COMPARE laag-toggle ──────────────────────────────────────────── */
     .compare-btn {
@@ -529,6 +534,29 @@
       border: 1px solid rgba(255,255,255,0.1);
     }
     #linkPolygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+
+    /* ── Debug-paneel ────────────────────────────────────────────────── */
+    #debugPanel {
+      position: absolute; top: 56px; right: 16px; z-index: 10;
+      background: rgba(13,17,23,0.93);
+      border: 1px solid rgba(255,140,80,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: 'Segoe UI', system-ui, monospace;
+      font-size: 11px; color: #7a8699;
+      backdrop-filter: blur(8px);
+      min-width: 240px;
+      display: none;
+      line-height: 1.85;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel b { color: #ffb450; font-weight: 600; }
+    .dbg-head {
+      font-size: 10px; color: #5a6272; text-transform: uppercase;
+      letter-spacing: 0.06em; margin-top: 7px; margin-bottom: 1px;
+      border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 2px;
+    }
+    .dbg-head:first-child { margin-top: 0; }
   </style>
 </head>
 
@@ -567,6 +595,11 @@
       <div style="display:flex;gap:8px">
         <button class="new-btn" id="newClearBtn" style="flex:1" data-i18n="newAreaClearBbox">Wis bbox</button>
       </div>
+
+      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa;cursor:pointer">
+        <input type="checkbox" id="newDebug" style="accent-color:#7ec8e3;width:14px;height:14px;flex-shrink:0"/>
+        Debug-uitvoer activeren
+      </label>
 
       <!-- Voortgang -->
       <div id="newProgress">
@@ -642,6 +675,21 @@
     <button class="tb-btn lang-btn" data-lang="NL" onclick="applyLang('NL')" title="Nederlands">NL</button>
     <button class="tb-btn lang-btn" data-lang="EN" onclick="applyLang('EN')" title="English">EN</button>
     <button class="tb-btn lang-btn" data-lang="FI" onclick="applyLang('FI')" title="Suomi">FI</button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Debug -->
+    <button class="tb-btn lang-btn" id="debugBtn" title="Debug-paneel tonen/verbergen">DBG</button>
+  </div>
+
+  <!-- Debug-paneel (rechts onder toolbar, verborgen tot DBG-knop) -->
+  <div id="debugPanel">
+    <div class="dbg-head">Gebied</div>
+    <div id="dbgArea">—</div>
+    <div class="dbg-head">Netwerk &amp; data</div>
+    <div id="dbgNetwork">—</div>
+    <div class="dbg-head">Simulatie</div>
+    <div id="dbgSim">—</div>
   </div>
 
   <!-- Legend strip -->
@@ -825,6 +873,10 @@
     <div id="changesList"></div>
     <div id="changesPanelFooter">
       <input type="text" id="scenarioNameInput" placeholder="Scenario-naam" data-i18n-ph="scenarioNamePh"/>
+      <label id="adjustDebugLabel">
+        <input type="checkbox" id="adjustDebug" style="accent-color:#ffb450;width:13px;height:13px;flex-shrink:0"/>
+        Debug-uitvoer activeren
+      </label>
       <button id="applyChangesBtn" data-i18n="applyBtn">&#9654; Doorvoeren</button>
       <div id="applyStatus"></div>
     </div>
@@ -1139,7 +1191,7 @@
     localStorage.setItem('ui-lang', lang);
 
     // Taal-knoppen actief zetten
-    document.querySelectorAll('.lang-btn').forEach(b =>
+    document.querySelectorAll('[data-lang]').forEach(b =>
       b.classList.toggle('active', b.dataset.lang === lang));
 
     // data-i18n → textContent
@@ -1359,6 +1411,11 @@
       updateBboxLayer();
     };
 
+    // Synchroniseer checkbox met globale debug-toestand; wissel beide mee.
+    const newDebugEl = document.getElementById('newDebug');
+    newDebugEl.checked = !!window._debugMode;
+    newDebugEl.onchange = e => { window._debugMode = e.target.checked; };
+
     document.getElementById('newCancelBtn').onclick = () => {
       document.getElementById('newScreen').classList.remove('visible');
       document.getElementById('loader').style.display = 'flex';
@@ -1386,6 +1443,7 @@
         name, mode,
         min_lon: bbox.minLon, min_lat: bbox.minLat,
         max_lon: bbox.maxLon, max_lat: bbox.maxLat,
+        debug: !!window._debugMode,
       };
       let jobId;
       try {
@@ -2240,6 +2298,36 @@
     let colorMetric = 'flow';
     let cars      = [];
     let carData   = [];
+
+    /** Ververs het debug-paneel met actuele statistieken over data en simulatie. */
+    function updateDebugPanel() {
+      if (!window._debugMode) return;
+      const nMoving   = cars.filter(c => c.state === 'moving').length;
+      const nParked   = cars.filter(c => c.state === 'parked').length;
+      const nSpawning = cars.filter(c => c.state === 'spawning').length;
+      const nBoundary = [...zoneMap.values()].filter(z => z.boundary).length;
+      document.getElementById('dbgArea').innerHTML =
+        `areaId: <b>${AREA_ID}</b><br>` +
+        `mode: <b>${MODE}</b><br>` +
+        `dagdeel: <b>${daypart}</b><br>` +
+        `bbox: <b>[${areaBounds.map(v => v.toFixed(5)).join(', ')}]</b>`;
+      document.getElementById('dbgNetwork').innerHTML =
+        `wegvakken: <b>${segments.length}</b><br>` +
+        `knopen: <b>${nodeCoords.size}</b><br>` +
+        `zones: <b>${zoneMap.size}</b> (boundary: <b>${nBoundary}</b>)<br>` +
+        `routes: <b>${routeList.length}</b> &mdash; ${routeMode
+          ? `route-modus, gewicht: <b>${Math.round(totalRouteWeight)}</b>`
+          : `<b>segment-modus</b>`}<br>` +
+        `globalMaxFlow: <b>${Math.round(globalMaxFlow)}</b> vtg/u`;
+      document.getElementById('dbgSim').innerHTML =
+        `auto's: <b>${cars.length}</b> totaal<br>` +
+        `rijdend: <b>${nMoving}</b> &nbsp;` +
+        `geparkeerd: <b>${nParked}</b> &nbsp;` +
+        `spawning: <b>${nSpawning}</b>`;
+    }
+    // Exporteer zodat de globale DBG-handler (buiten IIFE) het paneel kan verversen
+    window._updateDebugPanel = updateDebugPanel;
+    setInterval(updateDebugPanel, 300);
 
     /** Uurintensiteit voor het actieve dagdeel.
      *  Als dp[daypart] gevuld (>0): direct teruggeven.
@@ -4049,6 +4137,8 @@
       if (pendingChanges.length && (wasHidden || !nameInput.value.trim())) {
         nameInput.value = `${networkName} (${scenarioCounter})`;
       }
+      // Sync debug-vinkje met globale toestand
+      document.getElementById('adjustDebug').checked = !!window._debugMode;
       count.textContent   = pendingChanges.length;
       list.innerHTML = '';
 
@@ -4121,7 +4211,7 @@
         const res = await fetch('/api/adjust', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ area_id: AREA_ID, mode: MODE, changes, scenario_name: scenarioName }),
+          body: JSON.stringify({ area_id: AREA_ID, mode: MODE, changes, scenario_name: scenarioName, debug: document.getElementById('adjustDebug').checked }),
         });
         if (!res.ok) throw new Error(await res.text());
         const { job_id } = await res.json();
@@ -4718,6 +4808,14 @@
       document.getElementById('scaleVal').textContent = timeScale + '×';
     });
 
+    document.getElementById('adjustDebug').addEventListener('change', e => {
+      window._debugMode = e.target.checked;
+      document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+      document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+      document.getElementById('newDebug') && (document.getElementById('newDebug').checked = window._debugMode);
+      if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+    });
+
     document.getElementById('pauseBtn').addEventListener('click', () => {
       paused = !paused;
       const btn = document.getElementById('pauseBtn');
@@ -4736,6 +4834,7 @@
       // in segment-modus bepaalt het de flow-drempel per segment.
       rebuildCars();
       updateOverlay(true);
+      updateDebugPanel();
     });
 
   })();
@@ -4750,6 +4849,19 @@
     el.classList.add('fade');
     setTimeout(() => el.remove(), 700);
   }
+
+  // ── Globale debug-toggle ────────────────────────────────────────────────────
+  // window._debugMode is de gedeelde schakelaar voor zowel de wizard (prepare-pipeline)
+  // als het hoofd-paneel (simulatiestatistieken). De handler zit buiten de async IIFE
+  // zodat hij ook werkt als er nog geen gebied geladen is.
+  window._debugMode = false;
+  document.getElementById('debugBtn').addEventListener('click', () => {
+    window._debugMode = !window._debugMode;
+    document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+    document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+    // Als de hoofdkaart al geladen is, direct het paneel verversen
+    if (typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+  });
 
   </script>
 </body>
