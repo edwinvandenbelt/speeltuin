@@ -2199,8 +2199,9 @@
   let globalMaxFlow = 1;
 
   // OD-productie: voor elk OD-paar een set van paden gewogen op route.weight
-  let odGroups = new Map();   // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
-  let lastProductionT = 0;    // performance.now()/1000 van laatste productie-cyclus
+  let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
+  let lastProductionT      = 0;   // performance.now()/1000 van laatste productie-cyclus
+  let lastProductionSpawns = 0;   // aantal gespawnde auto's in de laatste productie-cyclus
 
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
@@ -2380,9 +2381,10 @@
         for (const f of zoneFeaturesRaw) {
           const p = f.properties;
           if (p.zoneId) zoneMap.set(p.zoneId, {
-            from:      p.fromNodeProportions || {},
-            to:        p.toNodeProportions   || {},
-            boundary:  p.zoneClass === 'BOUNDARY',
+            from:       p.fromNodeProportions || {},
+            to:         p.toNodeProportions   || {},
+            boundary:   p.zoneClass === 'BOUNDARY',
+            production: p.production          || 0,   // veh/u voor dit dagdeel
           });
         }
         console.info(`Zones geladen: ${zoneMap.size}`);
@@ -2498,14 +2500,15 @@
           if (innerLen < 30) continue;
 
           routeList.push({
-            innerIds:     validInnerIds,   // linkId's — per-link snelheid opgehaald in buildCarList
-            midStartNode: firstLink.fromNode,
-            midEndNode:   lastLink.toNode,
+            innerIds:        validInnerIds,   // linkId's — per-link snelheid opgehaald in buildCarList
+            midStartNode:    firstLink.fromNode,
+            midEndNode:      lastLink.toNode,
             fromZoneId,
             toZoneId,
             fromBoundary,
             toBoundary,
-            weight:  r.trips,
+            originProduction: feat.properties.originProduction ?? 0,
+            weight:           r.trips,
           });
         }
       }
@@ -2600,7 +2603,11 @@
         )}</b>)<br>` +
         `rijdend: <b>${nMoving}</b> &nbsp;` +
         `geparkeerd: <b>${nParked}</b> &nbsp;` +
-        `spawning: <b>${nSpawning}</b>`;
+        (routeMode
+          ? `productie: <b>${lastProductionSpawns}</b>/s &nbsp;` +
+            `(${odGroups.size} OD-groepen, ` +
+            `${Math.round([...odGroups.values()].reduce((s, od) => s + od.totalFlow, 0))} vtg/u verwacht)`
+          : `spawning: <b>${nSpawning}</b>`);
     }
     // Exporteer zodat de globale DBG-handler (buiten IIFE) het paneel kan verversen
     window._updateDebugPanel = updateDebugPanel;
@@ -2888,17 +2895,6 @@
 
         if (!routePaths.length) return list;
 
-        // Stap 1b: sla OD-groepen op voor het productiemechanisme.
-        // Elke groep bevat alle route-paden voor dat OD-paar en de totale flow.
-        odGroups.clear();
-        for (const rp of routePaths) {
-          const key = `${rp.route.fromZoneId}→${rp.route.toZoneId}`;
-          if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
-          const g = odGroups.get(key);
-          g.totalFlow += rp.route.weight;
-          g.paths.push(rp);
-        }
-
         // Stap 2: Little's Law – netwerk-totaal N = Σ(flow × lengte / (speedMs × 3600))
         // Dit is het verwachte aantal voertuigen dat tegelijkertijd op het hele netwerk rijdt.
         let littlesN = 0;
@@ -2921,6 +2917,25 @@
           rp.density = routeDensity;
         }
         const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
+
+        // Stap 3b: sla OD-groepen op voor het productiemechanisme.
+        // Moet ná Stap 3 staan zodat rp.density al gezet is.
+        // totalFlow [veh/u] = originProduction × DP_FRACTION[daypart] × r.trips
+        //   • originProduction: gekalibreerde dagproductie uit het routebestand (veh/dag,
+        //     zelfde eenheid als flow24hrs) — geldig voor zowel CBS-zones als boundary-zones.
+        //     Gebruik NIET zone.production uit ZONE-bestand: dat is CBS-demografisch en
+        //     kan honderden keren groter zijn dan de werkelijke gemodelleerde stroom.
+        //   • DP_FRACTION[daypart]: conversiefactor dagproductie → uurproductie voor dit dagdeel
+        //   • r.trips: aandeel van die productie dat via dit specifieke routepad gaat [0–1]
+        odGroups.clear();
+        for (const rp of routePaths) {
+          const key = `${rp.route.fromZoneId}→${rp.route.toZoneId}`;
+          if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
+          const g             = odGroups.get(key);
+          const productionDp  = (rp.route.originProduction ?? 0) * (DP_FRACTION[daypart] ?? (1 / 14.4));
+          g.totalFlow += productionDp * rp.route.weight;
+          g.paths.push(rp);
+        }
 
         // Verdeel N proportioneel; probabilistische afronding zodat Σ count ≈ N.
         for (const rp of routePaths) {
@@ -3742,14 +3757,17 @@
           } else if (now - lastProductionT >= 1.0) {
             const dtReal = Math.min(now - lastProductionT, 2.0);  // max 2s om burst te beperken
             lastProductionT = now;
+            let cycleSpawns = 0;
             for (const od of odGroups.values()) {
               if (cars.length >= MAX_VEHICLES) break;
               const expected = (od.totalFlow / 3600) * timeScale * dtReal;
               const count = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);
               for (let ci = 0; ci < count && cars.length < MAX_VEHICLES; ci++) {
                 spawnProductionCar(pickWeightedRoute(od.paths));
+                cycleSpawns++;
               }
             }
+            lastProductionSpawns = cycleSpawns;
           }
         }
 
@@ -4742,17 +4760,14 @@
               const validInnerIds = innerIds.filter(id => linkGeomMap.get(id)?.length >= 2);
               if (!validInnerIds.length) continue;
               routeList.push({
-                innerIds:        validInnerIds,
-                linkIds:         validInnerIds,
-                flow:            feat.properties.flow || 0,
-                trips:           r.trips || 0,
-                flowsPerDaypart: feat.properties.flowsPerDaypart || null,
+                innerIds:         validInnerIds,
                 fromZoneId, toZoneId,
-                midStartNode:    firstLink.fromNode,
-                midEndNode:      lastLink.toNode,
+                midStartNode:     firstLink.fromNode,
+                midEndNode:       lastLink.toNode,
                 fromBoundary,
                 toBoundary,
-                weight:          r.trips,
+                originProduction: feat.properties.originProduction ?? 0,
+                weight:           r.trips,
               });
             }
           }

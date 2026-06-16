@@ -15,12 +15,13 @@ if not exist "%DST%" (
     goto do_update
 )
 
-rem Vergelijk timestamps via xcopy /D (kopieert alleen als bron nieuwer is)
-xcopy /D /Y /Q "%SRC%" "%~dp0" >nul 2>&1
-if errorlevel 1 (
-    echo [INFO] Lokale whl is al up-to-date.
-    goto start_server
-)
+rem Vergelijk timestamps via PowerShell (exitcode 1 = bron is nieuwer)
+powershell -NoProfile -Command ^
+  "if ((Get-Item '%SRC%').LastWriteTime -gt (Get-Item '%DST%').LastWriteTime) { exit 1 } else { exit 0 }"
+if errorlevel 1 goto do_update
+
+echo [INFO] Lokale whl is al up-to-date.
+goto start_server
 
 :do_update
 echo [INFO] Nieuwere whl gevonden, installeren...
