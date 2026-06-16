@@ -14,6 +14,7 @@ API:
     GET  /api/prepare/<job_id>                 -> status van een job
     POST /api/adjust                           -> start adjust-pipeline (achtergrond)
     GET  /api/adjust/<job_id>                  -> status van adjust-job
+    POST /api/flow-scale                       -> pas flows aan op basis van datum/weer/doel
 """
 
 import argparse
@@ -57,9 +58,23 @@ try:
     from prepare.core.prepare_core import run_pipeline as _prepare_run_pipeline
     _PREPARE_AVAILABLE = True
 except ImportError as _e:
-    _prepare_run_pipeline = None  # type: ignore[assignment]
+    _prepare_run_pipeline = None
     _PREPARE_AVAILABLE = False
     print(f'[server] WAARSCHUWING: prepare niet beschikbaar — {_e}')
+
+try:
+    from flow_scaler.core.flow_scaler_core import (
+        load_purpose_index, parse_date, normalise_temperature,
+        normalise_weather, filterNetwork, determineIndiceKeys,
+        read_indexes, applyIndices, Params as FlowScalerParams,
+    )
+    _FLOW_SCALER_AVAILABLE = True
+except ImportError as _e:
+    load_purpose_index = normalise_temperature = normalise_weather = None  # type: ignore[assignment]
+    parse_date = filterNetwork = determineIndiceKeys = read_indexes = applyIndices = None  # type: ignore[assignment]
+    FlowScalerParams = None  # type: ignore[assignment,misc]
+    _FLOW_SCALER_AVAILABLE = False
+    print(f'[server] WAARSCHUWING: flow_scaler niet beschikbaar — {_e}')
 
 # ---------------------------------------------------------------------------
 # Configuratie
@@ -416,6 +431,108 @@ def api_adjust_status(job_id):
     return jsonify(job)
 
 
+# ---------------------------------------------------------------------------
+# Flow-scaler
+# ---------------------------------------------------------------------------
+
+def _find_local_file(filename: str) -> Path | None:
+    """Zoek een bestand in DATA_DIR en daarna in STATIC_DIR; geeft None als niet gevonden."""
+    for base in (DATA_DIR, STATIC_DIR):
+        p = base / filename
+        if p.exists():
+            return p
+    return None
+
+
+@app.route('/api/flow-scale', methods=['POST'])
+def api_flow_scale():
+    """
+    Schaal de verkeersflows van een bestaand netwerk op basis van temporele en
+    contextuele parameters.
+
+    Body (JSON):
+        areaId       - bestaand gebied (vereist)
+        mode         - transportmodus (CAR / BIKE / PEDESTRIAN; standaard: CAR)
+        date         - ISO-8601 datetime of null (null = geen tijdfilter, 24u-totaal)
+        temperature  - High / Medium / Low (standaard: Medium)
+        weather      - sunny / cloudy / dry / rainy (standaard: cloudy)
+        purpose      - work / education / shopping / recreational / unknown / null (null = alle)
+        regio        - midden / noord / zuid (standaard: midden)
+    """
+    if not _FLOW_SCALER_AVAILABLE:
+        abort(503, 'flow_scaler-package niet beschikbaar')
+
+    body = request.get_json(force=True, silent=True) or {}
+
+    area_id = str(body.get('areaId') or body.get('area_id') or '').strip()
+    mode    = str(body.get('mode', 'CAR')).upper()
+
+    if not area_id:
+        abort(400, 'Parameter "areaId" ontbreekt')
+
+    network_path = _geojson_path(area_id, mode, 'NETWORK')
+    if not network_path.exists():
+        abort(404, f'Netwerkbestand niet gevonden: {network_path.name}')
+
+    # ── Purpose-index laden ────────────────────────────────────────────────
+    purpose_index_path = _find_local_file('purpose_index.json')
+    if purpose_index_path is None:
+        abort(503, 'purpose_index.json niet gevonden')
+    with open(purpose_index_path, encoding='utf-8') as fh:
+        purpose_index_raw = json.load(fh)
+    purpose_index = load_purpose_index(purpose_index_raw)
+
+    # ── Daglicht-tabel laden (optioneel) ───────────────────────────────────
+    daylight_raw = []
+    daylight_path = _find_local_file('daylight.json')
+    if daylight_path is not None:
+        try:
+            with open(daylight_path, encoding='utf-8') as fh:
+                daylight_raw = json.load(fh)
+        except Exception as exc:
+            print(f'[server] daylight.json laden mislukt, wordt overgeslagen: {exc}')
+
+    # ── Parameters normaliseren ────────────────────────────────────────────
+    date_str    = body.get('date') or None
+    raw_temp    = body.get('temperature', 'Medium')
+    raw_weather = body.get('weather', 'cloudy')
+    raw_purpose = body.get('purpose') or None
+    regio       = str(body.get('regio', 'midden')).lower()
+
+    dt          = parse_date(date_str)
+    temperature = normalise_temperature(raw_temp)
+    weather     = normalise_weather(raw_weather, dt, daylight_raw)
+    purpose     = None if raw_purpose in (None, 'all', '') else raw_purpose.lower()
+
+    # Lokale holiday_indices.csv doorgeven zodat _load_uri() het leest i.p.v. S3
+    holiday_path = _find_local_file('holiday_indices.csv')
+    holiday_index = str(holiday_path) if holiday_path is not None else ''
+
+    params = FlowScalerParams(
+        mode=mode,
+        dt=dt,
+        temperature=temperature,
+        weather=weather,
+        regio=regio,
+        purpose=purpose,
+        holiday_index=holiday_index,
+    )
+
+    # ── Netwerk laden en schalen ───────────────────────────────────────────
+    with open(network_path, encoding='utf-8') as fh:
+        network_fc = json.load(fh)
+
+    n_features = len(network_fc.get('features', []))
+    filtered   = filterNetwork(network_fc, bbox=None, offset=0, limit=max(n_features, 1))
+    filtered.params = params
+
+    keys    = determineIndiceKeys(params, filtered.metadata)
+    indexes = read_indexes(keys, purpose_index)
+    result  = applyIndices(filtered, indexes, run_cleaner=False)
+
+    return jsonify(result)
+
+
 @app.route('/api/geojson')
 def api_geojson():
     area_id   = request.args.get('areaId',  '')
@@ -447,9 +564,10 @@ def error_handler(e):
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    print(f'Data-map : {DATA_DIR}')
-    print(f'prepare  : {"beschikbaar" if _PREPARE_AVAILABLE else "NIET beschikbaar"}')
-    print(f'adjust   : {"beschikbaar" if _ADJUST_AVAILABLE else "NIET beschikbaar"}')
+    print(f'Data-map    : {DATA_DIR}')
+    print(f'prepare     : {"beschikbaar" if _PREPARE_AVAILABLE else "NIET beschikbaar"}')
+    print(f'adjust      : {"beschikbaar" if _ADJUST_AVAILABLE else "NIET beschikbaar"}')
+    print(f'flow_scaler : {"beschikbaar" if _FLOW_SCALER_AVAILABLE else "NIET beschikbaar"}')
     print(f'Beschikbare gebieden: {_discover_areas()}')
-    print(f'Server   : http://localhost:{args.port}')
+    print(f'Server      : http://localhost:{args.port}')
     app.run(host='0.0.0.0', port=args.port, debug=True)

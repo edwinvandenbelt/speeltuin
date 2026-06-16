@@ -17,3 +17,6 @@ requests>=2.33
 python-dotenv>=1.2
 
 numpy>=2.0
+
+# Windows timezone database (required by zoneinfo on Windows)
+tzdata>=2024.1

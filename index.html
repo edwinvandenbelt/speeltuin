@@ -99,6 +99,16 @@
       display: flex; justify-content: space-between;
       font-size: 10px; color: #5a6272;
     }
+    #carCountStrip {
+      margin-top: 5px;
+      padding-top: 4px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      font-size: 10px;
+      color: #7ec8e3;
+      text-align: center;
+      min-height: 0;
+    }
+    #carCountStrip:empty { display: none; }
 
     /* ── Nieuw-scherm ─────────────────────────────────────────────────── */
     #newScreen {
@@ -535,9 +545,93 @@
     }
     #linkPolygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
 
+    /* ── Flow-scaler panel ───────────────────────────────────────────── */
+    #flowScalerPanel {
+      display: none;
+      position: fixed;
+      top: 60px; left: 16px;
+      z-index: 30;
+      width: 300px;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid rgba(126,200,227,0.25);
+      border-radius: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    #flowScalerPanel.fsp-visible { display: block; }
+    #fspHeader {
+      padding: 11px 14px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #fspClose {
+      background: transparent; border: none; color: #5a6272;
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      transition: color 0.15s;
+    }
+    #fspClose:hover { color: #c9d6e8; }
+    #fspBody { padding: 12px 14px 14px; }
+    .fsp-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px; gap: 8px;
+    }
+    .fsp-label {
+      font-size: 11px; color: #7a8699; flex-shrink: 0; white-space: nowrap; width: 80px;
+    }
+    .fsp-input, .fsp-select {
+      flex: 1; min-width: 0;
+      background: #1a2233; color: #c9d6e8;
+      border: 1px solid rgba(126,200,227,0.2); border-radius: 6px;
+      padding: 5px 7px; font-size: 11px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      appearance: none; -webkit-appearance: none;
+    }
+    .fsp-input:focus, .fsp-select:focus {
+      outline: none; border-color: rgba(126,200,227,0.5);
+    }
+    .fsp-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+    .fsp-slider {
+      flex: 1; min-width: 0; height: 4px; cursor: pointer;
+      accent-color: #7ec8e3;
+    }
+    .fsp-hour-val {
+      font-size: 11px; color: #7ec8e3; font-weight: 600;
+      width: 32px; text-align: right; flex-shrink: 0;
+    }
+    #fspBtns {
+      display: flex; gap: 8px; margin-top: 12px;
+    }
+    #fspApply {
+      flex: 1; padding: 7px 0; border-radius: 7px;
+      background: rgba(126,200,227,0.15); color: #7ec8e3;
+      border: 1px solid rgba(126,200,227,0.35);
+      font-size: 12px; cursor: pointer; font-family: 'Segoe UI', system-ui, sans-serif;
+      letter-spacing: 0.3px; transition: background 0.15s;
+    }
+    #fspApply:hover:not(:disabled) { background: rgba(126,200,227,0.28); }
+    #fspApply:disabled { opacity: 0.4; cursor: not-allowed; }
+    #fspReset {
+      flex: 1; padding: 7px 0; border-radius: 7px;
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+      font-size: 12px; cursor: pointer; font-family: 'Segoe UI', system-ui, sans-serif;
+      letter-spacing: 0.3px; transition: background 0.15s, color 0.15s;
+    }
+    #fspReset:hover:not(:disabled) { background: rgba(255,80,80,0.1); color: #ff6b6b; border-color: rgba(255,80,80,0.3); }
+    #fspReset:disabled { opacity: 0.35; cursor: not-allowed; }
+    #fspStatus {
+      font-size: 11px; color: #7ec8e3; margin-top: 7px;
+      min-height: 14px; line-height: 1.4;
+    }
+    #fspStatus.fsp-error { color: #ff6b6b; }
+    /* Active-indicator op de toolbar-knop (nu in #daypartBtns) */
+    #fspBtn.active { color: #7ec8e3; border-color: rgba(126,200,227,0.5); background: rgba(126,200,227,0.12); }
+
     /* ── Debug-paneel ────────────────────────────────────────────────── */
-    #debugPanel {
-      position: absolute; top: 56px; right: 16px; z-index: 10;
+    #debugPanel {      position: absolute; top: 56px; right: 16px; z-index: 10;
       background: rgba(13,17,23,0.93);
       border: 1px solid rgba(255,140,80,0.3);
       border-radius: 8px;
@@ -628,11 +722,13 @@
 
     <div class="tb-sep"></div>
 
-    <!-- Dagdeel: OS / AS / RD -->
-    <div id="daypartBtns" style="display:flex;gap:3px">
+    <!-- Dagdeel: OS / AS / RD + flow-scaler -->
+    <div id="daypartBtns" style="display:flex;gap:3px;align-items:center">
       <button class="tb-btn dpBtn" data-dp="mrh" data-i18n="dpMrhLabel" data-i18n-title="dpMrhTitle" title="Ochtendspits">OS</button>
       <button class="tb-btn dpBtn active" data-dp="erh" data-i18n="dpErhLabel" data-i18n-title="dpErhTitle" title="Avondspits">AS</button>
       <button class="tb-btn dpBtn" data-dp="rest" data-i18n="dpRestLabel" data-i18n-title="dpRestTitle" title="Restdag">RD</button>
+      <div style="width:1px;height:16px;background:rgba(255,255,255,0.12);margin:0 2px;flex-shrink:0"></div>
+      <button class="tb-btn" id="fspBtn" data-i18n-title="fspBtnTitle" title="Flow-scaler instellen">&#9201;</button>
     </div>
 
     <div class="tb-sep"></div>
@@ -700,6 +796,7 @@
       <span id="legendLabel">Intensiteit</span>
       <span id="legendMax">–</span>
     </div>
+    <div id="carCountStrip"></div>
   </div>
 
   <!-- ── Link bewerk-dialoog ────────────────────────────────────────────── -->
@@ -882,6 +979,60 @@
     </div>
   </div>
 
+  <!-- ── Flow-scaler panel ─────────────────────────────────────────────────── -->
+  <div id="flowScalerPanel">
+    <div id="fspHeader">
+      <span data-i18n="fspTitle">Flow-scaler</span>
+      <button id="fspClose" title="Sluiten">&#10005;</button>
+    </div>
+    <div id="fspBody">
+      <div class="fsp-row">
+        <label class="fsp-label" for="fspDate" data-i18n="fspDateLabel">Datum</label>
+        <input type="date" id="fspDate" class="fsp-input"/>
+      </div>
+      <div class="fsp-row">
+        <label class="fsp-label" for="fspHour" data-i18n="fspHourLabel">Uur</label>
+        <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
+          <input type="range" id="fspHour" min="0" max="23" value="8" class="fsp-slider"/>
+          <span id="fspHourVal" class="fsp-hour-val">08:00</span>
+        </div>
+      </div>
+      <div class="fsp-row">
+        <label class="fsp-label" for="fspTemp" data-i18n="fspTempLabel">Temperatuur</label>
+        <select id="fspTemp" class="fsp-select">
+          <option value="High" data-i18n="fspTempHigh">Hoog</option>
+          <option value="Medium" selected data-i18n="fspTempMedium">Medium</option>
+          <option value="Low" data-i18n="fspTempLow">Laag</option>
+        </select>
+      </div>
+      <div class="fsp-row">
+        <label class="fsp-label" for="fspWeather" data-i18n="fspWeatherLabel">Weer</label>
+        <select id="fspWeather" class="fsp-select">
+          <option value="sunny" data-i18n="fspWeatherSunny">Zonnig</option>
+          <option value="cloudy" selected data-i18n="fspWeatherCloudy">Bewolkt</option>
+          <option value="dry" data-i18n="fspWeatherDry">Droog</option>
+          <option value="rainy" data-i18n="fspWeatherRainy">Regenachtig</option>
+        </select>
+      </div>
+      <div class="fsp-row">
+        <label class="fsp-label" for="fspPurpose" data-i18n="fspPurposeLabel">Reisdoel</label>
+        <select id="fspPurpose" class="fsp-select">
+          <option value="" data-i18n="fspPurposeAll">Alle</option>
+          <option value="work" data-i18n="fspPurposeWork">Werk</option>
+          <option value="education" data-i18n="fspPurposeEducation">Onderwijs</option>
+          <option value="shopping" data-i18n="fspPurposeShopping">Winkelen</option>
+          <option value="recreational" data-i18n="fspPurposeRecreational">Recreatie</option>
+          <option value="unknown" data-i18n="fspPurposeUnknown">Overig</option>
+        </select>
+      </div>
+      <div id="fspBtns">
+        <button id="fspApply" data-i18n="fspApplyBtn">Toepassen</button>
+        <button id="fspReset" data-i18n="fspResetBtn" disabled>Wis</button>
+      </div>
+      <div id="fspStatus"></div>
+    </div>
+  </div>
+
   <script>
   'use strict';
 
@@ -980,6 +1131,25 @@
       legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad',
       legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
       legendUnit:'vtg/u',
+      carCountFmt: n => `~${n.toLocaleString('nl-NL')} voertuigen op de wegen`,
+      // Flow-scaler panel
+      fspBtnTitle:'Flow-scaler instellen',
+      fspTitle:'Flow-scaler',
+      fspDateLabel:'Datum',
+      fspHourLabel:'Uur',
+      fspTempLabel:'Temperatuur',
+      fspTempHigh:'Hoog', fspTempMedium:'Medium', fspTempLow:'Laag',
+      fspWeatherLabel:'Weer',
+      fspWeatherSunny:'Zonnig', fspWeatherCloudy:'Bewolkt',
+      fspWeatherDry:'Droog', fspWeatherRainy:'Regenachtig',
+      fspPurposeLabel:'Reisdoel',
+      fspPurposeAll:'Alle', fspPurposeWork:'Werk', fspPurposeEducation:'Onderwijs',
+      fspPurposeShopping:'Winkelen', fspPurposeRecreational:'Recreatie', fspPurposeUnknown:'Overig',
+      fspRegioLabel:'Regio (vakantie)',
+      fspRegioMidden:'Midden', fspRegioNoord:'Noord', fspRegioZuid:'Zuid',
+      fspApplyBtn:'Toepassen', fspResetBtn:'Wis',
+      fspLoading:'Laden\u2026', fspDone:'Klaar',
+      fspError: e => `Fout: ${e}`,
       // Tooltip
       tooltipSegment: id => `Segment #${id}`,
       tooltipDaypart:'Dagdeel', tooltipFlow:'Flow (dagdeel)', tooltipFlowTotal:'Flow (totaal/24u)',
@@ -1074,6 +1244,25 @@
       legendFlow:'Intensity', legendOccupancy:'Occupancy',
       legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
       legendUnit:'veh/h',
+      carCountFmt: n => `~${n.toLocaleString('en-GB')} vehicles on the road`,
+      // Flow-scaler panel
+      fspBtnTitle:'Configure flow scaler',
+      fspTitle:'Flow scaler',
+      fspDateLabel:'Date',
+      fspHourLabel:'Hour',
+      fspTempLabel:'Temperature',
+      fspTempHigh:'High', fspTempMedium:'Medium', fspTempLow:'Low',
+      fspWeatherLabel:'Weather',
+      fspWeatherSunny:'Sunny', fspWeatherCloudy:'Cloudy',
+      fspWeatherDry:'Dry', fspWeatherRainy:'Rainy',
+      fspPurposeLabel:'Trip purpose',
+      fspPurposeAll:'All', fspPurposeWork:'Work', fspPurposeEducation:'Education',
+      fspPurposeShopping:'Shopping', fspPurposeRecreational:'Recreational', fspPurposeUnknown:'Other',
+      fspRegioLabel:'Region (holiday)',
+      fspRegioMidden:'Central', fspRegioNoord:'North', fspRegioZuid:'South',
+      fspApplyBtn:'Apply', fspResetBtn:'Reset',
+      fspLoading:'Loading\u2026', fspDone:'Done',
+      fspError: e => `Error: ${e}`,
       tooltipSegment: id => `Segment #${id}`,
       tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
       tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh/24h',
@@ -1166,6 +1355,25 @@
       legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste',
       legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
       legendUnit:'ajon/h',
+      carCountFmt: n => `~${n.toLocaleString('fi-FI')} ajoneuvoa tiellä`,
+      // Flow-scaler panel
+      fspBtnTitle:'Virtaskaalain asetukset',
+      fspTitle:'Virtaskaalain',
+      fspDateLabel:'Päivämäärä',
+      fspHourLabel:'Tunti',
+      fspTempLabel:'L\u00e4mp\u00f6tila',
+      fspTempHigh:'Korkea', fspTempMedium:'Keskitaso', fspTempLow:'Matala',
+      fspWeatherLabel:'S\u00e4\u00e4',
+      fspWeatherSunny:'Aurinkoinen', fspWeatherCloudy:'Pilvinen',
+      fspWeatherDry:'Kuiva', fspWeatherRainy:'Sateinen',
+      fspPurposeLabel:'Matkan tarkoitus',
+      fspPurposeAll:'Kaikki', fspPurposeWork:'Ty\u00f6', fspPurposeEducation:'Koulutus',
+      fspPurposeShopping:'Ostokset', fspPurposeRecreational:'Vapaa-aika', fspPurposeUnknown:'Muu',
+      fspRegioLabel:'Alue (loma)',
+      fspRegioMidden:'Keski', fspRegioNoord:'Pohjoinen', fspRegioZuid:'Etel\u00e4',
+      fspApplyBtn:'K\u00e4yt\u00e4', fspResetBtn:'Nollaa',
+      fspLoading:'Ladataan\u2026', fspDone:'Valmis',
+      fspError: e => `Virhe: ${e}`,
       tooltipSegment: id => `Segmentti #${id}`,
       tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
       tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon/24h',
@@ -1566,10 +1774,33 @@
     /** norm ∈ [0,1] → RGBA groen → geel → rood.
      *  Wortel-gamma: geel verschuift naar norm ≈ 0.25 voor meer kleuronderscheid bij lage intensiteiten. */
     function flowToRgba(norm) {
-      const t = Math.sqrt(norm);  // gamma 0.5 → geel op ~25 % van de schaal
-      const r = Math.min(255, Math.round(t * 2 * 255));
-      const g = Math.min(255, Math.round((1 - t) * 2 * 255));
-      return [r, g, 12, 210];
+      // 4-stop gradient: blauw → groen (bij ~25 vtg/u) → geel → rood
+      // breakG = genormaliseerde waarde waarbij blauw overgaat in groen
+      const breakG = Math.min(0.15, 25 / (globalMaxFlow || 1e6));
+      let r, g, b;
+      if (norm <= breakG) {
+        // Blauw [20, 80, 220] → groen [0, 230, 118]
+        const t = breakG > 0 ? norm / breakG : 1;
+        r = Math.round(20  * (1 - t));
+        g = Math.round(80  + t * 150);
+        b = Math.round(220 - t * 102);
+      } else {
+        const t = (norm - breakG) / (1 - breakG);   // 0→1 voor groen→rood range
+        if (t < 0.5) {
+          // Groen [0, 230, 118] → geel [255, 234, 0]
+          const s = t * 2;
+          r = Math.round(s * 255);
+          g = Math.round(230 + s * 4);
+          b = Math.round(118 * (1 - s));
+        } else {
+          // Geel [255, 234, 0] → rood [255, 23, 68]
+          const s = (t - 0.5) * 2;
+          r = 255;
+          g = Math.round(234 - s * 211);
+          b = Math.round(s * 68);
+        }
+      }
+      return [r, g, b, 210];
     }
 
   // Groen→geel→rood (zelfde als flow, herbruikbaar voor bezettingsgraad)
@@ -1964,6 +2195,13 @@
     return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
   }
 
+  // Globaal maximum flow — toegankelijk voor flowToRgba() die buiten de async IIFE staat
+  let globalMaxFlow = 1;
+
+  // OD-productie: voor elk OD-paar een set van paden gewogen op route.weight
+  let odGroups = new Map();   // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
+  let lastProductionT = 0;    // performance.now()/1000 van laatste productie-cyclus
+
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
 
@@ -1980,11 +2218,34 @@
     const maxFlow    = Math.max(...flowValues);
     const flowRange  = maxFlow - minFlow || 1;
 
+    /** Schat het maximaal aantal voertuigen tegelijk op de wegen via Little's Law.
+     *  λ = Σ dpFlowOf(seg) / 60  [vtg/min]
+     *  W = gewogen gem. rijtijd per segment  [min]
+     *  L = λ × W  [vtg] */
+    function updateCarCount() {
+      const el = document.getElementById('carCountStrip');
+      if (!el) return;
+      if (!segments || segments.length === 0) { el.textContent = ''; return; }
+      let totalFlow = 0;
+      let totalWeightedTimeSec = 0;
+      for (const seg of segments) {
+        const flow = dpFlowOf(seg.props);
+        if (flow <= 0 || !seg.speedMs) continue;
+        totalFlow += flow;
+        totalWeightedTimeSec += flow * (seg.length / seg.speedMs);
+      }
+      if (totalFlow === 0) { el.textContent = ''; return; }
+      const avgTripDurMin = (totalWeightedTimeSec / totalFlow) / 60;
+      const maxCars = Math.round((totalFlow / 60) * avgTripDurMin);
+      el.textContent = T('carCountFmt', maxCars);
+    }
+
     /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
     function updateLegend() {
       const unit = T('legendUnit');
-      // Gradient voor flow-metrics: geel op 25 % zodat lage waarden duidelijk onderscheid geven
-      const flowGradient = 'linear-gradient(to right, #00e676, #ffea00 25%, #ff1744)';
+      // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
+      const bp = Math.max(2, Math.round(25 / (globalMaxFlow || 1) * 100));
+      const flowGradient = `linear-gradient(to right, #1450dc, #00e676 ${bp}%, #ffea00 55%, #ff1744)`;
       const metricMeta = {
         flow:             { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
         flow_scaled:      { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
@@ -2000,7 +2261,7 @@
         ? v => Math.round(v) + ' %'
         : v => Math.round(v).toLocaleString(T('numberLocale')) + ' ' + u;
       if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-        // Vaste globale schaal: 0 t/m het netwerk-maximum over alle dagdelen
+        // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
         document.getElementById('legendMin').textContent = fmt(0);
         document.getElementById('legendMax').textContent = fmt(globalMaxFlow);
       } else {
@@ -2016,6 +2277,7 @@
         document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
         document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
       }
+      updateCarCount();
     }
 
     // Netwerknaam instellen vanuit GeoJSON top-level properties
@@ -2299,6 +2561,16 @@
     let cars      = [];
     let carData   = [];
 
+    // ── Flow-scaler staat ────────────────────────────────────────────────────
+    /** Originele flow-waarden per linkId; gevuld bij eerste toepassing, null als niet actief. */
+    let _fspOriginal = null;  // Map<linkId, {flow, flow24hrs, flowsPerDaypart}>
+    /** Teller die oploopt bij elke apply/reset; dient als deck.gl updateTrigger. */
+    let _fspVersion  = 0;
+    /** Overschreven max-flow voor de legenda terwijl de flow-scaler actief is; null = gebruik per-dagdeel scan. */
+    let _fspMaxFlow  = null;
+    /** Label dat in de tooltip getoond wordt als de scaler actief is (bijv. "2026-06-15 08:00"). */
+    let _fspActiveLabel = null;
+
     /** Ververs het debug-paneel met actuele statistieken over data en simulatie. */
     function updateDebugPanel() {
       if (!window._debugMode) return;
@@ -2320,7 +2592,12 @@
           : `<b>segment-modus</b>`}<br>` +
         `globalMaxFlow: <b>${Math.round(globalMaxFlow)}</b> vtg/u`;
       document.getElementById('dbgSim').innerHTML =
-        `auto's: <b>${cars.length}</b> totaal<br>` +
+        `auto's: <b>${cars.length}</b> totaal &nbsp; (Little's Law: <b>${Math.round(
+          segments.reduce((s, sg) => {
+            const f = segFlow(sg), v = sg.speedMs || 10;
+            return s + (f > 0 ? f * sg.length / (v * 3600) : 0);
+          }, 0)
+        )}</b>)<br>` +
         `rijdend: <b>${nMoving}</b> &nbsp;` +
         `geparkeerd: <b>${nParked}</b> &nbsp;` +
         `spawning: <b>${nSpawning}</b>`;
@@ -2346,7 +2623,7 @@
 
     /** Globaal maximum uurintensiteit (vtg/h) over álle dagdelen en álle wegvakken.
      *  Wordt als vaste schaalbovengrens gebruikt, zodat kleuren per dagdeel vergelijkbaar zijn. */
-    const globalMaxFlow = (() => {
+    globalMaxFlow = (() => {
       let mx = 0;
       for (const seg of segments) {
         for (const dp of Object.keys(DP_FRACTION)) {
@@ -2611,20 +2888,29 @@
 
         if (!routePaths.length) return list;
 
-        // Stap 2: Little's Law – totaal voertuigen
-        // N = Σ_links(flow_l * length_l / (speedMs_l * 3600)) * 0.80
+        // Stap 1b: sla OD-groepen op voor het productiemechanisme.
+        // Elke groep bevat alle route-paden voor dat OD-paar en de totale flow.
+        odGroups.clear();
+        for (const rp of routePaths) {
+          const key = `${rp.route.fromZoneId}→${rp.route.toZoneId}`;
+          if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
+          const g = odGroups.get(key);
+          g.totalFlow += rp.route.weight;
+          g.paths.push(rp);
+        }
+
+        // Stap 2: Little's Law – netwerk-totaal N = Σ(flow × lengte / (speedMs × 3600))
+        // Dit is het verwachte aantal voertuigen dat tegelijkertijd op het hele netwerk rijdt.
         let littlesN = 0;
         for (const seg of segments) {
           const flow    = segFlow(seg);
           const speedMs = seg.speedMs || 10;
           if (flow > 0) littlesN += (flow * seg.length) / (speedMs * 3600);
         }
-        littlesN = Math.min(Math.round(littlesN * 0.80), MAX_VEHICLES);
-        const N = Math.max(littlesN, 1);
+        const N = Math.max(1, Math.min(Math.round(littlesN), MAX_VEHICLES));
 
-        // Stap 3: bereken per route de directe Little's Law count (flow×length/speed).
-        // Elke route krijgt zoveel auto's als zijn eigen density direct impliceert,
-        // ongeacht het totaal. Daarna schalen we terug als het totaal MAX_VEHICLES overschrijdt.
+        // Stap 3: bereken per route de Little's Law density (aandeel in het netwerk-totaal).
+        // Door N proportioneel te verdelen blijft het totaal ≈ N, ook als routes overlappen.
         for (const rp of routePaths) {
           let routeDensity = 0;
           for (const lo of rp.allLinkObjs) {
@@ -2633,14 +2919,19 @@
             if (flow > 0) routeDensity += (flow * segmentLength(lo.coords)) / (speedMs * 3600);
           }
           rp.density = routeDensity;
-          rp.count   = Math.max(1, Math.round(routeDensity * 0.80));
         }
-        const rawTotal  = routePaths.reduce((s, rp) => s + rp.count, 0);
-        const capScale  = rawTotal > MAX_VEHICLES ? MAX_VEHICLES / rawTotal : 1.0;
+        const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
+
+        // Verdeel N proportioneel; probabilistische afronding zodat Σ count ≈ N.
+        for (const rp of routePaths) {
+          const share  = rp.density / totalRouteDensity;
+          const routeN = N * share;
+          rp.count = Math.floor(routeN) + (Math.random() < (routeN % 1) ? 1 : 0);
+        }
         const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
 
         for (const rp of routePaths) {
-          const count = Math.max(1, Math.round(rp.count * capScale));
+          const count = rp.count;
 
           // Zoek mogelijke chaining-partner (route die begint waar deze eindigt)
           const endNode   = rp.route.midEndNode;
@@ -2669,15 +2960,18 @@
               : 0;
 
             list.push({
-              path:     rp.path,
-              offset:   wp.offset,
-              speed:    rp.path.speedMs * 0.9,
-              color:    randomCarColor(),
-              typeIdx:  randomVehicleType(),
-              state:    isParked ? 'parked' : 'moving',
+              path:      rp.path,
+              offset:    wp.offset,
+              speed:     rp.path.speedMs * 0.9,
+              color:     randomCarColor(),
+              typeIdx:   randomVehicleType(),
+              state:     isParked ? 'parked' : 'moving',
               departAt,
-              canPark:  rp.canPark,
+              canPark:   rp.canPark,
+              noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
               pendingPath,
+              spawnRate:  null,             // niet meer gebruikt (noRespawn=true)
+              spawnDelay: null,
               waitingAtNode:      null,
               waitStartT:         null,
               yieldOverrideUntil: null,
@@ -2693,9 +2987,11 @@
         const now = performance.now() / 1000;
         for (const seg of segments) {
           if (seg.length < 30 || segFlow(seg) < thresh) continue;
-          const flow         = segFlow(seg);
+          const flow          = segFlow(seg);
           const traversalTime = seg.length / seg.speedMs;          // seconden
-          const count        = Math.round(flow * traversalTime / 3600);
+          // Probabilistische afronding: density 0.1 → 10% kans op 1 auto (i.p.v. altijd 0)
+          const density = flow * traversalTime / 3600;
+          const count   = Math.floor(density) + (Math.random() < (density % 1) ? 1 : 0);
           if (count < 1) continue;
           const path       = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs, flow }]);
           // Tijd dat de auto onzichtbaar is (spawning) zodat effectieve doorvoer = flow
@@ -2725,6 +3021,56 @@
       }
 
       return list;
+    }
+
+    // ── Productie-helpers ─────────────────────────────────────────────────────
+
+    /** Kies een route-pad gewogen op route.weight (proportioneel aan de fractie). */
+    function pickWeightedRoute(paths) {
+      const totalW = paths.reduce((s, rp) => s + rp.route.weight, 0) || 1;
+      let r = Math.random() * totalW;
+      for (const rp of paths) {
+        r -= rp.route.weight;
+        if (r <= 0) return rp;
+      }
+      return paths[paths.length - 1];
+    }
+
+    /**
+     * Spawnt één productie-auto aan het begin (offset=0) van het gegeven route-pad.
+     * De auto start bij het beginpunt van de route (herkomst) en rijdt naar de bestemming.
+     * Bij aankomst verdwijnt de auto (noRespawn=true); nieuwe auto's worden door het
+     * productiemechanisme aangemaakt.
+     */
+    function spawnProductionCar(rp) {
+      // Route-chaining: ~20% kans als er een aansluitende route beschikbaar is
+      const endNode = rp.route.midEndNode;
+      const allPaths = [...odGroups.values()].flatMap(g => g.paths);
+      const chainCandidates = rp.isBoundary
+        ? []
+        : allPaths.filter(other => other !== rp && other.route.midStartNode === endNode);
+      const pendingPath = (chainCandidates.length && Math.random() < 0.20)
+        ? chainCandidates[Math.floor(Math.random() * chainCandidates.length)].path
+        : null;
+
+      cars.push({
+        path:      rp.path,
+        offset:    0,
+        speed:     0,
+        color:     randomCarColor(),
+        typeIdx:   randomVehicleType(),
+        state:     'moving',
+        departAt:  0,
+        canPark:   rp.canPark,
+        noRespawn: true,
+        pendingPath,
+        spawnRate:  null,
+        spawnDelay: null,
+        waitingAtNode:      null,
+        waitStartT:         null,
+        yieldOverrideUntil: null,
+        stopTarget:         null,
+      });
     }
 
     /** Na buildCarList: herpositioneer auto's per pad zodat ze minimaal MIN_GAP uit elkaar staan */
@@ -2869,7 +3215,7 @@
           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
             norm = Math.max(0, Math.min(1, v / 100));
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-            // Vaste globale schaal: 0 t/m globalMaxFlow — vergelijkbaar over alle dagdelen
+            // Statische schaal: norm altijd t.o.v. netwerk-brede maximum (dagdeel-onafhankelijk)
             norm = Math.max(0, Math.min(1, v / globalMaxFlow));
           } else {
             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
@@ -2883,8 +3229,8 @@
         },
         pickable: !linkEditActive,
         updateTriggers: {
-          getLineColor: [daypart, colorMetric],
-          getLineWidth: [daypart, colorMetric],
+          getLineColor: [daypart, colorMetric, _fspVersion],
+          getLineWidth: [daypart, colorMetric, _fspVersion],
         },
       });
     }
@@ -2965,20 +3311,22 @@
     function makeTooltip({ object }) {
       if (!object) return null;
       const p  = object.properties;
-      const dp = p.flowsPerDaypart || {};
       const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
       const dpFlow = dpFlowOf(p);
       const occ = p.capacity > 0
         ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
       const loc = T('numberLocale');
+      // Toon tijdstip van flow-scaler als actief, anders het dagdeel-label
+      const contextLabel = _fspActiveLabel ?? dpLabels[daypart];
+      const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
       return {
         html: `
           <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
             <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
               ${T('tooltipSegment', Math.abs(p.linkId))}
             </div>
-            <div><span style="color:#5a6272">${T('tooltipDaypart')}: </span>
-              <b>${dpLabels[daypart]}</b></div>
+            <div><span style="color:#5a6272">${contextKey}: </span>
+              <b>${contextLabel}</b></div>
             <div><span style="color:#5a6272">${T('tooltipFlow')}: </span>
               <b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
             <div><span style="color:#5a6272">${T('tooltipFlowTotal')}: </span>
@@ -3086,9 +3434,14 @@
         // ── Toestandsovergangen ──────────────────────────────────────────
         for (const car of cars) {
           if (car.state === 'parked' && t >= car.departAt) {
-            // Stadswegauto vertrekt vanuit parkeerstand
-            car.state  = 'moving';
-            car.speed  = 0;
+            if (car.noRespawn) {
+              // Productie- / warmup-auto: na parkeren verdwijnen (geen herstart)
+              car.state = 'done';
+            } else {
+              // Herhalende auto: vertrek vanuit parkeerstand
+              car.state = 'moving';
+              car.speed = 0;
+            }
           } else if (car.state === 'spawning' && t >= car.departAt) {
             // Snelwegauto / boundary: verschijn aan het begin van de route
             car.offset = 0;
@@ -3101,19 +3454,29 @@
               car.pendingPath = null;
               car.offset     = 0;
               car.speed      = 0;
+            } else if (car.noRespawn) {
+              // Productie- / warmup-auto: bij aankomst bestemming verdwijnen
+              car.state = 'done';
             } else if (car.canPark) {
-              // Stadsweg: parkeer aan het einde en wacht voor volgende rit
+              // Herhalende stadsweg-auto: parkeer aan het einde en wacht voor volgende rit
               car.offset   = 0.99;
               car.speed    = 0;
               car.state    = 'parked';
               car.departAt = t + Math.max(PARK_MIN_S, normalRandom(PARK_MEAN_S, PARK_STD_S)) / timeScale;
             } else {
-              // Snelweg / boundary / segment-modus: verdwijnen en opnieuw spawnen aan het begin.
-              // Gebruik car.spawnDelay als die bekend is (segment-modus), anders 2–22 s willekeurig.
-              car.offset   = 0;
-              car.speed    = 0;
-              car.state    = 'spawning';
-              car.departAt = t + (car.spawnDelay != null ? car.spawnDelay : 2 + Math.random() * 20) / timeScale;
+              // Herhalende snelweg / boundary / segment-modus: opnieuw spawnen aan het begin.
+              car.offset = 0;
+              car.speed  = 0;
+              car.state  = 'spawning';
+              if (car.spawnDelay != null) {
+                // Segment-modus: vaste cycletijd garandeert dat doorvoer = flow klopt.
+                car.departAt = t + car.spawnDelay / timeScale;
+              } else {
+                // Route-modus: exponentieel verdeelde tussenkomstijden (Poisson-aankomstproces).
+                const meanS    = (car.spawnRate > 0) ? (3600 / car.spawnRate) : 20;
+                const delaySec = -Math.log(Math.random() || 1e-9) * meanS;
+                car.departAt   = t + Math.max(0.5, delaySec) / timeScale;
+              }
             }
           }
         }
@@ -3365,6 +3728,31 @@
           }
         }
 
+        // ── Ruim 'done' auto's op (achteruit lopen om splice-indices te bewaren) ──
+        for (let ci = cars.length - 1; ci >= 0; ci--) {
+          if (cars[ci].state === 'done') cars.splice(ci, 1);
+        }
+
+        // ── Productie: 1× per reële seconde auto's spawnen aan OD-beginpunten ──
+        // Voor elk OD-paar: verwacht aankomsten = (totalFlow/3600) × timeScale × dt_reëel
+        // Probabilistische afronding zodat de gemiddelde doorvoer exact klopt.
+        if (odGroups.size > 0) {
+          if (lastProductionT === 0) {
+            lastProductionT = now;   // initialiseer op het eerste frame
+          } else if (now - lastProductionT >= 1.0) {
+            const dtReal = Math.min(now - lastProductionT, 2.0);  // max 2s om burst te beperken
+            lastProductionT = now;
+            for (const od of odGroups.values()) {
+              if (cars.length >= MAX_VEHICLES) break;
+              const expected = (od.totalFlow / 3600) * timeScale * dtReal;
+              const count = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);
+              for (let ci = 0; ci < count && cars.length < MAX_VEHICLES; ci++) {
+                spawnProductionCar(pickWeightedRoute(od.paths));
+              }
+            }
+          }
+        }
+
         computeCarData();
         updateOverlay(true);
       }
@@ -3374,6 +3762,7 @@
 
     /** Herbouw auto-lijst (bij zoom-wijziging of drempel-aanpassing) */
     function rebuildCars() {
+      lastProductionT = 0;   // reset productie-timer zodat er geen burst optreedt na rebuild
       cars = enforceInitialSpacing(buildCarList(threshold));
       computeCarData();
     }
@@ -4835,6 +5224,177 @@
       rebuildCars();
       updateOverlay(true);
       updateDebugPanel();
+    });
+
+    // ── Flow-scaler knoppen ──────────────────────────────────────────────────
+
+    // Standaard datum = vandaag
+    document.getElementById('fspDate').value = new Date().toISOString().split('T')[0];
+
+    // Uur-slider live-display
+    document.getElementById('fspHour').addEventListener('input', e => {
+      document.getElementById('fspHourVal').textContent =
+        String(e.target.value).padStart(2, '0') + ':00';
+    });
+
+    /** Vraag de backend om geschaalde flows en patch de in-memory segmenten. */
+    async function applyFlowScaler() {
+      const fspApplyBtn  = document.getElementById('fspApply');
+      const fspResetBtn  = document.getElementById('fspReset');
+      const fspStatusEl  = document.getElementById('fspStatus');
+
+      const dateVal    = document.getElementById('fspDate').value || null;
+      const hour       = String(document.getElementById('fspHour').value).padStart(2, '0');
+      const dateTime   = dateVal ? `${dateVal}T${hour}:00:00` : null;
+      const tempVal    = document.getElementById('fspTemp').value;
+      const weatherVal = document.getElementById('fspWeather').value;
+      const purposeVal = document.getElementById('fspPurpose').value || null;
+      // Regio uit netwerk-properties — fallback naar 'midden'
+      const regioVal   = geojson.properties?.regio || 'midden';
+
+      fspApplyBtn.disabled = true;
+      fspStatusEl.className = '';
+      fspStatusEl.textContent = T('fspLoading');
+
+      try {
+        const resp = await fetch('/api/flow-scale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            areaId:      AREA_ID,
+            mode:        MODE,
+            date:        dateTime,
+            temperature: tempVal,
+            weather:     weatherVal,
+            purpose:     purposeVal,
+            regio:       regioVal,
+          }),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }));
+          throw new Error(err.error || resp.statusText);
+        }
+
+        const scaled = await resp.json();  // GeoJSON FeatureCollection
+
+        // ── Sla originele waarden op (alleen de eerste keer) ────────────────
+        if (!_fspOriginal) {
+          _fspOriginal = new Map();
+          for (const seg of segments) {
+            const p = seg.props;
+            _fspOriginal.set(String(p.linkId), {
+              flow:            p.flow,
+              flow24hrs:       p.flow24hrs,
+              flowsPerDaypart: p.flowsPerDaypart
+                ? { mrh: p.flowsPerDaypart.mrh, erh: p.flowsPerDaypart.erh, rest: p.flowsPerDaypart.rest }
+                : null,
+            });
+          }
+        }
+
+        // ── Bouw een linkId-opzoekkaart van de geschaalde features ──────────
+        const scaledMap = new Map();
+        for (const f of (scaled.features || [])) {
+          if (f.properties?.linkId != null) {
+            scaledMap.set(String(f.properties.linkId), f.properties);
+          }
+        }
+
+        // ── Patch de segmenten ──────────────────────────────────────────────
+        const temporal = (scaled.features?.[0]?.properties?.flowTemporalUnit ?? 24);
+        for (const seg of segments) {
+          const sp = scaledMap.get(String(seg.props.linkId));
+          if (!sp) continue;
+          const scaledFlow = sp.flow ?? 0;
+          seg.props.flow      = scaledFlow;
+          seg.props.flow24hrs = sp.flow24hrs ?? scaledFlow;
+          if (temporal === 1) {
+            // Specifieke datum/tijd → zelfde waarde voor alle dagdelen
+            seg.props.flowsPerDaypart = { mrh: scaledFlow, erh: scaledFlow, rest: scaledFlow };
+          } else {
+            // Geen datum → 24u-totaal; dpFlowOf verdeelt via DP_FRACTION
+            seg.props.flowsPerDaypart = null;
+          }
+        }
+
+        rebuildLinkFlowMap();
+
+        // Herbereken max-flow na schaling voor legenda en kleurschaal
+        let fspMax = 0;
+        for (const seg of segments) {
+          const v = dpFlowOf(seg.props);
+          if (v > fspMax) fspMax = v;
+        }
+        _fspMaxFlow = fspMax || 1;
+
+        // Versieteller omhoog → deck.gl updateTriggers vuren
+        _fspVersion++;
+
+        // Actief-label voor tooltip
+        _fspActiveLabel = dateTime ? `${dateVal} ${hour}:00` : T('fspTitle');
+
+        rebuildCars();
+        updateLegend();
+        updateOverlay(true);
+
+        fspStatusEl.className = '';
+        fspStatusEl.textContent = T('fspDone');
+        fspResetBtn.disabled = false;
+        document.getElementById('fspBtn').classList.add('active');
+
+      } catch (err) {
+        fspStatusEl.className = 'fsp-error';
+        fspStatusEl.textContent = T('fspError', err.message);
+      } finally {
+        fspApplyBtn.disabled = false;
+      }
+    }
+
+    /** Herstel de originele flow-waarden en verwijder de flow-scaler overlay. */
+    function resetFlowScaler() {
+      if (!_fspOriginal) return;
+      for (const seg of segments) {
+        const orig = _fspOriginal.get(String(seg.props.linkId));
+        if (!orig) continue;
+        seg.props.flow            = orig.flow;
+        seg.props.flow24hrs       = orig.flow24hrs;
+        seg.props.flowsPerDaypart = orig.flowsPerDaypart;
+      }
+      _fspOriginal    = null;
+      _fspMaxFlow     = null;
+      _fspActiveLabel = null;
+      _fspVersion++;
+
+      // Zet active-class terug op het huidige dagdeel
+      document.querySelectorAll('.dpBtn').forEach(b => {
+        b.classList.toggle('active', b.dataset.dp === daypart);
+      });
+
+      rebuildLinkFlowMap();
+      rebuildCars();
+      updateLegend();
+      updateOverlay(true);
+
+      document.getElementById('fspReset').disabled = true;
+      document.getElementById('fspStatus').textContent = '';
+      document.getElementById('fspBtn').classList.remove('active');
+    }
+
+    document.getElementById('fspApply').addEventListener('click', applyFlowScaler);
+    document.getElementById('fspReset').addEventListener('click', resetFlowScaler);
+    document.getElementById('fspClose').addEventListener('click', () => {
+      document.getElementById('flowScalerPanel').classList.remove('fsp-visible');
+      // Panel sluiten houdt de scaler actief als die al toegepast is;
+      // knop blijft blauw als _fspOriginal gezet is
+      if (!_fspOriginal) document.getElementById('fspBtn').classList.remove('active');
+    });
+    document.getElementById('fspBtn').addEventListener('click', () => {
+      const panel = document.getElementById('flowScalerPanel');
+      const isOpen = panel.classList.toggle('fsp-visible');
+      if (!isOpen && !_fspOriginal) {
+        document.getElementById('fspBtn').classList.remove('active');
+      }
     });
 
   })();
