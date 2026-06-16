@@ -343,7 +343,6 @@ def api_adjust():
         routes_path=routes_file,
         new_area_id=new_area_id,
         min_link_trips=1.0,
-        refresh=False,
         debug=bool(body.get('debug', False)),
     )
 
