@@ -744,6 +744,13 @@
       <option value="compare" id="compareOption" data-i18n="metricCompare" style="display:none">Vergelijking tonen</option>
     </select>
 
+    <!-- Zone-centroids weergave -->
+    <select id="zoneCentroidSelect" class="tb-select" title="Zone-centroids">
+      <option value="off">- zones onzichtbaar -</option>
+      <option value="production">- productie -</option>
+      <option value="attraction">- attractie -</option>
+    </select>
+
     <div class="tb-sep"></div>
 
     <!-- Tijdschaal -->
@@ -1156,6 +1163,12 @@
       tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg/24u',
       tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
       tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'Bezettingsgraad', tooltipLength:'Lengte',
+      tooltipZoneClass:'Zoneklasse',
+      tooltipZoneClassStudy:'Studiegebied', tooltipZoneClassInfluence:'Invloedszone',
+      tooltipZoneClassBoundary:'Grenszone', tooltipZoneClassCbs:'CBS-zone',
+      tooltipZoneProd:'Productie', tooltipZoneProdUnit:'vtg/dag',
+      tooltipZoneAttr:'Attractie',  tooltipZoneAttrUnit:'vtg/dag',
+      tooltipZoneRoute:'Rituitwisseling', tooltipZoneRouteUnit:'vtg/u',
       dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
       // Netwerktitel
       networkTitle: n => `Verkeersnetwerk ${n}`, pageTitle: n => `Verkeersnetwerk ${n}`,
@@ -1268,6 +1281,12 @@
       tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh/24h',
       tooltipSpeed:'Speed', tooltipLanes:'Lanes',
       tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'Occupancy', tooltipLength:'Length',
+      tooltipZoneClass:'Zone class',
+      tooltipZoneClassStudy:'Study area', tooltipZoneClassInfluence:'Influence zone',
+      tooltipZoneClassBoundary:'Boundary zone', tooltipZoneClassCbs:'CBS zone',
+      tooltipZoneProd:'Production', tooltipZoneProdUnit:'veh/day',
+      tooltipZoneAttr:'Attraction',  tooltipZoneAttrUnit:'veh/day',
+      tooltipZoneRoute:'Trip exchange', tooltipZoneRouteUnit:'veh/h',
       dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
       networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
       numberLocale:'en-GB',
@@ -1379,6 +1398,12 @@
       tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon/24h',
       tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
       tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'Kuormitusaste', tooltipLength:'Pituus',
+      tooltipZoneClass:'Alueluokka',
+      tooltipZoneClassStudy:'Tutkimusalue', tooltipZoneClassInfluence:'Vaikutusalue',
+      tooltipZoneClassBoundary:'Rajav\u00f6hyke', tooltipZoneClassCbs:'CBS-alue',
+      tooltipZoneProd:'Tuotanto', tooltipZoneProdUnit:'ajon/vrk',
+      tooltipZoneAttr:'Houkuttelevuus', tooltipZoneAttrUnit:'ajon/vrk',
+      tooltipZoneRoute:'Matkavirta', tooltipZoneRouteUnit:'ajon/h',
       dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika',
       networkTitle: n => `Liikenneverkko ${n}`, pageTitle: n => `Liikenneverkko ${n}`,
       numberLocale:'fi',
@@ -1895,7 +1920,7 @@
 
   // ── Applicatielogica ──────────────────────────────────────────────────────
 
-  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer } = deck;
+  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer, ScatterplotLayer, PathLayer } = deck;
 
   // ── Mesh-hulpfuncties ────────────────────────────────────────────────────────
 
@@ -2202,6 +2227,8 @@
   let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
   let lastProductionT      = 0;   // performance.now()/1000 van laatste productie-cyclus
   let lastProductionSpawns = 0;   // aantal gespawnde auto's in de laatste productie-cyclus
+  let lastAttractionCount  = 0;   // aantal aangekomen (verdwenen) auto's in de laatste seconde
+  let attractionAccum      = 0;   // lopende teller aankomsten binnen huidig productie-interval
 
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
@@ -2551,8 +2578,11 @@
     });
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
-    let timeScale = 1;
-    let threshold = 0;
+     let timeScale = 1;
+     let threshold = 0;
+     let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
+     let selectedZoneId   = null;    // zoneId van geselecteerde zone (voor route-highlight)
+     let hoveredZoneId    = null;    // zoneId onder de cursor (bijgehouden via onHover)
     /** Weegfactoren dagdeel → uurintensiteit.
      *  OS=2u, AS=2u, restdag=20u; wegingsbasis 14.4
      *  Formule: (weging/duur) / 14.4  */
@@ -2605,8 +2635,7 @@
         `geparkeerd: <b>${nParked}</b> &nbsp;` +
         (routeMode
           ? `productie: <b>${lastProductionSpawns}</b>/s &nbsp;` +
-            `(${odGroups.size} OD-groepen, ` +
-            `${Math.round([...odGroups.values()].reduce((s, od) => s + od.totalFlow, 0))} vtg/u verwacht)`
+            `attractie: <b>${lastAttractionCount}</b>/s`
           : `spawning: <b>${nSpawning}</b>`);
     }
     // Exporteer zodat de globale DBG-handler (buiten IIFE) het paneel kan verversen
@@ -2905,16 +2934,20 @@
         }
         const N = Math.max(1, Math.min(Math.round(littlesN), MAX_VEHICLES));
 
-        // Stap 3: bereken per route de Little's Law density (aandeel in het netwerk-totaal).
-        // Door N proportioneel te verdelen blijft het totaal ≈ N, ook als routes overlappen.
+        // Stap 3: OD-gebaseerde Little's Law density per route.
+        // density = originProduction × DP_FRACTION × r.trips × reistijd
+        // Gebruik de OD-specifieke flow (niet de totale linkflow) zodat de initiële verdeling
+        // consistent is met het productiemechanisme. Gedeelde links worden hierdoor niet
+        // dubbel geteld. N uit Stap 2 blijft het anker voor het totale voertuigaantal.
         for (const rp of routePaths) {
-          let routeDensity = 0;
+          const odFlowVehHr = (rp.route.originProduction ?? 0)
+                            * (DP_FRACTION[daypart] ?? (1 / 14.4))
+                            * (rp.route.weight ?? 0);
+          let travelTime = 0;
           for (const lo of rp.allLinkObjs) {
-            const flow    = lo.flow || 0;
-            const speedMs = lo.speedMs || 10;
-            if (flow > 0) routeDensity += (flow * segmentLength(lo.coords)) / (speedMs * 3600);
+            travelTime += segmentLength(lo.coords) / (lo.speedMs || 10);
           }
-          rp.density = routeDensity;
+          rp.density = odFlowVehHr * travelTime / 3600;
         }
         const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
 
@@ -3200,13 +3233,14 @@
       return new GeoJsonLayer({
         id: 'network',
         data: geojson,
-        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare',
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && !selectedZoneId,
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
         lineWidthMinPixels: 1.5,
-        getLineWidth: f => {
-          const lanes = f.properties.lanes || 1;
+         getLineWidth: f => {
+           if (f.properties.capacity === 0) return 1;
+           const lanes = f.properties.lanes || 1;
           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
             let v;
             if (colorMetric === 'occupancy_scaled') {
@@ -3223,8 +3257,9 @@
           }
           return Math.max(1.5, lanes * 3);
         },
-        getLineColor: f => {
-          const v = getMetricValue(f.properties);
+         getLineColor: f => {
+           if (f.properties.capacity === 0) return [210, 40, 40, 200];
+           const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
           let norm;
           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
@@ -3275,6 +3310,158 @@
       });
     }
 
+    function makeZoneCentroidLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length) {
+        return new ScatterplotLayer({ id: 'zone-centroids', data: [] });
+      }
+
+      const isProduction = zoneCentroidMode === 'production';
+
+      // Globale schaalfactor op basis van alle zones (onafhankelijk van selectie)
+      const allVals = zoneFeaturesRaw.map(f => {
+        const p = f.properties || {};
+        return isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+      });
+      const globalMax = Math.max(...allVals, 1);
+      const globalScale = 700 / Math.sqrt(globalMax);   // max ≈ 700m
+
+      // Wanneer een zone geselecteerd is: schaal tegenpolen zodat
+      // Σ oppervlakte tegenpolen = oppervlakte geselecteerde zone.
+      let flowByZone = null;
+      let totalFlow  = 0;
+      let radiusSelected = 0;
+
+      if (selectedZoneId) {
+        ({ flowByZone } = computeZoneRouteData());
+        totalFlow = [...flowByZone.values()].reduce((s, v) => s + v, 0) || 1;
+
+        // Straal van de geselecteerde zone (eigen productie/attractie)
+        const selFeature = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+        const selVal = selFeature
+          ? (isProduction ? (selFeature.properties.production ?? 0) : (selFeature.properties.attraction ?? 0))
+          : 0;
+        radiusSelected = Math.max(20, Math.sqrt(selVal) * globalScale);
+      }
+
+      // Bouw puntenlijst
+      const pts = [];
+      for (const f of zoneFeaturesRaw) {
+        const p   = f.properties || {};
+        const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+        const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+        if (lon == null || lat == null) continue;
+
+        const isSelected = p.zoneId === selectedZoneId;
+        let radius;
+
+        let flow = 0;
+        if (flowByZone && !isSelected) {
+          // Tegenpool: rᵢ = R_selected × √(flowᵢ / totalFlow)
+          flow = flowByZone.get(p.zoneId) ?? 0;
+          if (flow <= 0) continue;
+          radius = radiusSelected * Math.sqrt(flow / totalFlow);
+        } else {
+          // Geen selectie, of dit is de geselecteerde zone zelf
+          const val = isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+          if (val <= 0) continue;
+          radius = Math.max(20, Math.sqrt(val) * globalScale);
+        }
+
+        pts.push({
+          lon, lat, radius, zoneId: p.zoneId ?? null, isSelected,
+          zoneName:   p.zoneName || String(p.zoneId ?? ''),
+          zoneClass:  p.zoneClass || '',
+          production: p.production ?? 0,
+          attraction: p.attraction ?? 0,
+          flow,
+        });
+      }
+
+      return new ScatterplotLayer({
+        id:             'zone-centroids',
+        data:           pts,
+        pickable:       true,
+        stroked:        true,
+        filled:         true,
+        radiusUnits:    'meters',
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 1,
+        getPosition:    d => [d.lon, d.lat],
+        getRadius:      d => d.radius,
+        getFillColor:   d => d.isSelected
+          ? (isProduction ? [255, 140, 0, 140] : [30, 120, 255, 140])
+          : (isProduction ? [255, 140, 0,  60] : [30, 120, 255,  60]),
+        getLineColor:   d => d.isSelected
+          ? (isProduction ? [255, 200, 80, 255] : [80, 200, 255, 255])
+          : (isProduction ? [255, 140,  0, 180] : [30, 120, 255, 180]),
+        getLineWidth:   d => d.isSelected ? 2.5 : 1.5,
+        onHover: ({ object }) => {
+          hoveredZoneId = object?.zoneId ?? null;
+          map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
+        },
+        updateTriggers: {
+          getRadius:    [zoneCentroidMode, selectedZoneId, daypart],
+          getFillColor: [zoneCentroidMode, selectedZoneId],
+          getLineColor: [zoneCentroidMode, selectedZoneId],
+          getLineWidth: [selectedZoneId],
+        },
+      });
+    }
+
+
+    function makeZoneRoutesLayer() {
+      if (!selectedZoneId || zoneCentroidMode === 'off') {
+        return new PathLayer({ id: 'zone-routes', data: [] });
+      }
+
+      const { pathData } = computeZoneRouteData();
+      if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
+
+      const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+      const isProduction = zoneCentroidMode === 'production';
+
+      return new PathLayer({
+        id:             'zone-routes',
+        data:           pathData,
+        pickable:       false,
+        widthUnits:     'pixels',
+        widthMinPixels: 1.5,
+        widthMaxPixels: 10,
+        getPath:        d => d.coords,
+        getWidth:       d => Math.max(1.5, (d.flow / maxFlow) * 10),
+        getColor:       isProduction ? [255, 120, 0, 240] : [0, 220, 255, 240],
+        updateTriggers: { getColor: [zoneCentroidMode], getPath: [selectedZoneId, zoneCentroidMode, daypart] },
+      });
+    }
+
+    /** Bereken routes + flows voor de geselecteerde zone.
+     *  Gedeeld door makeZoneRoutesLayer en makeZoneCentroidLayer. */
+    function computeZoneRouteData() {
+      const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+      const relevant = routeList.filter(r =>
+        zoneCentroidMode === 'production' ? r.fromZoneId === selectedZoneId : r.toZoneId === selectedZoneId
+      );
+
+      const flowByZone = new Map();  // counterpartZoneId → totale flow [veh/hr]
+      const pathData   = [];
+
+      for (const route of relevant) {
+        const flow         = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        const counterpart  = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
+        flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
+
+        const coords = [];
+        for (const id of route.innerIds) {
+          const seg = linkGeomMap.get(id);
+          if (seg) coords.push(...seg);
+        }
+        if (coords.length >= 2) pathData.push({ coords, flow });
+      }
+
+      return { pathData, flowByZone };
+    }
+
+
     function makeCarLayers(data) {
       const layers = [];
       for (let ti = 0; ti < VEHICLE_TYPES.length; ti++) {
@@ -3323,9 +3510,51 @@
       return layers;
     }
 
-    function makeTooltip({ object }) {
-      if (!object) return null;
-      const p  = object.properties;
+     function makeTooltip({ object, layer }) {
+       if (!object) return null;
+
+       // ── Zone-centroid tooltip ────────────────────────────────────────────
+       if (layer?.id === 'zone-centroids') {
+         const d = object;
+         const loc = T('numberLocale');
+         const isProduction = zoneCentroidMode === 'production';
+         const accentColor  = isProduction ? '#ff9a30' : '#4bcfff';
+         const classLabel   = ({
+           STUDY:     T('tooltipZoneClassStudy'),
+           INFLUENCE: T('tooltipZoneClassInfluence'),
+           BOUNDARY:  T('tooltipZoneClassBoundary'),
+           CBS:       T('tooltipZoneClassCbs'),
+         })[d.zoneClass] ?? d.zoneClass;
+         const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+         const flowRow = d.flow > 0
+           ? `<div><span style="color:#5a6272">${T('tooltipZoneRoute')} (${dpLabels[daypart]}): </span>
+                <b>${d.flow.toFixed(0)}\u202f${T('tooltipZoneRouteUnit')}</b></div>`
+           : '';
+         return {
+           html: `
+             <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
+               <div style="color:${accentColor};font-weight:600;margin-bottom:6px">
+                 ${d.zoneName}
+               </div>
+               <div><span style="color:#5a6272">${T('tooltipZoneClass')}: </span>
+                 <b>${classLabel}</b></div>
+               <div><span style="color:#5a6272">${T('tooltipZoneProd')}: </span>
+                 <b>${(d.production).toLocaleString(loc)}\u202f${T('tooltipZoneProdUnit')}</b></div>
+               <div><span style="color:#5a6272">${T('tooltipZoneAttr')}: </span>
+                 <b>${(d.attraction).toLocaleString(loc)}\u202f${T('tooltipZoneAttrUnit')}</b></div>
+               ${flowRow}
+             </div>`,
+           style: {
+             background: 'rgba(13,17,23,0.95)', borderRadius: '10px',
+             padding: '12px 16px', border: '1px solid rgba(126,200,227,0.25)',
+             boxShadow: '0 4px 20px rgba(0,0,0,0.5)', pointerEvents: 'none',
+           },
+         };
+       }
+
+       // ── Netwerk-segment tooltip ──────────────────────────────────────────
+       const p  = object.properties;
+       if (!p) return null;
       const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
       const dpFlow = dpFlowOf(p);
       const occ = p.capacity > 0
@@ -3374,13 +3603,13 @@
 
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers:     [makeNetworkLayer(), makeLinkEditLayer(), ...makeCarLayers([...carData])],
+      layers: [makeNetworkLayer(), makeLinkEditLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
-        if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
-        if (linkEditActive && isHovering) return 'pointer';
-        return '';
+         if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
+         if (linkEditActive && isHovering) return 'pointer';
+         return '';
       },
       onClick: (info, event) => {
         // Polygon-modus: hoekpunt toevoegen als een deck.gl-object geraakt werd.
@@ -3401,6 +3630,8 @@
           }
           return false; // niets gepickt → laat map.on('click') het afhandelen
         }
+        // Zone-centroid klik: afgehandeld via map.on('click') + hoveredZoneId (zie verderop)
+
         if (!linkEditActive || linkSelectMode !== 'click') return;
         if (!info.object)    return;
         if (info.layer?.id !== 'link-edit') return;
@@ -3411,6 +3642,14 @@
     });
     map.addControl(overlay);
 
+    // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
+    // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
+    map.on('click', () => {
+      if (zoneCentroidMode === 'off' || !hoveredZoneId) return;
+      selectedZoneId = (selectedZoneId === hoveredZoneId) ? null : hoveredZoneId;
+      updateOverlay(true);
+    });
+
     // Initialiseer afsluiting-symbolen zodra de kaart-stijl gereed is (ook zonder edit-modus)
     if (map.isStyleLoaded()) {
       initClosedLinksLayer();
@@ -3419,13 +3658,15 @@
       map.on('idle', _onMapReady);
     }
 
-     function updateOverlay(withCars = true) {
-       overlay.setProps({ layers: [
-         makeNetworkLayer(),
-         makeLinkEditLayer(),
-         ...makeCarLayers(withCars ? [...carData] : []),
-       ]});
-     }
+      function updateOverlay(withCars = true) {
+        overlay.setProps({ layers: [
+          makeNetworkLayer(),
+          makeLinkEditLayer(),
+          makeZoneCentroidLayer(),
+          makeZoneRoutesLayer(),
+          ...makeCarLayers(withCars ? [...carData] : []),
+        ]});
+      }
 
 
     // ── 7. Animatielus ──────────────────────────────────────────────────────
@@ -3472,6 +3713,7 @@
             } else if (car.noRespawn) {
               // Productie- / warmup-auto: bij aankomst bestemming verdwijnen
               car.state = 'done';
+              attractionAccum++;
             } else if (car.canPark) {
               // Herhalende stadsweg-auto: parkeer aan het einde en wacht voor volgende rit
               car.offset   = 0.99;
@@ -3768,6 +4010,8 @@
               }
             }
             lastProductionSpawns = cycleSpawns;
+            lastAttractionCount  = attractionAccum;
+            attractionAccum      = 0;
           }
         }
 
@@ -5227,19 +5471,25 @@
       btn.innerHTML = paused ? '&#9654;' : '&#9208;';
     });
 
-    document.getElementById('daypartBtns').addEventListener('click', e => {
-      const btn = e.target.closest('.dpBtn');
-      if (!btn) return;
-      daypart = btn.dataset.dp;
-      document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b === btn));
-      updateLegend();
-      rebuildLinkFlowMap();
-      // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
-      // in segment-modus bepaalt het de flow-drempel per segment.
-      rebuildCars();
-      updateOverlay(true);
-      updateDebugPanel();
-    });
+     document.getElementById('daypartBtns').addEventListener('click', e => {
+       const btn = e.target.closest('.dpBtn');
+       if (!btn) return;
+       daypart = btn.dataset.dp;
+       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b === btn));
+       updateLegend();
+       rebuildLinkFlowMap();
+       // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
+       // in segment-modus bepaalt het de flow-drempel per segment.
+       rebuildCars();
+       updateOverlay(true);
+       updateDebugPanel();
+     });
+
+     document.getElementById('zoneCentroidSelect').addEventListener('change', e => {
+       zoneCentroidMode = e.target.value;
+       if (zoneCentroidMode === 'off') selectedZoneId = null;
+       updateOverlay(true);
+     });
 
     // ── Flow-scaler knoppen ──────────────────────────────────────────────────
 
