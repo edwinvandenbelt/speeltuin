@@ -130,8 +130,7 @@
     #pauseBtn.paused:hover { background: rgba(255,200,80,0.22); }
     .tb-add { border-color: rgba(100,220,150,0.2); color: #3a6050; background: rgba(100,220,150,0.04); cursor: not-allowed; opacity: 0.55; }
     .tb-add:hover { background: rgba(100,220,150,0.04) !important; color: #3a6050 !important; }
-    .lang-btn { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; }
-    .lang-btn.active { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
+    .lang-select { min-width: 70px; padding: 0 4px; font-size: 12px; }
 
     /* ── Legend strip ────────────────────────────────────────────────── */
     #legendStrip {
@@ -840,19 +839,16 @@
     <button class="tb-btn" id="pauseBtn" data-i18n-title="pauseTitle" title="Pauzeer simulatie">&#9208;</button>
     <button class="tb-btn edit-btn" id="nodeEditBtn" data-i18n-title="nodeEditTitle" title="Productie/attractie per knoop wijzigen">&#9673;</button>
     <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
-
-    <div class="tb-sep"></div>
-
-    <!-- Dummy: toevoegen (nog niet beschikbaar) -->
-    <button class="tb-btn tb-add" id="addWegvakBtn" data-i18n-title="addWegvakTitle" title="Wegvak toevoegen (nog niet beschikbaar)" disabled>&#8862;</button>
-    <button class="tb-btn tb-add" id="addKnoopBtn" data-i18n-title="addKnoopTitle" title="Knoop toevoegen (nog niet beschikbaar)" disabled>&#8853;</button>
+    <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
 
     <div class="tb-sep"></div>
 
     <!-- Taal -->
-    <button class="tb-btn lang-btn" data-lang="NL" onclick="applyLang('NL')" title="Nederlands">NL</button>
-    <button class="tb-btn lang-btn" data-lang="EN" onclick="applyLang('EN')" title="English">EN</button>
-    <button class="tb-btn lang-btn" data-lang="FI" onclick="applyLang('FI')" title="Suomi">FI</button>
+    <select id="langSelect" class="tb-select lang-select" onchange="applyLang(this.value)" data-i18n-title="langSelectTitle" title="Taal kiezen">
+      <option value="NL">&#127475;&#127473; NL</option>
+      <option value="EN">&#127468;&#127463; EN</option>
+      <option value="FI">&#127467;&#127470; FI</option>
+    </select>
 
     <div class="tb-sep"></div>
 
@@ -1252,6 +1248,10 @@
       // ScenarioVergelijker
       splitViewTitle:'ScenarioVergelijker: berekend ↔ bron',
       badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Herkomst/bestemming per wegvak',
+      // Taal-dropdown
+      langSelectTitle:'Taal kiezen',
       numberLocale:'nl',
     },
     EN: {
@@ -1374,6 +1374,10 @@
       // Scenario comparator
       splitViewTitle:'Scenario comparator: calculated ↔ source',
       badgeLeft:'Calculated scenario', badgeRight:'Source scenario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Origin/destination per road link',
+      // Language dropdown
+      langSelectTitle:'Select language',
       numberLocale:'en-GB',
     },
     FI: {
@@ -1496,6 +1500,10 @@
       // Skenaariovertailija
       splitViewTitle:'Skenaariovertailija: laskettu ↔ lähde',
       badgeLeft:'Laskettu skenaario', badgeRight:'Lähdeskenaario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Lähtö/kohde tiejaksokohtaisesti',
+      // Kielen valinta
+      langSelectTitle:'Valitse kieli',
       numberLocale:'fi',
     },
   };
@@ -1513,9 +1521,9 @@
     currentLang = lang;
     localStorage.setItem('ui-lang', lang);
 
-    // Taal-knoppen actief zetten
-    document.querySelectorAll('[data-lang]').forEach(b =>
-      b.classList.toggle('active', b.dataset.lang === lang));
+    // Taal-dropdown synchroniseren
+    const langSel = document.getElementById('langSelect');
+    if (langSel) langSel.value = lang;
 
     // data-i18n → textContent
     document.querySelectorAll('[data-i18n]').forEach(el =>
@@ -2459,6 +2467,8 @@
     const linkCapacityMap  = new Map();
     // linkId → flow per dagdeel (vtg/u), wordt bijgewerkt via rebuildLinkFlowMap()
     const linkFlowMap   = new Map();
+    // linkId → route[] — gebouwd door buildLinkRouteMap() na het vullen van routeList
+    const linkRouteMap  = new Map();
     for (const seg of segments) {
       linkGeomMap.set(seg.props.linkId,     seg.coords);
       linkSpeedMap.set(seg.props.linkId,    seg.speedMs);
@@ -2655,6 +2665,7 @@
 
       totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
       routeMode = routeList.length > 0;
+      buildLinkRouteMap();
     } catch (e) {
       console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
     }
@@ -3493,6 +3504,10 @@
 
     let nodeEditActive = false;
     let linkEditActive = false;
+    // ── Selected Link Analysis — state ──────────────────────────────────────
+    let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
+    let selectedLinkActive = false;   // true als de link-selectie-modus actief is
+    let hoveredLinkId      = null;    // linkId onder de cursor (bijgehouden via onHover)
     let nodeSelectMode   = 'click';  // 'click' | 'polygon'
     let polygonVertices  = [];       // [[lon, lat], ...]
     let polygonNodesInside = [];     // zone-knopen binnen de gesloten polygon
@@ -3524,7 +3539,7 @@
       return new GeoJsonLayer({
         id: 'network',
         data: geojson.features,  // features-array ipv wrapper-object: deck.gl detecteert nieuwe referentie na reload
-        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && !selectedZoneId,
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && !selectedZoneId && !selectedLinkId,
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
@@ -3569,6 +3584,11 @@
           }
         },
         pickable: !linkEditActive,
+        onHover: ({ object }) => {
+          if (selectedLinkActive) {
+            hoveredLinkId = object?.properties?.linkId ?? null;
+          }
+        },
         updateTriggers: {
           getLineColor: [daypart, colorMetric, _fspVersion],
           getLineWidth: [daypart, colorMetric, _fspVersion],
@@ -3673,11 +3693,15 @@
     }
 
     function makeZoneCentroidLayer() {
-      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length) {
+      // Zones verbergen als: mode=off EN geen zone/link geselecteerd, OF geen data
+      const showForLinkSel = selectedLinkId !== null && zoneFeaturesRaw.length > 0;
+      if ((zoneCentroidMode === 'off' && !selectedZoneId && !showForLinkSel) || !zoneFeaturesRaw.length) {
         return new ScatterplotLayer({ id: 'zone-centroids', data: [] });
       }
 
-      const isProduction = zoneCentroidMode === 'production';
+      // Effectieve modus: bij link-selectie met mode=off valt terug op 'production'
+      const effectiveMode = zoneCentroidMode === 'off' ? 'production' : zoneCentroidMode;
+      const isProduction  = effectiveMode === 'production';
 
       // Globale max voor alpha-normalisatie (onafhankelijk van selectie)
       const allVals = zoneFeaturesRaw.map(f => {
@@ -3691,6 +3715,10 @@
       let maxCounterpartFlow = 1;
       if (selectedZoneId) {
         ({ flowByZone } = computeZoneRouteData());
+        maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
+      } else if (showForLinkSel) {
+        const { flowByFromZone, flowByToZone } = computeLinkRouteData();
+        flowByZone = isProduction ? flowByFromZone : flowByToZone;
         maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
       }
 
@@ -3765,15 +3793,39 @@
           map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
         },
         updateTriggers: {
-          getFillColor: [zoneCentroidMode, selectedZoneId, daypart],
-          getLineColor: [zoneCentroidMode, selectedZoneId, daypart],
-          getLineWidth: [selectedZoneId],
+          getFillColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
+          getLineColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
+          getLineWidth: [selectedZoneId, selectedLinkId],
         },
       });
     }
 
 
     function makeZoneRoutesLayer() {
+      // ── Selected Link: toon alle routes die door het geselecteerde wegvak lopen ──
+      if (selectedLinkId) {
+        const { pathData } = computeLinkRouteData();
+        if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
+        const maxFlow      = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+        const isProduction = zoneCentroidMode !== 'attraction';
+        return new PathLayer({
+          id:             'zone-routes',
+          data:           pathData,
+          pickable:       false,
+          widthUnits:     'pixels',
+          widthMinPixels: 1,
+          widthMaxPixels: 8,
+          getPath:        d => d.coords,
+          getWidth:       d => Math.max(1, (d.flow / maxFlow) * 8),
+          getColor:       isProduction ? [255, 120, 0, 180] : [0, 220, 255, 180],
+          updateTriggers: {
+            getColor: [zoneCentroidMode],
+            getPath:  [selectedLinkId, zoneCentroidMode, daypart],
+          },
+        });
+      }
+
+      // ── Selected Zone: toon routes van/naar de geselecteerde zone ─────────────
       if (!selectedZoneId || zoneCentroidMode === 'off') {
         return new PathLayer({ id: 'zone-routes', data: [] });
       }
@@ -3823,6 +3875,61 @@
       }
 
       return { pathData, flowByZone };
+    }
+
+
+    /** Bouw linkRouteMap: linkId → route[] na het vullen van routeList. */
+    function buildLinkRouteMap() {
+      linkRouteMap.clear();
+      for (const route of routeList) {
+        for (const id of route.innerIds) {
+          if (!linkRouteMap.has(id)) linkRouteMap.set(id, []);
+          linkRouteMap.get(id).push(route);
+        }
+      }
+    }
+
+    /** Aggregeer herkomst/bestemmings-flows voor het geselecteerde wegvak.
+     *  Geeft { flowByFromZone, flowByToZone, pathData } terug. */
+    function computeLinkRouteData() {
+      const dpFrac   = DP_FRACTION[daypart] ?? (1 / 14.4);
+      // Verdedigende lookup: probeer zowel het originele type als Number()-conversie
+      const numKey   = Number(selectedLinkId);
+      const relevant = linkRouteMap.get(numKey)
+                    ?? linkRouteMap.get(selectedLinkId)
+                    ?? [];
+      const flowByFromZone = new Map();
+      const flowByToZone   = new Map();
+      const pathData       = [];
+      for (const route of relevant) {
+        const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        flowByFromZone.set(route.fromZoneId, (flowByFromZone.get(route.fromZoneId) ?? 0) + flow);
+        flowByToZone.set(route.toZoneId,   (flowByToZone.get(route.toZoneId)   ?? 0) + flow);
+        // Geometrie van de volledige route opbouwen voor de PathLayer
+        const coords = [];
+        for (const id of route.innerIds) {
+          const seg = linkGeomMap.get(id);
+          if (seg) coords.push(...seg);
+        }
+        if (coords.length >= 2) pathData.push({ coords, flow });
+      }
+      return { flowByFromZone, flowByToZone, pathData };
+    }
+
+    /** GeoJsonLayer die het geselecteerde wegvak markeert (geel, dik). */
+    function makeSelectedLinkHighlightLayer() {
+      if (!selectedLinkId) return new GeoJsonLayer({ id: 'selected-link', data: [] });
+      const feat = geojson.features.find(f => f.properties?.linkId === selectedLinkId);
+      return new GeoJsonLayer({
+        id: 'selected-link',
+        data: feat ? [feat] : [],
+        stroked: false, filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 6,
+        getLineWidth: 6,
+        getLineColor: [255, 220, 0, 230],
+        updateTriggers: { getLineColor: [selectedLinkId] },
+      });
     }
 
 
@@ -3972,7 +4079,7 @@
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
          if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
-         if (linkEditActive && isHovering) return 'pointer';
+         if ((linkEditActive || selectedLinkActive) && isHovering) return 'pointer';
          return '';
       },
       onClick: (info, event) => {
@@ -4009,6 +4116,21 @@
     // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
     // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
     map.on('click', () => {
+      // Link-selectie via selectedLinkActive + hoveredLinkId
+      if (selectedLinkActive && hoveredLinkId !== null) {
+        selectedLinkId = (selectedLinkId === hoveredLinkId) ? null : hoveredLinkId;
+        if (selectedLinkId !== null) {
+          const numKey = Number(selectedLinkId);
+          const routes = linkRouteMap.get(numKey) ?? linkRouteMap.get(selectedLinkId) ?? [];
+          console.log('[SLA] geselecteerd linkId:', selectedLinkId, typeof selectedLinkId,
+            '| linkRouteMap.size:', linkRouteMap.size,
+            '| routes voor dit link:', routes.length,
+            '| routeList.length:', routeList.length,
+            '| zoneFeaturesRaw.length:', zoneFeaturesRaw.length);
+        }
+        updateOverlay(true);
+        return;
+      }
       if (zoneCentroidMode === 'off' || !hoveredZoneId) return;
       selectedZoneId = (selectedZoneId === hoveredZoneId) ? null : hoveredZoneId;
       updateOverlay(true);
@@ -4026,6 +4148,7 @@
         overlay.setProps({ layers: [
           makeNetworkLayer(),
           makeLinkEditLayer(),
+          makeSelectedLinkHighlightLayer(),
           makeZoneCentroidLayer(),
           makeZoneRoutesLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
@@ -5398,6 +5521,7 @@
           }
           totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
           routeMode = routeList.length > 0;
+          buildLinkRouteMap();
         }
       } catch (e) { console.warn('Routes herlaad mislukt:', e); }
 
@@ -5661,6 +5785,15 @@
     document.getElementById('splitViewBtn').addEventListener('click', () => {
       if (splitViewActive) deactivateSplitView();
       else activateSplitView();
+    });
+
+    // ── Selected Link Analysis — knop ─────────────────────────────────────────
+    document.getElementById('selectedLinkBtn').addEventListener('click', () => {
+      selectedLinkActive = !selectedLinkActive;
+      selectedLinkId     = null;
+      hoveredLinkId      = null;
+      document.getElementById('selectedLinkBtn').classList.toggle('active', selectedLinkActive);
+      updateOverlay(true);
     });
 
     // ── Splitter-drag ────────────────────────────────────────────────────────
