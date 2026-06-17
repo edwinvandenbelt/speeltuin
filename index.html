@@ -199,8 +199,10 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .dpBtn { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
-    .dpBtn.active { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
+    .dpBtn  { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
+    .dpBtn.active  { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
+    .fillBtn { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
+    .fillBtn.active { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
 
     /* ── Edit-modus knoppen ───────────────────────────────────────────── */
     .edit-btn {
@@ -733,6 +735,15 @@
 
     <div class="tb-sep"></div>
 
+    <!-- Initiële vulmethode: LL / LD -->
+    <div id="fillBtns" style="display:flex;gap:3px;align-items:center">
+      <button class="tb-btn fillBtn" data-fill="little" data-i18n="fillLlLabel" data-i18n-title="fillLlTitle" title="Little's Law">LL</button>
+      <button class="tb-btn fillBtn" data-fill="link"   data-i18n="fillLdLabel" data-i18n-title="fillLdTitle" title="Linkdichtheid">LD</button>
+      <button class="tb-btn fillBtn" data-fill="cap"    data-i18n="fillCbLabel" data-i18n-title="fillCbTitle" title="Capaciteitsbezetting">CB</button>
+    </div>
+
+    <div class="tb-sep"></div>
+
     <!-- Kleur-metriek -->
     <select id="colorMetric" class="tb-select" data-i18n-title="metricTitle" title="Kleur-metriek">
       <option value="flow" data-i18n="metricFlow">Intensiteit</option>
@@ -1051,6 +1062,8 @@
       dpMrhLabel:'OS', dpMrhTitle:'Ochtendspits',
       dpErhLabel:'AS', dpErhTitle:'Avondspits',
       dpRestLabel:'RD', dpRestTitle:'Restdag',
+      fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
+      fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
       timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
       pauseTitle:'Pauzeer simulatie',
@@ -1179,6 +1192,8 @@
       dpMrhLabel:'AM', dpMrhTitle:'Morning peak',
       dpErhLabel:'PM', dpErhTitle:'Evening peak',
       dpRestLabel:'OP', dpRestTitle:'Off-peak',
+      fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
+      fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
       metricTitle:'Color metric',
       timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
       pauseTitle:'Pause simulation',
@@ -1296,6 +1311,8 @@
       dpMrhLabel:'AR', dpMrhTitle:'Aamuruuhka',
       dpErhLabel:'IR', dpErhTitle:'Iltaruuhka',
       dpRestLabel:'MA', dpRestTitle:'Muu aika',
+      fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
+      fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
       timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
       pauseTitle:'Pys\xe4yt\xe4 simulaatio',
@@ -2362,14 +2379,17 @@
     // ── 2. Routes laden (optioneel) ─────────────────────────────────────────
 
     // linkId → geometrie (voor route-reconstructie)
-    const linkGeomMap   = new Map();
+    const linkGeomMap      = new Map();
     // linkId → snelheid in m/s (voor per-link snelheidsmodel)
-    const linkSpeedMap  = new Map();
+    const linkSpeedMap     = new Map();
+    // linkId → capaciteit in veh/u (voor CB-vulmethode)
+    const linkCapacityMap  = new Map();
     // linkId → flow per dagdeel (vtg/u), wordt bijgewerkt via rebuildLinkFlowMap()
     const linkFlowMap   = new Map();
     for (const seg of segments) {
-      linkGeomMap.set(seg.props.linkId,  seg.coords);
-      linkSpeedMap.set(seg.props.linkId, seg.speedMs);
+      linkGeomMap.set(seg.props.linkId,     seg.coords);
+      linkSpeedMap.set(seg.props.linkId,    seg.speedMs);
+      linkCapacityMap.set(seg.props.linkId, seg.props.capacity ?? 1800);
     }
 
     /** Herbouw linkFlowMap voor het huidige dagdeel (aanroepen na dagdeel-wijziging) */
@@ -2593,6 +2613,7 @@
      *  Formule: (weging/duur) / 14.4  */
     const DP_FRACTION = { mrh: (2/2)/14.4, erh: (2/2)/14.4, rest: (10.4/20)/14.4 };
     let daypart    = 'erh';
+    let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
     rebuildLinkFlowMap();  // Nu pas: daypart is gedeclareerd
     let widthScale = false;
     let colorMetric = 'flow';
@@ -2875,24 +2896,25 @@
         const minWeight = thresh / 10000;
 
         // Stap 1: bouw alle route-paden
-        const routePaths = [];  // { path, route, isBoundary, canPark, allLinkObjs }
+        const routePaths = [];  // { path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount }
         for (const route of routeList) {
           if (route.weight < minWeight) continue;
 
-          const innerLinkObjs = route.innerIds.map(id => {
+          // innerLinkPairs bevat het id-veld (nodig voor LD-vulmethode: offset per inner-link)
+          const innerLinkPairs = route.innerIds.map(id => {
             const coords  = linkGeomMap.get(id);
             const speedMs = linkSpeedMap.get(id) ?? 10;
             const flow    = linkFlowMap.get(id) ?? 0;
             const nodes   = nodeLinkMap.get(id);
-            return coords ? { coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
+            return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
           }).filter(Boolean);
 
-          if (!innerLinkObjs.length) continue;
+          if (!innerLinkPairs.length) continue;
 
-          const approachSpeedMs = innerLinkObjs[0].speedMs;
-          const exitSpeedMs     = innerLinkObjs[innerLinkObjs.length - 1].speedMs;
+          const approachSpeedMs = innerLinkPairs[0].speedMs;
+          const exitSpeedMs     = innerLinkPairs[innerLinkPairs.length - 1].speedMs;
 
-          let allLinkObjs = [...innerLinkObjs];
+          let allLinkObjs = [...innerLinkPairs];
 
           if (!route.fromBoundary) {
             const fromZone = zoneMap.get(route.fromZoneId);
@@ -2905,6 +2927,10 @@
               }
             }
           }
+
+          // approachCount: aantal approach-links vóór de inner-links in allLinkObjs
+          // (vastgesteld nádat approach is prepended, vóór exit wordt appended)
+          const approachCount = allLinkObjs.length - innerLinkPairs.length;
 
           if (!route.toBoundary) {
             const toZone = zoneMap.get(route.toZoneId);
@@ -2924,40 +2950,12 @@
           const isBoundary = route.fromBoundary || route.toBoundary;
           const canPark    = path.speedMs <= (50 / 3.6) && !isBoundary;
 
-          routePaths.push({ path, route, isBoundary, canPark, allLinkObjs });
+          routePaths.push({ path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount });
         }
 
         if (!routePaths.length) return list;
 
-        // Stap 2: Little's Law – netwerk-totaal N = Σ(flow × lengte / (speedMs × 3600))
-        // Dit is het verwachte aantal voertuigen dat tegelijkertijd op het hele netwerk rijdt.
-        let littlesN = 0;
-        for (const seg of segments) {
-          const flow    = segFlow(seg);
-          const speedMs = seg.speedMs || 10;
-          if (flow > 0) littlesN += (flow * seg.length) / (speedMs * 3600);
-        }
-        const N = Math.max(1, Math.min(Math.round(littlesN), MAX_VEHICLES));
-
-        // Stap 3: OD-gebaseerde Little's Law density per route.
-        // density = originProduction × DP_FRACTION × r.trips × reistijd
-        // Gebruik de OD-specifieke flow (niet de totale linkflow) zodat de initiële verdeling
-        // consistent is met het productiemechanisme. Gedeelde links worden hierdoor niet
-        // dubbel geteld. N uit Stap 2 blijft het anker voor het totale voertuigaantal.
-        for (const rp of routePaths) {
-          const odFlowVehHr = (rp.route.originProduction ?? 0)
-                            * (DP_FRACTION[daypart] ?? (1 / 14.4))
-                            * (rp.route.weight ?? 0);
-          let travelTime = 0;
-          for (const lo of rp.allLinkObjs) {
-            travelTime += segmentLength(lo.coords) / (lo.speedMs || 10);
-          }
-          rp.density = odFlowVehHr * travelTime / 3600;
-        }
-        const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
-
-        // Stap 3b: sla OD-groepen op voor het productiemechanisme.
-        // Moet ná Stap 3 staan zodat rp.density al gezet is.
+        // Stap 3b: sla OD-groepen op voor het productiemechanisme (altijd nodig, ongeacht vulmethode).
         // totalFlow [veh/u] = originProduction × DP_FRACTION[daypart] × r.trips
         //   • originProduction: gekalibreerde dagproductie uit het routebestand (veh/dag,
         //     zelfde eenheid als flow24hrs) — geldig voor zowel CBS-zones als boundary-zones.
@@ -2969,67 +2967,251 @@
         for (const rp of routePaths) {
           const key = `${rp.route.fromZoneId}→${rp.route.toZoneId}`;
           if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
-          const g             = odGroups.get(key);
-          const productionDp  = (rp.route.originProduction ?? 0) * (DP_FRACTION[daypart] ?? (1 / 14.4));
+          const g            = odGroups.get(key);
+          const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[daypart] ?? (1 / 14.4));
           g.totalFlow += productionDp * rp.route.weight;
           g.paths.push(rp);
         }
 
-        // Verdeel N proportioneel; probabilistische afronding zodat Σ count ≈ N.
-        for (const rp of routePaths) {
-          const share  = rp.density / totalRouteDensity;
-          const routeN = N * share;
-          rp.count = Math.floor(routeN) + (Math.random() < (routeN % 1) ? 1 : 0);
-        }
-        const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
-
-        for (const rp of routePaths) {
-          const count = rp.count;
-
-          // Zoek mogelijke chaining-partner (route die begint waar deze eindigt)
-          const endNode   = rp.route.midEndNode;
-          const chainCandidates = routePaths.filter(
-            other => other !== rp && other.route.midStartNode === endNode
-          );
-
-          for (let i = 0; i < count; i++) {
-            const isParked = rp.canPark && Math.random() < parkRatio;
-
-            // Gewogen startpositie (ook voor geparkeerde auto's — verspreid over de route)
-            const wp = buildWeightedPath(rp.allLinkObjs);
-            if (!wp) continue;
-
-            // Route-chaining: ~30% van rijdende stadswegauto's krijgt een vervolgroute
-            let pendingPath = null;
-            if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
-              const partner = chainCandidates[Math.floor(Math.random() * chainCandidates.length)];
-              pendingPath = partner.path;
+        // Preprocessing gedeeld door LD en CB: bouw per inner-link een route-map en
+        // per route-pad een offset-tabel (path.boundaries[approachCount + j]).
+        let innerLinkRouteMap = null;
+        if (initFillMethod === 'link' || initFillMethod === 'cap') {
+          innerLinkRouteMap = new Map(); // linkId → [{rp, weight}]
+          for (const rp of routePaths) {
+            const w = (rp.route.originProduction ?? 0) * (rp.route.weight ?? 0);
+            if (w <= 0) continue;
+            rp.innerLinkOffsets = new Map(); // linkId → {startOffset [m], linkLength [m]}
+            for (let j = 0; j < rp.innerLinkPairs.length; j++) {
+              const { id: linkId } = rp.innerLinkPairs[j];
+              const startOffset    = rp.path.boundaries[rp.approachCount + j];
+              const linkLength     = rp.path.links[rp.approachCount + j].length;
+              if (linkLength > 0) rp.innerLinkOffsets.set(linkId, { startOffset, linkLength });
+              if (!innerLinkRouteMap.has(linkId)) innerLinkRouteMap.set(linkId, []);
+              innerLinkRouteMap.get(linkId).push({ rp, weight: w });
             }
+          }
+        }
 
-            // Geparkeerde auto's: resterende wachttijd uniform verdeeld over [0, PARK_MEAN_S].
-            // Ze staan er al een tijdje — niet allemaal tegelijk vertrekken.
-            const departAt = isParked
-              ? Math.random() * PARK_MEAN_S / timeScale
-              : 0;
+        if (initFillMethod === 'link') {
+          // ── Methode LD: Linkdichtheid ───────────────────────────────────────
+          // k = q/v → N_link = flow [veh/u] × linkLength [m] / (speedMs [m/s] × 3600)
+          // linkFlowMap is al dagdeel-geschaald (via rebuildLinkFlowMap).
+          const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
+          let totalLd = 0;
+          for (const [linkId, entries] of innerLinkRouteMap) {
+            if (totalLd >= MAX_VEHICLES) break;
+            const flow    = linkFlowMap.get(linkId) ?? 0;
+            const speedMs = linkSpeedMap.get(linkId) ?? 10;
+            if (flow <= 0) continue;
+            const firstOffsets = entries[0].rp.innerLinkOffsets.get(linkId);
+            if (!firstOffsets || firstOffsets.linkLength <= 0) continue;
+            const linkLength = firstOffsets.linkLength;
+            const density    = flow * linkLength / (speedMs * 3600);
+            const n_s        = Math.floor(density) + (Math.random() < (density % 1) ? 1 : 0);
+            if (n_s < 1) continue;
 
-            list.push({
-              path:      rp.path,
-              offset:    wp.offset,
-              speed:     rp.path.speedMs * 0.9,
-              color:     randomCarColor(),
-              typeIdx:   randomVehicleType(),
-              state:     isParked ? 'parked' : 'moving',
-              departAt,
-              canPark:   rp.canPark,
-              noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
-              pendingPath,
-              spawnRate:  null,             // niet meer gebruikt (noRespawn=true)
-              spawnDelay: null,
-              waitingAtNode:      null,
-              waitStartT:         null,
-              yieldOverrideUntil: null,
-              stopTarget:         null,
-            });
+            // Normaliseer sampling-gewichten (DP_FRACTION valt weg bij normalisatie)
+            const totalW = entries.reduce((s, e) => s + e.weight, 0);
+            if (totalW <= 0) continue;
+
+            for (let i = 0; i < n_s; i++) {
+              if (totalLd >= MAX_VEHICLES) break;
+              // Sample route proportioneel aan originProduction × weight
+              let r = Math.random() * totalW;
+              let chosen = entries[entries.length - 1];
+              for (const entry of entries) { r -= entry.weight; if (r <= 0) { chosen = entry; break; } }
+              const rp      = chosen.rp;
+              const offsets = rp.innerLinkOffsets.get(linkId);
+              if (!offsets) continue;
+              // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
+              const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
+              const offset      = Math.min(posInMetres / rp.path.length, 0.999);
+              const isParked    = rp.canPark && Math.random() < parkRatio;
+              const endNode     = rp.route.midEndNode;
+              const chainCandidates = routePaths.filter(
+                other => other !== rp && other.route.midStartNode === endNode
+              );
+              let pendingPath = null;
+              if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
+                pendingPath = chainCandidates[Math.floor(Math.random() * chainCandidates.length)].path;
+              }
+              const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
+              list.push({
+                path:      rp.path,
+                offset,
+                speed:     rp.path.speedMs * 0.9,
+                color:     randomCarColor(),
+                typeIdx:   randomVehicleType(),
+                state:     isParked ? 'parked' : 'moving',
+                departAt,
+                canPark:   rp.canPark,
+                noRespawn: true,
+                pendingPath,
+                spawnRate:  null,
+                spawnDelay: null,
+                waitingAtNode:      null,
+                waitStartT:         null,
+                yieldOverrideUntil: null,
+                stopTarget:         null,
+              });
+              totalLd++;
+            }
+          }
+        } else if (initFillMethod === 'cap') {
+          // ── Methode CB: Capaciteitsbezetting ──────────────────────────────
+          // safeSpacingM = speedKmh/2 × 1.1 = speedMs × 3.6/2 × 1.1 = speedMs × 1.98
+          // occupancy    = flow / capacity  (gecapped op 1.0)
+          // n_s          = round(linkLength / safeSpacingM × occupancy)
+          const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
+          let totalCb = 0;
+          for (const [linkId, entries] of innerLinkRouteMap) {
+            if (totalCb >= MAX_VEHICLES) break;
+            const flow     = linkFlowMap.get(linkId) ?? 0;
+            const speedMs  = linkSpeedMap.get(linkId) ?? 10;
+            const capacity = linkCapacityMap.get(linkId) ?? 1800;
+            if (flow <= 0 || capacity <= 0) continue;
+            const firstOffsets = entries[0].rp.innerLinkOffsets.get(linkId);
+            if (!firstOffsets || firstOffsets.linkLength <= 0) continue;
+            const linkLength   = firstOffsets.linkLength;
+            const safeSpacingM = speedMs * 1.98;        // speedKmh/2 × 1.1
+            const occupancy    = Math.min(flow / capacity, 1.0);
+            const raw          = (linkLength / safeSpacingM) * occupancy;
+            const n_s          = Math.floor(raw) + (Math.random() < (raw % 1) ? 1 : 0);
+            if (n_s < 1) continue;
+
+            // Normaliseer sampling-gewichten (DP_FRACTION valt weg bij normalisatie)
+            const totalW = entries.reduce((s, e) => s + e.weight, 0);
+            if (totalW <= 0) continue;
+
+            for (let i = 0; i < n_s; i++) {
+              if (totalCb >= MAX_VEHICLES) break;
+              // Sample route proportioneel aan originProduction × weight
+              let r = Math.random() * totalW;
+              let chosen = entries[entries.length - 1];
+              for (const entry of entries) { r -= entry.weight; if (r <= 0) { chosen = entry; break; } }
+              const rp      = chosen.rp;
+              const offsets = rp.innerLinkOffsets.get(linkId);
+              if (!offsets) continue;
+              // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
+              const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
+              const offset      = Math.min(posInMetres / rp.path.length, 0.999);
+              const isParked    = rp.canPark && Math.random() < parkRatio;
+              const endNode     = rp.route.midEndNode;
+              const chainCandidates = routePaths.filter(
+                other => other !== rp && other.route.midStartNode === endNode
+              );
+              let pendingPath = null;
+              if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
+                pendingPath = chainCandidates[Math.floor(Math.random() * chainCandidates.length)].path;
+              }
+              const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
+              list.push({
+                path:      rp.path,
+                offset,
+                speed:     rp.path.speedMs * 0.9,
+                color:     randomCarColor(),
+                typeIdx:   randomVehicleType(),
+                state:     isParked ? 'parked' : 'moving',
+                departAt,
+                canPark:   rp.canPark,
+                noRespawn: true,
+                pendingPath,
+                spawnRate:  null,
+                spawnDelay: null,
+                waitingAtNode:      null,
+                waitStartT:         null,
+                yieldOverrideUntil: null,
+                stopTarget:         null,
+              });
+              totalCb++;
+            }
+          }
+        } else {
+          // ── Methode LL: Little's Law (standaard) ────────────────────────────
+          // Stap 2: Little's Law – netwerk-totaal N = Σ(flow × lengte / (speedMs × 3600))
+          // Dit is het verwachte aantal voertuigen dat tegelijkertijd op het hele netwerk rijdt.
+          let littlesN = 0;
+          for (const seg of segments) {
+            const flow    = segFlow(seg);
+            const speedMs = seg.speedMs || 10;
+            if (flow > 0) littlesN += (flow * seg.length) / (speedMs * 3600);
+          }
+          const N = Math.max(1, Math.min(Math.round(littlesN), MAX_VEHICLES));
+
+          // Stap 3: OD-gebaseerde Little's Law density per route.
+          // density = originProduction × DP_FRACTION × r.trips × reistijd
+          // Gebruik de OD-specifieke flow (niet de totale linkflow) zodat de initiële verdeling
+          // consistent is met het productiemechanisme. Gedeelde links worden hierdoor niet
+          // dubbel geteld. N uit Stap 2 blijft het anker voor het totale voertuigaantal.
+          for (const rp of routePaths) {
+            const odFlowVehHr = (rp.route.originProduction ?? 0)
+                              * (DP_FRACTION[daypart] ?? (1 / 14.4))
+                              * (rp.route.weight ?? 0);
+            let travelTime = 0;
+            for (const lo of rp.allLinkObjs) {
+              travelTime += segmentLength(lo.coords) / (lo.speedMs || 10);
+            }
+            rp.density = odFlowVehHr * travelTime / 3600;
+          }
+          const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
+
+          // Verdeel N proportioneel; probabilistische afronding zodat Σ count ≈ N.
+          for (const rp of routePaths) {
+            const share  = rp.density / totalRouteDensity;
+            const routeN = N * share;
+            rp.count = Math.floor(routeN) + (Math.random() < (routeN % 1) ? 1 : 0);
+          }
+          const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
+
+          for (const rp of routePaths) {
+            const count = rp.count;
+
+            // Zoek mogelijke chaining-partner (route die begint waar deze eindigt)
+            const endNode   = rp.route.midEndNode;
+            const chainCandidates = routePaths.filter(
+              other => other !== rp && other.route.midStartNode === endNode
+            );
+
+            for (let i = 0; i < count; i++) {
+              const isParked = rp.canPark && Math.random() < parkRatio;
+
+              // Gewogen startpositie (ook voor geparkeerde auto's — verspreid over de route)
+              const wp = buildWeightedPath(rp.allLinkObjs);
+              if (!wp) continue;
+
+              // Route-chaining: ~30% van rijdende stadswegauto's krijgt een vervolgroute
+              let pendingPath = null;
+              if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
+                const partner = chainCandidates[Math.floor(Math.random() * chainCandidates.length)];
+                pendingPath = partner.path;
+              }
+
+              // Geparkeerde auto's: resterende wachttijd uniform verdeeld over [0, PARK_MEAN_S].
+              // Ze staan er al een tijdje — niet allemaal tegelijk vertrekken.
+              const departAt = isParked
+                ? Math.random() * PARK_MEAN_S / timeScale
+                : 0;
+
+              list.push({
+                path:      rp.path,
+                offset:    wp.offset,
+                speed:     rp.path.speedMs * 0.9,
+                color:     randomCarColor(),
+                typeIdx:   randomVehicleType(),
+                state:     isParked ? 'parked' : 'moving',
+                departAt,
+                canPark:   rp.canPark,
+                noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
+                pendingPath,
+                spawnRate:  null,             // niet meer gebruikt (noRespawn=true)
+                spawnDelay: null,
+                waitingAtNode:      null,
+                waitStartT:         null,
+                yieldOverrideUntil: null,
+                stopTarget:         null,
+              });
+            }
           }
         }
       } else {
@@ -4933,13 +5115,14 @@
       }));
 
       // Herbouw graph
-      linkGeomMap.clear(); linkSpeedMap.clear();
+      linkGeomMap.clear(); linkSpeedMap.clear(); linkCapacityMap.clear();
       nodeCoords.clear();  nodeLinkMap.clear();  adj.clear();
       for (const f of newGeojson.features) {
         const p = f.properties, c = f.geometry.coordinates;
         if (!p.fromNode || !p.toNode || !c?.length) continue;
-        linkGeomMap.set(p.linkId,  c);
-        linkSpeedMap.set(p.linkId, p.speed > 0 ? p.speed / 3.6 : 10);
+        linkGeomMap.set(p.linkId,      c);
+        linkSpeedMap.set(p.linkId,     p.speed > 0 ? p.speed / 3.6 : 10);
+        linkCapacityMap.set(p.linkId,  p.capacity ?? 1800);
         nodeCoords.set(p.fromNode, c[0]);
         nodeCoords.set(p.toNode,   c[c.length - 1]);
         nodeLinkMap.set(p.linkId,  { fromNode: p.fromNode, toNode: p.toNode });
@@ -5487,8 +5670,21 @@
        // in segment-modus bepaalt het de flow-drempel per segment.
        rebuildCars();
        updateOverlay(true);
-       updateDebugPanel();
-     });
+        updateDebugPanel();
+      });
+
+      document.getElementById('fillBtns').addEventListener('click', e => {
+        const btn = e.target.closest('.fillBtn');
+        if (!btn) return;
+        initFillMethod = btn.dataset.fill;
+        localStorage.setItem('initFillMethod', initFillMethod);
+        document.querySelectorAll('.fillBtn').forEach(b => b.classList.toggle('active', b === btn));
+        rebuildCars();
+      });
+      // Initiële actieve staat op basis van localStorage
+      document.querySelectorAll('.fillBtn').forEach(b =>
+        b.classList.toggle('active', b.dataset.fill === initFillMethod)
+      );
 
      document.getElementById('zoneCentroidSelect').addEventListener('change', e => {
        zoneCentroidMode = e.target.value;
