@@ -15,7 +15,41 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1117; }
-    #map { width: 100vw; height: 100vh; }
+    /* ── Kaart-container (enkelvoudig / split-view) ──────────────────── */
+    #mapContainer { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
+    #map          { flex: 1 1 50%; min-width: 200px; height: 100%; }
+    #map-orig     { flex: 1 1 50%; min-width: 200px; height: 100%; display: none; }
+    #map-splitter {
+      flex: 0 0 6px; display: none; cursor: col-resize; height: 100%;
+      background: #1a2840;
+      border-left:  1px solid rgba(61,90,122,0.8);
+      border-right: 1px solid rgba(61,90,122,0.8);
+      transition: background 0.15s;
+      position: relative; z-index: 5;
+    }
+    #map-splitter:hover, #map-splitter.dragging { background: #3d5a7a; }
+    .split-mode #map-orig     { display: block; }
+    .split-mode #map-splitter { display: flex; align-items: center; justify-content: center; }
+    /* Grip-icoon op de splitter */
+    #map-splitter::after {
+      content: ''; display: block;
+      width: 2px; height: 40px;
+      background: rgba(126,200,227,0.35);
+      border-radius: 2px;
+    }
+    /* Badges boven elke kaart */
+    .map-badge {
+      position: absolute; top: 10px; z-index: 20;
+      background: rgba(13,17,23,0.85); color: #7ec8e3;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+      padding: 4px 10px; border-radius: 5px;
+      border: 1px solid rgba(126,200,227,0.25);
+      pointer-events: none; display: none;
+    }
+    .split-mode .map-badge { display: block; }
+    #badge-left  { left: 8px; }
+    #badge-right { right: 8px; }
 
     /* ── Toolbar ─────────────────────────────────────────────────────── */
     #toolbar {
@@ -662,7 +696,14 @@
     <p id="loaderMsg">GeoJSON laden…</p>
   </div>
 
-  <div id="map"></div>
+  <div id="mapContainer">
+    <div id="map"></div>
+    <div id="map-splitter" title="Sleep om verdeling aan te passen"></div>
+    <div id="map-orig"></div>
+    <!-- badges -->
+    <div id="badge-left"  class="map-badge" data-i18n="badgeLeft">Berekend scenario</div>
+    <div id="badge-right" class="map-badge" data-i18n="badgeRight">Bronscenario</div>
+  </div>
 
   <!-- ── Nieuw gebied aanmaken ──────────────────────────────────────────── -->
   <div id="newScreen">
@@ -754,6 +795,10 @@
       <option value="capacity" data-i18n="metricCapacity">Capaciteit</option>
       <option value="compare" id="compareOption" data-i18n="metricCompare" style="display:none">Vergelijking tonen</option>
     </select>
+
+    <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
+    <button class="tb-btn" id="splitViewBtn" data-i18n-title="splitViewTitle"
+            title="ScenarioVergelijker" style="display:none">⧉</button>
 
     <!-- Zone-centroids weergave -->
     <select id="zoneCentroidSelect" class="tb-select" title="Zone-centroids">
@@ -1185,6 +1230,9 @@
       dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
       // Netwerktitel
       networkTitle: n => `Verkeersnetwerk ${n}`, pageTitle: n => `Verkeersnetwerk ${n}`,
+      // ScenarioVergelijker
+      splitViewTitle:'ScenarioVergelijker: berekend ↔ bron',
+      badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',
       numberLocale:'nl',
     },
     EN: {
@@ -1304,6 +1352,9 @@
       tooltipZoneRoute:'Trip exchange', tooltipZoneRouteUnit:'veh/h',
       dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
       networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
+      // Scenario comparator
+      splitViewTitle:'Scenario comparator: calculated ↔ source',
+      badgeLeft:'Calculated scenario', badgeRight:'Source scenario',
       numberLocale:'en-GB',
     },
     FI: {
@@ -1423,6 +1474,9 @@
       tooltipZoneRoute:'Matkavirta', tooltipZoneRouteUnit:'ajon/h',
       dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika',
       networkTitle: n => `Liikenneverkko ${n}`, pageTitle: n => `Liikenneverkko ${n}`,
+      // Skenaariovertailija
+      splitViewTitle:'Skenaariovertailija: laskettu ↔ lähde',
+      badgeLeft:'Laskettu skenaario', badgeRight:'Lähdeskenaario',
       numberLocale:'fi',
     },
   };
@@ -2512,11 +2566,24 @@
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const routesGeoJson = await resp.json();
 
+      // Pre-pass: bereken per origin-zone de som van r.trips.
+      // prepare_core schrijft fracties (som ≈ 1.0); adjust_core schrijft absolute trips/dag
+      // (som >> 1.0). Als de som > 1.5 behandelen we de waarden als absoluut.
+      const zoneTripSumMap = new Map();
+      for (const feat of routesGeoJson.features) {
+        const fz = feat.properties.fromZoneId;
+        for (const r of feat.properties.routes ?? [])
+          zoneTripSumMap.set(fz, (zoneTripSumMap.get(fz) ?? 0) + (r.trips ?? 0));
+      }
+
       for (const feat of routesGeoJson.features) {
         const routes     = feat.properties.routes;
         const fromZoneId = feat.properties.fromZoneId;
         const toZoneId   = feat.properties.toZoneId;
         if (!routes) continue;
+
+        const zoneSum    = zoneTripSumMap.get(fromZoneId) ?? 1;
+        const isAbsolute = zoneSum > 1.5;  // adjust_core-uitvoer: absolute trips/dag
 
         for (const r of routes) {
           const fromBoundary = zoneMap.get(fromZoneId)?.boundary ?? false;
@@ -2559,8 +2626,10 @@
             toZoneId,
             fromBoundary,
             toBoundary,
-            originProduction: feat.properties.originProduction ?? 0,
-            weight:           r.trips,
+            // Absoluut: gebruik zoneSum als productie, normeer weight naar [0,1]-fractie
+            // Relatief (prepare_core): originProduction en fractie-weight ongewijzigd
+            originProduction: isAbsolute ? zoneSum : (feat.properties.originProduction ?? 0),
+            weight:           isAbsolute ? r.trips / zoneSum : r.trips,
           });
         }
       }
@@ -3387,6 +3456,20 @@
 
     // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
 
+    // ── ScenarioVergelijker — state (vóór makeCarLayers zodat er geen TDZ-fout optreedt) ──
+    let splitViewActive    = false;
+    let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
+    let map2               = null;   // rechter MapLibre-instantie
+    let overlay2           = null;   // deck.gl MapboxOverlay voor rechterkaart
+    let origSegments       = [];     // segments-array voor rechterkaart
+    let origGeojsonFeatures = [];    // geojson.features voor rechterkaart
+    let origZoneFeatures   = [];     // zoneFeaturesRaw voor rechterkaart
+    let _mapSyncing        = false;  // guard tegen recursieve camera-sync
+    // Splitter-drag state
+    let _splitterDragging  = false;
+    let _splitterStartX    = 0;
+    let _splitterLeftBasis = 0;
+
     let nodeEditActive = false;
     let linkEditActive = false;
     let nodeSelectMode   = 'click';  // 'click' | 'polygon'
@@ -3472,8 +3555,79 @@
       });
     }
 
-    function makeLinkEditLayer() {
+    // Tweede netwerk-laag voor ScenarioVergelijker (rechterkaart = bronscenario)
+    function makeNetworkLayer2() {
+      if (!origSegments.length) return null;
+      let metricMin = Infinity, metricMax = -Infinity;
+      for (const seg of origSegments) {
+        const v = getMetricValue(seg.props);
+        if (v != null && isFinite(v)) {
+          if (v < metricMin) metricMin = v;
+          if (v > metricMax) metricMax = v;
+        }
+      }
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of origSegments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      const metricRange = metricMax - metricMin || 1;
+      const dpRange     = dpMax - dpMin || 1;
+
       return new GeoJsonLayer({
+        id: 'network2',
+        data: origGeojsonFeatures,
+        visible: true,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth: f => {
+          if (f.properties.capacity === 0) return 1;
+          const lanes = f.properties.lanes || 1;
+          if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
+            let v;
+            if (colorMetric === 'occupancy_scaled') {
+              const flow = dpFlowOf(f.properties);
+              v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
+              const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
+              return Math.max(1.5, t * lanes * 12);
+            } else {
+              v = dpFlowOf(f.properties);
+              const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
+              return Math.max(1.5, t * lanes * 12);
+            }
+          }
+          return Math.max(1.5, lanes * 3);
+        },
+        getLineColor: f => {
+          if (f.properties.capacity === 0) return [210, 40, 40, 200];
+          const v = getMetricValue(f.properties);
+          if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          let norm;
+          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
+            norm = Math.max(0, Math.min(1, v / 100));
+          } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+            norm = Math.max(0, Math.min(1, v / globalMaxFlow));
+          } else {
+            norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+          }
+          switch (colorMetric) {
+            case 'speed':     return speedRgba(norm);
+            case 'capacity':  return capacityRgba(norm);
+            case 'occupancy': return greenRedRgba(norm);
+            default:          return flowToRgba(norm);
+          }
+        },
+        updateTriggers: {
+          getLineColor: [daypart, colorMetric, _fspVersion],
+          getLineWidth: [daypart, colorMetric, _fspVersion],
+        },
+      });
+    }
+
+    function makeLinkEditLayer() {      return new GeoJsonLayer({
         id: 'link-edit',
         data: geojson,
         visible: linkEditActive,
@@ -3659,7 +3813,7 @@
         if (!typeData.length) continue;
         const shared = {
           data:           typeData,
-          visible:        colorMetric !== 'compare',
+          visible:        colorMetric !== 'compare' && !splitViewActive,
           getPosition:    d => d.position,
           getOrientation: d => d.orientation,
           sizeScale: 1,
@@ -3855,6 +4009,10 @@
           makeZoneRoutesLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
         ]});
+        // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
+        if (splitViewActive && overlay2) {
+          overlay2.setProps({ layers: [makeNetworkLayer2()].filter(Boolean) });
+        }
       }
 
 
@@ -5172,11 +5330,24 @@
           const routesFc = await rr.json();
           // Herbouw routeList (zelfde logica als initieel laden)
           routeList.length = 0;
+
+          // Pre-pass: detecteer absolute trips/dag (adjust_core) vs fracties (prepare_core)
+          const zoneTripSumMapR = new Map();
+          for (const feat of routesFc.features) {
+            const fz = feat.properties.fromZoneId;
+            for (const r of feat.properties.routes ?? [])
+              zoneTripSumMapR.set(fz, (zoneTripSumMapR.get(fz) ?? 0) + (r.trips ?? 0));
+          }
+
           for (const feat of routesFc.features) {
             const routes     = feat.properties.routes;
             const fromZoneId = feat.properties.fromZoneId;
             const toZoneId   = feat.properties.toZoneId;
             if (!routes) continue;
+
+            const zoneSum    = zoneTripSumMapR.get(fromZoneId) ?? 1;
+            const isAbsolute = zoneSum > 1.5;
+
             for (const r of routes) {
               const fromBoundary = zoneMap.get(fromZoneId)?.boundary ?? false;
               const toBoundary   = zoneMap.get(toZoneId)?.boundary   ?? false;
@@ -5199,8 +5370,8 @@
                 midEndNode:       lastLink.toNode,
                 fromBoundary,
                 toBoundary,
-                originProduction: feat.properties.originProduction ?? 0,
-                weight:           r.trips,
+                originProduction: isAbsolute ? zoneSum : (feat.properties.originProduction ?? 0),
+                weight:           isAbsolute ? r.trips / zoneSum : r.trips,
               });
             }
           }
@@ -5239,6 +5410,10 @@
       updateOverlay(true);
 
       // AREA_ID bijwerken zodat vervolgacties (doorvoeren, adjust) het nieuwe gebied gebruiken
+      // Sla huidig gebied op als bronscenario voor ScenarioVergelijker vóór de update
+      splitViewSrcAreaId = AREA_ID;
+      if (splitViewActive) deactivateSplitView();
+      document.getElementById('splitViewBtn').style.display = '';
       AREA_ID = newAreaId;
 
       // URL bijwerken zonder pagina-reload (voor bookmarken / delen)
@@ -5264,6 +5439,10 @@
       fetch('/api/areas').then(r => r.json()).then(areas => {
         const area = areas.find(a => a.areaId === AREA_ID && a.mode === MODE);
         if (area?.hasCompare) syncCompareOption(true);
+        if (area?.srcAreaId) {
+          splitViewSrcAreaId = area.srcAreaId;
+          document.getElementById('splitViewBtn').style.display = '';
+        }
       }).catch(() => {});
     }
 
@@ -5303,6 +5482,9 @@
     function syncCompareOption(hasCompare) {
       const opt = document.getElementById('compareOption');
       opt.style.display = hasCompare ? '' : 'none';
+      // splitViewBtn tonen als er een bronscenario bekend is
+      document.getElementById('splitViewBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
       // Als de huidige selectie 'compare' is maar er geen data meer is, reset
       if (!hasCompare && colorMetric === 'compare') {
         colorMetric = 'flow';
@@ -5313,6 +5495,176 @@
         updateOverlay(true);
       }
     }
+
+    // ── ScenarioVergelijker ──────────────────────────────────────────────────
+
+    const _mapContainer = document.getElementById('mapContainer');
+    const _mapSplitter  = document.getElementById('map-splitter');
+
+    async function activateSplitView() {
+      if (splitViewActive || !splitViewSrcAreaId) return;
+
+      const mkUrl2 = type =>
+        `/api/geojson?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}&type=${type}`;
+
+      try {
+        // ── Laad origineel netwerk ──────────────────────────────────────────
+        const origGeoJson  = await fetch(mkUrl2('NETWORK')).then(r => r.json());
+        const origFeatures = origGeoJson.features.filter(
+          f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+        );
+        const origFlows   = origFeatures.map(f => f.properties.flow);
+        const origMinFlow = Math.min(...origFlows);
+        const origRange   = (Math.max(...origFlows) - origMinFlow) || 1;
+        origSegments.length = 0;
+        origFeatures.forEach(f => origSegments.push({
+          coords:  f.geometry.coordinates,
+          length:  segmentLength(f.geometry.coordinates),
+          speedMs: f.properties.speed / 3.6,
+          flow:    f.properties.flow,
+          norm:    (f.properties.flow - origMinFlow) / origRange,
+          props:   f.properties,
+        }));
+        origGeojsonFeatures = origGeoJson.features;
+
+        // ── Activeer split-layout ──────────────────────────────────────────
+        splitViewActive = true;
+        _mapContainer.classList.add('split-mode');
+        map.getContainer().style.flexBasis = '';  // reset naar 50/50
+        map.resize();
+
+        // ── Maak rechterkaart aan ──────────────────────────────────────────
+        const cam = map.getCenter();
+        map2 = new maplibregl.Map({
+          container: 'map-orig',
+          style:     'https://tiles.openfreemap.org/styles/liberty',
+          center:    [cam.lng, cam.lat],
+          zoom:      map.getZoom(),
+          pitch:     map.getPitch(),
+          bearing:   map.getBearing(),
+          antialias: true,
+          maxPitch:  85,
+        });
+
+        map2.once('load', () => {
+          overlay2 = new MapboxOverlay({
+            interleaved: true,
+            layers: [makeNetworkLayer2()].filter(Boolean),
+          });
+          map2.addControl(overlay2);
+        });
+
+        // ── Camera-sync ────────────────────────────────────────────────────
+        map.on('move', _syncMap1ToMap2);
+        map2.on('move', _syncMap2ToMap1);
+
+        // ── Bewerkingen uitschakelen ───────────────────────────────────────
+        // Stop actieve bewerkingsmodi eerst
+        if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+        if (linkEditActive) document.getElementById('linkEditBtn').click();
+        // Disable knoppen zodat ze niet opnieuw gestart kunnen worden
+        ['nodeEditBtn', 'linkEditBtn', 'applyChangesBtn'].forEach(id => {
+          document.getElementById(id).disabled = true;
+        });
+
+        // ── Cars verbergen (splitViewActive = true → visible: false) ───────
+        updateOverlay(true);
+
+        // Knop als actief markeren
+        document.getElementById('splitViewBtn').classList.add('active');
+
+      } catch (e) {
+        console.warn('ScenarioVergelijker activeren mislukt:', e);
+        splitViewActive = false;
+        _mapContainer.classList.remove('split-mode');
+        map.resize();
+      }
+    }
+
+    function deactivateSplitView() {
+      if (!splitViewActive) return;
+
+      // Camera-sync listeners verwijderen
+      map.off('move', _syncMap1ToMap2);
+      if (map2) map2.off('move', _syncMap2ToMap1);
+
+      // map2 afbreken
+      if (overlay2) { try { overlay2.finalize(); } catch (_) {} overlay2 = null; }
+      if (map2) { map2.remove(); map2 = null; }
+
+      // Originele data leegmaken
+      origSegments.length  = 0;
+      origGeojsonFeatures  = [];
+
+      // Layout terugzetten
+      map.getContainer().style.flexBasis = '';
+      _mapContainer.classList.remove('split-mode');
+      splitViewActive = false;
+      map.resize();
+
+      // Cars terug
+      updateOverlay(true);
+
+      // Bewerkingen weer beschikbaar stellen
+      ['nodeEditBtn', 'linkEditBtn', 'applyChangesBtn'].forEach(id => {
+        document.getElementById(id).disabled = false;
+      });
+
+      document.getElementById('splitViewBtn').classList.remove('active');
+    }
+
+    function _syncMap1ToMap2() {
+      if (_mapSyncing || !map2) return;
+      _mapSyncing = true;
+      map2.jumpTo({ center: map.getCenter(), zoom: map.getZoom(),
+                    bearing: map.getBearing(), pitch: map.getPitch() });
+      _mapSyncing = false;
+    }
+
+    function _syncMap2ToMap1() {
+      if (_mapSyncing || !map2) return;
+      _mapSyncing = true;
+      map.jumpTo({ center: map2.getCenter(), zoom: map2.getZoom(),
+                   bearing: map2.getBearing(), pitch: map2.getPitch() });
+      _mapSyncing = false;
+    }
+
+    document.getElementById('splitViewBtn').addEventListener('click', () => {
+      if (splitViewActive) deactivateSplitView();
+      else activateSplitView();
+    });
+
+    // ── Splitter-drag ────────────────────────────────────────────────────────
+    _mapSplitter.addEventListener('mousedown', e => {
+      if (!splitViewActive) return;
+      _splitterDragging  = true;
+      _splitterStartX    = e.clientX;
+      _splitterLeftBasis = map.getContainer().offsetWidth;
+      _mapSplitter.classList.add('dragging');
+      document.body.style.cursor     = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!_splitterDragging) return;
+      const splitterW = _mapSplitter.offsetWidth;
+      const total     = _mapContainer.offsetWidth - splitterW;
+      const newLeft   = Math.max(200, Math.min(total - 200,
+                          _splitterLeftBasis + (e.clientX - _splitterStartX)));
+      map.getContainer().style.flexBasis  = newLeft + 'px';
+      if (map2) map2.getContainer().style.flexBasis = (total - newLeft) + 'px';
+      map.resize();
+      if (map2) map2.resize();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!_splitterDragging) return;
+      _splitterDragging = false;
+      _mapSplitter.classList.remove('dragging');
+      document.body.style.cursor     = '';
+      document.body.style.userSelect = '';
+    });
 
     // ── Node-edit knop ──────────────────────────────────────────────────────
 

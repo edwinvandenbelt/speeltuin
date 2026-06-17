@@ -194,14 +194,27 @@ def _discover_areas():
             area_id = m.group(1)
             mode    = m.group(2)
             name    = area_id
+            src_area_id = None
             try:
                 with open(f, encoding='utf-8') as fh:
                     data = json.load(fh)
-                    name = data.get('properties', {}).get('name', area_id)
+                    props = data.get('properties', {})
+                    name        = props.get('name', area_id)
+                    # baseAreaId wordt door adjust_core in $.properties gezet
+                    src_area_id = props.get('baseAreaId') or None
             except Exception:
                 pass
+            # Fallback: .src-area-id bestand (geschreven door server bij adjust)
+            if not src_area_id:
+                src_id_path = subdir / '.src-area-id'
+                if src_id_path.exists():
+                    try:
+                        src_area_id = src_id_path.read_text(encoding='utf-8').strip() or None
+                    except Exception:
+                        pass
             has_compare = (subdir / f'{area_id}-COMPARE-{mode}.geojson').exists()
-            areas.append({'areaId': area_id, 'mode': mode, 'name': name, 'hasCompare': has_compare})
+            areas.append({'areaId': area_id, 'mode': mode, 'name': name,
+                          'hasCompare': has_compare, 'srcAreaId': src_area_id})
     return areas
 
 # ---------------------------------------------------------------------------
@@ -357,6 +370,9 @@ def api_adjust():
     output_folder = _work_dir() / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
+    # Sla brongebied op voor ScenarioVergelijker (persistentie over herlaad/URL-delen)
+    (output_folder / '.src-area-id').write_text(area_id, encoding='utf-8')
+
     # Schrijf wijzigingen-bestand direct in de output-submap
     changes_file = output_folder / f'{new_area_id}-changes.json'
     changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding='utf-8')
@@ -402,7 +418,7 @@ def _run_adjust_job(job_id, kwargs, src_area_id, new_area_id, mode, scenario_nam
             _adjust_run_pipeline(**kwargs)
         stream.flush()
 
-        # Patch top-level properties in output-GeoJSON met scenario_name
+        # Patch top-level properties in output-GeoJSON met scenario-naam (alleen als opgegeven)
         if scenario_name:
             _patch_geojson_properties(new_area_id, mode, scenario_name)
 
