@@ -27,14 +27,18 @@ if errorlevel 1 goto do_update
 echo [INFO] Lokale whl is al up-to-date.
 
 :html_check
+echo [INFO] Controleren of lokale html is...
 powershell -NoProfile -Command ^
   "if ((Get-Item '%SRC_HTML%').LastWriteTime -gt (Get-Item '%DST_HTML%').LastWriteTime) { exit 1 } else { exit 0 }"
 if errorlevel 1 goto do_update_html
+echo [INFO] Lokale HTML is al up-to-date.
 
 :py_check
+echo [INFO] Controleren of lokale Python-bestand is...
 powershell -NoProfile -Command ^
   "if ((Get-Item '%SRC_PY%').LastWriteTime -gt (Get-Item '%DST_PY%').LastWriteTime) { exit 1 } else { exit 0 }"
 if errorlevel 1 goto do_update_py
+echo [INFO] Lokale Python-bestand is al up-to-date.
 
 goto start_server
 

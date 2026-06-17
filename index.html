@@ -2235,7 +2235,12 @@
 
     // ── 1. Netwerkdata laden ────────────────────────────────────────────────
     setLoaderMsg(T('loaderNetwork'));
-    const geojson = await fetch(GEOJSON_FILE).then(r => r.json());
+    const geojson = await fetch(GEOJSON_FILE).then(r => {
+      if (!r.ok) throw new Error(`Netwerkbestand niet gevonden (${r.status}) — gebied bestaat niet meer of is verplaatst.`);
+      return r.json();
+    });
+    if (!Array.isArray(geojson?.features))
+      throw new Error(`Ongeldig netwerkbestand — geen GeoJSON FeatureCollection ontvangen.`);
 
     const features = geojson.features.filter(
       f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
@@ -5662,7 +5667,12 @@
       }
     });
 
-  })();
+  })().catch(err => {
+    console.error('[init] Kritieke fout bij laden:', err);
+    setLoaderMsg(`\u26a0 ${err.message}`);
+    const el = document.getElementById('loaderMsg');
+    if (el) el.style.cssText += ';color:#ff6b6b;white-space:pre-wrap;max-width:480px';
+  });
   // ═══════════════════════════════════════════════════════════════════════════
 
   function setLoaderMsg(msg) {

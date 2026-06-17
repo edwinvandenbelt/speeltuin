@@ -160,27 +160,31 @@ def _safe(value):
 
 
 def _geojson_path(area_id, mode, file_type):
-    return _work_dir() / f"{area_id}-{file_type}-{mode}.geojson"
+    return _work_dir() / area_id / f"{area_id}-{file_type}-{mode}.geojson"
 
 
 def _discover_areas():
     areas   = []
     pattern = re.compile(r'^(.+)-NETWORK-([A-Za-z0-9_]+)\.geojson$')
-    for f in sorted(_work_dir().glob('*-NETWORK-*.geojson')):
-        m = pattern.match(f.name)
-        if not m:
+    work    = _work_dir()
+    for subdir in sorted(work.iterdir()):
+        if not subdir.is_dir():
             continue
-        area_id = m.group(1)
-        mode    = m.group(2)
-        name    = area_id
-        try:
-            with open(f, encoding='utf-8') as fh:
-                data = json.load(fh)
-                name = data.get('properties', {}).get('name', area_id)
-        except Exception:
-            pass
-        has_compare = (_work_dir() / f'{area_id}-COMPARE-{mode}.geojson').exists()
-        areas.append({'areaId': area_id, 'mode': mode, 'name': name, 'hasCompare': has_compare})
+        for f in sorted(subdir.glob('*-NETWORK-*.geojson')):
+            m = pattern.match(f.name)
+            if not m:
+                continue
+            area_id = m.group(1)
+            mode    = m.group(2)
+            name    = area_id
+            try:
+                with open(f, encoding='utf-8') as fh:
+                    data = json.load(fh)
+                    name = data.get('properties', {}).get('name', area_id)
+            except Exception:
+                pass
+            has_compare = (subdir / f'{area_id}-COMPARE-{mode}.geojson').exists()
+            areas.append({'areaId': area_id, 'mode': mode, 'name': name, 'hasCompare': has_compare})
     return areas
 
 # ---------------------------------------------------------------------------
@@ -199,17 +203,17 @@ def api_areas():
 
 @app.route('/api/areas/<area_id>', methods=['DELETE'])
 def api_delete_area(area_id):
-    """Verwijder alle bestanden behorend bij een gebied."""
-    deleted = []
-    for f in list(_work_dir().glob(f'{area_id}-*.geojson')) + list(_work_dir().glob(f'{area_id}-*.json')):
-        try:
-            f.unlink()
-            deleted.append(f.name)
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-    if not deleted:
-        abort(404, f'Geen bestanden gevonden voor gebied: {area_id}')
-    return jsonify({'deleted': deleted})
+    """Verwijder de submap met alle bestanden behorend bij een gebied."""
+    if not _safe(area_id):
+        abort(400, f'Ongeldige area_id: {area_id}')
+    area_dir = _work_dir() / area_id
+    if not area_dir.is_dir():
+        abort(404, f'Geen map gevonden voor gebied: {area_id}')
+    try:
+        shutil.rmtree(str(area_dir))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'deleted': area_id})
 
 
 @app.route('/api/setdir')
@@ -246,7 +250,7 @@ def api_prepare():
 
     name    = str(body.get('name', '')).strip()
     mode    = str(body.get('mode', 'CAR')).upper()
-    out_dir = Path(body.get('out_dir') or str(_work_dir())).resolve()
+    out_dir = Path(body.get('out_dir') or str(_work_dir() / name)).resolve()
 
     try:
         min_lon = float(body['min_lon'])
@@ -261,10 +265,9 @@ def api_prepare():
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Schrijf altijd een nieuwe area_id naar .area-uuid zodat elke run
-    # eigen outputbestanden krijgt en vorige runs niet worden overschreven.
+    # Schrijf de area_id (= name) naar .area-uuid zodat adjust_core de bronbestanden kan vinden.
     uuid_file = out_dir / '.area-uuid'
-    uuid_file.write_text(str(uuid.uuid4()), encoding='utf-8')
+    uuid_file.write_text(name, encoding='utf-8')
 
     kwargs = dict(
         min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat,
@@ -321,20 +324,21 @@ def api_adjust():
     if not _ADJUST_AVAILABLE:
         abort(503, 'adjust-package niet beschikbaar')
 
-    src_dir     = _work_dir()
+    src_dir     = _work_dir() / area_id
     routes_file = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
     if not routes_file.exists():
         abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
 
-    new_area_id  = str(uuid.uuid4())
-    changes_file = _work_dir() / f'{new_area_id}-changes.json'
+    new_area_id   = str(uuid.uuid4())
+    output_folder = _work_dir() / new_area_id
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    # Schrijf wijzigingen-bestand direct in de output-submap
+    changes_file = output_folder / f'{new_area_id}-changes.json'
     changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding='utf-8')
 
-    # adjust_core leest .area-uuid uit 'folder' om bronbestanden te vinden.
-    (_work_dir() / '.area-uuid').write_text(area_id, encoding='utf-8')
-
-    # Output in submap work/{new_area_id}/ zodat source != output
-    output_folder = _work_dir() / new_area_id
+    # Zorg dat .area-uuid in de bronmap klopt (beveiliging bij handmatig aanmaken)
+    (src_dir / '.area-uuid').write_text(area_id, encoding='utf-8')
 
     kwargs = dict(
         folder=src_dir,
@@ -343,6 +347,7 @@ def api_adjust():
         routes_path=routes_file,
         new_area_id=new_area_id,
         min_link_trips=1.0,
+        refresh=False,
         debug=bool(body.get('debug', False)),
     )
 
@@ -352,7 +357,7 @@ def api_adjust():
             'status':        'pending',
             'log':           [],
             'returncode':    None,
-            'out_dir':       str(_work_dir()),
+            'out_dir':       str(output_folder),
             'new_area_id':   new_area_id,
             'scenario_name': scenario_name,
             'compare_url':   None,
@@ -374,21 +379,11 @@ def _run_adjust_job(job_id, kwargs, src_area_id, new_area_id, mode, scenario_nam
             _adjust_run_pipeline(**kwargs)
         stream.flush()
 
-        # Kopieer output-bestanden van submap naar work-map
-        sub_dir = _work_dir() / new_area_id
-        if sub_dir.is_dir():
-            for f in sub_dir.iterdir():
-                if f.is_file():
-                    shutil.copy2(str(f), str(_work_dir() / f.name))
-
         # Patch top-level properties in output-GeoJSON met scenario_name
         if scenario_name:
             _patch_geojson_properties(new_area_id, mode, scenario_name)
 
-        # Herstel .area-uuid naar new_area_id zodat een volgende adjust hierop aansluit
-        (_work_dir() / '.area-uuid').write_text(new_area_id, encoding='utf-8')
-
-        compare_file = _work_dir() / f'{new_area_id}-COMPARE-{mode}.geojson'
+        compare_file = _geojson_path(new_area_id, mode, 'COMPARE')
         compare_url  = (f'/api/geojson?areaId={new_area_id}&mode={mode}&type=COMPARE'
                         if compare_file.exists() else None)
         with _jobs_lock:
@@ -406,7 +401,7 @@ def _run_adjust_job(job_id, kwargs, src_area_id, new_area_id, mode, scenario_nam
 def _patch_geojson_properties(area_id, mode, name):
     """Pas top-level properties.name en properties.area_id aan in alle output-GeoJSON's."""
     for file_type in ('NETWORK', 'ZONE', 'FEEDLINK', 'ROUTES', 'COMPARE'):
-        path = _work_dir() / f'{area_id}-{file_type}-{mode}.geojson'
+        path = _work_dir() / area_id / f'{area_id}-{file_type}-{mode}.geojson'
         if not path.exists():
             continue
         try:
