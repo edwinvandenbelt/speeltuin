@@ -51,6 +51,25 @@
     #badge-left  { left: 8px; }
     #badge-right { right: 8px; }
 
+    /* ── Overlay (swipe) modus — kaarten gestapeld, map-orig geclipped ─── */
+    /* Beide maps volledig over elkaar, splitter als absolute lijn            */
+    #mapContainer.overlay-mode { position: relative; display: block; }
+    #mapContainer.overlay-mode #map,
+    #mapContainer.overlay-mode #map-orig {
+      position: absolute !important;
+      left: 0; top: 0;
+      width: 100% !important; height: 100%;
+      flex: none; min-width: 0;
+    }
+    #mapContainer.overlay-mode #map-orig { z-index: 2; }
+    #mapContainer.overlay-mode #map-splitter {
+      display: flex; position: absolute;
+      top: 0; height: 100%; width: 6px;
+      flex: none; align-items: center; justify-content: center;
+      z-index: 5;
+      /* left wordt inline gezet via JS */
+    }
+
     /* ── Toolbar ─────────────────────────────────────────────────────── */
     #toolbar {
       position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
@@ -3465,6 +3484,8 @@
     let origGeojsonFeatures = [];    // geojson.features voor rechterkaart
     let origZoneFeatures   = [];     // zoneFeaturesRaw voor rechterkaart
     let _mapSyncing        = false;  // guard tegen recursieve camera-sync
+    let overlayMode        = false;  // swipe-modus: kaarten gestapeld, splitter = clip-lijn
+    let overlayX           = 0;      // huidige splitter-positie in px (overlay-modus)
     // Splitter-drag state
     let _splitterDragging  = false;
     let _splitterStartX    = 0;
@@ -5584,6 +5605,14 @@
     function deactivateSplitView() {
       if (!splitViewActive) return;
 
+      // Overlay-modus opruimen
+      if (overlayMode) {
+        overlayMode = false;
+        document.getElementById('map-orig').style.clipPath = '';
+        _mapSplitter.style.left = '';
+        _mapContainer.classList.remove('overlay-mode');
+      }
+
       // Camera-sync listeners verwijderen
       map.off('move', _syncMap1ToMap2);
       if (map2) map2.off('move', _syncMap2ToMap1);
@@ -5635,11 +5664,42 @@
     });
 
     // ── Splitter-drag ────────────────────────────────────────────────────────
+
+    function enterOverlayMode(x) {
+      overlayMode = true;
+      overlayX    = x;
+
+      // Flex-basis inline-stijlen resetten (worden overruled door overlay-mode CSS)
+      map.getContainer().style.flexBasis  = '';
+      if (map2) map2.getContainer().style.flexBasis = '';
+
+      // Layout overschakelen: beide kaarten gestapeld, full-screen
+      _mapContainer.classList.add('overlay-mode');
+
+      // Splitter als absolute lijn positioneren
+      _mapSplitter.style.left = x + 'px';
+
+      // map-orig (bronscenario, z-index 2) clippen: alles rechts van x zichtbaar
+      document.getElementById('map-orig').style.clipPath = `inset(0 0 0 ${x}px)`;
+
+      // Kaarten herformaten naar volledige breedte, camera uitlijnen
+      requestAnimationFrame(() => {
+        map.resize();
+        if (map2) {
+          map2.resize();
+          _mapSyncing = true;
+          map2.jumpTo({ center: map.getCenter(), zoom: map.getZoom(),
+                        bearing: map.getBearing(), pitch: map.getPitch() });
+          _mapSyncing = false;
+        }
+      });
+    }
+
     _mapSplitter.addEventListener('mousedown', e => {
       if (!splitViewActive) return;
       _splitterDragging  = true;
       _splitterStartX    = e.clientX;
-      _splitterLeftBasis = map.getContainer().offsetWidth;
+      if (!overlayMode) _splitterLeftBasis = map.getContainer().offsetWidth;
       _mapSplitter.classList.add('dragging');
       document.body.style.cursor     = 'col-resize';
       document.body.style.userSelect = 'none';
@@ -5648,14 +5708,26 @@
 
     document.addEventListener('mousemove', e => {
       if (!_splitterDragging) return;
-      const splitterW = _mapSplitter.offsetWidth;
-      const total     = _mapContainer.offsetWidth - splitterW;
-      const newLeft   = Math.max(200, Math.min(total - 200,
-                          _splitterLeftBasis + (e.clientX - _splitterStartX)));
-      map.getContainer().style.flexBasis  = newLeft + 'px';
-      if (map2) map2.getContainer().style.flexBasis = (total - newLeft) + 'px';
-      map.resize();
-      if (map2) map2.resize();
+
+      if (overlayMode) {
+        // Swipe-modus: verschuif de clip-lijn over de gestapelde kaarten
+        const rect = _mapContainer.getBoundingClientRect();
+        const x = Math.max(0, Math.min(_mapContainer.offsetWidth - _mapSplitter.offsetWidth,
+                    e.clientX - rect.left));
+        _mapSplitter.style.left = x + 'px';
+        document.getElementById('map-orig').style.clipPath = `inset(0 0 0 ${x}px)`;
+        overlayX = x;
+      } else {
+        // Split-modus: verander de breedte van de twee panelen
+        const splitterW = _mapSplitter.offsetWidth;
+        const total     = _mapContainer.offsetWidth - splitterW;
+        const newLeft   = Math.max(200, Math.min(total - 200,
+                            _splitterLeftBasis + (e.clientX - _splitterStartX)));
+        map.getContainer().style.flexBasis  = newLeft + 'px';
+        if (map2) map2.getContainer().style.flexBasis = (total - newLeft) + 'px';
+        map.resize();
+        if (map2) map2.resize();
+      }
     });
 
     document.addEventListener('mouseup', () => {
@@ -5664,6 +5736,11 @@
       _mapSplitter.classList.remove('dragging');
       document.body.style.cursor     = '';
       document.body.style.userSelect = '';
+
+      // Eerste drag in split-modus → overschakelen naar overlay/swipe-modus
+      if (splitViewActive && !overlayMode) {
+        enterOverlayMode(map.getContainer().offsetWidth);
+      }
     });
 
     // ── Node-edit knop ──────────────────────────────────────────────────────
