@@ -1478,8 +1478,8 @@
 
   // ── Parameters uit URL (bijv. /?areaId=xxx&mode=CAR) ─────────────────────
   const _params = new URLSearchParams(window.location.search);
-  const AREA_ID = _params.get('areaId');
-  const MODE    = (_params.get('mode') || 'CAR').toUpperCase();
+  let AREA_ID = _params.get('areaId');
+  const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
 
   // ── Geen areaId: toon keuzescherm ─────────────────────────────────────────
   if (!AREA_ID) {
@@ -3419,7 +3419,7 @@
 
       return new GeoJsonLayer({
         id: 'network',
-        data: geojson,
+        data: geojson.features,  // features-array ipv wrapper-object: deck.gl detecteert nieuwe referentie na reload
         visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && !selectedZoneId,
         stroked: false,
         filled: false,
@@ -5136,9 +5136,8 @@
           speedMs: p.speed > 0 ? p.speed / 3.6 : 10,
         });
       }
-      // Vervang geojson.features in-place zodat makeNetworkLayer de nieuwe flows ziet
-      geojson.features.length = 0;
-      newGeojson.features.forEach(f => geojson.features.push(f));
+      // Vervang geojson.features met een nieuwe array zodat deck.gl de referentiewijziging detecteert
+      geojson.features = newGeojson.features;
 
       rebuildLinkFlowMap();
       dijkstraCache.clear();
@@ -5238,6 +5237,9 @@
       updateClosedLinksLayer();
       rebuildCars();
       updateOverlay(true);
+
+      // AREA_ID bijwerken zodat vervolgacties (doorvoeren, adjust) het nieuwe gebied gebruiken
+      AREA_ID = newAreaId;
 
       // URL bijwerken zonder pagina-reload (voor bookmarken / delen)
       const url = new URL(window.location.href);

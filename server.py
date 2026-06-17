@@ -424,7 +424,7 @@ def _run_adjust_job(job_id, kwargs, src_area_id, new_area_id, mode, scenario_nam
 def _patch_geojson_properties(area_id, mode, name):
     """Pas top-level properties.name en properties.area_id aan in alle output-GeoJSON's."""
     for file_type in ('NETWORK', 'ZONE', 'FEEDLINK', 'ROUTES', 'COMPARE'):
-        path = _work_dir() / area_id / f'{area_id}-{file_type}-{mode}.geojson'
+        path = _find_area_dir(area_id) / f'{area_id}-{file_type}-{mode}.geojson'
         if not path.exists():
             continue
         try:
