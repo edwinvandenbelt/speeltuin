@@ -346,8 +346,15 @@ def api_adjust():
     if not routes_file.exists():
         abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
 
-    new_area_id   = str(uuid.uuid4())
-    output_folder = _work_dir() / new_area_id
+    new_area_id = str(uuid.uuid4())
+
+    # Gebruik scenario_name als mapnaam (gesaneerd), anders de UUID
+    if scenario_name:
+        folder_name = re.sub(r'[^\w\-]', '_', scenario_name.strip())
+        folder_name = re.sub(r'_+', '_', folder_name).strip('_') or new_area_id
+    else:
+        folder_name = new_area_id
+    output_folder = _work_dir() / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
     # Schrijf wijzigingen-bestand direct in de output-submap

@@ -1,5 +1,6 @@
 *.pyc
 .env
+.gmt-env
 .area-uuid
 *.geojson
 *-changes.json
