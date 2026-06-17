@@ -3504,58 +3504,60 @@
 
       const isProduction = zoneCentroidMode === 'production';
 
-      // Globale schaalfactor op basis van alle zones (onafhankelijk van selectie)
+      // Globale max voor alpha-normalisatie (onafhankelijk van selectie)
       const allVals = zoneFeaturesRaw.map(f => {
         const p = f.properties || {};
         return isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
       });
       const globalMax = Math.max(...allVals, 1);
-      const globalScale = 700 / Math.sqrt(globalMax);   // max ≈ 700m
 
-      // Wanneer een zone geselecteerd is: schaal tegenpolen zodat
-      // Σ oppervlakte tegenpolen = oppervlakte geselecteerde zone.
+      // Selectie-afhankelijke tegenpool-data
       let flowByZone = null;
-      let totalFlow  = 0;
-      let radiusSelected = 0;
-
+      let maxCounterpartFlow = 1;
       if (selectedZoneId) {
         ({ flowByZone } = computeZoneRouteData());
-        totalFlow = [...flowByZone.values()].reduce((s, v) => s + v, 0) || 1;
-
-        // Straal van de geselecteerde zone (eigen productie/attractie)
-        const selFeature = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
-        const selVal = selFeature
-          ? (isProduction ? (selFeature.properties.production ?? 0) : (selFeature.properties.attraction ?? 0))
-          : 0;
-        radiusSelected = Math.max(20, Math.sqrt(selVal) * globalScale);
+        maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
       }
+
+      // Alpha-helper: sqrt-schaling norm [0,1] → [50, 240]
+      // klein (val≈0) → alpha≈50 (~80% transparant), groot (val≈max) → alpha=240 (bijna opaque)
+      const normAlpha = norm =>
+        Math.round(50 + 190 * Math.sqrt(Math.max(0, Math.min(1, norm))));
 
       // Bouw puntenlijst
       const pts = [];
       for (const f of zoneFeaturesRaw) {
-        const p   = f.properties || {};
-        const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
-        const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+        const p = f.properties || {};
+
+        // Centroïd: centroidLon/Lat → Point-geometrie → Polygon (gemiddelde buitenring)
+        let lon = p.centroidLon ?? null;
+        let lat = p.centroidLat ?? null;
+        if (lon == null && f.geometry?.type === 'Point') {
+          [lon, lat] = f.geometry.coordinates;
+        } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+          const ring = f.geometry.coordinates[0];
+          lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+          lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+        }
         if (lon == null || lat == null) continue;
 
         const isSelected = p.zoneId === selectedZoneId;
-        let radius;
+        let alpha, flow = 0;
 
-        let flow = 0;
-        if (flowByZone && !isSelected) {
-          // Tegenpool: rᵢ = R_selected × √(flowᵢ / totalFlow)
+        if (isSelected) {
+          alpha = 220;                                          // geselecteerde zone: vaste hoge alpha
+        } else if (flowByZone) {
           flow = flowByZone.get(p.zoneId) ?? 0;
-          if (flow <= 0) continue;
-          radius = radiusSelected * Math.sqrt(flow / totalFlow);
+          if (flow <= 0) continue;                             // tegenpool zonder flow: overslaan
+          alpha = normAlpha(flow / maxCounterpartFlow);
         } else {
-          // Geen selectie, of dit is de geselecteerde zone zelf
           const val = isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
           if (val <= 0) continue;
-          radius = Math.max(20, Math.sqrt(val) * globalScale);
+          alpha = normAlpha(val / globalMax);
         }
 
         pts.push({
-          lon, lat, radius, zoneId: p.zoneId ?? null, isSelected,
+          lon, lat, alpha, zoneId: p.zoneId ?? null, isSelected,
           zoneName:   p.zoneName || String(p.zoneId ?? ''),
           zoneClass:  p.zoneClass || '',
           production: p.production ?? 0,
@@ -3570,26 +3572,26 @@
         pickable:       true,
         stroked:        true,
         filled:         true,
-        radiusUnits:    'meters',
+        radiusUnits:    'pixels',
         lineWidthUnits: 'pixels',
         lineWidthMinPixels: 1,
         getPosition:    d => [d.lon, d.lat],
-        getRadius:      d => d.radius,
+        getRadius:      10,
         getFillColor:   d => d.isSelected
-          ? (isProduction ? [255, 140, 0, 140] : [30, 120, 255, 140])
-          : (isProduction ? [255, 140, 0,  60] : [30, 120, 255,  60]),
+          ? (isProduction ? [255, 140,  0, 220] : [30, 120, 255, 220])
+          : (isProduction ? [255, 140,  0, d.alpha] : [30, 120, 255, d.alpha]),
         getLineColor:   d => d.isSelected
-          ? (isProduction ? [255, 200, 80, 255] : [80, 200, 255, 255])
-          : (isProduction ? [255, 140,  0, 180] : [30, 120, 255, 180]),
+          ? (isProduction ? [255, 200,  80, 255] : [ 80, 200, 255, 255])
+          : (isProduction ? [255, 140,   0, Math.min(d.alpha + 40, 255)]
+                          : [ 30, 120, 255, Math.min(d.alpha + 40, 255)]),
         getLineWidth:   d => d.isSelected ? 2.5 : 1.5,
         onHover: ({ object }) => {
           hoveredZoneId = object?.zoneId ?? null;
           map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
         },
         updateTriggers: {
-          getRadius:    [zoneCentroidMode, selectedZoneId, daypart],
-          getFillColor: [zoneCentroidMode, selectedZoneId],
-          getLineColor: [zoneCentroidMode, selectedZoneId],
+          getFillColor: [zoneCentroidMode, selectedZoneId, daypart],
+          getLineColor: [zoneCentroidMode, selectedZoneId, daypart],
           getLineWidth: [selectedZoneId],
         },
       });

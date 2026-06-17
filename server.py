@@ -159,8 +159,25 @@ def _safe(value):
     return bool(value and _SAFE_RE.match(value))
 
 
+def _find_area_dir(area_id: str):
+    """Zoek de work-submap die de bestanden voor area_id bevat.
+
+    Controleert eerst de snelle variant (mapnaam == area_id), dan scant het alle
+    submappen op de aanwezigheid van '<area_id>-NETWORK-*.geojson'.
+    Fallback: _work_dir() / area_id (leidt tot nette 404 downstream).
+    """
+    work = _work_dir()
+    direct = work / area_id
+    if direct.is_dir() and any(direct.glob(f'{area_id}-NETWORK-*.geojson')):
+        return direct
+    for subdir in work.iterdir():
+        if subdir.is_dir() and any(subdir.glob(f'{area_id}-NETWORK-*.geojson')):
+            return subdir
+    return direct  # fallback
+
+
 def _geojson_path(area_id, mode, file_type):
-    return _work_dir() / area_id / f"{area_id}-{file_type}-{mode}.geojson"
+    return _find_area_dir(area_id) / f"{area_id}-{file_type}-{mode}.geojson"
 
 
 def _discover_areas():
@@ -206,7 +223,7 @@ def api_delete_area(area_id):
     """Verwijder de submap met alle bestanden behorend bij een gebied."""
     if not _safe(area_id):
         abort(400, f'Ongeldige area_id: {area_id}')
-    area_dir = _work_dir() / area_id
+    area_dir = _find_area_dir(area_id)
     if not area_dir.is_dir():
         abort(404, f'Geen map gevonden voor gebied: {area_id}')
     try:
@@ -324,7 +341,7 @@ def api_adjust():
     if not _ADJUST_AVAILABLE:
         abort(503, 'adjust-package niet beschikbaar')
 
-    src_dir     = _work_dir() / area_id
+    src_dir     = _find_area_dir(area_id)
     routes_file = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
     if not routes_file.exists():
         abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
@@ -347,7 +364,6 @@ def api_adjust():
         routes_path=routes_file,
         new_area_id=new_area_id,
         min_link_trips=1.0,
-        refresh=False,
         debug=bool(body.get('debug', False)),
     )
 
