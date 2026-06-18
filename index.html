@@ -416,6 +416,93 @@
       margin-bottom: 8px;
     }
 
+    /* ── What-if wegafsluiting panel ─────────────────────────────────── */
+    #whatifRcPanel {
+      display: none;
+      position: absolute;
+      bottom: 24px; right: 24px;
+      z-index: 20;
+      width: 300px;
+      background: rgba(13,17,23,0.93);
+      border: 1px solid rgba(255,80,80,0.25);
+      border-radius: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    #whatifRcPanelHeader {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 12px; color: #ff6b6b; font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #whatifRcList {
+      max-height: 180px; overflow-y: auto;
+      padding: 6px 0;
+    }
+    .whatif-rc-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 16px;
+      font-size: 12px; color: #c9d6e8;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .whatif-rc-item:last-child { border-bottom: none; }
+    .whatif-rc-item-label { flex: 1; line-height: 1.4; }
+    .whatif-rc-item-del {
+      width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0;
+      background: transparent; color: #4a5568;
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 13px; cursor: pointer; line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+    .whatif-rc-item-del:hover { background: rgba(255,80,80,0.15); color: #ff6b6b; border-color: rgba(255,80,80,0.3); }
+    .whatif-rc-empty {
+      padding: 10px 16px;
+      font-size: 12px; color: #5a6272; font-style: italic;
+    }
+    #whatifRcFooter { padding: 10px 16px; border-top: 1px solid rgba(255,255,255,0.07); }
+    #whatifRcDirRow {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 8px;
+    }
+    #whatifRcDirLabel { font-size: 12px; color: #7a8699; white-space: nowrap; }
+    #whatifRcDirSelect {
+      flex: 1; background: #1a2233; color: #c9d6e8;
+      border: 1px solid rgba(255,80,80,0.25); border-radius: 6px;
+      padding: 5px 8px; font-size: 12px; font-family: 'Segoe UI', sans-serif;
+    }
+    #whatifRcDirSelect:focus { outline: none; border-color: rgba(255,80,80,0.55); }
+    #whatifRcNameInput {
+      width: 100%; background: #1a2233; color: #c9d6e8;
+      border: 1px solid rgba(255,80,80,0.25); border-radius: 6px;
+      padding: 6px 9px; font-size: 12px; font-family: 'Segoe UI', sans-serif;
+      margin-bottom: 8px; box-sizing: border-box;
+    }
+    #whatifRcNameInput:focus { outline: none; border-color: rgba(255,80,80,0.55); }
+    #whatifRcRunBtn {
+      width: 100%; padding: 8px 0; border-radius: 7px;
+      background: rgba(255,80,80,0.15); color: #ff6b6b;
+      border: 1px solid rgba(255,80,80,0.4);
+      font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif;
+      letter-spacing: 0.3px; transition: background 0.15s;
+      margin-bottom: 6px;
+    }
+    #whatifRcRunBtn:hover { background: rgba(255,80,80,0.28); }
+    #whatifRcRunBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #whatifRcClearBtn {
+      width: 100%; padding: 6px 0; border-radius: 7px;
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif;
+      transition: background 0.15s, color 0.15s;
+    }
+    #whatifRcClearBtn:hover { background: rgba(255,255,255,0.04); color: #c9d6e8; }
+    #whatifRcStatus { font-size: 11px; color: #7ec8e3; margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
+    /* Rode gloedkleur voor active what-if-knop */
+    #whatifRcBtn:hover { background: rgba(255,80,80,0.15) !important; color: #ff8080 !important; }
+    #whatifRcBtn.active { background: rgba(255,80,80,0.22) !important; color: #ff6b6b !important; border-color: rgba(255,80,80,0.5) !important; }
+
     /* ── COMPARE laag-toggle ──────────────────────────────────────────── */
     .compare-btn {
       margin-top: 8px;
@@ -840,6 +927,7 @@
     <button class="tb-btn edit-btn" id="nodeEditBtn" data-i18n-title="nodeEditTitle" title="Productie/attractie per knoop wijzigen">&#9673;</button>
     <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
     <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
+    <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting">&#128683;</button>
 
     <div class="tb-sep"></div>
 
@@ -1057,6 +1145,29 @@
     </div>
   </div>
 
+  <!-- ── What-if wegafsluiting paneel ──────────────────────────────────── -->
+  <div id="whatifRcPanel">
+    <div id="whatifRcPanelHeader">
+      <span data-i18n="whatifRcTitle">What-if wegafsluiting</span>
+      <span id="whatifRcCount" style="color:#5a6272;font-weight:400">0</span>
+    </div>
+    <div id="whatifRcList"></div>
+    <div id="whatifRcFooter">
+      <div id="whatifRcDirRow">
+        <span id="whatifRcDirLabel" data-i18n="whatifRcDirectionLabel">Richting</span>
+        <select id="whatifRcDirSelect">
+          <option value="both"     data-i18n="whatifRcDirBoth">Beide richtingen</option>
+          <option value="same"     data-i18n="whatifRcDirSame">Zelfde richting</option>
+          <option value="opposite" data-i18n="whatifRcDirOpposite">Tegenrichting</option>
+        </select>
+      </div>
+      <input type="text" id="whatifRcNameInput" data-i18n-ph="whatifRcNamePh" placeholder="Scenario-naam"/>
+      <button id="whatifRcRunBtn"   data-i18n="whatifRcRunBtn">&#128683; Uitvoeren</button>
+      <button id="whatifRcClearBtn" data-i18n="whatifRcClearBtn">&#10005; Wis selectie</button>
+      <div id="whatifRcStatus"></div>
+    </div>
+  </div>
+
   <!-- ── Flow-scaler panel ─────────────────────────────────────────────────── -->
   <div id="flowScalerPanel">
     <div id="fspHeader">
@@ -1250,6 +1361,24 @@
       badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',
       // Selected Link Analysis
       selectedLinkTitle:'Herkomst/bestemming per wegvak',
+      // What-if wegafsluiting
+      whatifRcBtnTitle:'What-if wegafsluiting',
+      whatifRcTitle:'What-if wegafsluiting',
+      whatifRcNamePh:'Scenario-naam',
+      whatifRcRunBtn:'\uD83D\uDEAB Uitvoeren',
+      whatifRcClearBtn:'\u2715 Wis selectie',
+      whatifRcDirectionLabel:'Richting',
+      whatifRcDirBoth:'Beide richtingen',
+      whatifRcDirSame:'Zelfde richting',
+      whatifRcDirOpposite:'Tegenrichting',
+      whatifRcNoLinks:'Geen wegvakken geselecteerd.',
+      whatifRcNoCsv:'NVP-routedata ontbreekt. Bereid het gebied opnieuw voor met nvp_table + nvp_year.',
+      whatifRcStart:'What-if starten\u2026',
+      whatifRcRunning:'Bezig\u2026',
+      whatifRcDone:'Klaar!',
+      whatifRcError: c => `Fout (returncode: ${c})`,
+      whatifRcFetchError: e => `Fout: ${e}`,
+      whatifRcLinkLabel: id => `Wegvak ${id}`,
       // Taal-dropdown
       langSelectTitle:'Taal kiezen',
       numberLocale:'nl',
@@ -1376,6 +1505,24 @@
       badgeLeft:'Calculated scenario', badgeRight:'Source scenario',
       // Selected Link Analysis
       selectedLinkTitle:'Origin/destination per road link',
+      // What-if road closure
+      whatifRcBtnTitle:'What-if road closure',
+      whatifRcTitle:'What-if road closure',
+      whatifRcNamePh:'Scenario name',
+      whatifRcRunBtn:'\uD83D\uDEAB Run',
+      whatifRcClearBtn:'\u2715 Clear selection',
+      whatifRcDirectionLabel:'Direction',
+      whatifRcDirBoth:'Both directions',
+      whatifRcDirSame:'Same direction',
+      whatifRcDirOpposite:'Opposite direction',
+      whatifRcNoLinks:'No road links selected.',
+      whatifRcNoCsv:'NVP route data missing. Re-prepare this area with nvp_table + nvp_year.',
+      whatifRcStart:'Starting what-if\u2026',
+      whatifRcRunning:'Processing\u2026',
+      whatifRcDone:'Done!',
+      whatifRcError: c => `Error (return code: ${c})`,
+      whatifRcFetchError: e => `Error: ${e}`,
+      whatifRcLinkLabel: id => `Link ${id}`,
       // Language dropdown
       langSelectTitle:'Select language',
       numberLocale:'en-GB',
@@ -1502,6 +1649,24 @@
       badgeLeft:'Laskettu skenaario', badgeRight:'Lähdeskenaario',
       // Selected Link Analysis
       selectedLinkTitle:'Lähtö/kohde tiejaksokohtaisesti',
+      // What-if tiesulku
+      whatifRcBtnTitle:'What-if tiesulku',
+      whatifRcTitle:'What-if tiesulku',
+      whatifRcNamePh:'Skenaarion nimi',
+      whatifRcRunBtn:'\uD83D\uDEAB Suorita',
+      whatifRcClearBtn:'\u2715 Tyhjenн\xe4 valinta',
+      whatifRcDirectionLabel:'Suunta',
+      whatifRcDirBoth:'Molemmat suunnat',
+      whatifRcDirSame:'Sama suunta',
+      whatifRcDirOpposite:'Vastakkaissuunta',
+      whatifRcNoLinks:'Ei tiejaksoja valittuna.',
+      whatifRcNoCsv:'NVP-reittitiedot puuttuvat. Valmistele alue uudelleen nvp_table + nvp_year.',
+      whatifRcStart:'K\xe4ynnistet\xe4\xe4n what-if\u2026',
+      whatifRcRunning:'K\xe4sitell\xe4\xe4n\u2026',
+      whatifRcDone:'Valmis!',
+      whatifRcError: c => `Virhe (paluuarvo: ${c})`,
+      whatifRcFetchError: e => `Virhe: ${e}`,
+      whatifRcLinkLabel: id => `Tiejakso ${id}`,
       // Kielen valinta
       langSelectTitle:'Valitse kieli',
       numberLocale:'fi',
@@ -3516,6 +3681,10 @@
     let linkPolygonVertices   = [];       // [[lon, lat], ...]
     let linkPolygonLinksInside = [];      // link-features binnen de gesloten polygon
 
+    // ── What-if wegafsluiting — state ────────────────────────────────────────
+    let whatifRcActive = false;           // true als what-if wegafsluiting-modus actief is
+    let whatifRcLinks  = new Map();       // linkId (string) → label (string)
+
     function makeNetworkLayer() {
       // Bereken min/max voor de actieve metric
       let metricMin = Infinity, metricMax = -Infinity;
@@ -3585,8 +3754,11 @@
         },
         pickable: !linkEditActive,
         onHover: ({ object }) => {
-          if (selectedLinkActive) {
+          if (selectedLinkActive || whatifRcActive) {
             hoveredLinkId = object?.properties?.linkId ?? null;
+          }
+          if (whatifRcActive) {
+            map.getCanvas().style.cursor = object ? 'pointer' : '';
           }
         },
         updateTriggers: {
@@ -3932,6 +4104,30 @@
       });
     }
 
+    function makeWhatifRcHighlightLayer() {
+      const features = [];
+      for (const [lid] of whatifRcLinks) {
+        const coords = linkGeomMap.get(Number(lid)) ?? linkGeomMap.get(lid);
+        if (coords?.length >= 2) {
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: coords },
+            properties: { linkId: lid },
+          });
+        }
+      }
+      return new GeoJsonLayer({
+        id: 'whatif-rc-highlight',
+        data: features.length ? { type: 'FeatureCollection', features } : { type: 'FeatureCollection', features: [] },
+        stroked: false, filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 5,
+        getLineWidth: 5,
+        getLineColor: [255, 80, 80, 230],
+        updateTriggers: { getLineColor: [whatifRcLinks.size] },
+      });
+    }
+
 
     function makeCarLayers(data) {
       const layers = [];
@@ -4131,6 +4327,18 @@
         updateOverlay(true);
         return;
       }
+      // What-if wegafsluiting link-selectie
+      if (whatifRcActive && hoveredLinkId !== null) {
+        const lid = String(hoveredLinkId);
+        if (whatifRcLinks.has(lid)) {
+          whatifRcLinks.delete(lid);
+        } else {
+          whatifRcLinks.set(lid, T('whatifRcLinkLabel', lid));
+        }
+        renderWhatifRcList();
+        updateOverlay(true);
+        return;
+      }
       if (zoneCentroidMode === 'off' || !hoveredZoneId) return;
       selectedZoneId = (selectedZoneId === hoveredZoneId) ? null : hoveredZoneId;
       updateOverlay(true);
@@ -4149,6 +4357,7 @@
           makeNetworkLayer(),
           makeLinkEditLayer(),
           makeSelectedLinkHighlightLayer(),
+          makeWhatifRcHighlightLayer(),
           makeZoneCentroidLayer(),
           makeZoneRoutesLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
@@ -5548,6 +5757,7 @@
       // Stop bewerkingsmodus als die nog actief was
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
       if (linkEditActive) document.getElementById('linkEditBtn').click();
+      deactivateWhatifRc();
 
       updateLegend();
       updateClosedLinksLayer();
@@ -5789,10 +5999,142 @@
 
     // ── Selected Link Analysis — knop ─────────────────────────────────────────
     document.getElementById('selectedLinkBtn').addEventListener('click', () => {
+      deactivateWhatifRc();
       selectedLinkActive = !selectedLinkActive;
       selectedLinkId     = null;
       hoveredLinkId      = null;
       document.getElementById('selectedLinkBtn').classList.toggle('active', selectedLinkActive);
+      updateOverlay(true);
+    });
+
+    // ── What-if wegafsluiting — hulpfunctie & knop ───────────────────────────
+
+    function deactivateWhatifRc() {
+      if (!whatifRcActive) return;
+      whatifRcActive = false;
+      document.getElementById('whatifRcBtn').classList.remove('active');
+      document.getElementById('whatifRcPanel').style.display = 'none';
+      map.getCanvas().style.cursor = '';
+    }
+
+    function renderWhatifRcList() {
+      const list  = document.getElementById('whatifRcList');
+      const count = document.getElementById('whatifRcCount');
+      count.textContent = whatifRcLinks.size;
+      if (!whatifRcLinks.size) {
+        list.innerHTML = `<div class="whatif-rc-empty">${T('whatifRcNoLinks')}</div>`;
+        return;
+      }
+      list.innerHTML = '';
+      for (const [lid, label] of whatifRcLinks) {
+        const item = document.createElement('div');
+        item.className = 'whatif-rc-item';
+        const lbl = document.createElement('div');
+        lbl.className = 'whatif-rc-item-label';
+        lbl.textContent = label;
+        const del = document.createElement('button');
+        del.className = 'whatif-rc-item-del';
+        del.textContent = '\u00d7';
+        del.title = T('changeItemDel');
+        del.addEventListener('click', () => {
+          whatifRcLinks.delete(lid);
+          renderWhatifRcList();
+          updateOverlay(true);
+        });
+        item.appendChild(lbl);
+        item.appendChild(del);
+        list.appendChild(item);
+      }
+    }
+
+    async function runWhatifRoadClosure() {
+      const status = document.getElementById('whatifRcStatus');
+      if (!whatifRcLinks.size) {
+        status.style.display = 'block';
+        status.style.color   = '#ff6b6b';
+        status.textContent   = T('whatifRcNoLinks');
+        return;
+      }
+      const btn = document.getElementById('whatifRcRunBtn');
+      btn.disabled = true;
+      status.style.display = 'block';
+      status.style.color   = '#7ec8e3';
+      status.textContent   = T('whatifRcStart');
+
+      const direction    = document.getElementById('whatifRcDirSelect').value;
+      const scenarioName = document.getElementById('whatifRcNameInput').value.trim()
+                        || `${window._networkName} (what-if ${scenarioCounter})`;
+      const linkIds = [...whatifRcLinks.keys()].map(Number);
+
+      try {
+        const res = await fetch('/api/whatif-road-closure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ area_id: AREA_ID, mode: MODE, selected_links: linkIds, direction, scenario_name: scenarioName }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          status.style.color = '#ff6b6b';
+          status.textContent = txt;
+          btn.disabled = false;
+          return;
+        }
+        const { job_id } = await res.json();
+        status.textContent = T('whatifRcRunning');
+        const poll = setInterval(async () => {
+          try {
+            const sr = await fetch(`/api/whatif-road-closure/${job_id}`);
+            const sj = await sr.json();
+            if (sj.status === 'running' || sj.status === 'pending') {
+              status.textContent = T('whatifRcRunning');
+            } else if (sj.status === 'done') {
+              status.textContent = T('whatifRcDone');
+            } else {
+              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
+              status.style.color = '#ff6b6b';
+              status.textContent = errLines.length ? errLines.join('\n') : T('whatifRcError', sj.returncode);
+            }
+            if (sj.status === 'done' || sj.status === 'error') {
+              clearInterval(poll);
+              btn.disabled = false;
+              if (sj.status === 'done') {
+                scenarioCounter++;
+                whatifRcLinks.clear();
+                renderWhatifRcList();
+                document.getElementById('whatifRcNameInput').value = '';
+                await loadAdjustedResult(sj.new_area_id, null);
+              }
+            }
+          } catch (e) { /* poll-fout: volgende poging */ }
+        }, 1500);
+      } catch (err) {
+        status.style.color = '#ff6b6b';
+        status.textContent = T('whatifRcFetchError', err.message);
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('whatifRcBtn').addEventListener('click', () => {
+      // Deactiveer conflicterende modi
+      if (nodeEditActive)   document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)   document.getElementById('linkEditBtn').click();
+      if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
+      whatifRcActive = !whatifRcActive;
+      document.getElementById('whatifRcBtn').classList.toggle('active', whatifRcActive);
+      const panel = document.getElementById('whatifRcPanel');
+      if (whatifRcActive) {
+        panel.style.display = 'block';
+        renderWhatifRcList();
+      } else {
+        panel.style.display = 'none';
+      }
+      updateOverlay(true);
+    });
+
+    document.getElementById('whatifRcRunBtn').addEventListener('click', runWhatifRoadClosure);
+    document.getElementById('whatifRcClearBtn').addEventListener('click', () => {
+      whatifRcLinks.clear();
+      renderWhatifRcList();
       updateOverlay(true);
     });
 
@@ -5879,8 +6221,9 @@
     // ── Node-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('nodeEditBtn').addEventListener('click', () => {
-      // Zet link-edit uit als die actief was
+      // Zet link-edit en what-if uit als die actief waren
       if (linkEditActive) document.getElementById('linkEditBtn').click();
+      deactivateWhatifRc();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
       document.getElementById('nodeEditBtn').textContent =
@@ -5924,8 +6267,9 @@
     // ── Link-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('linkEditBtn').addEventListener('click', () => {
-      // Zet node-edit uit als die actief was
+      // Zet node-edit en what-if uit als die actief waren
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      deactivateWhatifRc();
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
       document.getElementById('linkEditBtn').innerHTML =

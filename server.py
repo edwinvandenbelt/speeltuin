@@ -76,6 +76,36 @@ except ImportError as _e:
     _FLOW_SCALER_AVAILABLE = False
     print(f'[server] WAARSCHUWING: flow_scaler niet beschikbaar — {_e}')
 
+try:
+    from whatif.nvp_whatif_data_lib import read_data_geojson as _whatif_read_data_geojson
+    from whatif.nvp_whatif_data_lib import export_network_whatif as _whatif_export_network
+    from whatif.nvp_whatif_lib import (
+        prepare_data             as _wi_prepare_data,
+        initialize_weights       as _wi_initialize_weights,
+        initialize_mask          as _wi_initialize_mask,
+        get_nsegments            as _wi_get_nsegments,
+        get_selection            as _wi_get_selection,
+        clean_trips              as _wi_clean_trips,
+        calibrate_tripvolumes    as _wi_calibrate_tripvolumes,
+        get_graphs_base          as _wi_get_graphs_base,
+        get_ods                  as _wi_get_ods,
+        selected_od_flows        as _wi_selected_od_flows,
+        adopt_reduction          as _wi_adopt_reduction,
+        get_new_paths            as _wi_get_new_paths,
+        full_assignment          as _wi_full_assignment,
+        get_difference_flows     as _wi_get_difference_flows,
+    )
+    _WHATIF_AVAILABLE = True
+except ImportError as _e:
+    _whatif_read_data_geojson = _whatif_export_network = None  # type: ignore[assignment]
+    _wi_prepare_data = _wi_initialize_weights = _wi_initialize_mask = None  # type: ignore[assignment]
+    _wi_get_nsegments = _wi_get_selection = _wi_clean_trips = None  # type: ignore[assignment]
+    _wi_calibrate_tripvolumes = _wi_get_graphs_base = _wi_get_ods = None  # type: ignore[assignment]
+    _wi_selected_od_flows = _wi_adopt_reduction = _wi_get_new_paths = None  # type: ignore[assignment]
+    _wi_full_assignment = _wi_get_difference_flows = None  # type: ignore[assignment]
+    _WHATIF_AVAILABLE = False
+    print(f'[server] WAARSCHUWING: what_if_quick_scan niet beschikbaar — {_e}')
+
 # ---------------------------------------------------------------------------
 # Configuratie
 # ---------------------------------------------------------------------------
@@ -212,9 +242,11 @@ def _discover_areas():
                         src_area_id = src_id_path.read_text(encoding='utf-8').strip() or None
                     except Exception:
                         pass
-            has_compare = (subdir / f'{area_id}-COMPARE-{mode}.geojson').exists()
+            has_compare    = (subdir / f'{area_id}-COMPARE-{mode}.geojson').exists()
+            has_nvp_routes = (subdir / f'{area_id}-NVP-ROUTES-{mode}.parquet').exists()
             areas.append({'areaId': area_id, 'mode': mode, 'name': name,
-                          'hasCompare': has_compare, 'srcAreaId': src_area_id})
+                          'hasCompare': has_compare, 'srcAreaId': src_area_id,
+                          'hasNvpRoutes': has_nvp_routes})
     return areas
 
 # ---------------------------------------------------------------------------
@@ -306,6 +338,8 @@ def api_prepare():
         schema=body.get('schema', '2023_01'),
         refresh=bool(body.get('refresh')),
         debug=bool(body.get('debug', False)),
+        nvp_table='nvp_experimental.silver.vw_segments',
+        nvp_year=2025,
     )
 
     job_id = str(uuid.uuid4())
@@ -465,8 +499,264 @@ def api_adjust_status(job_id):
 
 
 # ---------------------------------------------------------------------------
-# Flow-scaler
+# What-if quick scan — wegafsluiting
 # ---------------------------------------------------------------------------
+
+# Model-coëfficiënten (overgenomen uit road_closure/__main__.py)
+_WI_FRACT_CHANGE         = [0.10, 0.25, 0.50, 0.80, 0.95]
+_WI_MIN_NVP              = 10
+_WI_MIN_RADIUS_ODNODE    = 200
+_WI_CWEIGHT_ADD          = 0.3
+_WI_POWER_RATIO          = {'capacity': 0.45, 'speed': 0.20}
+_WI_MOTIVES              = {'totaal': 0, 'werk': 1, 'zakelijk': 2, 'onderwijs': 3,
+                             'recreatief': 4, 'winkel': 5, 'overig': 6}
+_WI_PERIODS              = {'etmaal': 0, 'ochtendspits': 1, 'avondspits': 2, 'restdag': 3}
+
+
+def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
+                                  output_folder, new_area_id, src_area_id,
+                                  mode, selected_links, direction,
+                                  motive, period, nroutes,
+                                  measure, reduction_factor,
+                                  scenario_name):
+    """Voer de what-if wegafsluiting uit in een achtergrondthread."""
+    import shutil as _shutil
+
+    with _jobs_lock:
+        _jobs[job_id]['status'] = 'running'
+    stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
+
+    try:
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+
+            # ── 1. Inlezen ────────────────────────────────────────────────
+            print('[whatif] Netwerk en NVP-routes inlezen …')
+            nodes, links, links_opposite, volumes, segments, tripsarr, trippaths = \
+                _whatif_read_data_geojson(path_geojson, path_csv)
+
+            # ── 2. Voorbereiden ───────────────────────────────────────────
+            print('[whatif] Data voorbereiden …')
+            imotive  = _WI_MOTIVES[motive]
+            iperiod  = _WI_PERIODS[period]
+            # selected_links = list van [[link_id], ...] (groepen)
+            sel_links_grouped = [[lid] for lid in selected_links]
+
+            nodexys, selected_segments, opposite_segments, qsegsmodel, qmodel, segments_to_links = \
+                _wi_prepare_data(nodes, links, links_opposite, segments, volumes,
+                                  sel_links_grouped, direction, imotive, iperiod)
+
+            # ── 3. Selectie ───────────────────────────────────────────────
+            print('[whatif] Ritpaden selecteren …')
+            nsel_pass   = 1
+            tripweights = _wi_initialize_weights(tripsarr)
+            trippaths2, tripweights2, trippaths12, trippaths21 = _wi_get_selection(
+                trippaths, tripweights, selected_segments, nsel_pass)
+
+            # ── 4. Aantal segmenten ───────────────────────────────────────
+            nsegment, nsegment2 = _wi_get_nsegments(segments, trippaths21)
+
+            # ── 5. Rondritten opschonen ───────────────────────────────────
+            print('[whatif] Rondritten opschonen …')
+            tripweights2 = _wi_clean_trips(selected_segments, opposite_segments,
+                                            tripweights2, trippaths2, trippaths12)
+
+            # ── 6. Kalibratie ─────────────────────────────────────────────
+            print('[whatif] Ritvolumes kalibreren …')
+            porttrips2_all = _wi_initialize_mask(trippaths2['trip'])
+            ratio_model, qsegs_sel, qsegs_sel2 = _wi_calibrate_tripvolumes(
+                selected_segments, qsegsmodel,
+                trippaths12, trippaths21,
+                trippaths2, tripweights2, porttrips2_all,
+                nsegment, nsegment2)
+
+            # ── 7. Grafen (basisitutatie) ─────────────────────────────────
+            print('[whatif] Grafen opbouwen …')
+            G, Gback, nodepairs_segs, nodecosts = _wi_get_graphs_base(
+                segments, selected_segments, qsegsmodel, nsegment)
+
+            # ── 8. OD-knopen en paden ─────────────────────────────────────
+            print('[whatif] OD-relaties bepalen …')
+            onodes, dnodes, osegs2, dsegs2, opaths, dpaths = _wi_get_ods(
+                G, Gback, segments, nsegment,
+                selected_segments, opposite_segments,
+                trippaths12, trippaths21,
+                trippaths2, tripweights2, porttrips2_all, nsegment2,
+                _WI_FRACT_CHANGE, _WI_MIN_NVP, nodexys, _WI_MIN_RADIUS_ODNODE)
+
+            # ── 9. Nieuwe paden (omleidingen) ─────────────────────────────
+            print('[whatif] Omleidingspaden zoeken …')
+            newpaths, validpaths = _wi_get_new_paths(G, onodes, dnodes, selected_segments)
+
+            # ── 10. OD-flows op geselecteerd segment ──────────────────────
+            print('[whatif] OD-flows berekenen …')
+            qsegsmodel_od = _wi_selected_od_flows(
+                selected_segments, qsegsmodel, qsegs_sel,
+                ratio_model, nsegment, nsegment2,
+                trippaths12, trippaths21,
+                trippaths2, tripweights2, porttrips2_all,
+                onodes, dnodes, osegs2, dsegs2, validpaths)
+
+            # ── 11. Reductiefactor toepassen ──────────────────────────────
+            qsegsmodel_od = _wi_adopt_reduction(qsegsmodel_od, measure,
+                                                 reduction_factor, _WI_POWER_RATIO)
+
+            # ── 12. Volledige toewijzing ───────────────────────────────────
+            print(f'[whatif] Volledige toewijzing ({nroutes} routes) …')
+            qsegsmodel_dmin, qsegsmodel_dplus = _wi_full_assignment(
+                segments, selected_segments, nsegment,
+                qsegsmodel, qsegsmodel_od,
+                G, Gback, nodepairs_segs, nodecosts,
+                onodes, dnodes, opaths, dpaths,
+                newpaths, validpaths,
+                _WI_CWEIGHT_ADD, nroutes)
+
+            # ── 13. Verschilflows links ───────────────────────────────────
+            qmodel_dmin, qmodel_dplus = _wi_get_difference_flows(
+                links, qmodel, segments_to_links,
+                qsegsmodel_dmin, qsegsmodel_dplus)
+
+            # ── 14. Export what-if NETWORK GeoJSON ────────────────────────
+            print('[whatif] Resultaat exporteren …')
+            output_folder.mkdir(parents=True, exist_ok=True)
+            path_network_out = output_folder / f'{new_area_id}-NETWORK-{mode}.geojson'
+            _whatif_export_network(links, qmodel, qmodel_dmin, qmodel_dplus,
+                                    path_geojson, str(path_network_out))
+
+            # ── 15. Originele ROUTES en ZONE kopiëren ────────────────────
+            src_dir = _find_area_dir(src_area_id)
+            for file_type in ('ROUTES', 'ZONE', 'FEEDLINK'):
+                src_file = src_dir / f'{src_area_id}-{file_type}-{mode}.geojson'
+                if src_file.exists():
+                    dst_file = output_folder / f'{new_area_id}-{file_type}-{mode}.geojson'
+                    _shutil.copy2(str(src_file), str(dst_file))
+
+            # ── 16. Patcheer top-level properties ────────────────────────
+            if scenario_name:
+                _patch_geojson_properties(new_area_id, mode, scenario_name)
+
+            # ── 17. Sla brongebied op voor ScenarioVergelijker ────────────
+            (output_folder / '.src-area-id').write_text(src_area_id, encoding='utf-8')
+
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]['returncode'] = 0
+            _jobs[job_id]['status']     = 'done'
+            _jobs[job_id]['new_area_id'] = new_area_id
+
+    except Exception as exc:
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
+            _jobs[job_id]['status']     = 'error'
+            _jobs[job_id]['returncode'] = -1
+
+
+@app.route('/api/whatif-road-closure', methods=['POST'])
+def api_whatif_road_closure():
+    """
+    Start de what-if wegafsluiting als achtergrondproces.
+
+    Body (JSON):
+        area_id        - bestaand gebied
+        mode           - transportmodus (CAR / BIKE / PEDESTRIAN; standaard: CAR)
+        selected_links - array van integer link-IDs om af te sluiten
+        direction      - 'both' | 'same' | 'opposite'  (standaard: 'both')
+        scenario_name  - (optioneel) naam voor het scenario
+        nroutes        - (optioneel) aantal alternatieve routes (standaard: 5)
+        motive         - (optioneel) reismotief (standaard: 'totaal')
+        period         - (optioneel) tijdvak (standaard: 'etmaal')
+        measure        - (optioneel) 'closure' | 'capacity' | 'speed' (standaard: 'closure')
+        reduction_factor - (optioneel) reductiefactor bij capacity/speed (standaard: 0.5)
+    """
+    if not _WHATIF_AVAILABLE:
+        abort(503, 'what_if_quick_scan-package niet beschikbaar')
+
+    body = request.get_json(force=True, silent=True) or {}
+
+    area_id       = str(body.get('area_id', '')).strip()
+    mode          = str(body.get('mode', 'CAR')).upper()
+    selected_links = body.get('selected_links', [])
+    direction      = str(body.get('direction', 'both')).lower()
+    scenario_name  = str(body.get('scenario_name', '')).strip() or None
+    nroutes        = int(body.get('nroutes', 5))
+    motive         = str(body.get('motive', 'totaal')).lower()
+    period         = str(body.get('period', 'etmaal')).lower()
+    measure        = str(body.get('measure', 'closure')).lower()
+    reduction_factor = float(body.get('reduction_factor', 0.5))
+
+    if not area_id:
+        abort(400, 'Parameter "area_id" ontbreekt')
+    if not isinstance(selected_links, list) or not selected_links:
+        abort(400, 'Parameter "selected_links" moet een niet-lege array zijn')
+    if direction not in ('both', 'same', 'opposite'):
+        abort(400, 'Parameter "direction" moet "both", "same" of "opposite" zijn')
+    if motive not in _WI_MOTIVES:
+        abort(400, f'Ongeldig motief. Toegestaan: {", ".join(_WI_MOTIVES)}')
+    if period not in _WI_PERIODS:
+        abort(400, f'Ongeldig tijdvak. Toegestaan: {", ".join(_WI_PERIODS)}')
+
+    # Omzetten naar integers
+    try:
+        selected_links = [int(lid) for lid in selected_links]
+    except (ValueError, TypeError):
+        abort(400, 'selected_links moet een array van integers zijn')
+
+    # Bronbestanden controleren
+    src_dir      = _find_area_dir(area_id)
+    path_geojson = src_dir / f'{area_id}-NETWORK-{mode}.geojson'
+    path_csv     = src_dir / f'{area_id}-NVP-ROUTES-{mode}.csv'
+
+    if not path_geojson.exists():
+        abort(404, f'Netwerkbestand niet gevonden: {path_geojson.name}')
+    if not path_csv.exists():
+        abort(404,
+              f'NVP-routes bestand ontbreekt ({path_csv.name}). '
+              f'Bereid het gebied opnieuw voor met de nvp_mapper stap (nvp_table + nvp_year).')
+
+    # Nieuwe area-id en outputmap bepalen
+    new_area_id = str(uuid.uuid4())
+    if scenario_name:
+        folder_name = re.sub(r'[^\w\-]', '_', scenario_name.strip())
+        folder_name = re.sub(r'_+', '_', folder_name).strip('_') or new_area_id
+    else:
+        folder_name = new_area_id
+    output_folder = _work_dir() / folder_name
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    # area-uuid voor downstream gebruik
+    (output_folder / '.area-uuid').write_text(new_area_id, encoding='utf-8')
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'status':        'pending',
+            'log':           [],
+            'returncode':    None,
+            'out_dir':       str(output_folder),
+            'new_area_id':   new_area_id,
+            'scenario_name': scenario_name,
+        }
+
+    threading.Thread(
+        target=_run_whatif_road_closure_job,
+        args=(job_id, str(path_geojson), str(path_csv),
+              output_folder, new_area_id, area_id,
+              mode, selected_links, direction,
+              motive, period, nroutes,
+              measure, reduction_factor,
+              scenario_name),
+        daemon=True,
+    ).start()
+    return jsonify({'job_id': job_id}), 202
+
+
+@app.route('/api/whatif-road-closure/<job_id>')
+def api_whatif_road_closure_status(job_id):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        abort(404, f'Job niet gevonden: {job_id}')
+    return jsonify(job)
 
 def _find_local_file(filename: str) -> Path | None:
     """Zoek een bestand in DATA_DIR en daarna in STATIC_DIR; geeft None als niet gevonden."""

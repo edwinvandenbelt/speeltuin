@@ -18,48 +18,86 @@ if exist "%~dp0.gmt-env" (
     echo [WARN] .gmt-env niet gevonden, geen bronmappen ingesteld.
 )
 
-rem ── Wheel ────────────────────────────────────────────────────────────────────
+rem ── Wheel: gmt_calculation_lib ───────────────────────────────────────────────
 if not defined WHEEL_DIR (
     echo [INFO] WHEEL_DIR niet ingesteld in .gmt-env, wheel-update overgeslagen.
-    goto code_check
+    goto whatif_wheel_check
 )
 if not exist "%WHEEL_DIR%\" (
     echo [INFO] WHEEL_DIR niet bereikbaar ^(%WHEEL_DIR%^), wheel-update overgeslagen.
-    goto code_check
+    goto whatif_wheel_check
 )
 
 set "WHEEL_FILE="
 for /f "delims=" %%f in ('dir /b "%WHEEL_DIR%\gmt_calculation_lib-*.whl" 2^>nul') do set "WHEEL_FILE=%%f"
 if not defined WHEEL_FILE (
-    echo [WARN] Geen wheel gevonden in %WHEEL_DIR%
-    goto code_check
+    echo [WARN] Geen gmt_calculation_lib wheel gevonden in %WHEEL_DIR%
+    goto whatif_wheel_check
 )
 
 set "SRC=%WHEEL_DIR%\%WHEEL_FILE%"
 set "DST=%~dp0%WHEEL_FILE%"
 
 if not exist "%DST%" (
-    echo [INFO] Lokale whl ontbreekt, kopieer en installeer...
-    goto do_update
+    echo [INFO] Lokale gmt whl ontbreekt, kopieer en installeer...
+    goto do_update_gmt
 )
 
 powershell -NoProfile -Command ^
     "if ((Get-Item '%SRC%').LastWriteTime -gt (Get-Item '%DST%').LastWriteTime) { exit 1 } else { exit 0 }"
-if errorlevel 1 goto do_update
-echo [INFO] Lokale whl is al up-to-date.
-goto code_check
+if errorlevel 1 goto do_update_gmt
+echo [INFO] gmt_calculation_lib whl is al up-to-date.
+goto whatif_wheel_check
 
-:do_update
+:do_update_gmt
 call :make_backup
-echo [INFO] Nieuwere module gevonden, installeren...
+echo [INFO] Nieuwere gmt_calculation_lib module gevonden, installeren...
 copy /Y "%SRC%" "%DST%" >nul
 call "%VENV%"
 pip install --force-reinstall "%DST%"
 if errorlevel 1 (
-    echo [ERROR] Installatie mislukt.
+    echo [ERROR] Installatie gmt_calculation_lib mislukt.
     exit /b 1
 )
-echo [INFO] Whl succesvol herinstalleerd.
+echo [INFO] gmt_calculation_lib whl succesvol herinstalleerd.
+
+rem ── Wheel: what_if_quick_scan ────────────────────────────────────────────────
+:whatif_wheel_check
+if not defined WHEEL_DIR goto code_check
+if not exist "%WHEEL_DIR%\" goto code_check
+
+set "WHATIF_WHEEL_FILE="
+for /f "delims=" %%f in ('dir /b "%WHEEL_DIR%\what_if_quick_scan-*.whl" 2^>nul') do set "WHATIF_WHEEL_FILE=%%f"
+if not defined WHATIF_WHEEL_FILE (
+    echo [WARN] Geen what_if_quick_scan wheel gevonden in %WHEEL_DIR%
+    goto code_check
+)
+
+set "WHATIF_SRC=%WHEEL_DIR%\%WHATIF_WHEEL_FILE%"
+set "WHATIF_DST=%~dp0%WHATIF_WHEEL_FILE%"
+
+if not exist "%WHATIF_DST%" (
+    echo [INFO] Lokale what_if whl ontbreekt, kopieer en installeer...
+    goto do_update_whatif
+)
+
+powershell -NoProfile -Command ^
+    "if ((Get-Item '%WHATIF_SRC%').LastWriteTime -gt (Get-Item '%WHATIF_DST%').LastWriteTime) { exit 1 } else { exit 0 }"
+if errorlevel 1 goto do_update_whatif
+echo [INFO] what_if_quick_scan whl is al up-to-date.
+goto code_check
+
+:do_update_whatif
+call :make_backup
+echo [INFO] Nieuwere what_if_quick_scan module gevonden, installeren...
+copy /Y "%WHATIF_SRC%" "%WHATIF_DST%" >nul
+call "%VENV%"
+pip install --force-reinstall "%WHATIF_DST%"
+if errorlevel 1 (
+    echo [ERROR] Installatie what_if_quick_scan mislukt.
+    exit /b 1
+)
+echo [INFO] what_if_quick_scan whl succesvol herinstalleerd.
 
 rem ── Code (HTML + PY) ────────────────────────────────────────────────────────
 :code_check
@@ -101,7 +139,7 @@ call :make_backup
 echo [INFO] Nieuwere HTML gevonden, kopiëren...
 copy /Y "%SRC_HTML%" "%DST_HTML%" >nul
 if errorlevel 1 (
-    echo [ERROR] Kopiëren mislukt.
+    echo [ERROR] Kopiëren HTML mislukt.
     exit /b 1
 )
 echo [INFO] HTML succesvol bijgewerkt.
@@ -112,10 +150,18 @@ call :make_backup
 echo [INFO] Nieuwer Python-bestand gevonden, kopiëren...
 copy /Y "%SRC_PY%" "%DST_PY%" >nul
 if errorlevel 1 (
-    echo [ERROR] Kopiëren mislukt.
+    echo [ERROR] Kopiëren server.py mislukt.
     exit /b 1
 )
 echo [INFO] Python-bestand succesvol bijgewerkt.
+echo [INFO] Requirements installeren...
+call "%VENV%"
+pip install -r "%~dp0requirements.txt"
+if errorlevel 1 (
+    echo [ERROR] pip install -r requirements.txt mislukt.
+    exit /b 1
+)
+echo [INFO] Requirements succesvol geinstalleerd.
 
 :start_server
 echo [INFO] Server starten...
@@ -134,6 +180,8 @@ powershell -NoProfile -Command ^
     "$f = @();" ^
     "$whl = Get-ChildItem -Path '%~dp0' -Filter 'gmt_calculation_lib-*.whl' -EA SilentlyContinue;" ^
     "if ($whl) { foreach ($w in $whl) { $f += $w.FullName } };" ^
+    "$whl2 = Get-ChildItem -Path '%~dp0' -Filter 'what_if_quick_scan-*.whl' -EA SilentlyContinue;" ^
+    "if ($whl2) { foreach ($w in $whl2) { $f += $w.FullName } };" ^
     "if (Test-Path '%~dp0index.html') { $f += '%~dp0index.html' };" ^
     "if (Test-Path '%~dp0server.py')  { $f += '%~dp0server.py' };" ^
     "if ($f.Count -gt 0) { Compress-Archive -Path $f -DestinationPath $z -Force; Write-Host '[INFO] Backup opgeslagen:' $z } else { Write-Host '[WARN] Niets om te backuppen' }"
