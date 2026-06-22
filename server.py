@@ -1,24 +1,28 @@
 """
-Verkeersnetwerk-visualisatie — Flask back-end
-=============================================
+Verkeersnetwerk-visualisatie — Flask back-end (OGC API Features + Processes)
+============================================================================
 
 Start:
     python server.py [--data <map>] [--port <poort>]
 
-API:
-    GET  /                                     -> index.html
-    GET  /api/geojson?areaId=&mode=&type=      -> GeoJSON-bestand
-    GET  /api/areas                            -> beschikbare gebieden
-    GET  /api/setdir?path=                     -> stel data-map in
-    POST /api/prepare                          -> start prepare-pipeline (achtergrond)
-    GET  /api/prepare/<job_id>                 -> status van een job
-    POST /api/adjust                           -> start adjust-pipeline (achtergrond)
-    GET  /api/adjust/<job_id>                  -> status van adjust-job
-    POST /api/flow-scale                       -> pas flows aan op basis van datum/weer/doel
+OGC API:
+    GET  /                                        -> f=html: SPA; f=json: landing page
+    GET  /conformance
+    GET  /collections                             -> 7 collections
+    GET  /collections/{id}
+    GET  /collections/{id}/items
+    GET  /collections/{id}/items/{featureId}      -> 501
+    GET  /processes                               -> alleen beschikbare processen
+    GET  /processes/{processId}
+    POST /processes/{processId}/execution
+    GET  /jobs
+    GET  /jobs/{jobId}
+    GET  /jobs/{jobId}/results
 """
 
 import argparse
 import contextlib
+import datetime as _dt
 import io
 import json
 import os
@@ -28,9 +32,12 @@ import threading
 import uuid
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_file, send_from_directory
+from flask import Flask, abort, jsonify, make_response, request, send_from_directory
 
-# Laad .env uit de werkdirectory (of scriptmap) indien aanwezig
+# ---------------------------------------------------------------------------
+# .env laden
+# ---------------------------------------------------------------------------
+
 try:
     from dotenv import load_dotenv
     _env_file = Path(os.getcwd()) / '.env'
@@ -40,10 +47,10 @@ try:
         load_dotenv(_env_file, override=False)
         print(f'.env geladen: {_env_file}')
 except ImportError:
-    pass  # python-dotenv niet geïnstalleerd — env vars moeten al gezet zijn
+    pass  # python-dotenv niet geïnstalleerd
 
 # ---------------------------------------------------------------------------
-# Importeer pipeline-functies direct uit de geïnstalleerde packages
+# Pipeline-imports
 # ---------------------------------------------------------------------------
 
 try:
@@ -58,7 +65,7 @@ try:
     from prepare.core.prepare_core import run_pipeline as _prepare_run_pipeline
     _PREPARE_AVAILABLE = True
 except ImportError as _e:
-    _prepare_run_pipeline = None
+    _prepare_run_pipeline = None  # type: ignore[assignment]
     _PREPARE_AVAILABLE = False
     print(f'[server] WAARSCHUWING: prepare niet beschikbaar — {_e}')
 
@@ -119,6 +126,7 @@ args, _ = parser.parse_known_args()
 
 DATA_DIR   = Path(args.data).resolve()
 STATIC_DIR = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
+_SAFE_RE   = re.compile(r'^[A-Za-z0-9_\-]+$')
 
 
 def _work_dir() -> Path:
@@ -127,17 +135,175 @@ def _work_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
-VALID_TYPES = {'NETWORK', 'ROUTES', 'ZONE', 'COMPARE'}
-_SAFE_RE    = re.compile(r'^[A-Za-z0-9_\\-]+$')
+
+# ---------------------------------------------------------------------------
+# OGC API metadata
+# ---------------------------------------------------------------------------
+
+_COLLECTIONS = {
+    'areas': {
+        'title': 'Beschikbare gebieden',
+        'description': 'Alle beschikbare verkeersgebieden in de werkmap.',
+    },
+    'network': {
+        'title': 'Verkeersnetwerk',
+        'description': 'Wegvakken en verkeersvolumes per gebied en transportmodus.',
+    },
+    'routes': {
+        'title': 'Routes',
+        'description': 'Ritten en routepaden per gebied en transportmodus.',
+    },
+    'zones': {
+        'title': 'Zones',
+        'description': 'Verkeerstoedelingszones per gebied en transportmodus.',
+    },
+    'feedlinks': {
+        'title': 'Aansluitingslinks',
+        'description': 'Aansluitingslinks per gebied en transportmodus.',
+    },
+    'comparison': {
+        'title': 'Vergelijking',
+        'description': 'Verschilnetwerk ten opzichte van het basisscenario.',
+    },
+    'flows': {
+        'title': 'Verkeersflows (geschaald)',
+        'description': 'Verkeersflows geschaald naar datum, weer en reismotief.',
+    },
+}
+
+# Mapping van collection-id naar bestandstype-suffix
+_COLLECTION_FILE_TYPE = {
+    'network':    'NETWORK',
+    'routes':     'ROUTES',
+    'zones':      'ZONE',
+    'feedlinks':  'FEEDLINK',
+    'comparison': 'COMPARE',
+}
+
+_PROCESS_DESCRIPTIONS = {
+    'prepare': {
+        'id': 'prepare',
+        'title': 'Gebied voorbereiden',
+        'description': 'Download en verwerk verkeersgegevens voor een nieuw gebied.',
+        'version': '1.0.0',
+        'jobControlOptions': ['async-execute'],
+        'outputTransmission': ['value'],
+        'inputs': {
+            'name':    {'title': 'Gebiedsnaam', 'schema': {'type': 'string'}, 'minOccurs': 1},
+            'mode':    {'title': 'Modus', 'schema': {'type': 'string', 'enum': ['CAR', 'BIKE', 'PEDESTRIAN']}, 'minOccurs': 1},
+            'min_lon': {'title': 'Min. lengtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'min_lat': {'title': 'Min. breedtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'max_lon': {'title': 'Max. lengtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'max_lat': {'title': 'Max. breedtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'catalog': {'title': 'Catalogus', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'schema':  {'title': 'Schema', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'refresh': {'title': 'Vernieuwen', 'schema': {'type': 'boolean'}, 'minOccurs': 0},
+            'debug':   {'title': 'Debug', 'schema': {'type': 'boolean'}, 'minOccurs': 0},
+        },
+        'outputs': {
+            'collection': {'title': 'Collectie-URL', 'schema': {'type': 'string'}},
+        },
+    },
+    'adjust': {
+        'id': 'adjust',
+        'title': 'Scenario aanpassen',
+        'description': 'Herbereken verkeersstromen op basis van zone-wijzigingen.',
+        'version': '1.0.0',
+        'jobControlOptions': ['async-execute'],
+        'outputTransmission': ['value'],
+        'inputs': {
+            'area_id':       {'title': 'Gebied-ID', 'schema': {'type': 'string'}, 'minOccurs': 1},
+            'mode':          {'title': 'Modus', 'schema': {'type': 'string'}, 'minOccurs': 1},
+            'changes':       {'title': 'Wijzigingen', 'schema': {'type': 'array'}, 'minOccurs': 1},
+            'scenario_name': {'title': 'Scenarionaam', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'debug':         {'title': 'Debug', 'schema': {'type': 'boolean'}, 'minOccurs': 0},
+        },
+        'outputs': {
+            'new_area_id': {'title': 'Nieuw gebied-ID', 'schema': {'type': 'string'}},
+            'collection':  {'title': 'Collectie-URL', 'schema': {'type': 'string'}},
+            'compare_url': {'title': 'Vergelijkings-URL', 'schema': {'type': 'string'}},
+        },
+    },
+    'whatif-road-closure': {
+        'id': 'whatif-road-closure',
+        'title': 'What-if wegafsluiting',
+        'description': 'Simuleer de gevolgen van het afsluiten van één of meer wegvakken.',
+        'version': '1.0.0',
+        'jobControlOptions': ['async-execute'],
+        'outputTransmission': ['value'],
+        'inputs': {
+            'area_id':          {'title': 'Gebied-ID', 'schema': {'type': 'string'}, 'minOccurs': 1},
+            'mode':             {'title': 'Modus', 'schema': {'type': 'string'}, 'minOccurs': 1},
+            'selected_links':   {'title': 'Geselecteerde links', 'schema': {'type': 'array', 'items': {'type': 'integer'}}, 'minOccurs': 1},
+            'direction':        {'title': 'Richting', 'schema': {'type': 'string', 'enum': ['both', 'same', 'opposite']}, 'minOccurs': 0},
+            'scenario_name':    {'title': 'Scenarionaam', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'nroutes':          {'title': 'Aantal routes', 'schema': {'type': 'integer'}, 'minOccurs': 0},
+            'motive':           {'title': 'Reismotief', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'period':           {'title': 'Tijdvak', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'measure':          {'title': 'Maatregel', 'schema': {'type': 'string', 'enum': ['closure', 'capacity', 'speed']}, 'minOccurs': 0},
+            'reduction_factor': {'title': 'Reductiefactor', 'schema': {'type': 'number'}, 'minOccurs': 0},
+        },
+        'outputs': {
+            'new_area_id': {'title': 'Nieuw gebied-ID', 'schema': {'type': 'string'}},
+            'collection':  {'title': 'Collectie-URL', 'schema': {'type': 'string'}},
+        },
+    },
+    'delete-area': {
+        'id': 'delete-area',
+        'title': 'Gebied verwijderen',
+        'description': 'Verwijder een gebied en alle bijbehorende bestanden definitief.',
+        'version': '1.0.0',
+        'jobControlOptions': ['sync-execute'],
+        'outputTransmission': ['value'],
+        'inputs': {
+            'id': {'title': 'Gebied-ID', 'schema': {'type': 'string'}, 'minOccurs': 1},
+        },
+        'outputs': {
+            'deleted': {'title': 'Verwijderd gebied-ID', 'schema': {'type': 'string'}},
+        },
+    },
+    'set-directory': {
+        'id': 'set-directory',
+        'title': 'Data-map instellen',
+        'description': 'Stel de werkmap in waaruit gebieden worden geladen.',
+        'version': '1.0.0',
+        'jobControlOptions': ['sync-execute'],
+        'outputTransmission': ['value'],
+        'inputs': {
+            'path': {'title': 'Pad', 'schema': {'type': 'string'}, 'minOccurs': 1},
+        },
+        'outputs': {
+            'dir':   {'title': 'Ingestelde map', 'schema': {'type': 'string'}},
+            'areas': {'title': 'Beschikbare gebieden', 'schema': {'type': 'array'}},
+        },
+    },
+}
+
+# ---------------------------------------------------------------------------
+# What-if model-coëfficiënten
+# ---------------------------------------------------------------------------
+
+_WI_FRACT_CHANGE         = [0.10, 0.25, 0.50, 0.80, 0.95]
+_WI_MIN_NVP              = 10
+_WI_MIN_RADIUS_ODNODE    = 200
+_WI_CWEIGHT_ADD          = 0.3
+_WI_POWER_RATIO          = {'capacity': 0.45, 'speed': 0.20}
+_WI_MOTIVES              = {'totaal': 0, 'werk': 1, 'zakelijk': 2, 'onderwijs': 3,
+                             'recreatief': 4, 'winkel': 5, 'overig': 6}
+_WI_PERIODS              = {'etmaal': 0, 'ochtendspits': 1, 'avondspits': 2, 'restdag': 3}
+
+# ---------------------------------------------------------------------------
+# Flask-app
+# ---------------------------------------------------------------------------
 
 app = Flask(__name__, static_folder=None)
 
 # ---------------------------------------------------------------------------
-# Achtergrond-jobs
+# Job-store
 # ---------------------------------------------------------------------------
 
-_jobs = {}          # job_id -> { status, log, returncode, out_dir }
-_jobs_lock = threading.Lock()
+_jobs: dict = {}
+_jobs_lock  = threading.Lock()
 
 
 class _LogStream(io.TextIOBase):
@@ -162,55 +328,31 @@ class _LogStream(io.TextIOBase):
             self._buf = ''
 
 
-def _run_prepare_job(job_id, out_dir, kwargs):
-    """Voer prepare-pipeline direct uit in achtergrondthread."""
-    with _jobs_lock:
-        _jobs[job_id]['status'] = 'running'
-    stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
-    try:
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            _prepare_run_pipeline(**kwargs)
-        stream.flush()
-        with _jobs_lock:
-            _jobs[job_id]['returncode'] = 0
-            _jobs[job_id]['status']     = 'done'
-    except Exception as exc:
-        stream.flush()
-        with _jobs_lock:
-            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
-            _jobs[job_id]['status']     = 'error'
-            _jobs[job_id]['returncode'] = -1
-
 # ---------------------------------------------------------------------------
 # Hulpfuncties
 # ---------------------------------------------------------------------------
 
-def _safe(value):
+def _safe(value) -> bool:
     return bool(value and _SAFE_RE.match(value))
 
 
-def _find_area_dir(area_id: str):
-    """Zoek de work-submap die de bestanden voor area_id bevat.
-
-    Controleert eerst de snelle variant (mapnaam == area_id), dan scant het alle
-    submappen op de aanwezigheid van '<area_id>-NETWORK-*.geojson'.
-    Fallback: _work_dir() / area_id (leidt tot nette 404 downstream).
-    """
-    work = _work_dir()
+def _find_area_dir(area_id: str) -> Path:
+    """Zoek de work-submap die de bestanden voor area_id bevat."""
+    work   = _work_dir()
     direct = work / area_id
     if direct.is_dir() and any(direct.glob(f'{area_id}-NETWORK-*.geojson')):
         return direct
     for subdir in work.iterdir():
         if subdir.is_dir() and any(subdir.glob(f'{area_id}-NETWORK-*.geojson')):
             return subdir
-    return direct  # fallback
+    return direct  # fallback (leidt tot 404 downstream)
 
 
-def _geojson_path(area_id, mode, file_type):
-    return _find_area_dir(area_id) / f"{area_id}-{file_type}-{mode}.geojson"
+def _geojson_path(area_id: str, mode: str, file_type: str) -> Path:
+    return _find_area_dir(area_id) / f'{area_id}-{file_type}-{mode}.geojson'
 
 
-def _discover_areas():
+def _discover_areas() -> list:
     areas   = []
     pattern = re.compile(r'^(.+)-NETWORK-([A-Za-z0-9_]+)\.geojson$')
     work    = _work_dir()
@@ -228,13 +370,11 @@ def _discover_areas():
             try:
                 with open(f, encoding='utf-8') as fh:
                     data = json.load(fh)
-                    props = data.get('properties', {})
+                    props       = data.get('properties', {})
                     name        = props.get('name', area_id)
-                    # baseAreaId wordt door adjust_core in $.properties gezet
                     src_area_id = props.get('baseAreaId') or None
             except Exception:
                 pass
-            # Fallback: .src-area-id bestand (geschreven door server bij adjust)
             if not src_area_id:
                 src_id_path = subdir / '.src-area-id'
                 if src_id_path.exists():
@@ -249,229 +389,17 @@ def _discover_areas():
                           'hasNvpRoutes': has_nvp_routes})
     return areas
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
-@app.route('/')
-def index():
-    return send_from_directory(str(STATIC_DIR), 'index.html')
-
-
-@app.route('/api/areas')
-def api_areas():
-    return jsonify(_discover_areas())
+def _find_local_file(filename: str):
+    """Zoek bestand in DATA_DIR en STATIC_DIR; geeft None als niet gevonden."""
+    for base in (DATA_DIR, STATIC_DIR):
+        p = base / filename
+        if p.exists():
+            return p
+    return None
 
 
-@app.route('/api/areas/<area_id>', methods=['DELETE'])
-def api_delete_area(area_id):
-    """Verwijder de submap met alle bestanden behorend bij een gebied."""
-    if not _safe(area_id):
-        abort(400, f'Ongeldige area_id: {area_id}')
-    area_dir = _find_area_dir(area_id)
-    if not area_dir.is_dir():
-        abort(404, f'Geen map gevonden voor gebied: {area_id}')
-    try:
-        shutil.rmtree(str(area_dir))
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    return jsonify({'deleted': area_id})
-
-
-@app.route('/api/setdir')
-def api_setdir():
-    global DATA_DIR
-    raw = request.args.get('path', '').strip()
-    if not raw:
-        abort(400, 'Parameter "path" ontbreekt')
-    p = Path(raw).resolve()
-    if p.is_file():
-        p = p.parent
-    if not p.is_dir():
-        abort(404, f'Map niet gevonden: {p}')
-    DATA_DIR = p
-    return jsonify({'dir': str(DATA_DIR), 'areas': _discover_areas()})
-
-
-@app.route('/api/prepare', methods=['POST'])
-def api_prepare():
-    """
-    Start de prepare-pipeline als achtergrondproces.
-
-    Body (JSON):
-        name                              - gebiedsnaam
-        mode                              - transportmodus (CAR / BIKE / PEDESTRIAN)
-        min_lon, min_lat, max_lon, max_lat - bbox in decimale graden
-        out_dir                           - (optioneel) uitvoermap; standaard DATA_DIR
-        refresh                           - (optioneel) bool
-    """
-    if not _PREPARE_AVAILABLE:
-        abort(503, 'prepare-package niet beschikbaar')
-
-    body = request.get_json(force=True, silent=True) or {}
-
-    name    = str(body.get('name', '')).strip()
-    mode    = str(body.get('mode', 'CAR')).upper()
-    out_dir = Path(body.get('out_dir') or str(_work_dir() / name)).resolve()
-
-    try:
-        min_lon = float(body['min_lon'])
-        min_lat = float(body['min_lat'])
-        max_lon = float(body['max_lon'])
-        max_lat = float(body['max_lat'])
-    except (KeyError, ValueError, TypeError):
-        abort(400, 'Ongeldige of ontbrekende bbox-parameters')
-
-    if not name:
-        abort(400, 'Parameter "name" ontbreekt')
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Schrijf de area_id (= name) naar .area-uuid zodat adjust_core de bronbestanden kan vinden.
-    uuid_file = out_dir / '.area-uuid'
-    uuid_file.write_text(name, encoding='utf-8')
-
-    kwargs = dict(
-        min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat,
-        mode=mode, name=name, out_dir=out_dir,
-        catalog=body.get('catalog', 'spectrum'),
-        schema=body.get('schema', '2023_01'),
-        refresh=bool(body.get('refresh')),
-        debug=bool(body.get('debug', False)),
-        nvp_table='nvp_experimental.silver.vw_segments',
-        nvp_year=2025,
-    )
-
-    job_id = str(uuid.uuid4())
-    with _jobs_lock:
-        _jobs[job_id] = {
-            'status': 'pending',
-            'log': [],
-            'returncode': None,
-            'out_dir': str(out_dir),
-        }
-
-    threading.Thread(target=_run_prepare_job, args=(job_id, out_dir, kwargs), daemon=True).start()
-    return jsonify({'job_id': job_id}), 202
-
-
-@app.route('/api/prepare/<job_id>')
-def api_prepare_status(job_id):
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-    if job is None:
-        abort(404, f'Job niet gevonden: {job_id}')
-    return jsonify(job)
-
-
-@app.route('/api/adjust', methods=['POST'])
-def api_adjust():
-    """
-    Start de adjust-pipeline als achtergrondproces.
-
-    Body (JSON):
-        area_id   - bestaande area-id (bronmap = DATA_DIR)
-        mode      - transportmodus (CAR / BIKE / PEDESTRIAN)
-        changes   - array van wijzigingen (zoneId/nodeId + production/attraction)
-    """
-    body = request.get_json(force=True, silent=True) or {}
-
-    area_id       = str(body.get('area_id',       '')).strip()
-    mode          = str(body.get('mode',          'CAR')).upper()
-    changes       = body.get('changes', [])
-    scenario_name = str(body.get('scenario_name', '')).strip() or None
-
-    if not area_id:
-        abort(400, 'Parameter "area_id" ontbreekt')
-    if not isinstance(changes, list) or not changes:
-        abort(400, 'Parameter "changes" moet een niet-lege array zijn')
-    if not _ADJUST_AVAILABLE:
-        abort(503, 'adjust-package niet beschikbaar')
-
-    src_dir     = _find_area_dir(area_id)
-    routes_file = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
-    if not routes_file.exists():
-        abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
-
-    new_area_id = str(uuid.uuid4())
-
-    # Gebruik scenario_name als mapnaam (gesaneerd), anders de UUID
-    if scenario_name:
-        folder_name = re.sub(r'[^\w\-]', '_', scenario_name.strip())
-        folder_name = re.sub(r'_+', '_', folder_name).strip('_') or new_area_id
-    else:
-        folder_name = new_area_id
-    output_folder = _work_dir() / folder_name
-    output_folder.mkdir(parents=True, exist_ok=True)
-
-    # Sla brongebied op voor ScenarioVergelijker (persistentie over herlaad/URL-delen)
-    (output_folder / '.src-area-id').write_text(area_id, encoding='utf-8')
-
-    # Schrijf wijzigingen-bestand direct in de output-submap
-    changes_file = output_folder / f'{new_area_id}-changes.json'
-    changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding='utf-8')
-
-    # Zorg dat .area-uuid in de bronmap klopt (beveiliging bij handmatig aanmaken)
-    (src_dir / '.area-uuid').write_text(area_id, encoding='utf-8')
-
-    kwargs = dict(
-        folder=src_dir,
-        changes=str(changes_file),
-        output_folder=output_folder,
-        routes_path=routes_file,
-        new_area_id=new_area_id,
-        min_link_trips=1.0,
-        debug=bool(body.get('debug', False)),
-    )
-
-    job_id = str(uuid.uuid4())
-    with _jobs_lock:
-        _jobs[job_id] = {
-            'status':        'pending',
-            'log':           [],
-            'returncode':    None,
-            'out_dir':       str(output_folder),
-            'new_area_id':   new_area_id,
-            'scenario_name': scenario_name,
-            'compare_url':   None,
-        }
-
-    threading.Thread(target=_run_adjust_job,
-                     args=(job_id, kwargs, area_id, new_area_id, mode, scenario_name),
-                     daemon=True).start()
-    return jsonify({'job_id': job_id}), 202
-
-
-def _run_adjust_job(job_id, kwargs, src_area_id, new_area_id, mode, scenario_name):
-    """Voer adjust-pipeline direct uit in achtergrondthread."""
-    with _jobs_lock:
-        _jobs[job_id]['status'] = 'running'
-    stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
-    try:
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            _adjust_run_pipeline(**kwargs)
-        stream.flush()
-
-        # Patch top-level properties in output-GeoJSON met scenario-naam (alleen als opgegeven)
-        if scenario_name:
-            _patch_geojson_properties(new_area_id, mode, scenario_name)
-
-        compare_file = _geojson_path(new_area_id, mode, 'COMPARE')
-        compare_url  = (f'/api/geojson?areaId={new_area_id}&mode={mode}&type=COMPARE'
-                        if compare_file.exists() else None)
-        with _jobs_lock:
-            _jobs[job_id]['returncode']  = 0
-            _jobs[job_id]['status']      = 'done'
-            _jobs[job_id]['compare_url'] = compare_url
-    except Exception as exc:
-        stream.flush()
-        with _jobs_lock:
-            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
-            _jobs[job_id]['status']     = 'error'
-            _jobs[job_id]['returncode'] = -1
-
-
-def _patch_geojson_properties(area_id, mode, name):
+def _patch_geojson_properties(area_id: str, mode: str, name: str):
     """Pas top-level properties.name en properties.area_id aan in alle output-GeoJSON's."""
     for file_type in ('NETWORK', 'ZONE', 'FEEDLINK', 'ROUTES', 'COMPARE'):
         path = _find_area_dir(area_id) / f'{area_id}-{file_type}-{mode}.geojson'
@@ -489,41 +417,148 @@ def _patch_geojson_properties(area_id, mode, name):
             print(f'[server] Kon {path.name} niet patchen: {exc}')
 
 
-@app.route('/api/adjust/<job_id>')
-def api_adjust_status(job_id):
+def _get_available_processes() -> set:
+    """Geef de set van processIds die momenteel beschikbaar zijn."""
+    avail = {'delete-area', 'set-directory'}
+    if _PREPARE_AVAILABLE:
+        avail.add('prepare')
+    if _ADJUST_AVAILABLE:
+        avail.add('adjust')
+    if _WHATIF_AVAILABLE:
+        avail.add('whatif-road-closure')
+    return avail
+
+
+def _job_to_status(job: dict) -> dict:
+    """Geef OGC-conform job-statusobject terug (zonder _results)."""
+    job_id = job['jobID']
+    return {
+        'jobID':     job_id,
+        'processID': job['processID'],
+        'status':    job['status'],
+        'log':       job.get('log', []),
+        'created':   job.get('created'),
+        'started':   job.get('started'),
+        'finished':  job.get('finished'),
+        'links': [
+            {'href': f'/jobs/{job_id}',         'rel': 'self',    'type': 'application/json', 'title': 'Job status'},
+            {'href': f'/jobs/{job_id}/results',  'rel': 'results', 'type': 'application/json', 'title': 'Job resultaten'},
+        ],
+    }
+
+
+def _ogc_items_response(collection_id: str, data, self_url: str):
+    """Wrap een GeoJSON FeatureCollection in de OGC API Features envelope."""
+    if not isinstance(data, dict):
+        try:
+            data = dict(data)
+        except Exception:
+            data = {'type': 'FeatureCollection', 'features': []}
+
+    features = data.get('features', [])
+    extra    = {k: v for k, v in data.items()
+                if k not in ('type', 'features', 'links')}
+
+    result: dict = {
+        'type':            'FeatureCollection',
+        'features':        features,
+        'links': [
+            {'href': self_url,                   'rel': 'self',       'type': 'application/geo+json', 'title': 'Dit document'},
+            {'href': f'/collections/{collection_id}', 'rel': 'collection', 'type': 'application/json',     'title': 'Collectiebeschrijving'},
+        ],
+        'timeStamp':      _dt.datetime.utcnow().isoformat() + 'Z',
+        'numberMatched':  len(features),
+        'numberReturned': len(features),
+    }
+    if extra:
+        result['properties'] = extra
+
+    resp = make_response(json.dumps(result, ensure_ascii=False))
+    resp.headers['Content-Type'] = 'application/geo+json'
+    return resp
+
+
+def _now_iso() -> str:
+    return _dt.datetime.utcnow().isoformat() + 'Z'
+
+
+# ---------------------------------------------------------------------------
+# Achtergrond-job runners
+# ---------------------------------------------------------------------------
+
+def _run_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str, mode: str):
+    """Voer prepare-pipeline uit in achtergrondthread."""
     with _jobs_lock:
-        job = _jobs.get(job_id)
-    if job is None:
-        abort(404, f'Job niet gevonden: {job_id}')
-    return jsonify(job)
+        _jobs[job_id]['status']  = 'running'
+        _jobs[job_id]['started'] = _now_iso()
+    stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
+    try:
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            _prepare_run_pipeline(**kwargs)
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]['returncode'] = 0
+            _jobs[job_id]['status']     = 'successful'
+            _jobs[job_id]['finished']   = _now_iso()
+            _jobs[job_id]['_results']   = {
+                'collection': f'/collections/network/items?areaId={name}&mode={mode}',
+            }
+    except Exception as exc:
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
+            _jobs[job_id]['status']     = 'failed'
+            _jobs[job_id]['returncode'] = -1
+            _jobs[job_id]['finished']   = _now_iso()
 
 
-# ---------------------------------------------------------------------------
-# What-if quick scan — wegafsluiting
-# ---------------------------------------------------------------------------
+def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
+                    new_area_id: str, mode: str, scenario_name):
+    """Voer adjust-pipeline uit in achtergrondthread."""
+    with _jobs_lock:
+        _jobs[job_id]['status']  = 'running'
+        _jobs[job_id]['started'] = _now_iso()
+    stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
+    try:
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            _adjust_run_pipeline(**kwargs)
+        stream.flush()
 
-# Model-coëfficiënten (overgenomen uit road_closure/__main__.py)
-_WI_FRACT_CHANGE         = [0.10, 0.25, 0.50, 0.80, 0.95]
-_WI_MIN_NVP              = 10
-_WI_MIN_RADIUS_ODNODE    = 200
-_WI_CWEIGHT_ADD          = 0.3
-_WI_POWER_RATIO          = {'capacity': 0.45, 'speed': 0.20}
-_WI_MOTIVES              = {'totaal': 0, 'werk': 1, 'zakelijk': 2, 'onderwijs': 3,
-                             'recreatief': 4, 'winkel': 5, 'overig': 6}
-_WI_PERIODS              = {'etmaal': 0, 'ochtendspits': 1, 'avondspits': 2, 'restdag': 3}
+        if scenario_name:
+            _patch_geojson_properties(new_area_id, mode, scenario_name)
+
+        compare_file = _geojson_path(new_area_id, mode, 'COMPARE')
+        compare_url  = (f'/collections/comparison/items?areaId={new_area_id}&mode={mode}'
+                        if compare_file.exists() else None)
+
+        with _jobs_lock:
+            _jobs[job_id]['returncode'] = 0
+            _jobs[job_id]['status']     = 'successful'
+            _jobs[job_id]['finished']   = _now_iso()
+            _jobs[job_id]['_results']   = {
+                'new_area_id': new_area_id,
+                'collection':  f'/collections/network/items?areaId={new_area_id}&mode={mode}',
+                'compare_url': compare_url,
+            }
+    except Exception as exc:
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
+            _jobs[job_id]['status']     = 'failed'
+            _jobs[job_id]['returncode'] = -1
+            _jobs[job_id]['finished']   = _now_iso()
 
 
-def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
-                                  output_folder, new_area_id, src_area_id,
-                                  mode, selected_links, direction,
-                                  motive, period, nroutes,
-                                  measure, reduction_factor,
+def _run_whatif_road_closure_job(job_id: str, path_geojson: str, path_csv: str,
+                                  output_folder: Path, new_area_id: str, src_area_id: str,
+                                  mode: str, selected_links: list, direction: str,
+                                  motive: str, period: str, nroutes: int,
+                                  measure: str, reduction_factor: float,
                                   scenario_name):
     """Voer de what-if wegafsluiting uit in een achtergrondthread."""
-    import shutil as _shutil
-
     with _jobs_lock:
-        _jobs[job_id]['status'] = 'running'
+        _jobs[job_id]['status']  = 'running'
+        _jobs[job_id]['started'] = _now_iso()
     stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
 
     try:
@@ -536,14 +571,13 @@ def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
 
             # ── 2. Voorbereiden ───────────────────────────────────────────
             print('[whatif] Data voorbereiden …')
-            imotive  = _WI_MOTIVES[motive]
-            iperiod  = _WI_PERIODS[period]
-            # selected_links = list van [[link_id], ...] (groepen)
+            imotive = _WI_MOTIVES[motive]
+            iperiod = _WI_PERIODS[period]
             sel_links_grouped = [[lid] for lid in selected_links]
 
             nodexys, selected_segments, opposite_segments, qsegsmodel, qmodel, segments_to_links = \
                 _wi_prepare_data(nodes, links, links_opposite, segments, volumes,
-                                  sel_links_grouped, direction, imotive, iperiod)
+                                 sel_links_grouped, direction, imotive, iperiod)
 
             # ── 3. Selectie ───────────────────────────────────────────────
             print('[whatif] Ritpaden selecteren …')
@@ -558,7 +592,7 @@ def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
             # ── 5. Rondritten opschonen ───────────────────────────────────
             print('[whatif] Rondritten opschonen …')
             tripweights2 = _wi_clean_trips(selected_segments, opposite_segments,
-                                            tripweights2, trippaths2, trippaths12)
+                                           tripweights2, trippaths2, trippaths12)
 
             # ── 6. Kalibratie ─────────────────────────────────────────────
             print('[whatif] Ritvolumes kalibreren …')
@@ -569,7 +603,7 @@ def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
                 trippaths2, tripweights2, porttrips2_all,
                 nsegment, nsegment2)
 
-            # ── 7. Grafen (basisitutatie) ─────────────────────────────────
+            # ── 7. Grafen (basissituatie) ─────────────────────────────────
             print('[whatif] Grafen opbouwen …')
             G, Gback, nodepairs_segs, nodecosts = _wi_get_graphs_base(
                 segments, selected_segments, qsegsmodel, nsegment)
@@ -598,7 +632,7 @@ def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
 
             # ── 11. Reductiefactor toepassen ──────────────────────────────
             qsegsmodel_od = _wi_adopt_reduction(qsegsmodel_od, measure,
-                                                 reduction_factor, _WI_POWER_RATIO)
+                                                reduction_factor, _WI_POWER_RATIO)
 
             # ── 12. Volledige toewijzing ───────────────────────────────────
             print(f'[whatif] Volledige toewijzing ({nroutes} routes) …')
@@ -620,7 +654,7 @@ def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
             output_folder.mkdir(parents=True, exist_ok=True)
             path_network_out = output_folder / f'{new_area_id}-NETWORK-{mode}.geojson'
             _whatif_export_network(links, qmodel, qmodel_dmin, qmodel_dplus,
-                                    path_geojson, str(path_network_out))
+                                   path_geojson, str(path_network_out))
 
             # ── 15. Originele ROUTES en ZONE kopiëren ────────────────────
             src_dir = _find_area_dir(src_area_id)
@@ -628,7 +662,7 @@ def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
                 src_file = src_dir / f'{src_area_id}-{file_type}-{mode}.geojson'
                 if src_file.exists():
                     dst_file = output_folder / f'{new_area_id}-{file_type}-{mode}.geojson'
-                    _shutil.copy2(str(src_file), str(dst_file))
+                    shutil.copy2(str(src_file), str(dst_file))
 
             # ── 16. Patcheer top-level properties ────────────────────────
             if scenario_name:
@@ -640,49 +674,162 @@ def _run_whatif_road_closure_job(job_id, path_geojson, path_csv,
         stream.flush()
         with _jobs_lock:
             _jobs[job_id]['returncode'] = 0
-            _jobs[job_id]['status']     = 'done'
-            _jobs[job_id]['new_area_id'] = new_area_id
+            _jobs[job_id]['status']     = 'successful'
+            _jobs[job_id]['finished']   = _now_iso()
+            _jobs[job_id]['_results']   = {
+                'new_area_id': new_area_id,
+                'collection':  f'/collections/network/items?areaId={new_area_id}&mode={mode}',
+            }
 
     except Exception as exc:
         stream.flush()
         with _jobs_lock:
             _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
-            _jobs[job_id]['status']     = 'error'
+            _jobs[job_id]['status']     = 'failed'
             _jobs[job_id]['returncode'] = -1
+            _jobs[job_id]['finished']   = _now_iso()
 
 
-@app.route('/api/whatif-road-closure', methods=['POST'])
-def api_whatif_road_closure():
-    """
-    Start de what-if wegafsluiting als achtergrondproces.
+# ---------------------------------------------------------------------------
+# Process execute helpers
+# ---------------------------------------------------------------------------
 
-    Body (JSON):
-        area_id        - bestaand gebied
-        mode           - transportmodus (CAR / BIKE / PEDESTRIAN; standaard: CAR)
-        selected_links - array van integer link-IDs om af te sluiten
-        direction      - 'both' | 'same' | 'opposite'  (standaard: 'both')
-        scenario_name  - (optioneel) naam voor het scenario
-        nroutes        - (optioneel) aantal alternatieve routes (standaard: 5)
-        motive         - (optioneel) reismotief (standaard: 'totaal')
-        period         - (optioneel) tijdvak (standaard: 'etmaal')
-        measure        - (optioneel) 'closure' | 'capacity' | 'speed' (standaard: 'closure')
-        reduction_factor - (optioneel) reductiefactor bij capacity/speed (standaard: 0.5)
-    """
+def _execute_prepare(inputs: dict):
+    """Start prepare als async job. Geeft (body, 201, headers) terug."""
+    if not _PREPARE_AVAILABLE:
+        abort(503, 'prepare-package niet beschikbaar')
+
+    name    = str(inputs.get('name', '')).strip()
+    mode    = str(inputs.get('mode', 'CAR')).upper()
+    out_dir = Path(inputs.get('out_dir') or str(_work_dir() / name)).resolve()
+
+    try:
+        min_lon = float(inputs['min_lon'])
+        min_lat = float(inputs['min_lat'])
+        max_lon = float(inputs['max_lon'])
+        max_lat = float(inputs['max_lat'])
+    except (KeyError, ValueError, TypeError):
+        abort(400, 'Ongeldige of ontbrekende bbox-parameters')
+
+    if not name:
+        abort(400, 'Parameter "name" ontbreekt')
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / '.area-uuid').write_text(name, encoding='utf-8')
+
+    kwargs = dict(
+        min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat,
+        mode=mode, name=name, out_dir=out_dir,
+        catalog=inputs.get('catalog', 'spectrum'),
+        schema=inputs.get('schema', '2023_01'),
+        refresh=bool(inputs.get('refresh')),
+        debug=bool(inputs.get('debug', False)),
+
+    )
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'jobID':      job_id,
+            'processID':  'prepare',
+            'status':     'accepted',
+            'log':        [],
+            'returncode': None,
+            'out_dir':    str(out_dir),
+            'created':    _now_iso(),
+            'started':    None,
+            'finished':   None,
+            '_results':   {},
+        }
+
+    threading.Thread(target=_run_prepare_job,
+                     args=(job_id, out_dir, kwargs, name, mode),
+                     daemon=True).start()
+    return {'jobID': job_id, 'status': 'accepted'}, 201, {'Location': f'/jobs/{job_id}'}
+
+
+def _execute_adjust(inputs: dict):
+    """Start adjust als async job. Geeft (body, 201, headers) terug."""
+    if not _ADJUST_AVAILABLE:
+        abort(503, 'adjust-package niet beschikbaar')
+
+    area_id       = str(inputs.get('area_id', '')).strip()
+    mode          = str(inputs.get('mode', 'CAR')).upper()
+    changes       = inputs.get('changes', [])
+    scenario_name = str(inputs.get('scenario_name', '')).strip() or None
+
+    if not area_id:
+        abort(400, 'Parameter "area_id" ontbreekt')
+    if not isinstance(changes, list) or not changes:
+        abort(400, 'Parameter "changes" moet een niet-lege array zijn')
+
+    src_dir     = _find_area_dir(area_id)
+    routes_file = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
+    if not routes_file.exists():
+        abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
+
+    new_area_id = str(uuid.uuid4())
+    if scenario_name:
+        folder_name = re.sub(r'[^\w\-]', '_', scenario_name.strip())
+        folder_name = re.sub(r'_+', '_', folder_name).strip('_') or new_area_id
+    else:
+        folder_name = new_area_id
+    output_folder = _work_dir() / folder_name
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    (output_folder / '.src-area-id').write_text(area_id, encoding='utf-8')
+
+    changes_file = output_folder / f'{new_area_id}-changes.json'
+    changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding='utf-8')
+
+    (src_dir / '.area-uuid').write_text(area_id, encoding='utf-8')
+
+    kwargs = dict(
+        folder=src_dir,
+        changes=str(changes_file),
+        output_folder=output_folder,
+        routes_path=routes_file,
+        new_area_id=new_area_id,
+        min_link_trips=1.0,
+        debug=bool(inputs.get('debug', False)),
+    )
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'jobID':      job_id,
+            'processID':  'adjust',
+            'status':     'accepted',
+            'log':        [],
+            'returncode': None,
+            'out_dir':    str(output_folder),
+            'created':    _now_iso(),
+            'started':    None,
+            'finished':   None,
+            '_results':   {},
+        }
+
+    threading.Thread(target=_run_adjust_job,
+                     args=(job_id, kwargs, area_id, new_area_id, mode, scenario_name),
+                     daemon=True).start()
+    return {'jobID': job_id, 'status': 'accepted'}, 201, {'Location': f'/jobs/{job_id}'}
+
+
+def _execute_whatif_road_closure(inputs: dict):
+    """Start what-if wegafsluiting als async job. Geeft (body, 201, headers) terug."""
     if not _WHATIF_AVAILABLE:
         abort(503, 'what_if_quick_scan-package niet beschikbaar')
 
-    body = request.get_json(force=True, silent=True) or {}
-
-    area_id       = str(body.get('area_id', '')).strip()
-    mode          = str(body.get('mode', 'CAR')).upper()
-    selected_links = body.get('selected_links', [])
-    direction      = str(body.get('direction', 'both')).lower()
-    scenario_name  = str(body.get('scenario_name', '')).strip() or None
-    nroutes        = int(body.get('nroutes', 5))
-    motive         = str(body.get('motive', 'totaal')).lower()
-    period         = str(body.get('period', 'etmaal')).lower()
-    measure        = str(body.get('measure', 'closure')).lower()
-    reduction_factor = float(body.get('reduction_factor', 0.5))
+    area_id          = str(inputs.get('area_id', '')).strip()
+    mode             = str(inputs.get('mode', 'CAR')).upper()
+    selected_links   = inputs.get('selected_links', [])
+    direction        = str(inputs.get('direction', 'both')).lower()
+    scenario_name    = str(inputs.get('scenario_name', '')).strip() or None
+    nroutes          = int(inputs.get('nroutes', 5))
+    motive           = str(inputs.get('motive', 'totaal')).lower()
+    period           = str(inputs.get('period', 'etmaal')).lower()
+    measure          = str(inputs.get('measure', 'closure')).lower()
+    reduction_factor = float(inputs.get('reduction_factor', 0.5))
 
     if not area_id:
         abort(400, 'Parameter "area_id" ontbreekt')
@@ -695,13 +842,11 @@ def api_whatif_road_closure():
     if period not in _WI_PERIODS:
         abort(400, f'Ongeldig tijdvak. Toegestaan: {", ".join(_WI_PERIODS)}')
 
-    # Omzetten naar integers
     try:
         selected_links = [int(lid) for lid in selected_links]
     except (ValueError, TypeError):
         abort(400, 'selected_links moet een array van integers zijn')
 
-    # Bronbestanden controleren
     src_dir      = _find_area_dir(area_id)
     path_geojson = src_dir / f'{area_id}-NETWORK-{mode}.geojson'
     path_csv     = src_dir / f'{area_id}-NVP-ROUTES-{mode}.csv'
@@ -713,7 +858,6 @@ def api_whatif_road_closure():
               f'NVP-routes bestand ontbreekt ({path_csv.name}). '
               f'Bereid het gebied opnieuw voor met de nvp_mapper stap (nvp_table + nvp_year).')
 
-    # Nieuwe area-id en outputmap bepalen
     new_area_id = str(uuid.uuid4())
     if scenario_name:
         folder_name = re.sub(r'[^\w\-]', '_', scenario_name.strip())
@@ -722,19 +866,21 @@ def api_whatif_road_closure():
         folder_name = new_area_id
     output_folder = _work_dir() / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
-
-    # area-uuid voor downstream gebruik
     (output_folder / '.area-uuid').write_text(new_area_id, encoding='utf-8')
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:
         _jobs[job_id] = {
-            'status':        'pending',
-            'log':           [],
-            'returncode':    None,
-            'out_dir':       str(output_folder),
-            'new_area_id':   new_area_id,
-            'scenario_name': scenario_name,
+            'jobID':      job_id,
+            'processID':  'whatif-road-closure',
+            'status':     'accepted',
+            'log':        [],
+            'returncode': None,
+            'out_dir':    str(output_folder),
+            'created':    _now_iso(),
+            'started':    None,
+            'finished':   None,
+            '_results':   {},
         }
 
     threading.Thread(
@@ -747,137 +893,341 @@ def api_whatif_road_closure():
               scenario_name),
         daemon=True,
     ).start()
-    return jsonify({'job_id': job_id}), 202
+    return {'jobID': job_id, 'status': 'accepted'}, 201, {'Location': f'/jobs/{job_id}'}
 
 
-@app.route('/api/whatif-road-closure/<job_id>')
-def api_whatif_road_closure_status(job_id):
+def _execute_delete_area(inputs: dict):
+    """Verwijder gebied synchroon. Geeft (body, 200, {}) terug."""
+    area_id = str(inputs.get('id', '')).strip()
+    if not _safe(area_id):
+        abort(400, f'Ongeldige of ontbrekende area_id: {area_id!r}')
+    area_dir = _find_area_dir(area_id)
+    if not area_dir.is_dir():
+        abort(404, f'Geen map gevonden voor gebied: {area_id}')
+    try:
+        shutil.rmtree(str(area_dir))
+    except Exception as exc:
+        abort(500, str(exc))
+    return {'deleted': area_id}, 200, {}
+
+
+def _execute_set_directory(inputs: dict):
+    """Stel data-map in synchroon. Geeft (body, 200, {}) terug."""
+    global DATA_DIR
+    raw = str(inputs.get('path', '')).strip()
+    if not raw:
+        abort(400, 'Parameter "path" ontbreekt')
+    p = Path(raw).resolve()
+    if p.is_file():
+        p = p.parent
+    if not p.is_dir():
+        abort(404, f'Map niet gevonden: {p}')
+    DATA_DIR = p
+    return {'dir': str(DATA_DIR), 'areas': _discover_areas()}, 200, {}
+
+
+# ---------------------------------------------------------------------------
+# OGC API Routes
+# ---------------------------------------------------------------------------
+
+@app.route('/')
+def index():
+    fmt = request.args.get('f', 'html').lower()
+    if fmt == 'json':
+        return jsonify({
+            'title': 'Verkeersnetwerk-visualisatie',
+            'description': 'OGC API Features + Processes — verkeersnetwerk visualisatie en scenarioanalyse.',
+            'links': [
+                {'href': '/?f=json',    'rel': 'self',        'type': 'application/json', 'title': 'Landing page'},
+                {'href': '/conformance','rel': 'conformance',  'type': 'application/json', 'title': 'OGC conformantieklassen'},
+                {'href': '/collections','rel': 'data',         'type': 'application/json', 'title': 'Collecties'},
+                {'href': '/processes',  'rel': 'processes',    'type': 'application/json', 'title': 'Processen'},
+                {'href': '/jobs',       'rel': 'monitor',      'type': 'application/json', 'title': 'Actieve jobs'},
+            ],
+        })
+    return send_from_directory(str(STATIC_DIR), 'index.html')
+
+
+@app.route('/conformance')
+def ogc_conformance():
+    return jsonify({
+        'conformsTo': [
+            'http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core',
+            'http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30',
+            'http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson',
+            'http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core',
+            'http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json',
+            'http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-management',
+        ]
+    })
+
+
+@app.route('/collections')
+def ogc_collections():
+    colls = []
+    for cid, info in _COLLECTIONS.items():
+        colls.append({
+            'id':          cid,
+            'title':       info['title'],
+            'description': info['description'],
+            'links': [
+                {'href': f'/collections/{cid}',       'rel': 'self',  'type': 'application/json',     'title': info['title']},
+                {'href': f'/collections/{cid}/items', 'rel': 'items', 'type': 'application/geo+json', 'title': f'{info["title"]} — items'},
+            ],
+        })
+    return jsonify({
+        'collections': colls,
+        'links': [
+            {'href': '/collections', 'rel': 'self', 'type': 'application/json', 'title': 'Collecties'},
+        ],
+    })
+
+
+@app.route('/collections/<collection_id>')
+def ogc_collection(collection_id):
+    info = _COLLECTIONS.get(collection_id)
+    if info is None:
+        abort(404, f'Collectie niet gevonden: {collection_id}')
+    return jsonify({
+        'id':          collection_id,
+        'title':       info['title'],
+        'description': info['description'],
+        'links': [
+            {'href': f'/collections/{collection_id}',       'rel': 'self',  'type': 'application/json',     'title': info['title']},
+            {'href': f'/collections/{collection_id}/items', 'rel': 'items', 'type': 'application/geo+json', 'title': f'{info["title"]} — items'},
+        ],
+    })
+
+
+@app.route('/collections/<collection_id>/items/<feature_id>')
+def ogc_collection_feature(collection_id, feature_id):
+    abort(501, 'Ophalen van individuele features wordt niet ondersteund.')
+
+
+@app.route('/collections/<collection_id>/items')
+def ogc_collection_items(collection_id):
+    info = _COLLECTIONS.get(collection_id)
+    if info is None:
+        abort(404, f'Collectie niet gevonden: {collection_id}')
+
+    self_url = request.url
+
+    # ── areas: geen bestandsparameters vereist ────────────────────────────
+    if collection_id == 'areas':
+        areas    = _discover_areas()
+        features = [
+            {'type': 'Feature', 'id': a['areaId'], 'geometry': None, 'properties': a}
+            for a in areas
+        ]
+        return _ogc_items_response('areas', {'type': 'FeatureCollection', 'features': features}, self_url)
+
+    # ── flows: flow-scaler berekening ─────────────────────────────────────
+    if collection_id == 'flows':
+        if not _FLOW_SCALER_AVAILABLE:
+            abort(503, 'flow_scaler-package niet beschikbaar')
+
+        area_id = request.args.get('areaId', '').strip()
+        mode    = request.args.get('mode', 'CAR').upper().strip()
+
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, 'Ongeldige parameter: areaId')
+
+        network_path = _geojson_path(area_id, mode, 'NETWORK')
+        if not network_path.exists():
+            abort(404, f'Netwerkbestand niet gevonden: {network_path.name}')
+
+        purpose_index_path = _find_local_file('purpose_index.json')
+        if purpose_index_path is None:
+            abort(503, 'purpose_index.json niet gevonden')
+        with open(purpose_index_path, encoding='utf-8') as fh:
+            purpose_index_raw = json.load(fh)
+        purpose_index = load_purpose_index(purpose_index_raw)
+
+        daylight_raw  = []
+        daylight_path = _find_local_file('daylight.json')
+        if daylight_path is not None:
+            try:
+                with open(daylight_path, encoding='utf-8') as fh:
+                    daylight_raw = json.load(fh)
+            except Exception as exc:
+                print(f'[server] daylight.json laden mislukt, wordt overgeslagen: {exc}')
+
+        date_str    = request.args.get('date') or None
+        raw_temp    = request.args.get('temperature', 'Medium')
+        raw_weather = request.args.get('weather', 'cloudy')
+        raw_purpose = request.args.get('purpose') or None
+        regio       = request.args.get('regio', 'midden').lower()
+
+        dt          = parse_date(date_str)
+        temperature = normalise_temperature(raw_temp)
+        weather     = normalise_weather(raw_weather, dt, daylight_raw)
+        purpose     = None if raw_purpose in (None, 'all', '') else raw_purpose.lower()
+
+        holiday_path  = _find_local_file('holiday_indices.csv')
+        holiday_index = str(holiday_path) if holiday_path is not None else ''
+
+        params = FlowScalerParams(
+            mode=mode, dt=dt, temperature=temperature, weather=weather,
+            regio=regio, purpose=purpose, holiday_index=holiday_index,
+        )
+
+        with open(network_path, encoding='utf-8') as fh:
+            network_fc = json.load(fh)
+
+        n_features = len(network_fc.get('features', []))
+        filtered   = filterNetwork(network_fc, bbox=None, offset=0, limit=max(n_features, 1))
+        filtered.params = params
+
+        keys    = determineIndiceKeys(params, filtered.metadata)
+        indexes = read_indexes(keys, purpose_index)
+        result  = applyIndices(filtered, indexes, run_cleaner=False)
+
+        # Normaliseer naar plain dict voor OGC-envelope
+        if not isinstance(result, dict):
+            try:
+                result = dict(result)
+            except Exception:
+                result = {'type': 'FeatureCollection', 'features': []}
+
+        return _ogc_items_response('flows', result, self_url)
+
+    # ── overige collections: lees GeoJSON-bestand ─────────────────────────
+    area_id = request.args.get('areaId', '').strip()
+    mode    = request.args.get('mode', '').upper().strip()
+
+    if not area_id:
+        abort(400, 'Parameter "areaId" ontbreekt')
+    if not _safe(area_id):
+        abort(400, 'Ongeldige parameter: areaId')
+    if not mode:
+        abort(400, 'Parameter "mode" ontbreekt')
+    if not _safe(mode):
+        abort(400, 'Ongeldige parameter: mode')
+
+    file_type = _COLLECTION_FILE_TYPE[collection_id]
+    path      = _geojson_path(area_id, mode, file_type)
+
+    if not path.exists():
+        abort(404, f'Bestand niet gevonden: {path.name}')
+
+    with open(path, encoding='utf-8') as fh:
+        data = json.load(fh)
+
+    return _ogc_items_response(collection_id, data, self_url)
+
+
+@app.route('/processes')
+def ogc_processes():
+    avail = _get_available_processes()
+    procs = []
+    for pid in _PROCESS_DESCRIPTIONS:
+        if pid not in avail:
+            continue
+        desc = _PROCESS_DESCRIPTIONS[pid]
+        procs.append({
+            'id':                  pid,
+            'title':               desc['title'],
+            'description':         desc['description'],
+            'version':             desc['version'],
+            'jobControlOptions':   desc['jobControlOptions'],
+            'outputTransmission':  desc['outputTransmission'],
+            'links': [
+                {'href': f'/processes/{pid}', 'rel': 'self', 'type': 'application/json', 'title': desc['title']},
+            ],
+        })
+    return jsonify({
+        'processes': procs,
+        'links': [
+            {'href': '/processes', 'rel': 'self', 'type': 'application/json', 'title': 'Processen'},
+        ],
+    })
+
+
+@app.route('/processes/<process_id>')
+def ogc_process(process_id):
+    avail = _get_available_processes()
+    if process_id not in _PROCESS_DESCRIPTIONS:
+        abort(404, f'Proces niet gevonden: {process_id}')
+    if process_id not in avail:
+        abort(503, f'Proces niet beschikbaar: {process_id}')
+    desc = dict(_PROCESS_DESCRIPTIONS[process_id])
+    desc['links'] = [
+        {'href': f'/processes/{process_id}',           'rel': 'self',    'type': 'application/json', 'title': desc['title']},
+        {'href': f'/processes/{process_id}/execution', 'rel': 'execute', 'type': 'application/json', 'title': f'{desc["title"]} uitvoeren'},
+    ]
+    return jsonify(desc)
+
+
+@app.route('/processes/<process_id>/execution', methods=['POST'])
+def ogc_process_execute(process_id):
+    avail = _get_available_processes()
+    if process_id not in _PROCESS_DESCRIPTIONS:
+        abort(404, f'Proces niet gevonden: {process_id}')
+    if process_id not in avail:
+        abort(503, f'Proces niet beschikbaar: {process_id}')
+
+    raw_body = request.get_json(force=True, silent=True) or {}
+    # Ondersteun zowel OGC {"inputs": {...}} als flat body
+    inputs = raw_body.get('inputs', raw_body)
+
+    dispatch = {
+        'prepare':             _execute_prepare,
+        'adjust':              _execute_adjust,
+        'whatif-road-closure': _execute_whatif_road_closure,
+        'delete-area':         _execute_delete_area,
+        'set-directory':       _execute_set_directory,
+    }
+    body, status, headers = dispatch[process_id](inputs)
+    resp = jsonify(body)
+    resp.status_code = status
+    for k, v in headers.items():
+        resp.headers[k] = v
+    return resp
+
+
+@app.route('/jobs')
+def ogc_jobs():
+    with _jobs_lock:
+        jobs_copy = list(_jobs.values())
+    return jsonify({
+        'jobs': [_job_to_status(j) for j in jobs_copy],
+        'links': [
+            {'href': '/jobs', 'rel': 'self', 'type': 'application/json', 'title': 'Actieve jobs'},
+        ],
+    })
+
+
+@app.route('/jobs/<job_id>')
+def ogc_job(job_id):
     with _jobs_lock:
         job = _jobs.get(job_id)
     if job is None:
         abort(404, f'Job niet gevonden: {job_id}')
-    return jsonify(job)
-
-def _find_local_file(filename: str) -> Path | None:
-    """Zoek een bestand in DATA_DIR en daarna in STATIC_DIR; geeft None als niet gevonden."""
-    for base in (DATA_DIR, STATIC_DIR):
-        p = base / filename
-        if p.exists():
-            return p
-    return None
+    return jsonify(_job_to_status(job))
 
 
-@app.route('/api/flow-scale', methods=['POST'])
-def api_flow_scale():
-    """
-    Schaal de verkeersflows van een bestaand netwerk op basis van temporele en
-    contextuele parameters.
-
-    Body (JSON):
-        areaId       - bestaand gebied (vereist)
-        mode         - transportmodus (CAR / BIKE / PEDESTRIAN; standaard: CAR)
-        date         - ISO-8601 datetime of null (null = geen tijdfilter, 24u-totaal)
-        temperature  - High / Medium / Low (standaard: Medium)
-        weather      - sunny / cloudy / dry / rainy (standaard: cloudy)
-        purpose      - work / education / shopping / recreational / unknown / null (null = alle)
-        regio        - midden / noord / zuid (standaard: midden)
-    """
-    if not _FLOW_SCALER_AVAILABLE:
-        abort(503, 'flow_scaler-package niet beschikbaar')
-
-    body = request.get_json(force=True, silent=True) or {}
-
-    area_id = str(body.get('areaId') or body.get('area_id') or '').strip()
-    mode    = str(body.get('mode', 'CAR')).upper()
-
-    if not area_id:
-        abort(400, 'Parameter "areaId" ontbreekt')
-
-    network_path = _geojson_path(area_id, mode, 'NETWORK')
-    if not network_path.exists():
-        abort(404, f'Netwerkbestand niet gevonden: {network_path.name}')
-
-    # ── Purpose-index laden ────────────────────────────────────────────────
-    purpose_index_path = _find_local_file('purpose_index.json')
-    if purpose_index_path is None:
-        abort(503, 'purpose_index.json niet gevonden')
-    with open(purpose_index_path, encoding='utf-8') as fh:
-        purpose_index_raw = json.load(fh)
-    purpose_index = load_purpose_index(purpose_index_raw)
-
-    # ── Daglicht-tabel laden (optioneel) ───────────────────────────────────
-    daylight_raw = []
-    daylight_path = _find_local_file('daylight.json')
-    if daylight_path is not None:
-        try:
-            with open(daylight_path, encoding='utf-8') as fh:
-                daylight_raw = json.load(fh)
-        except Exception as exc:
-            print(f'[server] daylight.json laden mislukt, wordt overgeslagen: {exc}')
-
-    # ── Parameters normaliseren ────────────────────────────────────────────
-    date_str    = body.get('date') or None
-    raw_temp    = body.get('temperature', 'Medium')
-    raw_weather = body.get('weather', 'cloudy')
-    raw_purpose = body.get('purpose') or None
-    regio       = str(body.get('regio', 'midden')).lower()
-
-    dt          = parse_date(date_str)
-    temperature = normalise_temperature(raw_temp)
-    weather     = normalise_weather(raw_weather, dt, daylight_raw)
-    purpose     = None if raw_purpose in (None, 'all', '') else raw_purpose.lower()
-
-    # Lokale holiday_indices.csv doorgeven zodat _load_uri() het leest i.p.v. S3
-    holiday_path = _find_local_file('holiday_indices.csv')
-    holiday_index = str(holiday_path) if holiday_path is not None else ''
-
-    params = FlowScalerParams(
-        mode=mode,
-        dt=dt,
-        temperature=temperature,
-        weather=weather,
-        regio=regio,
-        purpose=purpose,
-        holiday_index=holiday_index,
-    )
-
-    # ── Netwerk laden en schalen ───────────────────────────────────────────
-    with open(network_path, encoding='utf-8') as fh:
-        network_fc = json.load(fh)
-
-    n_features = len(network_fc.get('features', []))
-    filtered   = filterNetwork(network_fc, bbox=None, offset=0, limit=max(n_features, 1))
-    filtered.params = params
-
-    keys    = determineIndiceKeys(params, filtered.metadata)
-    indexes = read_indexes(keys, purpose_index)
-    result  = applyIndices(filtered, indexes, run_cleaner=False)
-
-    return jsonify(result)
+@app.route('/jobs/<job_id>/results')
+def ogc_job_results(job_id):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        abort(404, f'Job niet gevonden: {job_id}')
+    if job['status'] not in ('successful',):
+        abort(404, f'Job {job_id} heeft nog geen resultaten (status: {job["status"]})')
+    return jsonify(job.get('_results', {}))
 
 
-@app.route('/api/geojson')
-def api_geojson():
-    area_id   = request.args.get('areaId',  '')
-    mode      = request.args.get('mode',    '').upper()
-    file_type = request.args.get('type',    '').upper()
-
-    if not _safe(area_id):
-        abort(400, 'Ongeldige of ontbrekende parameter: areaId')
-    if not _safe(mode):
-        abort(400, 'Ongeldige of ontbrekende parameter: mode')
-    if file_type not in VALID_TYPES:
-        abort(400, f'Ongeldige parameter type. Toegestaan: {", ".join(sorted(VALID_TYPES))}')
-
-    path = _geojson_path(area_id, mode, file_type)
-    if not path.exists():
-        abort(404, f'Bestand niet gevonden: {path.name}')
-
-    return send_file(str(path), mimetype='application/geo+json')
-
+# ---------------------------------------------------------------------------
+# Error handlers
+# ---------------------------------------------------------------------------
 
 @app.errorhandler(400)
 @app.errorhandler(404)
+@app.errorhandler(500)
+@app.errorhandler(501)
+@app.errorhandler(503)
 def error_handler(e):
     return jsonify(error=str(e.description)), e.code
 
@@ -891,6 +1241,6 @@ if __name__ == '__main__':
     print(f'prepare     : {"beschikbaar" if _PREPARE_AVAILABLE else "NIET beschikbaar"}')
     print(f'adjust      : {"beschikbaar" if _ADJUST_AVAILABLE else "NIET beschikbaar"}')
     print(f'flow_scaler : {"beschikbaar" if _FLOW_SCALER_AVAILABLE else "NIET beschikbaar"}')
-    print(f'Beschikbare gebieden: {_discover_areas()}')
+    print(f'whatif      : {"beschikbaar" if _WHATIF_AVAILABLE else "NIET beschikbaar"}')
     print(f'Server      : http://localhost:{args.port}')
     app.run(host='0.0.0.0', port=args.port, debug=True)

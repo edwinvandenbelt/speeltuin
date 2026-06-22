@@ -927,7 +927,7 @@
     <button class="tb-btn edit-btn" id="nodeEditBtn" data-i18n-title="nodeEditTitle" title="Productie/attractie per knoop wijzigen">&#9673;</button>
     <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
     <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
-    <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting">&#128683;</button>
+    <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
 
     <div class="tb-sep"></div>
 
@@ -1738,8 +1738,9 @@
         <p id="areaError" style="display:none;color:#ff6b6b;font-size:13px;margin-top:16px"></p>
       </div>`;
 
-    fetch('/api/areas')
+    fetch('/collections/areas/items')
       .then(r => r.json())
+      .then(data => data.features.map(f => f.properties))
       .then(areas => {
         const container = document.getElementById('areaButtons');
         if (!areas.length) {
@@ -1780,7 +1781,11 @@
             };
             delBtn.onclick = async () => {
               if (!confirm(T('areaDelConfirm', name, mode))) return;
-              const res = await fetch(`/api/areas/${encodeURIComponent(areaId)}`, { method: 'DELETE' });
+              const res = await fetch('/processes/delete-area/execution', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: areaId }),
+              });
               if (res.ok) {
                 row.remove();
               } else {
@@ -1943,13 +1948,13 @@
       };
       let jobId;
       try {
-        const res  = await fetch('/api/prepare', {
+        const res  = await fetch('/processes/prepare/execution', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ inputs: body }),
         });
         const data = await res.json();
         if (!res.ok) { statusEl.style.color = '#ff6b6b'; statusEl.textContent = data.error; return; }
-        jobId = data.job_id;
+        jobId = data.jobID;
       } catch (e) {
         statusEl.style.color = '#ff6b6b';
         statusEl.textContent = T('newAreaStatusConn');
@@ -1960,7 +1965,7 @@
       let lastLogLen = 0;
       const poll = setInterval(async () => {
         try {
-          const res  = await fetch(`/api/prepare/${jobId}`);
+          const res  = await fetch(`/jobs/${jobId}`);
           const job  = await res.json();
 
           // Append nieuwe logregels
@@ -1974,7 +1979,7 @@
           if (job.status === 'running') {
             statusEl.textContent = T('newAreaStatusRunning');
             fillEl.style.width = '60%';
-          } else if (job.status === 'done') {
+          } else if (job.status === 'successful') {
             clearInterval(poll);
             fillEl.style.width = '100%';
             fillEl.style.animation = 'none';
@@ -1983,7 +1988,7 @@
             document.getElementById('newSubmitBtn').disabled = false;
             document.getElementById('newSubmitBtn').textContent = T('newAreaStatusBack');
             document.getElementById('newSubmitBtn').onclick = () => window.location.reload();
-          } else if (job.status === 'error') {
+          } else if (job.status === 'failed') {
             clearInterval(poll);
             fillEl.style.background = '#ff1744';
             fillEl.style.animation = 'none';
@@ -1997,7 +2002,9 @@
   }
 
   function apiUrl(type) {
-    return `/api/geojson?areaId=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}&type=${type}`;
+    const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+    const coll = collMap[type] || type.toLowerCase();
+    return `/collections/${coll}/items?areaId=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`;
   }
 
   const GEOJSON_FILE  = apiUrl('NETWORK');
@@ -3730,6 +3737,12 @@
               return Math.max(1.5, t * lanes * 12);
             }
           }
+          if (colorMetric === 'flow') {
+            // Ongeschaald: breedte log-proportioneel aan uurintensiteit t.o.v. netwerk-maximum
+            const v = dpFlowOf(f.properties);
+            const t = Math.log1p(Math.max(0, v)) / Math.log1p(globalMaxFlow || 1);
+            return Math.max(1.5, t * lanes * 12);
+          }
           return Math.max(1.5, lanes * 3);
         },
          getLineColor: f => {
@@ -3811,6 +3824,12 @@
               const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
               return Math.max(1.5, t * lanes * 12);
             }
+          }
+          if (colorMetric === 'flow') {
+            // Ongeschaald: breedte log-proportioneel aan uurintensiteit t.o.v. netwerk-maximum
+            const v = dpFlowOf(f.properties);
+            const t = Math.log1p(Math.max(0, v)) / Math.log1p(globalMaxFlow || 1);
+            return Math.max(1.5, t * lanes * 12);
           }
           return Math.max(1.5, lanes * 3);
         },
@@ -5559,40 +5578,41 @@
                         || `${networkName} (${scenarioCounter})`;
 
       try {
-        const res = await fetch('/api/adjust', {
+        const res = await fetch('/processes/adjust/execution', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ area_id: AREA_ID, mode: MODE, changes, scenario_name: scenarioName, debug: document.getElementById('adjustDebug').checked }),
+          body: JSON.stringify({ inputs: { area_id: AREA_ID, mode: MODE, changes, scenario_name: scenarioName, debug: document.getElementById('adjustDebug').checked } }),
         });
         if (!res.ok) throw new Error(await res.text());
-        const { job_id } = await res.json();
+        const { jobID: job_id } = await res.json();
 
         // Poll tot done/error
         status.style.display = 'block';
         status.textContent = T('applyRunning');
         const poll = setInterval(async () => {
-          const sr = await fetch(`/api/adjust/${job_id}`);
+          const sr = await fetch(`/jobs/${job_id}`);
           const sj = await sr.json();
-          if (sj.status === 'running' || sj.status === 'pending') {
+          if (sj.status === 'running' || sj.status === 'accepted') {
             status.textContent = T('applyRunning');
-          } else if (sj.status === 'done') {
+          } else if (sj.status === 'successful') {
             status.textContent = T('applyDone');
           } else {
             const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
             status.style.color = '#ff6b6b';
             status.textContent = errLines.length ? errLines.join('\n') : T('applyError', sj.returncode);
           }
-          if (sj.status === 'done' || sj.status === 'error') {
+          if (sj.status === 'successful' || sj.status === 'failed') {
             clearInterval(poll);
             btn.disabled = false;
-            if (sj.status === 'done') {
+            if (sj.status === 'successful') {
                scenarioCounter++;
                clearHighlight();
                pendingChanges = [];
               document.getElementById('scenarioNameInput').value = '';
               renderChangesList();
               // Laad nieuw netwerk en optioneel COMPARE-laag
-              await loadAdjustedResult(sj.new_area_id, sj.compare_url);
+              const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+              await loadAdjustedResult(results.new_area_id, results.compare_url);
             }
           }
         }, 1500);
@@ -5604,8 +5624,11 @@
 
     async function loadAdjustedResult(newAreaId, compareUrl) {
       // Herlaad netwerk, routes en zones in-place zonder de kaartpositie te wijzigen.
-      const mkUrl = (type) =>
-        `/api/geojson?areaId=${encodeURIComponent(newAreaId)}&mode=${encodeURIComponent(MODE)}&type=${type}`;
+      const mkUrl = (type) => {
+        const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+        const coll = collMap[type] || type.toLowerCase();
+        return `/collections/${coll}/items?areaId=${encodeURIComponent(newAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      };
 
       // ── Netwerk ──────────────────────────────────────────────────────────
       const newGeojson  = await fetch(mkUrl('NETWORK')).then(r => r.json());
@@ -5790,8 +5813,8 @@
         })
         .catch(e => console.warn('COMPARE laden mislukt:', e));
     } else {
-      // Controleer via /api/areas of er al een COMPARE-bestand is voor dit gebied
-      fetch('/api/areas').then(r => r.json()).then(areas => {
+      // Controleer via /collections/areas/items of er al een COMPARE-bestand is voor dit gebied
+      fetch('/collections/areas/items').then(r => r.json()).then(data => data.features.map(f => f.properties)).then(areas => {
         const area = areas.find(a => a.areaId === AREA_ID && a.mode === MODE);
         if (area?.hasCompare) syncCompareOption(true);
         if (area?.srcAreaId) {
@@ -5859,8 +5882,11 @@
     async function activateSplitView() {
       if (splitViewActive || !splitViewSrcAreaId) return;
 
-      const mkUrl2 = type =>
-        `/api/geojson?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}&type=${type}`;
+      const mkUrl2 = type => {
+        const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+        const coll = collMap[type] || type.toLowerCase();
+        return `/collections/${coll}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      };
 
       try {
         // ── Laad origineel netwerk ──────────────────────────────────────────
@@ -6067,10 +6093,10 @@
       const linkIds = [...whatifRcLinks.keys()].map(Number);
 
       try {
-        const res = await fetch('/api/whatif-road-closure', {
+        const res = await fetch('/processes/whatif-road-closure/execution', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ area_id: AREA_ID, mode: MODE, selected_links: linkIds, direction, scenario_name: scenarioName }),
+          body: JSON.stringify({ inputs: { area_id: AREA_ID, mode: MODE, selected_links: linkIds, direction, scenario_name: scenarioName } }),
         });
         if (!res.ok) {
           const txt = await res.text();
@@ -6079,30 +6105,31 @@
           btn.disabled = false;
           return;
         }
-        const { job_id } = await res.json();
+        const { jobID: job_id } = await res.json();
         status.textContent = T('whatifRcRunning');
         const poll = setInterval(async () => {
           try {
-            const sr = await fetch(`/api/whatif-road-closure/${job_id}`);
+            const sr = await fetch(`/jobs/${job_id}`);
             const sj = await sr.json();
-            if (sj.status === 'running' || sj.status === 'pending') {
+            if (sj.status === 'running' || sj.status === 'accepted') {
               status.textContent = T('whatifRcRunning');
-            } else if (sj.status === 'done') {
+            } else if (sj.status === 'successful') {
               status.textContent = T('whatifRcDone');
             } else {
               const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
               status.style.color = '#ff6b6b';
               status.textContent = errLines.length ? errLines.join('\n') : T('whatifRcError', sj.returncode);
             }
-            if (sj.status === 'done' || sj.status === 'error') {
+            if (sj.status === 'successful' || sj.status === 'failed') {
               clearInterval(poll);
               btn.disabled = false;
-              if (sj.status === 'done') {
+              if (sj.status === 'successful') {
                 scenarioCounter++;
                 whatifRcLinks.clear();
                 renderWhatifRcList();
                 document.getElementById('whatifRcNameInput').value = '';
-                await loadAdjustedResult(sj.new_area_id, null);
+                const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+                await loadAdjustedResult(results.new_area_id, null);
               }
             }
           } catch (e) { /* poll-fout: volgende poging */ }
@@ -6379,16 +6406,17 @@
        const perAttr = calcPerNode(attrRaw, n);
        if (!perProd && !perAttr) { closePolygonDialog(); return; }
 
-       for (const node of polygonNodesInside) {
-         // Verwijder eventueel bestaande wijziging voor dit id
-         pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== node.zoneId);
-         const change = { zoneId: node.zoneId };
-         if (perProd) change.production = perProd;
-         if (perAttr) change.attraction = perAttr;
-         change._label     = node.zoneName;
-         change._zoneClass = node.zoneClass;
-         pendingChanges.push(change);
-       }
+        for (const node of polygonNodesInside) {
+          // Verwijder eventueel bestaande wijziging voor dit id
+          pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== node.zoneId);
+          const isNetworkNode = node.zoneClass === 'NETWORK_NODE';
+          const change = isNetworkNode ? { nodeId: node.zoneId } : { zoneId: node.zoneId };
+          if (perProd) change.production = perProd;
+          if (perAttr) change.attraction = perAttr;
+          change._label     = node.zoneName;
+          change._zoneClass = node.zoneClass;
+          pendingChanges.push(change);
+        }
        renderChangesList();
        closePolygonDialog();
      });
@@ -6520,7 +6548,7 @@
       if (colorMetric === 'compare') {
         // Laad COMPARE-bestand als nog niet aanwezig
         if (!compareData) {
-          const url = `/api/geojson?areaId=${AREA_ID}&mode=${MODE}&type=COMPARE`;
+          const url = `/collections/comparison/items?areaId=${AREA_ID}&mode=${MODE}`;
           try {
             const r = await fetch(url);
             if (!r.ok) throw new Error(r.statusText);
@@ -6633,19 +6661,16 @@
       fspStatusEl.textContent = T('fspLoading');
 
       try {
-        const resp = await fetch('/api/flow-scale', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            areaId:      AREA_ID,
-            mode:        MODE,
-            date:        dateTime,
-            temperature: tempVal,
-            weather:     weatherVal,
-            purpose:     purposeVal,
-            regio:       regioVal,
-          }),
+        const _fspParams = new URLSearchParams({
+          areaId:      AREA_ID,
+          mode:        MODE,
+          temperature: tempVal,
+          weather:     weatherVal,
+          regio:       regioVal,
         });
+        if (dateTime)   _fspParams.set('date', dateTime);
+        if (purposeVal) _fspParams.set('purpose', purposeVal);
+        const resp = await fetch(`/collections/flows/items?${_fspParams}`);
 
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({ error: resp.statusText }));

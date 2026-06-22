@@ -1,0 +1,5 @@
+# start.bat zoekt automatisch naar gmt_calculation_lib-*.whl in deze map.
+WHEEL_DIR=T:\Users\Belt Edwin van den\GMT
+
+# Brondirectory voor index.html en server.py (altijd dezelfde map).
+CODE_DIR=T:\Users\Belt Edwin van den\GMT
