@@ -455,9 +455,11 @@ def _ogc_items_response(collection_id: str, data, self_url: str):
         except Exception:
             data = {'type': 'FeatureCollection', 'features': []}
 
-    features = data.get('features', [])
-    extra    = {k: v for k, v in data.items()
-                if k not in ('type', 'features', 'links')}
+    features  = data.get('features', [])
+    top_props = data.get('properties') if isinstance(data.get('properties'), dict) else {}
+    other     = {k: v for k, v in data.items()
+                 if k not in ('type', 'features', 'links', 'properties')}
+    merged    = {**top_props, **other}
 
     result: dict = {
         'type':            'FeatureCollection',
@@ -470,8 +472,8 @@ def _ogc_items_response(collection_id: str, data, self_url: str):
         'numberMatched':  len(features),
         'numberReturned': len(features),
     }
-    if extra:
-        result['properties'] = extra
+    if merged:
+        result['properties'] = merged
 
     resp = make_response(json.dumps(result, ensure_ascii=False))
     resp.headers['Content-Type'] = 'application/geo+json'

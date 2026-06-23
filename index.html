@@ -702,6 +702,59 @@
       overflow: hidden;
     }
     #flowScalerPanel.fsp-visible { display: block; }
+
+    /* ── Instellingen-paneel ───────────────────────────────────────────────── */
+    #settingsPanel {
+      display: none;
+      position: fixed;
+      top: 52px;
+      z-index: 30;
+      width: 220px;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid rgba(126,200,227,0.25);
+      border-radius: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    #settingsPanel.sp-visible { display: block; }
+    #spHeader {
+      padding: 11px 14px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #spHeader button {
+      background: none; border: none; color: #5a6272; cursor: pointer;
+      font-size: 15px; padding: 0; line-height: 1;
+      transition: color 0.15s;
+    }
+    #spHeader button:hover { color: #c9d6e8; }
+    #spBody { padding: 12px 16px 14px; }
+    #spApply {
+      width: 100%; padding: 7px 0; margin-top: 2px;
+      background: rgba(126,200,227,0.15);
+      color: #7ec8e3;
+      border: 1px solid rgba(126,200,227,0.35);
+      border-radius: 7px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    #spApply:hover { background: rgba(126,200,227,0.28); }
+    .sp-section { margin-bottom: 0; }
+    .sp-section + .sp-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.07); }
+    .sp-label {
+      font-size: 10px; color: #5a6272; text-transform: uppercase;
+      letter-spacing: 0.4px; margin-bottom: 6px; font-weight: 600;
+    }
+    .sp-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 3px 0; cursor: pointer;
+    }
+    .sp-row input { accent-color: #7ec8e3; cursor: pointer; margin: 0; }
+    .sp-row span  { font-size: 12px; color: #c9d6e8; }
+
     #fspHeader {
       padding: 11px 14px 10px;
       border-bottom: 1px solid rgba(255,255,255,0.07);
@@ -881,8 +934,8 @@
 
     <div class="tb-sep"></div>
 
-    <!-- Initiële vulmethode: LL / LD -->
-    <div id="fillBtns" style="display:flex;gap:3px;align-items:center">
+    <!-- Initiële vulmethode (verborgen, beheerd via instellingen-paneel) -->
+    <div id="fillBtns" style="display:none">
       <button class="tb-btn fillBtn" data-fill="little" data-i18n="fillLlLabel" data-i18n-title="fillLlTitle" title="Little's Law">LL</button>
       <button class="tb-btn fillBtn" data-fill="link"   data-i18n="fillLdLabel" data-i18n-title="fillLdTitle" title="Linkdichtheid">LD</button>
       <button class="tb-btn fillBtn" data-fill="cap"    data-i18n="fillCbLabel" data-i18n-title="fillCbTitle" title="Capaciteitsbezetting">CB</button>
@@ -929,19 +982,68 @@
     <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
     <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
 
-    <div class="tb-sep"></div>
-
-    <!-- Taal -->
-    <select id="langSelect" class="tb-select lang-select" onchange="applyLang(this.value)" data-i18n-title="langSelectTitle" title="Taal kiezen">
+    <!-- Taal (verborgen, beheerd via instellingen-paneel) -->
+    <select id="langSelect" class="tb-select lang-select" style="display:none" onchange="applyLang(this.value)" data-i18n-title="langSelectTitle" title="Taal kiezen">
       <option value="NL">&#127475;&#127473; NL</option>
       <option value="EN">&#127468;&#127463; EN</option>
       <option value="FI">&#127467;&#127470; FI</option>
     </select>
 
+    <!-- Debug (verborgen, beheerd via instellingen-paneel) -->
+    <button class="tb-btn lang-btn" id="debugBtn" style="display:none" title="Debug-paneel tonen/verbergen">DBG</button>
+
     <div class="tb-sep"></div>
 
-    <!-- Debug -->
-    <button class="tb-btn lang-btn" id="debugBtn" title="Debug-paneel tonen/verbergen">DBG</button>
+    <!-- Instellingen-knop (uiterst rechts) -->
+    <button class="tb-btn" id="settingsBtn" data-i18n-title="settingsTitle" title="Instellingen">&#9881;</button>
+  </div>
+
+  <!-- ── Instellingen-paneel ──────────────────────────────────────────────── -->
+  <div id="settingsPanel">
+    <div id="spHeader">
+      <span data-i18n="settingsTitle">Instellingen</span>
+    </div>
+    <div id="spBody">
+      <div class="sp-section">
+        <div class="sp-label" data-i18n="settingsFillLabel">Initiële vulling</div>
+        <label class="sp-row">
+          <input type="radio" name="spFill" id="spFillLittle" value="little">
+          <span data-i18n="spFillLl">Little's Law</span>
+        </label>
+        <label class="sp-row">
+          <input type="radio" name="spFill" id="spFillLink" value="link">
+          <span data-i18n="spFillLd">Linkdichtheid</span>
+        </label>
+        <label class="sp-row">
+          <input type="radio" name="spFill" id="spFillCap" value="cap">
+          <span data-i18n="spFillCb">Capaciteitsbezetting</span>
+        </label>
+      </div>
+      <div class="sp-section">
+        <label class="sp-row">
+          <input type="checkbox" id="spDebug">
+          <span data-i18n="settingsDebugLabel">Debug-uitvoer</span>
+        </label>
+      </div>
+      <div class="sp-section">
+        <div class="sp-label" data-i18n="settingsLangLabel">Taal</div>
+        <label class="sp-row">
+          <input type="radio" name="spLang" value="NL">
+          <span>&#127475;&#127473; NL</span>
+        </label>
+        <label class="sp-row">
+          <input type="radio" name="spLang" value="EN">
+          <span>&#127468;&#127463; EN</span>
+        </label>
+        <label class="sp-row">
+          <input type="radio" name="spLang" value="FI">
+          <span>&#127467;&#127470; FI</span>
+        </label>
+      </div>
+      <div class="sp-section">
+        <button id="spApply" data-i18n="settingsApplyBtn">Toepassen</button>
+      </div>
+    </div>
   </div>
 
   <!-- Debug-paneel (rechts onder toolbar, verborgen tot DBG-knop) -->
@@ -1235,6 +1337,8 @@
       dpRestLabel:'RD', dpRestTitle:'Restdag',
       fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
       fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
+      settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
+      spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
       timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
       pauseTitle:'Pauzeer simulatie',
@@ -1390,6 +1494,8 @@
       dpRestLabel:'OP', dpRestTitle:'Off-peak',
       fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
+      settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
+      spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
       metricTitle:'Color metric',
       timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
       pauseTitle:'Pause simulation',
@@ -1534,6 +1640,8 @@
       dpRestLabel:'MA', dpRestTitle:'Muu aika',
       fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
+      settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
+      spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
       timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
       pauseTitle:'Pys\xe4yt\xe4 simulaatio',
@@ -6623,6 +6731,63 @@
       document.querySelectorAll('.fillBtn').forEach(b =>
         b.classList.toggle('active', b.dataset.fill === initFillMethod)
       );
+
+      // ── Instellingen-paneel (gear-knop) ──────────────────────────────────────
+      (function () {
+        const settingsBtn   = document.getElementById('settingsBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+
+        function openSettings() {
+          // Synchroniseer paneel met huidige toestand
+          const radio = settingsPanel.querySelector(`input[name="spFill"][value="${initFillMethod}"]`);
+          if (radio) radio.checked = true;
+          document.getElementById('spDebug').checked = !!window._debugMode;
+          const curLang = document.getElementById('langSelect').value;
+          const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
+          if (langRadio) langRadio.checked = true;
+          // Positioneer paneel onder de gear-knop (links-uitgelijnd, binnen viewport)
+          const r = settingsBtn.getBoundingClientRect();
+          settingsPanel.style.top  = (r.bottom + 4) + 'px';
+          settingsPanel.style.left = Math.min(r.left, window.innerWidth - 232) + 'px';
+          settingsPanel.classList.add('sp-visible');
+          settingsBtn.classList.add('active');
+        }
+
+        function closeSettings() {
+          // Lees nieuwe vulmethode en pas toe als gewijzigd
+          const newFill = settingsPanel.querySelector('input[name="spFill"]:checked')?.value || initFillMethod;
+          if (newFill !== initFillMethod) {
+            initFillMethod = newFill;
+            localStorage.setItem('initFillMethod', initFillMethod);
+            document.querySelectorAll('.fillBtn').forEach(b =>
+              b.classList.toggle('active', b.dataset.fill === initFillMethod));
+            rebuildCars();
+          }
+          // Lees nieuwe debug-instelling en pas toe als gewijzigd
+          const newDebug = document.getElementById('spDebug').checked;
+          if (newDebug !== !!window._debugMode) {
+            window._debugMode = newDebug;
+            document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+            document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+            const adj = document.getElementById('adjustDebug');
+            if (adj) adj.checked = window._debugMode;
+            if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+          }
+          // Lees nieuwe taal en pas toe als gewijzigd
+          const newLang = settingsPanel.querySelector('input[name="spLang"]:checked')?.value;
+          if (newLang && newLang !== document.getElementById('langSelect').value) {
+            applyLang(newLang);
+          }
+          settingsPanel.classList.remove('sp-visible');
+          settingsBtn.classList.remove('active');
+        }
+
+        settingsBtn.addEventListener('click', () => {
+          if (settingsPanel.classList.contains('sp-visible')) closeSettings();
+          else openSettings();
+        });
+        document.getElementById('spApply').addEventListener('click', closeSettings);
+      })();
 
      document.getElementById('zoneCentroidSelect').addEventListener('change', e => {
        zoneCentroidMode = e.target.value;
