@@ -253,6 +253,11 @@
 
     .dpBtn  { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
     .dpBtn.active  { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
+    .dpBtn:disabled, .dpBtn:disabled:hover {
+      opacity: 0.35; cursor: not-allowed;
+      background: rgba(255,255,255,0.05) !important;
+      color: #8896aa !important; border-color: rgba(255,255,255,0.1) !important;
+    }
     .fillBtn { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
     .fillBtn.active { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
 
@@ -2740,7 +2745,16 @@
         occupancy:        { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
         occupancy_scaled: { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
         speed:            { labelKey: 'legendSpeed',     unit: 'km/h', gradient: 'linear-gradient(to right, #ff1744, #ffea00, #2196f3)' },
-        capacity:         { labelKey: 'legendCapacity',  unit,         gradient: 'linear-gradient(to right, #90caf9, #1565c0)' },
+        capacity:         { labelKey: 'legendCapacity',  unit,         gradient: (() => {
+          const stops = [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000].map(v => {
+            const norm = Math.sqrt(v / 4000);
+            const r = Math.round(30 + (1 - norm) * 140);
+            const g = Math.round(80 + (1 - norm) * 120);
+            const b = Math.round(200 + norm * 55);
+            return `rgb(${r},${g},${b}) ${(v / 40).toFixed(1)}%`;
+          });
+          return `linear-gradient(to right, ${stops.join(', ')})`;
+        })() },
       };
       const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
       document.getElementById('legendBar').style.background = gradient;
@@ -2752,6 +2766,10 @@
         // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
         document.getElementById('legendMin').textContent = fmt(0);
         document.getElementById('legendMax').textContent = fmt(globalMaxFlow);
+      } else if (colorMetric === 'capacity') {
+        // Vaste schaal 0–4000, onafhankelijk van de data
+        document.getElementById('legendMin').textContent = fmt(0);
+        document.getElementById('legendMax').textContent = fmt(4000);
       } else {
         // Andere metrics: scan segmenten voor het actieve dagdeel
         let vMin = Infinity, vMax = -Infinity;
@@ -3940,6 +3958,9 @@
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
             // Statische schaal: norm altijd t.o.v. netwerk-brede maximum (dagdeel-onafhankelijk)
             norm = Math.max(0, Math.min(1, v / globalMaxFlow));
+          } else if (colorMetric === 'capacity') {
+            // Vaste schaal 0–4000 met sqrt-schaling
+            norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
           } else {
             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
           }
@@ -4027,6 +4048,9 @@
             norm = Math.max(0, Math.min(1, v / 100));
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
             norm = Math.max(0, Math.min(1, v / globalMaxFlow));
+          } else if (colorMetric === 'capacity') {
+            // Vaste schaal 0–4000 met sqrt-schaling
+            norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
           } else {
             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
           }
@@ -7028,13 +7052,13 @@
     document.getElementById('fspReset').addEventListener('click', resetFlowScaler);
     document.getElementById('fspClose').addEventListener('click', () => {
       document.getElementById('flowScalerPanel').classList.remove('fsp-visible');
-      // Panel sluiten houdt de scaler actief als die al toegepast is;
-      // knop blijft blauw als _fspOriginal gezet is
+      document.querySelectorAll('.dpBtn').forEach(b => b.disabled = false);
       if (!_fspOriginal) document.getElementById('fspBtn').classList.remove('active');
     });
     document.getElementById('fspBtn').addEventListener('click', () => {
-      const panel = document.getElementById('flowScalerPanel');
+      const panel  = document.getElementById('flowScalerPanel');
       const isOpen = panel.classList.toggle('fsp-visible');
+      document.querySelectorAll('.dpBtn').forEach(b => b.disabled = isOpen);
       if (!isOpen && !_fspOriginal) {
         document.getElementById('fspBtn').classList.remove('active');
       }
