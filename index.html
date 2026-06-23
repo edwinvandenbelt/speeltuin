@@ -1839,11 +1839,11 @@
   if (!AREA_ID) {
     const loader = document.getElementById('loader');
     loader.innerHTML = `
-      <div style="text-align:center;font-family:'Segoe UI',sans-serif;color:#c9d6e8;max-width:420px;padding:24px">
-        <h2 style="color:#7ec8e3;margin:0 0 8px;font-size:20px">${T('areaTitle')}</h2>
-        <p style="color:#5a6272;font-size:13px;margin:0 0 24px">${T('areaSubtitle')}</p>
-        <div id="areaButtons" style="display:flex;flex-direction:column;gap:8px"></div>
-        <p id="areaError" style="display:none;color:#ff6b6b;font-size:13px;margin-top:16px"></p>
+      <div style="font-family:'Segoe UI',sans-serif;color:#c9d6e8;width:500px;max-width:96vw;padding:24px">
+        <h2 style="color:#7ec8e3;margin:0 0 8px;font-size:20px;text-align:center">${T('areaTitle')}</h2>
+        <p style="color:#5a6272;font-size:13px;margin:0 0 20px;text-align:center">${T('areaSubtitle')}</p>
+        <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px"></div>
+        <p id="areaError" style="display:none;color:#ff6b6b;font-size:13px;margin-top:16px;text-align:center"></p>
       </div>`;
 
     fetch('/collections/areas/items')
@@ -1855,66 +1855,143 @@
           document.getElementById('areaError').textContent = T('areaNotFound');
           document.getElementById('areaError').style.display = 'block';
         } else {
-          areas.forEach(({ areaId, mode, name }) => {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;gap:6px;width:100%';
+          // ── Boomstructuur opbouwen ──────────────────────────────────────────
+          const byKey     = new Map(areas.map(a => [`${a.areaId}|${a.mode}`, a]));
+          const kidsMap   = new Map();   // key → [child areas]
+          const roots     = [];
 
+          areas.forEach(a => {
+            const parentKey = a.srcAreaId ? `${a.srcAreaId}|${a.mode}` : null;
+            if (parentKey && byKey.has(parentKey)) {
+              if (!kidsMap.has(parentKey)) kidsMap.set(parentKey, []);
+              kidsMap.get(parentKey).push(a);
+            } else {
+              roots.push(a);
+            }
+          });
+
+          // Ingeklapte takken persisteren — standaard alles ingeklapt
+          const _saved    = localStorage.getItem('areaTreeCollapsed');
+          const collapsed = _saved
+            ? new Set(JSON.parse(_saved))
+            : new Set(kidsMap.keys());   // eerste keer: alle takken dicht
+          const saveCollapsed = () =>
+            localStorage.setItem('areaTreeCollapsed', JSON.stringify([...collapsed]));
+
+          // ── Node renderen ───────────────────────────────────────────────────
+          function renderNode(area, depth) {
+            const key     = `${area.areaId}|${area.mode}`;
+            const kids    = kidsMap.get(key) || [];
+            const hasKids = kids.length > 0;
+
+            const nodeEl = document.createElement('div');
+
+            // Rij
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:5px;align-items:center';
+
+            // Toggle-pijltje (neemt altijd dezelfde breedte in zodat knoppen uitlijnen)
+            const arrowBtn = document.createElement('button');
+            arrowBtn.style.cssText = `
+              flex-shrink:0;width:20px;height:20px;padding:0;
+              background:none;border:none;
+              color:${hasKids ? '#5a6272' : 'transparent'};
+              pointer-events:${hasKids ? 'auto' : 'none'};
+              font-size:9px;display:flex;align-items:center;justify-content:center;
+              transition:color .15s;margin-left:${depth * 20}px`;
+            arrowBtn.textContent = collapsed.has(key) ? '▶' : '▼';
+
+            // Scenario-knop
             const btn = document.createElement('button');
-            btn.textContent = `${name}  —  ${mode}`;
-            btn.style.cssText = `flex:1;background:#1a2233;color:#c9d6e8;border:1px solid rgba(126,200,227,0.25);
-              border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;text-align:left;
+            btn.textContent = `${area.name}  —  ${area.mode}`;
+            btn.style.cssText = `
+              flex:1;min-width:0;
+              background:#1a2233;color:#c9d6e8;
+              border:1px solid rgba(126,200,227,0.25);
+              border-radius:7px;padding:9px 14px;font-size:13px;
+              cursor:pointer;text-align:left;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
               transition:background .15s`;
             btn.onmouseenter = () => btn.style.background = 'rgba(126,200,227,0.12)';
             btn.onmouseleave = () => btn.style.background = '#1a2233';
             btn.onclick = () => {
               window.location.href =
-                `/?areaId=${encodeURIComponent(areaId)}&mode=${encodeURIComponent(mode)}`;
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
             };
 
+            // Verwijder-knop
             const delBtn = document.createElement('button');
             delBtn.textContent = '✕';
-            delBtn.title = T('areaDelTitle', name);
-            delBtn.style.cssText = `background:transparent;color:#4a5568;border:1px solid rgba(255,255,255,0.1);
-              border-radius:7px;padding:10px 14px;font-size:14px;cursor:pointer;
-              transition:background .15s,color .15s;flex-shrink:0`;
+            delBtn.title = T('areaDelTitle', area.name);
+            delBtn.style.cssText = `
+              flex-shrink:0;background:transparent;color:#4a5568;
+              border:1px solid rgba(255,255,255,0.1);
+              border-radius:7px;padding:9px 12px;font-size:13px;
+              cursor:pointer;transition:background .15s,color .15s`;
             delBtn.onmouseenter = () => {
-              delBtn.style.background = 'rgba(255,80,80,0.15)';
-              delBtn.style.color = '#ff6b6b';
-              delBtn.style.borderColor = 'rgba(255,80,80,0.3)';
+              delBtn.style.background    = 'rgba(255,80,80,0.15)';
+              delBtn.style.color         = '#ff6b6b';
+              delBtn.style.borderColor   = 'rgba(255,80,80,0.3)';
             };
             delBtn.onmouseleave = () => {
-              delBtn.style.background = 'transparent';
-              delBtn.style.color = '#4a5568';
-              delBtn.style.borderColor = 'rgba(255,255,255,0.1)';
+              delBtn.style.background    = 'transparent';
+              delBtn.style.color         = '#4a5568';
+              delBtn.style.borderColor   = 'rgba(255,255,255,0.1)';
             };
             delBtn.onclick = async () => {
-              if (!confirm(T('areaDelConfirm', name, mode))) return;
+              if (!confirm(T('areaDelConfirm', area.name, area.mode))) return;
               const res = await fetch('/processes/delete-area/execution', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: areaId }),
+                body: JSON.stringify({ id: area.areaId }),
               });
               if (res.ok) {
-                row.remove();
+                nodeEl.remove();
               } else {
-                const data = await res.json().catch(() => ({}));
-                alert(T('areaDelError', data.error || res.statusText));
+                const d = await res.json().catch(() => ({}));
+                alert(T('areaDelError', d.error || res.statusText));
               }
             };
 
+            row.appendChild(arrowBtn);
             row.appendChild(btn);
             row.appendChild(delBtn);
-            container.appendChild(row);
-          });
+            nodeEl.appendChild(row);
+
+            // Kinderen-wrapper (gedefinieerd vóór onclick zodat de closure hem kan bereiken)
+            const kidsWrap = document.createElement('div');
+            kidsWrap.style.cssText = `margin-top:3px;display:${collapsed.has(key) ? 'none' : 'block'}`;
+            kids.forEach(child => kidsWrap.appendChild(renderNode(child, depth + 1)));
+            nodeEl.appendChild(kidsWrap);
+
+            // Pijltje-gedrag (na kidsWrap definitie)
+            if (hasKids) {
+              arrowBtn.onclick = () => {
+                const wasCollapsed = collapsed.has(key);
+                if (wasCollapsed) collapsed.delete(key); else collapsed.add(key);
+                saveCollapsed();
+                kidsWrap.style.display  = wasCollapsed ? 'block' : 'none';
+                arrowBtn.textContent    = wasCollapsed ? '▼' : '▶';
+                arrowBtn.style.color    = '#5a6272';
+              };
+              arrowBtn.onmouseenter = () => arrowBtn.style.color = '#7ec8e3';
+              arrowBtn.onmouseleave = () => arrowBtn.style.color = '#5a6272';
+            }
+
+            return nodeEl;
+          }
+
+          roots.forEach(root => container.appendChild(renderNode(root, 0)));
         }
 
         // "Nieuw"-knop altijd toevoegen
         const newBtn = document.createElement('button');
         newBtn.textContent = T('newAreaBtn');
-        newBtn.style.cssText = `background:transparent;color:#7ec8e3;
+        newBtn.style.cssText = `
+          background:transparent;color:#7ec8e3;
           border:1px dashed rgba(126,200,227,0.4);
           border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
-          transition:background .15s;width:100%;margin-top:4px`;
+          transition:background .15s;width:100%;margin-top:6px`;
         newBtn.onmouseenter = () => newBtn.style.background = 'rgba(126,200,227,0.07)';
         newBtn.onmouseleave = () => newBtn.style.background = 'transparent';
         newBtn.onclick = () => openNewScreen();
