@@ -191,7 +191,7 @@ _COLLECTION_FILE_TYPE = {
 
 # Verhoog dit getal als de Overpass-query of het dataformaat wijzigt.
 # Bestaande cachebestanden met een lager versienummer worden automatisch vernieuwd.
-_BUILDINGS_QUERY_VER = 3
+_BUILDINGS_QUERY_VER = 5
 
 _PROCESS_DESCRIPTIONS = {
     'prepare': {
@@ -507,6 +507,7 @@ def _overpass_query_for_bbox(b: str) -> str:
         f'  way["public_transport"~"station|stop_area"]({b});'
         f'  way["railway"~"station|halt"]({b});'
         f'  way["leisure"~"sports_centre|stadium|swimming_pool|ice_rink"]({b});'
+        f'  way["landuse"]({b});'
         f');'
         f'out body geom;'
     )
@@ -544,14 +545,122 @@ def _fetch_one_tile(b: str) -> tuple:
         return [], False   # afgekapte JSON: tegel overslaan
 
 
-def _fetch_buildings_overpass(bbox: list, tile_cache_dir: 'Path | None' = None) -> dict:
-    """Haal gebouwen en relevante objecten op via Overpass API.
+_BUILDING_TAGS = frozenset({'building', 'shop', 'amenity', 'public_transport', 'railway', 'leisure'})
+
+# Mapping van OSM landuse-waarden naar intern gebouwtype
+_LANDUSE_TYPE: dict = {
+    'residential':       'residential',
+    'housing':           'residential',
+    'commercial':        'commercial',
+    'retail':            'commercial',
+    'industrial':        'industrial',
+    'port':              'industrial',
+    'depot':             'industrial',
+    'harbour':           'industrial',
+    'brownfield':        'industrial',
+    'railway':           'transport',
+    'transportation':    'transport',
+    'education':         'education',
+    'recreation_ground': 'recreation',
+    'allotments':        'recreation',
+    'village_green':     'recreation',
+    'grass':             'recreation',
+    'greenfield':        'other',
+    'military':          'other',
+    'construction':      'other',
+    'farmland':          'other',
+    'farmyard':          'other',
+}
+
+
+def _py_pip(px: float, py: float, ring: list) -> bool:
+    """Ray-casting point-in-polygon test (identiek aan de JS-versie in index.html)."""
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if (yi > py) != (yj > py) and px < (xj - xi) * (py - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _elements_to_building_features(elements: list) -> list:
+    """Converteer ruwe Overpass-elementen naar een lijst GeoJSON building-Features.
+
+    Alleen elementen met een gebouwtag worden omgezet; landuse-areas worden
+    gebruikt voor de ruimtelijke join (_landuse-property) maar niet opgeslagen.
+    """
+    # Bouw landuse-opzoekstructuur uit de niet-gebouw elementen
+    landuse_lookup = []
+    for elem in elements:
+        tags = elem.get('tags', {})
+        if any(t in tags for t in _BUILDING_TAGS):
+            continue
+        landuse = tags.get('landuse', '')
+        if not landuse:
+            continue
+        coords = [[node['lon'], node['lat']] for node in elem.get('geometry', [])]
+        if len(coords) < 3:
+            continue
+        ring = coords if coords[0] == coords[-1] else coords + [coords[0]]
+        landuse_lookup.append({
+            'landuse': landuse,
+            'ring': ring,
+            'mnX': min(c[0] for c in ring), 'mxX': max(c[0] for c in ring),
+            'mnY': min(c[1] for c in ring), 'mxY': max(c[1] for c in ring),
+        })
+
+    # Converteer gebouwen naar GeoJSON Features
+    features = []
+    for elem in elements:
+        tags = elem.get('tags', {})
+        if not any(t in tags for t in _BUILDING_TAGS):
+            continue
+        coords = [[node['lon'], node['lat']] for node in elem.get('geometry', [])]
+        if len(coords) < 4:
+            continue
+        if coords[0] != coords[-1]:
+            coords.append(coords[0])
+
+        n_pts = len(coords) - 1
+        cx = sum(c[0] for c in coords[:n_pts]) / max(n_pts, 1)
+        cy = sum(c[1] for c in coords[:n_pts]) / max(n_pts, 1)
+
+        lu = None
+        for lz in landuse_lookup:
+            if cx < lz['mnX'] or cx > lz['mxX'] or cy < lz['mnY'] or cy > lz['mxY']:
+                continue
+            if _py_pip(cx, cy, lz['ring']):
+                lu = lz['landuse']
+                break
+
+        props: dict = {**tags, 'osm_id': elem['id']}
+        if lu:
+            props['_landuse'] = lu
+        features.append({
+            'type': 'Feature',
+            'geometry': {'type': 'Polygon', 'coordinates': [coords]},
+            'properties': props,
+        })
+    return features
+
+
+def _fetch_buildings_overpass(bbox: list,
+                              tile_cache_dir: 'Path | None' = None,
+                              fallback_tile_cache_dir: 'Path | None' = None) -> dict:
+    """Haal gebouwen op via Overpass API en sla ze op als GeoJSON per tegel.
 
     bbox = [minLon, minLat, maxLon, maxLat]
     Het gebied wordt opgesplitst in _OVERPASS_GRID × _OVERPASS_GRID tegels.
-    Als tile_cache_dir opgegeven is, worden succesvolle tegels individueel
-    gecachet zodat bij een volgende aanroep alleen ontbrekende tegels opnieuw
-    worden opgehaald.
+    Per tegel wordt de volgende voorkeursvolgorde gehanteerd:
+      1. Eigen tegel-cache (tile_cache_dir)
+      2. Tegel-cache van het basis-scenario (fallback_tile_cache_dir)
+      3. Ophalen via Overpass
+
+    Elke tegel-cache is een geldig GeoJSON FeatureCollection met uitsluitend
+    gebouw-features (landuse-areas worden niet opgeslagen).
     """
     minLon, minLat, maxLon, maxLat = bbox
     n    = _OVERPASS_GRID
@@ -559,7 +668,7 @@ def _fetch_buildings_overpass(bbox: list, tile_cache_dir: 'Path | None' = None) 
     dLat = (maxLat - minLat) / n
 
     seen_ids: set = set()
-    features = []
+    all_features: list = []
     complete = True
 
     for col in range(n):
@@ -570,61 +679,69 @@ def _fetch_buildings_overpass(bbox: list, tile_cache_dir: 'Path | None' = None) 
             nt = minLat + (row + 1) * dLat
             b  = f'{s},{w},{nt},{e}'
 
-            # Probeer tegel-cache
-            tile_path = (tile_cache_dir / f'tile-{col}x{row}.json') if tile_cache_dir else None
-            elements  = None
+            tile_path     = (tile_cache_dir / f'tile-{col}x{row}.geojson') if tile_cache_dir else None
+            tile_features = None
+
+            # 1) Eigen tegel-cache
             if tile_path and tile_path.exists():
                 try:
-                    td = json.loads(tile_path.read_text(encoding='utf-8'))
-                    if td.get('_qv') == _BUILDINGS_QUERY_VER:
-                        elements = td.get('elements', [])
+                    fc = json.loads(tile_path.read_text(encoding='utf-8'))
+                    if fc.get('type') == 'FeatureCollection' and fc.get('_qv') == _BUILDINGS_QUERY_VER:
+                        tile_features = fc.get('features', [])
                 except Exception:
-                    pass   # corrupte tile-cache: opnieuw ophalen
+                    pass   # corrupte tile-cache: verder zoeken
 
-            # Haal tegel op via Overpass als cache ontbrak of verouderd was
-            if elements is None:
+            # 2) Tegel-cache van het basis-scenario
+            if tile_features is None and fallback_tile_cache_dir:
+                fb_path = fallback_tile_cache_dir / f'tile-{col}x{row}.geojson'
+                if fb_path.exists():
+                    try:
+                        fc = json.loads(fb_path.read_text(encoding='utf-8'))
+                        if fc.get('type') == 'FeatureCollection' and fc.get('_qv') == _BUILDINGS_QUERY_VER:
+                            tile_features = fc.get('features', [])
+                    except Exception:
+                        pass
+
+            # 3) Ophalen via Overpass en omzetten naar GeoJSON-features
+            if tile_features is None:
                 if col > 0 or row > 0:
                     time.sleep(1)   # voorkom rate-limiting bij snelle opeenvolging
                 elements, ok = _fetch_one_tile(b)
                 if ok:
+                    tile_features = _elements_to_building_features(elements)
                     if tile_cache_dir:
                         try:
                             tile_cache_dir.mkdir(parents=True, exist_ok=True)
                             tile_path.write_text(
-                                json.dumps({'_qv': _BUILDINGS_QUERY_VER, 'elements': elements},
-                                           ensure_ascii=False),
+                                json.dumps({
+                                    'type': 'FeatureCollection',
+                                    '_qv':  _BUILDINGS_QUERY_VER,
+                                    'features': tile_features,
+                                }, ensure_ascii=False),
                                 encoding='utf-8',
                             )
                         except Exception:
                             pass
                 else:
                     complete = False
+                    tile_features = []
 
-            for element in elements:
-                if element.get('type') != 'way' or 'geometry' not in element:
+            # Dedupliceer op osm_id (gebouwen kunnen in meerdere tegels vallen)
+            for feat in tile_features:
+                osm_id = feat.get('properties', {}).get('osm_id')
+                if osm_id is not None and osm_id in seen_ids:
                     continue
-                osm_id = element['id']
-                if osm_id in seen_ids:
-                    continue
-                seen_ids.add(osm_id)
-                coords = [[node['lon'], node['lat']] for node in element['geometry']]
-                if len(coords) < 4:
-                    continue
-                if coords[0] != coords[-1]:
-                    coords.append(coords[0])
-                features.append({
-                    'type': 'Feature',
-                    'geometry': {'type': 'Polygon', 'coordinates': [coords]},
-                    'properties': {**element.get('tags', {}), 'osm_id': osm_id},
-                })
+                if osm_id is not None:
+                    seen_ids.add(osm_id)
+                all_features.append(feat)
 
-    props: dict = {'_qv': _BUILDINGS_QUERY_VER}
+    meta: dict = {'_qv': _BUILDINGS_QUERY_VER}
     if not complete:
-        props['_partial'] = True
+        meta['_partial'] = True
     return {
         'type': 'FeatureCollection',
-        'features': features,
-        'properties': props,
+        'features': all_features,
+        'properties': meta,
     }
 
 
@@ -1269,6 +1386,7 @@ def ogc_collection_items(collection_id):
         # 2) Zoek in ouder-gebieden via baseAreaId-keten
         visited = {area_id}
         cur_id  = area_id
+        base_tile_cache_dir = None   # tegel-cache van het dichtstbijzijnde basis-scenario
         for _ in range(6):
             try:
                 cur_dir       = _find_area_dir(cur_id)
@@ -1295,6 +1413,10 @@ def ogc_collection_items(collection_id):
                     parent_cache.unlink()
                 except Exception:
                     pass
+            # Bewaar tegel-cache van dit ouder-gebied (eerste treffer wint)
+            ptcd = parent_dir / f'{parent_id}-BUILDINGS-tiles'
+            if ptcd.exists() and base_tile_cache_dir is None:
+                base_tile_cache_dir = ptcd
 
         # 3) Bepaal bbox en query Overpass
         bbox = None
@@ -1321,7 +1443,8 @@ def ogc_collection_items(collection_id):
 
         try:
             tile_cache_dir = area_dir / f'{area_id}-BUILDINGS-tiles'
-            data = _fetch_buildings_overpass(bbox, tile_cache_dir=tile_cache_dir)
+            data = _fetch_buildings_overpass(bbox, tile_cache_dir=tile_cache_dir,
+                                             fallback_tile_cache_dir=base_tile_cache_dir)
         except Exception as exc:
             abort(502, f'Overpass-query mislukt: {exc}')
 

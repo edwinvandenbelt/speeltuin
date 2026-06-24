@@ -1510,6 +1510,14 @@
       buildingPurposeWinkelen:'- gebouwen: winkelen -', buildingPurposeWinkelenScaled:'- gebouwen: winkelen (geschaald) -',
       buildingPurposeRecreat:'- gebouwen: recreatie -', buildingPurposeRecreatiScaled:'- gebouwen: recreatie (geschaald) -',
       buildingPurposeOff:'- gebouwen: uit -',
+      // Gebouwen tooltip
+      tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
+      tooltipBuildingHeight:'Hoogte', tooltipBuildingCap:'Capaciteit',
+      buildingTypeResidential:'Wonen', buildingTypeOffice:'Kantoor',
+      buildingTypeCommercial:'Winkel / horeca', buildingTypeEducation:'Onderwijs',
+      buildingTypeIndustrial:'Industrie', buildingTypeParking:'Parkeren',
+      buildingTypeTransport:'OV / station', buildingTypeRecreation:'Recreatie',
+      buildingTypeOther:'Overig',
       // Taal-dropdown
       langSelectTitle:'Taal kiezen',
       numberLocale:'nl',
@@ -1663,6 +1671,14 @@
       buildingPurposeWinkelen:'- buildings: shopping -', buildingPurposeWinkelenScaled:'- buildings: shopping (scaled) -',
       buildingPurposeRecreat:'- buildings: recreation -', buildingPurposeRecreatiScaled:'- buildings: recreation (scaled) -',
       buildingPurposeOff:'- buildings: off -',
+      // Building tooltip
+      tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
+      tooltipBuildingHeight:'Height', tooltipBuildingCap:'Capacity',
+      buildingTypeResidential:'Residential', buildingTypeOffice:'Office',
+      buildingTypeCommercial:'Retail / food', buildingTypeEducation:'Education',
+      buildingTypeIndustrial:'Industrial', buildingTypeParking:'Parking',
+      buildingTypeTransport:'Transit / station', buildingTypeRecreation:'Recreation',
+      buildingTypeOther:'Other',
       // Language dropdown
       langSelectTitle:'Select language',
       numberLocale:'en-GB',
@@ -1816,6 +1832,14 @@
       buildingPurposeWinkelen:'- rakennukset: ostokset -', buildingPurposeWinkelenScaled:'- rakennukset: ostokset (skaalattu) -',
       buildingPurposeRecreat:'- rakennukset: vapaa-aika -', buildingPurposeRecreatiScaled:'- rakennukset: vapaa-aika (skaalattu) -',
       buildingPurposeOff:'- rakennukset: pois -',
+      // Rakennuksen tooltip
+      tooltipBuildingType:'Tyyppi', tooltipBuildingZone:'Vyöhyke',
+      tooltipBuildingHeight:'Korkeus', tooltipBuildingCap:'Kapasiteetti',
+      buildingTypeResidential:'Asuminen', buildingTypeOffice:'Toimisto',
+      buildingTypeCommercial:'Kauppa / ravintola', buildingTypeEducation:'Koulutus',
+      buildingTypeIndustrial:'Teollisuus', buildingTypeParking:'Pysäköinti',
+      buildingTypeTransport:'Joukkoliikenne', buildingTypeRecreation:'Virkistys',
+      buildingTypeOther:'Muu',
       // Kielen valinta
       langSelectTitle:'Valitse kieli',
       numberLocale:'fi',
@@ -2905,6 +2929,14 @@
         return 'industrial';
 
       // Overig (hospital, hotel, civic, etc.) — wel zichtbaar met neutrale kleur
+      // Fallback: gebruik landuse-type van het omvattende gebied
+      const landuse = (props['_landuse'] || '').toLowerCase();
+      if (['residential','housing'].includes(landuse))                          return 'residential';
+      if (['commercial','retail'].includes(landuse))                            return 'commercial';
+      if (['industrial','port','depot','harbour','brownfield'].includes(landuse)) return 'industrial';
+      if (['education'].includes(landuse))                                      return 'education';
+      if (['recreation_ground','allotments','village_green','grass'].includes(landuse)) return 'recreation';
+      if (['railway','transportation'].includes(landuse))                       return 'transport';
       return 'other';
     }
 
@@ -3102,26 +3134,6 @@
           : 1;
       }
 
-      // ── TRACE ────────────────────────────────────────────────────────────────
-      const _nTotal    = _buildingsGeoJson.features.length;
-      const _nWithZone = _buildingsGeoJson.features.filter(f => f.properties._bzoneId).length;
-      const _typeDist  = {};
-      for (const f of _buildingsGeoJson.features)
-        _typeDist[f.properties._btype] = (_typeDist[f.properties._btype] || 0) + 1;
-      console.groupCollapsed('[buildings] zone-join voltooid');
-      console.log('Gebouwen totaal:', _nTotal, '| met zone:', _nWithZone, '| zonder:', _nTotal - _nWithZone);
-      console.log('Type-verdeling:', _typeDist);
-      console.log('_NORM per motief:', JSON.stringify(_NORM));
-      // Toon _cap-waarden van eerste 3 gebouwen mét zone
-      const _sample = _buildingsGeoJson.features.filter(f => f.properties._bzoneId).slice(0, 3);
-      for (const f of _sample) {
-        const p = f.properties;
-        console.log(`  [${p.osm_id}] type=${p._btype} zone=${p._bzoneId}`,
-          'cap:', JSON.stringify(p._cap));
-      }
-      console.groupEnd();
-      // ── EINDE TRACE ──────────────────────────────────────────────────────────
-
       _doUpdateBuildingColors('all');
 
       // Toon de motief-dropdown nu gebouwen verrijkt zijn
@@ -3146,10 +3158,6 @@
       const norm         = _NORM[purpose] || 1;
       const relevantTypes = _PURPOSE_RELEVANT_TYPES[purpose] ?? null;
 
-      // ── TRACE ────────────────────────────────────────────────────────────────
-      let _nGrey = 0, _nColored = 0, _nFallback = 0, _nIrrelevant = 0;
-      // ── EINDE TRACE ──────────────────────────────────────────────────────────
-
       for (const f of _buildingsGeoJson.features) {
         const p    = f.properties;
         const type = p._btype || 'other';
@@ -3164,16 +3172,12 @@
           let score;
           if (!isRelevant) {
             score = 0;               // type niet relevant voor dit motief → grijs
-            if (dp === 'mrh') _nIrrelevant++;
           } else if (!hasDemoData) {
             score = dir * 0.5;       // fallback: vaste richting bij halve intensiteit
-            if (dp === 'mrh') _nFallback++;
           } else if (cap <= 0) {
             score = 0;               // geen capaciteit voor dit motief → grijs
-            if (dp === 'mrh') _nGrey++;
           } else {
             score = dir * Math.min(1, cap / norm);
-            if (dp === 'mrh') _nColored++;
           }
           p['color_' + dp] = buildingColor(score);
         }
@@ -3184,11 +3188,6 @@
         }
       }
 
-      // ── TRACE ────────────────────────────────────────────────────────────────
-      console.log(`[buildings] _doUpdateBuildingColors("${purpose}") norm=${norm.toFixed(2)}`
-        + ` → gekleurd:${_nColored} grijs(cap=0):${_nGrey}`
-        + ` fallback(geen-demo):${_nFallback} irrelevant(motief):${_nIrrelevant}`);
-      // ── EINDE TRACE ──────────────────────────────────────────────────────────
     }
 
     // Herbereken kleuren en actualiseer de kaartlaag
@@ -3196,12 +3195,6 @@
       const isScaled = val.endsWith('_scaled');
       const purpose  = isScaled ? val.slice(0, -7) : val;
       _currentPurpose = purpose;
-      // ── TRACE ────────────────────────────────────────────────────────────────
-      console.log(`[buildings] updateBuildingColors("${val}") scaled:${isScaled}`
-        + ` _buildingsGeoJson:${!!_buildingsGeoJson} _NORM:${!!_NORM}`
-        + ` source:${!!map.getSource('buildings')} layer:${!!map.getLayer('buildings-3d')}`
-        + ` daypart:${daypart}`);
-      // ── EINDE TRACE ──────────────────────────────────────────────────────────
       if (!_buildingsGeoJson || !_NORM) return;
       _doUpdateBuildingColors(purpose, isScaled);
       if (map.getSource('buildings')) {
@@ -3241,6 +3234,86 @@
             'fill-extrusion-opacity': 0.75,
           },
         });
+
+        // ── Gebouw-tooltip via native MapLibre-events ──────────────────────
+        const _bTip = document.getElementById('buildingTooltip');
+        let _bTipHideTimer = null;
+
+        map.on('mouseenter', 'buildings-3d', () => {
+          map.getCanvas().style.cursor = 'pointer';
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+        });
+
+        map.on('mouseleave', 'buildings-3d', () => {
+          map.getCanvas().style.cursor = '';
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        // Keep tooltip visible when mouse moves over it (to allow clicking the OSM link)
+        _bTip.addEventListener('mouseenter', () => {
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+        });
+        _bTip.addEventListener('mouseleave', () => {
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        map.on('mousemove', 'buildings-3d', e => {
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          const f = e.features?.[0];
+          if (!f) { _bTip.style.display = 'none'; return; }
+          const p = f.properties;
+
+          // Properties met object-waarden zijn door MapLibre JSON-geserialiseerd
+          let cap = 0;
+          try { cap = (JSON.parse(p._cap || '{}')?.[_currentPurpose] ?? 0); } catch (_) {}
+          let zoneName = null;
+          try { zoneName = JSON.parse(p._bzoneProps || 'null')?.zoneName ?? null; } catch (_) {}
+
+          const typeKey   = 'buildingType' + (p._btype || 'other').charAt(0).toUpperCase()
+                            + (p._btype || 'other').slice(1);
+          const typeLabel = T(typeKey) || p._btype || '–';
+          const heightM   = p.height ? Math.round(p.height) + '\u202fm' : '–';
+          const capFmt    = cap > 0 ? Math.round(cap).toLocaleString(T('numberLocale')) : '–';
+
+          // OSM-tags: alles behalve interne/berekende velden
+          const _SKIP = new Set([
+            '_btype','_bzoneId','_bzoneProps','_cap',
+            'color_mrh','color_erh','color_rest','height_sc','height','osm_id',
+          ]);
+          const osmRows = Object.entries(p)
+            .filter(([k]) => !_SKIP.has(k) && !k.startsWith('_'))
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => `<tr>
+              <td style="color:#5a6272;padding-right:10px;white-space:nowrap">${k}</td>
+              <td style="word-break:break-word"><b>${v}</b></td>
+            </tr>`)
+            .join('');
+
+          const osmLink = p.osm_id
+            ? `<div style="margin-top:6px;border-top:1px solid rgba(126,200,227,0.15);padding-top:6px">
+                <a href="https://www.openstreetmap.org/way/${p.osm_id}" target="_blank"
+                   style="color:#7ec8e3;font-size:11px">OSM way/${p.osm_id} ↗</a>
+               </div>` : '';
+
+          _bTip.innerHTML = `
+            <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">${typeLabel}</div>
+            ${zoneName ? `<div><span style="color:#5a6272">${T('tooltipBuildingZone')}: </span><b>${zoneName}</b></div>` : ''}
+            <div><span style="color:#5a6272">${T('tooltipBuildingHeight')}: </span><b>${heightM}</b></div>
+            ${cap > 0 ? `<div><span style="color:#5a6272">${T('tooltipBuildingCap')}: </span><b>${capFmt}</b></div>` : ''}
+            ${osmRows ? `<div style="margin-top:6px;border-top:1px solid rgba(126,200,227,0.15);padding-top:6px">
+              <table style="border-collapse:collapse;font-size:12px;width:100%">${osmRows}</table>
+            </div>` : ''}
+            ${osmLink}
+          `;
+
+          // Positioneer net rechtsonder de cursor, pas aan als tooltip buiten scherm valt
+          const x = e.originalEvent.clientX;
+          const y = e.originalEvent.clientY;
+          _bTip.style.display = '';
+          const tw = _bTip.offsetWidth, th = _bTip.offsetHeight;
+          _bTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+          _bTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+        });
       }
     }
 
@@ -3249,17 +3322,39 @@
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data || !Array.isArray(data.features)) return;
-        // Brugpijlers / dragers zijn geen gebouwen — client-side uitsluiten
-        data.features = data.features.filter(f => !f.properties?.['bridge:support']);
+        // Verwijder: brugpijlers, ondergrondse objecten, ondergrondse parkeergarages
+        data.features = data.features.filter(f => {
+          const p = f.properties;
+          if (p['bridge:support']) return false;
+          if ((p.location || '').toLowerCase() === 'underground') return false;
+          if ((p.parking  || '').toLowerCase() === 'underground') return false;
+          // level-tag: negatief getal of string die begint met '-' (bijv. "-1", "-1;0")
+          const levelStr = String(p.level ?? '');
+          if (levelStr.startsWith('-')) return false;
+          const lvl = parseFloat(levelStr);
+          if (!isNaN(lvl) && lvl < 0) return false;
+          return true;
+        });
         // Hoogte toekennen (eenmalig; kleur wordt later berekend in _tryZoneJoin)
         for (const f of data.features) {
-          const p = f.properties;
-          if (p.height) {
-            p.height = parseFloat(p.height) || 4;
+          const p    = f.properties;
+          const hRaw = parseFloat(p.height);
+          if (p.height != null && !isNaN(hRaw)) {
+            // Neem expliciete hoogte over — ook als die 0 is (bijv. maaiveld parkeerterrein)
+            p.height = Math.max(0, hRaw);
           } else if (p['building:levels']) {
-            p.height = (parseFloat(p['building:levels']) || 1) * 3;
+            const lvls = parseFloat(p['building:levels']);
+            p.height = isNaN(lvls) ? 4 : Math.max(0, lvls) * 3;
           } else {
-            p.height = 4;
+            // Geen expliciete hoogte: parkeeroppervlakken blijven plat (0m),
+            // alle andere gebouwen krijgen de standaard-fallback van 4m.
+            const amenity = (p.amenity  || '').toLowerCase();
+            const parking = (p.parking  || '').toLowerCase();
+            const bldg    = (p.building || '').toLowerCase();
+            const isSurfaceParking = amenity === 'parking'
+              && parking !== 'multi-storey' && parking !== 'rooftop'
+              && !['garage', 'garages', 'multi-storey'].includes(bldg);
+            p.height = isSurfaceParking ? 0 : 4;
           }
         }
         _buildingsRaw = data;
@@ -7367,9 +7462,6 @@
      });
 
      document.getElementById('buildingPurpose').addEventListener('change', e => {
-       // ── TRACE ───────────────────────────────────────────────────────────────
-       console.log('[buildings] dropdown change →', e.target.value);
-       // ── EINDE TRACE ─────────────────────────────────────────────────────────
        const val = e.target.value;
        if (val === 'off') {
          if (map.getLayer('buildings-3d'))
@@ -7581,5 +7673,12 @@
   });
 
   </script>
+  <div id="buildingTooltip" style="
+    display:none; position:fixed; z-index:9999; pointer-events:auto;
+    background:rgba(13,17,23,0.95); border-radius:10px; padding:12px 16px;
+    border:1px solid rgba(126,200,227,0.25); box-shadow:0 4px 20px rgba(0,0,0,0.5);
+    font:13px 'Segoe UI',sans-serif; color:#dde4f0; line-height:1.8;
+    max-width:260px;
+  "></div>
 </body>
 </html>
