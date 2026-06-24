@@ -2975,6 +2975,24 @@
       other:       { mrh:  0,   erh:  0,   rest:  0   },
     };
 
+    // Motief-specifieke richtingsoverschrijvingen.
+    // Sommige gebouwtypen hebben een andere P/A-richting afhankelijk van het motief.
+    const _BUILDING_DIR_OVERRIDES = {
+      // Woningen zijn avondspits + restdag productieplek voor recreatie:
+      // bewoners vertrekken vanuit huis om te recreëren.
+      residential: {
+        recreatie: { mrh: 0, erh: -1.0, rest: -0.8 },
+      },
+    };
+
+    // Retourneert de richting (−1…+1) voor een gebouwtype, motief en dagdeel.
+    // Past _BUILDING_DIR_OVERRIDES toe vóór de algemene _BUILDING_SCORES.
+    function _getBuildingDir(type, purpose, dp) {
+      const override = _BUILDING_DIR_OVERRIDES[type]?.[purpose];
+      if (override !== undefined) return override[dp] ?? 0;
+      return (_BUILDING_SCORES[type] || _BUILDING_SCORES.other)[dp] ?? 0;
+    }
+
     // Kleur: score ∈ [-1, 1] → rood (#d62728) ↔ grijs (#888888) ↔ groen (#2ca02c)
     function buildingColor(score) {
       const c = Math.max(-1, Math.min(1, score));
@@ -3225,7 +3243,7 @@
         const isRelevant = relevantTypes === null || relevantTypes.has(type);
 
         for (const dp of ['mrh', 'erh', 'rest']) {
-          const dir = (_BUILDING_SCORES[type] || _BUILDING_SCORES.other)[dp];
+          const dir = _getBuildingDir(type, purpose, dp);
           let score;
           if (!isRelevant) {
             score = 0;               // type niet relevant voor dit motief → grijs
@@ -3340,8 +3358,7 @@
           if (_currentPurpose && _currentPurpose !== 'off' && _NORM && _BUILDING_SCORES) {
             const btype      = p._btype || 'other';
             const norm       = _NORM[_currentPurpose] || 1;
-            const scores     = _BUILDING_SCORES[btype] || _BUILDING_SCORES.other;
-            const dir        = scores[daypart] ?? 0;
+            const dir        = _getBuildingDir(btype, _currentPurpose, daypart);
             const relTypes   = _PURPOSE_RELEVANT_TYPES[_currentPurpose] ?? null;
             const isRelevant = relTypes === null || relTypes.has(btype);
             let score = 0;
