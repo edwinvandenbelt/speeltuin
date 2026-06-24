@@ -970,6 +970,21 @@
       <option value="attraction">- attractie -</option>
     </select>
 
+    <!-- Gebouw-motief weergave (zichtbaar zodra gebouwen geladen zijn) -->
+    <select id="buildingPurpose" class="tb-select" style="display:none" title="Gebouwen: motief">
+      <option value="all"            data-i18n="buildingPurposeAll">- gebouwen: alles -</option>
+      <option value="all_scaled"     data-i18n="buildingPurposeAllScaled">- gebouwen: alles (geschaald) -</option>
+      <option value="werk"           data-i18n="buildingPurposeWerk">- gebouwen: werk -</option>
+      <option value="werk_scaled"    data-i18n="buildingPurposeWerkScaled">- gebouwen: werk (geschaald) -</option>
+      <option value="onderwijs"      data-i18n="buildingPurposeOnderwijs">- gebouwen: onderwijs -</option>
+      <option value="onderwijs_scaled" data-i18n="buildingPurposeOnderwijsScaled">- gebouwen: onderwijs (geschaald) -</option>
+      <option value="winkelen"       data-i18n="buildingPurposeWinkelen">- gebouwen: winkelen -</option>
+      <option value="winkelen_scaled" data-i18n="buildingPurposeWinkelenScaled">- gebouwen: winkelen (geschaald) -</option>
+      <option value="recreatie"      data-i18n="buildingPurposeRecreat">- gebouwen: recreatie -</option>
+      <option value="recreatie_scaled" data-i18n="buildingPurposeRecreatiScaled">- gebouwen: recreatie (geschaald) -</option>
+      <option value="off"            data-i18n="buildingPurposeOff">- gebouwen: uit -</option>
+    </select>
+
     <div class="tb-sep"></div>
 
     <!-- Tijdschaal -->
@@ -1488,6 +1503,13 @@
       whatifRcError: c => `Fout (returncode: ${c})`,
       whatifRcFetchError: e => `Fout: ${e}`,
       whatifRcLinkLabel: id => `Wegvak ${id}`,
+      // Gebouwen motief-dropdown
+      buildingPurposeAll:'- gebouwen: alles -', buildingPurposeAllScaled:'- gebouwen: alles (geschaald) -',
+      buildingPurposeWerk:'- gebouwen: werk -', buildingPurposeWerkScaled:'- gebouwen: werk (geschaald) -',
+      buildingPurposeOnderwijs:'- gebouwen: onderwijs -', buildingPurposeOnderwijsScaled:'- gebouwen: onderwijs (geschaald) -',
+      buildingPurposeWinkelen:'- gebouwen: winkelen -', buildingPurposeWinkelenScaled:'- gebouwen: winkelen (geschaald) -',
+      buildingPurposeRecreat:'- gebouwen: recreatie -', buildingPurposeRecreatiScaled:'- gebouwen: recreatie (geschaald) -',
+      buildingPurposeOff:'- gebouwen: uit -',
       // Taal-dropdown
       langSelectTitle:'Taal kiezen',
       numberLocale:'nl',
@@ -1634,6 +1656,13 @@
       whatifRcError: c => `Error (return code: ${c})`,
       whatifRcFetchError: e => `Error: ${e}`,
       whatifRcLinkLabel: id => `Link ${id}`,
+      // Building purpose dropdown
+      buildingPurposeAll:'- buildings: all -', buildingPurposeAllScaled:'- buildings: all (scaled) -',
+      buildingPurposeWerk:'- buildings: work -', buildingPurposeWerkScaled:'- buildings: work (scaled) -',
+      buildingPurposeOnderwijs:'- buildings: education -', buildingPurposeOnderwijsScaled:'- buildings: education (scaled) -',
+      buildingPurposeWinkelen:'- buildings: shopping -', buildingPurposeWinkelenScaled:'- buildings: shopping (scaled) -',
+      buildingPurposeRecreat:'- buildings: recreation -', buildingPurposeRecreatiScaled:'- buildings: recreation (scaled) -',
+      buildingPurposeOff:'- buildings: off -',
       // Language dropdown
       langSelectTitle:'Select language',
       numberLocale:'en-GB',
@@ -1780,6 +1809,13 @@
       whatifRcError: c => `Virhe (paluuarvo: ${c})`,
       whatifRcFetchError: e => `Virhe: ${e}`,
       whatifRcLinkLabel: id => `Tiejakso ${id}`,
+      // Rakennusten matkamotiivi
+      buildingPurposeAll:'- rakennukset: kaikki -', buildingPurposeAllScaled:'- rakennukset: kaikki (skaalattu) -',
+      buildingPurposeWerk:'- rakennukset: työ -', buildingPurposeWerkScaled:'- rakennukset: työ (skaalattu) -',
+      buildingPurposeOnderwijs:'- rakennukset: koulutus -', buildingPurposeOnderwijsScaled:'- rakennukset: koulutus (skaalattu) -',
+      buildingPurposeWinkelen:'- rakennukset: ostokset -', buildingPurposeWinkelenScaled:'- rakennukset: ostokset (skaalattu) -',
+      buildingPurposeRecreat:'- rakennukset: vapaa-aika -', buildingPurposeRecreatiScaled:'- rakennukset: vapaa-aika (skaalattu) -',
+      buildingPurposeOff:'- rakennukset: pois -',
       // Kielen valinta
       langSelectTitle:'Valitse kieli',
       numberLocale:'fi',
@@ -2807,6 +2843,430 @@
       areaBounds = [minLon, minLat, maxLon, maxLat];
     }
 
+    // ── Gebouwen: classificatie, kleur en kaartlaag ──────────────────────────
+
+    let _buildingsGeoJson = null;
+    let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
+    let _zonesForJoin     = null;   // zone-features beschikbaar voor ruimtelijke koppeling
+    let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
+    let _currentPurpose   = 'all';  // actief geselecteerd motief
+    let _mapReady         = false;
+
+    // Gebouwclassificatie op basis van OSM-tags
+    function classifyBuilding(props) {
+      const b       = (props.building         || '').toLowerCase();
+      const amenity = (props.amenity          || '').toLowerCase();
+      const shop    = (props.shop             || '').toLowerCase();
+      const office  = (props.office           || '').toLowerCase();
+      const pt      = (props.public_transport || '').toLowerCase();
+      const railway = (props.railway          || '').toLowerCase();
+      const leisure = (props.leisure          || '').toLowerCase();
+
+      // Parkeren (vóór de generieke building-check — parking is een eigen categorie)
+      if (['parking','garage','garages','carport','bicycle_parking'].includes(b)
+          || amenity === 'parking' || amenity === 'fuel')
+        return 'parking';
+
+      // Stations en OV-hubs
+      if (['train_station','transportation','airport'].includes(b)
+          || railway === 'station' || railway === 'halt'
+          || pt === 'station' || pt === 'stop_area'
+          || amenity === 'bus_station' || amenity === 'ferry_terminal')
+        return 'transport';
+
+      // Sport & recreatie
+      if (['stadium','sports_centre','sports_hall'].includes(b)
+          || ['sports_centre','stadium','swimming_pool','ice_rink'].includes(leisure)
+          || amenity === 'theatre' || amenity === 'cinema' || amenity === 'place_of_worship')
+        return 'recreation';
+
+      // Woningen
+      if (['residential','house','apartments','detached','terrace',
+           'semidetached_house','bungalow','dormitory','cabin','houseboat'].includes(b))
+        return 'residential';
+
+      // Kantoren
+      if (b === 'office' || office) return 'office';
+
+      // Winkels / horeca
+      if (['retail','supermarket','commercial','kiosk'].includes(b) || shop
+          || ['restaurant','cafe','bar','fast_food','food_court',
+              'marketplace','fuel'].includes(amenity))
+        return 'commercial';
+
+      // Onderwijs
+      if (['school','university','college','kindergarten'].includes(b)
+          || ['school','university','college','kindergarten','library'].includes(amenity))
+        return 'education';
+
+      // Industrie / opslag
+      if (['industrial','warehouse','factory','storage_tank',
+           'storage','container'].includes(b))
+        return 'industrial';
+
+      // Overig (hospital, hotel, civic, etc.) — wel zichtbaar met neutrale kleur
+      return 'other';
+    }
+
+    // Richting per gebouwtype en dagdeel: -1 = productie (rood), 0 = neutraal, +1 = attractie (groen)
+    const _BUILDING_SCORES = {
+      residential: { mrh: -1.0, erh:  1.0, rest:  0   },
+      office:      { mrh:  1.0, erh: -1.0, rest:  0.3 },
+      commercial:  { mrh:  0.3, erh:  1.0, rest:  0.5 },
+      education:   { mrh:  1.0, erh: -0.5, rest:  0   },
+      industrial:  { mrh:  0.3, erh: -0.3, rest:  0   },
+      parking:     { mrh:  0.8, erh: -0.8, rest:  0.2 },  // auto's komen aan (OS) / gaan weg (AS)
+      transport:   { mrh:  0.8, erh:  0.8, rest:  0.5 },  // OV-hub: altijd attractief
+      recreation:  { mrh:  0,   erh:  0.7, rest:  0.8 },  // recreatie na werk/school
+      other:       { mrh:  0,   erh:  0,   rest:  0   },
+    };
+
+    // Kleur: score ∈ [-1, 1] → rood (#d62728) ↔ grijs (#888888) ↔ groen (#2ca02c)
+    function buildingColor(score) {
+      const c = Math.max(-1, Math.min(1, score));
+      let r, g, b;
+      if (c >= 0) {
+        r = Math.round(0x88 + c * (0x2c - 0x88));
+        g = Math.round(0x88 + c * (0xa0 - 0x88));
+        b = Math.round(0x88 + c * (0x2c - 0x88));
+      } else {
+        const t = 1 + c;
+        r = Math.round(0xd6 + t * (0x88 - 0xd6));
+        g = Math.round(0x27 + t * (0x88 - 0x27));
+        b = Math.round(0x28 + t * (0x88 - 0x28));
+      }
+      return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+    }
+
+    // Point-in-polygon via ray casting
+    function _pointInPolygon(px, py, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi)
+          inside = !inside;
+      }
+      return inside;
+    }
+
+    // Centroïde van het buitenste polygoonring
+    function _buildingCentroid(coords) {
+      const ring = coords[0];
+      const n    = ring.length - 1;
+      let sx = 0, sy = 0;
+      for (let i = 0; i < n; i++) { sx += ring[i][0]; sy += ring[i][1]; }
+      return [sx / n, sy / n];
+    }
+
+    // Demografische capaciteitsindicator per gebouwtype en motief
+    function _getBuildingCapacity(type, purpose, zp) {
+      const shopJobs = (zp.arbeidsplaatsen_overige_winkelfunctie          || 0)
+                     + (zp.arbeidsplaatsen_overige_voedselwinkelfunctie   || 0)
+                     + (zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie || 0);
+      const eduSeats = (zp.leerlingplaatsen_basisonderwijs           || 0)
+                     + (zp.leerlingplaatsen_middelbaaronderwijs       || 0)
+                     + (zp.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                     + (zp.leerlingplaatsen_hogeronderwijs            || 0)
+                     || (zp.arbeidsplaatsen_onderwijsfunctie          || 0);
+      switch (purpose) {
+        case 'all':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'office':      return zp.arbeidsplaatsen_kantoorfunctie || 0;
+            case 'commercial':  return shopJobs;
+            case 'education':   return eduSeats;
+            case 'industrial':  return zp.arbeidsplaatsen_industriefunctie || 0;
+            case 'parking':     return zp.autos || 0;
+            case 'transport':   return zp.inwoners || 0;
+            case 'recreation':  return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            case 'other':       return (zp.arbeidsplaatsen_overige_gebruiksfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+          }
+          break;
+        case 'werk':
+          switch (type) {
+            case 'residential': return zp.inwoners_arbeidssituatie_werkend || 0;
+            case 'office':      return zp.arbeidsplaatsen_kantoorfunctie || 0;
+            case 'commercial':  return Math.round(shopJobs * 0.3);
+            case 'industrial':  return zp.arbeidsplaatsen_industriefunctie || 0;
+            case 'parking':     return zp.inwoners_arbeidssituatie_werkend || 0;
+            case 'transport':   return zp.inwoners_arbeidssituatie_werkend || 0;
+            default: return 0;
+          }
+        case 'onderwijs':
+          switch (type) {
+            case 'residential': return zp.inwoners_leeftijd_00_17_jaar || 0;  // kinderen < 18 jaar
+            case 'education':   return eduSeats;                               // leerlingplaatsen (attractie)
+            case 'transport':   return zp.inwoners_leeftijd_00_17_jaar || 0;
+            default: return 0;
+          }
+        case 'winkelen':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'commercial':  return shopJobs;
+            case 'parking':     return zp.huishoudens || 0;
+            default: return 0;
+          }
+        case 'recreatie':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'recreation':  return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            case 'other':       return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            default: return 0;
+          }
+      }
+      return 0;
+    }
+
+    // Ruimtelijke koppeling gebouwen ↔ zones; wordt uitgevoerd zodra beide datasets gereed zijn
+    function _tryZoneJoin() {
+      if (!_buildingsRaw || !_zonesForJoin) return;
+
+      // Bouw opzoekstructuur: niet-BOUNDARY zones; Polygon én MultiPolygon
+      const zoneLookup = [];
+      for (const f of _zonesForJoin) {
+        const cl = f.properties?.zoneClass;
+        if (cl === 'BOUNDARY') continue;
+        const geom = f.geometry;
+        if (!geom) continue;
+        // Normaliseer naar lijst van polygonen (elk een array van ringen)
+        let polys;
+        if      (geom.type === 'Polygon')      polys = [geom.coordinates];
+        else if (geom.type === 'MultiPolygon') polys = geom.coordinates;
+        else continue;
+        for (const poly of polys) {
+          const ring = poly[0];
+          if (!ring || ring.length < 3) continue;
+          let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+          for (const [x, y] of ring) {
+            if (x < mnX) mnX = x; if (y < mnY) mnY = y;
+            if (x > mxX) mxX = x; if (y > mxY) mxY = y;
+          }
+          zoneLookup.push({ props: f.properties, ring, mnX, mnY, mxX, mxY });
+        }
+      }
+
+      // Eerste pass: ken zone + type toe aan elk gebouw; tel per zone-type
+      const zoneTypeCounts = new Map();
+      for (const f of _buildingsRaw.features) {
+        const p    = f.properties;
+        const type = classifyBuilding(p);
+        p._btype   = type;
+        const coords = f.geometry?.coordinates;
+        if (!coords) { p._bzoneProps = null; p._bzoneId = null; continue; }
+        const [cx, cy] = _buildingCentroid(coords);
+        let foundZone = null;
+        for (const z of zoneLookup) {
+          if (cx < z.mnX || cx > z.mxX || cy < z.mnY || cy > z.mxY) continue;
+          if (_pointInPolygon(cx, cy, z.ring)) { foundZone = z; break; }
+        }
+        p._bzoneId    = foundZone?.props?.zoneId ?? null;
+        p._bzoneProps = foundZone ? foundZone.props : null;
+        if (p._bzoneId) {
+          const key = `${p._bzoneId}|${type}`;
+          zoneTypeCounts.set(key, (zoneTypeCounts.get(key) || 0) + 1);
+        }
+      }
+
+      // Tweede pass: bereken capaciteitsaandeel per gebouw en motief
+      const purposes = ['all', 'werk', 'onderwijs', 'winkelen', 'recreatie'];
+      for (const f of _buildingsRaw.features) {
+        const p    = f.properties;
+        const type = p._btype || 'other';
+        const zp   = p._bzoneProps;
+        p._cap = {};
+        for (const pur of purposes) {
+          if (!zp) { p._cap[pur] = 0; continue; }
+          const totalCap = _getBuildingCapacity(type, pur, zp);
+          const nType    = zoneTypeCounts.get(`${p._bzoneId}|${type}`) || 1;
+          p._cap[pur]    = totalCap / nType;
+        }
+        p.color_mrh = p.color_erh = p.color_rest = '#888888';
+      }
+
+      _buildingsGeoJson = _buildingsRaw;
+
+      // Normalisatie: 95e percentiel per motief
+      _NORM = {};
+      for (const pur of purposes) {
+        const vals = _buildingsGeoJson.features
+          .map(f => f.properties._cap?.[pur] || 0)
+          .filter(v => v > 0)
+          .sort((a, b) => a - b);
+        _NORM[pur] = vals.length > 0
+          ? (vals[Math.floor(vals.length * 0.95)] || vals[vals.length - 1])
+          : 1;
+      }
+
+      // ── TRACE ────────────────────────────────────────────────────────────────
+      const _nTotal    = _buildingsGeoJson.features.length;
+      const _nWithZone = _buildingsGeoJson.features.filter(f => f.properties._bzoneId).length;
+      const _typeDist  = {};
+      for (const f of _buildingsGeoJson.features)
+        _typeDist[f.properties._btype] = (_typeDist[f.properties._btype] || 0) + 1;
+      console.groupCollapsed('[buildings] zone-join voltooid');
+      console.log('Gebouwen totaal:', _nTotal, '| met zone:', _nWithZone, '| zonder:', _nTotal - _nWithZone);
+      console.log('Type-verdeling:', _typeDist);
+      console.log('_NORM per motief:', JSON.stringify(_NORM));
+      // Toon _cap-waarden van eerste 3 gebouwen mét zone
+      const _sample = _buildingsGeoJson.features.filter(f => f.properties._bzoneId).slice(0, 3);
+      for (const f of _sample) {
+        const p = f.properties;
+        console.log(`  [${p.osm_id}] type=${p._btype} zone=${p._bzoneId}`,
+          'cap:', JSON.stringify(p._cap));
+      }
+      console.groupEnd();
+      // ── EINDE TRACE ──────────────────────────────────────────────────────────
+
+      _doUpdateBuildingColors('all');
+
+      // Toon de motief-dropdown nu gebouwen verrijkt zijn
+      const selEl = document.getElementById('buildingPurpose');
+      if (selEl) selEl.style.display = '';
+
+      _tryAddBuildings();
+    }
+
+    // Schrijf color_mrh/erh/rest op elk gebouw voor het gegeven motief
+    // Welke gebouwtypen zijn relevant per motief (null = geen filter = alles)
+    const _PURPOSE_RELEVANT_TYPES = {
+      all:       null,
+      werk:      new Set(['residential','office','industrial','commercial','parking','transport']),
+      onderwijs: new Set(['residential','education','transport']),
+      winkelen:  new Set(['residential','commercial','parking']),
+      recreatie: new Set(['residential','recreation','transport','other']),
+    };
+
+    function _doUpdateBuildingColors(purpose, scaled = false) {
+      if (!_buildingsGeoJson || !_NORM) return;
+      const norm         = _NORM[purpose] || 1;
+      const relevantTypes = _PURPOSE_RELEVANT_TYPES[purpose] ?? null;
+
+      // ── TRACE ────────────────────────────────────────────────────────────────
+      let _nGrey = 0, _nColored = 0, _nFallback = 0, _nIrrelevant = 0;
+      // ── EINDE TRACE ──────────────────────────────────────────────────────────
+
+      for (const f of _buildingsGeoJson.features) {
+        const p    = f.properties;
+        const type = p._btype || 'other';
+        const cap  = p._cap?.[purpose] ?? 0;
+        const zp   = p._bzoneProps;
+        const hasDemoData = zp != null
+          && ((zp.huishoudens ?? -1) >= 0 || (zp.arbeidsplaatsen ?? -1) >= 0);
+        const isRelevant = relevantTypes === null || relevantTypes.has(type);
+
+        for (const dp of ['mrh', 'erh', 'rest']) {
+          const dir = (_BUILDING_SCORES[type] || _BUILDING_SCORES.other)[dp];
+          let score;
+          if (!isRelevant) {
+            score = 0;               // type niet relevant voor dit motief → grijs
+            if (dp === 'mrh') _nIrrelevant++;
+          } else if (!hasDemoData) {
+            score = dir * 0.5;       // fallback: vaste richting bij halve intensiteit
+            if (dp === 'mrh') _nFallback++;
+          } else if (cap <= 0) {
+            score = 0;               // geen capaciteit voor dit motief → grijs
+            if (dp === 'mrh') _nGrey++;
+          } else {
+            score = dir * Math.min(1, cap / norm);
+            if (dp === 'mrh') _nColored++;
+          }
+          p['color_' + dp] = buildingColor(score);
+        }
+        // Geschaalde hoogte: 2m basis + tot 60m extra naar rato van capaciteitsaandeel
+        if (scaled) {
+          const capNorm = Math.min(1, cap / norm);
+          p.height_sc = 2 + capNorm * 60;
+        }
+      }
+
+      // ── TRACE ────────────────────────────────────────────────────────────────
+      console.log(`[buildings] _doUpdateBuildingColors("${purpose}") norm=${norm.toFixed(2)}`
+        + ` → gekleurd:${_nColored} grijs(cap=0):${_nGrey}`
+        + ` fallback(geen-demo):${_nFallback} irrelevant(motief):${_nIrrelevant}`);
+      // ── EINDE TRACE ──────────────────────────────────────────────────────────
+    }
+
+    // Herbereken kleuren en actualiseer de kaartlaag
+    function updateBuildingColors(val) {
+      const isScaled = val.endsWith('_scaled');
+      const purpose  = isScaled ? val.slice(0, -7) : val;
+      _currentPurpose = purpose;
+      // ── TRACE ────────────────────────────────────────────────────────────────
+      console.log(`[buildings] updateBuildingColors("${val}") scaled:${isScaled}`
+        + ` _buildingsGeoJson:${!!_buildingsGeoJson} _NORM:${!!_NORM}`
+        + ` source:${!!map.getSource('buildings')} layer:${!!map.getLayer('buildings-3d')}`
+        + ` daypart:${daypart}`);
+      // ── EINDE TRACE ──────────────────────────────────────────────────────────
+      if (!_buildingsGeoJson || !_NORM) return;
+      _doUpdateBuildingColors(purpose, isScaled);
+      if (map.getSource('buildings')) {
+        map.getSource('buildings').setData(_buildingsGeoJson);
+        if (map.getLayer('buildings-3d')) {
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-color',  ['get', `color_${daypart}`]);
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-height',
+            isScaled
+              ? ['coalesce', ['get', 'height_sc'], 4]
+              : ['coalesce', ['get', 'height'],    4]);
+        }
+      }
+    }
+
+    function _tryAddBuildings() {
+      if (!_mapReady || !_buildingsGeoJson) return;
+      // Verberg ingebouwde Liberty-gebouwlagen
+      try {
+        for (const layer of map.getStyle().layers) {
+          if (/building/i.test(layer.id)) {
+            map.setLayoutProperty(layer.id, 'visibility', 'none');
+          }
+        }
+      } catch (_) {}
+      if (!map.getSource('buildings')) {
+        map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson });
+      }
+      if (!map.getLayer('buildings-3d')) {
+        map.addLayer({
+          id:     'buildings-3d',
+          type:   'fill-extrusion',
+          source: 'buildings',
+          paint: {
+            'fill-extrusion-color':   ['get', 'color_mrh'],
+            'fill-extrusion-height':  ['coalesce', ['get', 'height'], 4],
+            'fill-extrusion-base':    0,
+            'fill-extrusion-opacity': 0.75,
+          },
+        });
+      }
+    }
+
+    // Laad gebouwen asynchroon; verrijking vindt plaats zodra ook zones beschikbaar zijn
+    fetch(`/collections/buildings/items?areaId=${AREA_ID}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || !Array.isArray(data.features)) return;
+        // Brugpijlers / dragers zijn geen gebouwen — client-side uitsluiten
+        data.features = data.features.filter(f => !f.properties?.['bridge:support']);
+        // Hoogte toekennen (eenmalig; kleur wordt later berekend in _tryZoneJoin)
+        for (const f of data.features) {
+          const p = f.properties;
+          if (p.height) {
+            p.height = parseFloat(p.height) || 4;
+          } else if (p['building:levels']) {
+            p.height = (parseFloat(p['building:levels']) || 1) * 3;
+          } else {
+            p.height = 4;
+          }
+        }
+        _buildingsRaw = data;
+        _tryZoneJoin();
+      })
+      .catch(() => {});  // gebouwen zijn optioneel; stil negeren bij fout
+
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments    = features.map(f => ({
       coords:  f.geometry.coordinates,
@@ -2900,6 +3360,10 @@
         console.info(`Zones geladen: ${zoneMap.size}`);
       }
     } catch (e) { console.info('Zone-bestand niet beschikbaar:', e.message); }
+
+    // Koppel gebouwen aan zones zodra zone-geometrie beschikbaar is
+    _zonesForJoin = zoneFeaturesRaw;
+    _tryZoneJoin();
 
     /** Kies gewogen willekeurig een nodeId uit een proporties-object */
     function pickNode(proportions) {
@@ -4969,6 +5433,8 @@
     map.on('load', () => {
       hideLaadscherm();
       animate();
+      _mapReady = true;
+      _tryAddBuildings();
     });
 
     // Zoom-event: auto-dichtheid wordt niet herberekend bij panning/zoomen
@@ -6818,6 +7284,10 @@
        rebuildCars();
        updateOverlay(true);
         updateDebugPanel();
+       // Gebouwkleur synchroniseren met het geselecteerde dagdeel
+       if (map.getLayer('buildings-3d')) {
+         map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
+       }
       });
 
       document.getElementById('fillBtns').addEventListener('click', e => {
@@ -6894,6 +7364,21 @@
        zoneCentroidMode = e.target.value;
        if (zoneCentroidMode === 'off') selectedZoneId = null;
        updateOverlay(true);
+     });
+
+     document.getElementById('buildingPurpose').addEventListener('change', e => {
+       // ── TRACE ───────────────────────────────────────────────────────────────
+       console.log('[buildings] dropdown change →', e.target.value);
+       // ── EINDE TRACE ─────────────────────────────────────────────────────────
+       const val = e.target.value;
+       if (val === 'off') {
+         if (map.getLayer('buildings-3d'))
+           map.setLayoutProperty('buildings-3d', 'visibility', 'none');
+       } else {
+         if (map.getLayer('buildings-3d'))
+           map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+         updateBuildingColors(val);
+       }
      });
 
     // ── Flow-scaler knoppen ──────────────────────────────────────────────────

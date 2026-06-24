@@ -31,6 +31,11 @@ import shutil
 import threading
 import uuid
 from pathlib import Path
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import http.client
 
 from flask import Flask, abort, jsonify, make_response, request, send_from_directory
 
@@ -169,6 +174,10 @@ _COLLECTIONS = {
         'title': 'Verkeersflows (geschaald)',
         'description': 'Verkeersflows geschaald naar datum, weer en reismotief.',
     },
+    'buildings': {
+        'title': 'Gebouwen',
+        'description': 'Gebouwen in het studiegebied (OpenStreetMap / Overpass, gecached).',
+    },
 }
 
 # Mapping van collection-id naar bestandstype-suffix
@@ -179,6 +188,10 @@ _COLLECTION_FILE_TYPE = {
     'feedlinks':  'FEEDLINK',
     'comparison': 'COMPARE',
 }
+
+# Verhoog dit getal als de Overpass-query of het dataformaat wijzigt.
+# Bestaande cachebestanden met een lager versienummer worden automatisch vernieuwd.
+_BUILDINGS_QUERY_VER = 3
 
 _PROCESS_DESCRIPTIONS = {
     'prepare': {
@@ -478,6 +491,141 @@ def _ogc_items_response(collection_id: str, data, self_url: str):
     resp = make_response(json.dumps(result, ensure_ascii=False))
     resp.headers['Content-Type'] = 'application/geo+json'
     return resp
+
+
+_OVERPASS_GRID = 3   # N×N tegels per gebied; vergroot bij aanhoudende time-outs
+
+
+def _overpass_query_for_bbox(b: str) -> str:
+    """Geef een Overpass-query terug voor de opgegeven bbox-string 'S,W,N,E'."""
+    return (
+        f'[out:json][timeout:40];'
+        f'('
+        f'  way["building"]({b});'
+        f'  way["shop"]({b});'
+        f'  way["amenity"~"parking|bus_station|ferry_terminal|fuel|marketplace"]({b});'
+        f'  way["public_transport"~"station|stop_area"]({b});'
+        f'  way["railway"~"station|halt"]({b});'
+        f'  way["leisure"~"sports_centre|stadium|swimming_pool|ice_rink"]({b});'
+        f');'
+        f'out body geom;'
+    )
+
+
+def _fetch_one_tile(b: str) -> tuple:
+    """Voer één Overpass-query uit voor bbox 'S,W,N,E'.
+
+    Geeft (elements, ok) terug: elements is de lijst OSM-elementen,
+    ok=False als de response afgebroken of onleesbaar was.
+    Bij HTTP 429 wordt eenmalig 12 seconden gewacht en opnieuw geprobeerd.
+    """
+    query = _overpass_query_for_bbox(b)
+    url   = 'https://overpass-api.de/api/interpreter?' + urllib.parse.urlencode({'data': query})
+    req   = urllib.request.Request(url, headers={'User-Agent': 'GMP-speeltuin/1.0'})
+    raw   = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=50) as resp_ov:
+                raw = resp_ov.read()
+            break   # gelukt
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt == 0:
+                time.sleep(12)   # rate-limit: wacht en probeer opnieuw
+                continue
+            return [], False     # andere HTTP-fout: tegel overslaan
+        except http.client.IncompleteRead as exc:
+            raw = exc.partial    # gebruik ontvangen bytes en stop
+            break
+    if raw is None:
+        return [], False
+    try:
+        return json.loads(raw.decode('utf-8')).get('elements', []), True
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return [], False   # afgekapte JSON: tegel overslaan
+
+
+def _fetch_buildings_overpass(bbox: list, tile_cache_dir: 'Path | None' = None) -> dict:
+    """Haal gebouwen en relevante objecten op via Overpass API.
+
+    bbox = [minLon, minLat, maxLon, maxLat]
+    Het gebied wordt opgesplitst in _OVERPASS_GRID × _OVERPASS_GRID tegels.
+    Als tile_cache_dir opgegeven is, worden succesvolle tegels individueel
+    gecachet zodat bij een volgende aanroep alleen ontbrekende tegels opnieuw
+    worden opgehaald.
+    """
+    minLon, minLat, maxLon, maxLat = bbox
+    n    = _OVERPASS_GRID
+    dLon = (maxLon - minLon) / n
+    dLat = (maxLat - minLat) / n
+
+    seen_ids: set = set()
+    features = []
+    complete = True
+
+    for col in range(n):
+        for row in range(n):
+            w  = minLon + col * dLon
+            e  = minLon + (col + 1) * dLon
+            s  = minLat + row * dLat
+            nt = minLat + (row + 1) * dLat
+            b  = f'{s},{w},{nt},{e}'
+
+            # Probeer tegel-cache
+            tile_path = (tile_cache_dir / f'tile-{col}x{row}.json') if tile_cache_dir else None
+            elements  = None
+            if tile_path and tile_path.exists():
+                try:
+                    td = json.loads(tile_path.read_text(encoding='utf-8'))
+                    if td.get('_qv') == _BUILDINGS_QUERY_VER:
+                        elements = td.get('elements', [])
+                except Exception:
+                    pass   # corrupte tile-cache: opnieuw ophalen
+
+            # Haal tegel op via Overpass als cache ontbrak of verouderd was
+            if elements is None:
+                if col > 0 or row > 0:
+                    time.sleep(1)   # voorkom rate-limiting bij snelle opeenvolging
+                elements, ok = _fetch_one_tile(b)
+                if ok:
+                    if tile_cache_dir:
+                        try:
+                            tile_cache_dir.mkdir(parents=True, exist_ok=True)
+                            tile_path.write_text(
+                                json.dumps({'_qv': _BUILDINGS_QUERY_VER, 'elements': elements},
+                                           ensure_ascii=False),
+                                encoding='utf-8',
+                            )
+                        except Exception:
+                            pass
+                else:
+                    complete = False
+
+            for element in elements:
+                if element.get('type') != 'way' or 'geometry' not in element:
+                    continue
+                osm_id = element['id']
+                if osm_id in seen_ids:
+                    continue
+                seen_ids.add(osm_id)
+                coords = [[node['lon'], node['lat']] for node in element['geometry']]
+                if len(coords) < 4:
+                    continue
+                if coords[0] != coords[-1]:
+                    coords.append(coords[0])
+                features.append({
+                    'type': 'Feature',
+                    'geometry': {'type': 'Polygon', 'coordinates': [coords]},
+                    'properties': {**element.get('tags', {}), 'osm_id': osm_id},
+                })
+
+    props: dict = {'_qv': _BUILDINGS_QUERY_VER}
+    if not complete:
+        props['_partial'] = True
+    return {
+        'type': 'FeatureCollection',
+        'features': features,
+        'properties': props,
+    }
 
 
 def _now_iso() -> str:
@@ -1094,6 +1242,99 @@ def ogc_collection_items(collection_id):
                 result = {'type': 'FeatureCollection', 'features': []}
 
         return _ogc_items_response('flows', result, self_url)
+
+    # ── buildings: OSM-gebouwen, gecached per gebied ──────────────────────
+    if collection_id == 'buildings':
+        area_id = request.args.get('areaId', '').strip()
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, 'Ongeldige parameter: areaId')
+
+        area_dir   = _find_area_dir(area_id)
+        cache_path = area_dir / f'{area_id}-BUILDINGS.geojson'
+
+        # 1) Gebruik cache als aanwezig én actueel (versienummer klopt)
+        if cache_path.exists():
+            with open(cache_path, encoding='utf-8') as fh:
+                data = json.load(fh)
+            if data.get('properties', {}).get('_qv') == _BUILDINGS_QUERY_VER:
+                return _ogc_items_response('buildings', data, self_url)
+            # Verouderde cache: verwijder en herlaad
+            try:
+                cache_path.unlink()
+            except Exception:
+                pass
+
+        # 2) Zoek in ouder-gebieden via baseAreaId-keten
+        visited = {area_id}
+        cur_id  = area_id
+        for _ in range(6):
+            try:
+                cur_dir       = _find_area_dir(cur_id)
+                network_files = list(cur_dir.glob(f'{cur_id}-NETWORK-*.geojson'))
+                if not network_files:
+                    break
+                with open(network_files[0], encoding='utf-8') as fh:
+                    props     = json.load(fh).get('properties', {})
+                parent_id = props.get('baseAreaId') or None
+            except Exception:
+                break
+            if not parent_id or parent_id in visited:
+                break
+            visited.add(parent_id)
+            cur_id       = parent_id
+            parent_dir   = _find_area_dir(parent_id)
+            parent_cache = parent_dir / f'{parent_id}-BUILDINGS.geojson'
+            if parent_cache.exists():
+                with open(parent_cache, encoding='utf-8') as fh:
+                    data = json.load(fh)
+                if data.get('properties', {}).get('_qv') == _BUILDINGS_QUERY_VER:
+                    return _ogc_items_response('buildings', data, self_url)
+                try:
+                    parent_cache.unlink()
+                except Exception:
+                    pass
+
+        # 3) Bepaal bbox en query Overpass
+        bbox = None
+        try:
+            network_files = list(area_dir.glob(f'{area_id}-NETWORK-*.geojson'))
+            if network_files:
+                with open(network_files[0], encoding='utf-8') as fh:
+                    ndata = json.load(fh)
+                props = ndata.get('properties', {})
+                bbox  = props.get('bbox')
+                if not bbox or len(bbox) < 4:
+                    lons, lats = [], []
+                    for feat in ndata.get('features', []):
+                        for coord in feat.get('geometry', {}).get('coordinates', []):
+                            lons.append(coord[0])
+                            lats.append(coord[1])
+                    if lons:
+                        bbox = [min(lons), min(lats), max(lons), max(lats)]
+        except Exception as exc:
+            abort(500, f'Fout bij lezen netwerk voor bbox: {exc}')
+
+        if not bbox:
+            abort(404, 'Geen bbox beschikbaar voor gebouwen-query')
+
+        try:
+            tile_cache_dir = area_dir / f'{area_id}-BUILDINGS-tiles'
+            data = _fetch_buildings_overpass(bbox, tile_cache_dir=tile_cache_dir)
+        except Exception as exc:
+            abort(502, f'Overpass-query mislukt: {exc}')
+
+        # Cache opslaan — alleen als alle tegels succesvol waren
+        try:
+            if not data.get('properties', {}).get('_partial'):
+                area_dir.mkdir(parents=True, exist_ok=True)
+                with open(cache_path, 'w', encoding='utf-8') as fh:
+                    json.dump(data, fh, ensure_ascii=False)
+        except Exception:
+            pass
+
+        return _ogc_items_response('buildings', data, self_url)
 
     # ── overige collections: lees GeoJSON-bestand ─────────────────────────
     area_id = request.args.get('areaId', '').strip()
