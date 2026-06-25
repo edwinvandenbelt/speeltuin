@@ -5742,6 +5742,10 @@
     const CLOSED_LAYER  = 'closed-links-layer';
     const CLOSED_ICON   = 'no-entry';
 
+    // ── Snelheidsbordje symboollaag ────────────────────────────────────────────
+    const SPEED_SOURCE = 'speed-signs-src';
+    const SPEED_LAYER  = 'speed-signs-layer';
+
     let highlightedChangeIndex = null;
 
     function addNodeLayer() {
@@ -5876,8 +5880,9 @@
          paint: { 'line-color': '#ffb450', 'line-width': 2, 'line-dasharray': [5, 3] },
        });
         initHighlightLayers();
-        initClosedLinksLayer();
-      }
+         initClosedLinksLayer();
+         initSpeedSignLayer();
+       }
 
       /** Initialiseer MapLibre-lagen voor wijziging-highlight (idempotent). */
       function initHighlightLayers() {
@@ -5945,6 +5950,33 @@
       return ctx.getImageData(0, 0, size, size);
     }
 
+    /**
+     * Maak een snelheidsbordje als ImageData (64×64) inclusief het getal.
+     * Tekent alles op canvas zodat er geen externe glyph-server nodig is.
+     */
+    function createSpeedSignIcon(speed, size = 64) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const cx = size / 2, r = size / 2 - 2;
+      // Witte achtergrond
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'white'; ctx.fill();
+      // Dikke rode buitenring
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.strokeStyle = '#cc1111'; ctx.lineWidth = 5; ctx.stroke();
+      // Dunne rode binnenring
+      ctx.beginPath(); ctx.arc(cx, cx, r - 7, 0, Math.PI * 2);
+      ctx.strokeStyle = '#cc1111'; ctx.lineWidth = 2; ctx.stroke();
+      // Snelheidsgetal
+      ctx.fillStyle = '#111111';
+      ctx.font = `bold ${Math.round(size * 0.30)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(speed), cx, cx);
+      return ctx.getImageData(0, 0, size, size);
+    }
+
     /** Initialiseer MapLibre-lagen voor afgesloten wegvakken (idempotent). */
     function initClosedLinksLayer() {
       if (map.getSource(CLOSED_SOURCE)) return;
@@ -5992,6 +6024,57 @@
         });
       }
       map.getSource(CLOSED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+    }
+
+    /** Initialiseer MapLibre-lagen voor snelheidsbordjes (idempotent). */
+    function initSpeedSignLayer() {
+      if (map.getSource(SPEED_SOURCE)) return;
+      map.addSource(SPEED_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: SPEED_LAYER, type: 'symbol', source: SPEED_SOURCE,
+        layout: {
+          'icon-image': ['concat', 'speed-sign-', ['to-string', ['get', 'speed']]],
+          'icon-size': 1.0,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+      updateSpeedSignLayer();
+    }
+
+    /**
+     * Herbereken welke wegvakken een snelheidsreductie hebben (pendingChanges met speed != null
+     * en capacity !== 0) en zet het middenpunt ervan in SPEED_SOURCE.
+     */
+    function updateSpeedSignLayer() {
+      if (!map.getSource(SPEED_SOURCE)) return;
+      const overrides = new Map();
+      for (const ch of pendingChanges) {
+        if (ch._isLink) overrides.set(String(ch.linkId), ch);
+      }
+      const pts = [];
+      for (const f of geojson.features) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = String(f.properties?.linkId ?? f.properties?.id ?? '');
+        const ch = overrides.get(linkId);
+        if (!ch) continue;
+        if (ch.speed == null) continue;
+        if (ch.capacity === 0) continue;  // afgesloten: verbodsbord heeft voorrang
+        // Registreer icoon on-demand per unieke snelheidswaarde
+        const iconId = `speed-sign-${ch.speed}`;
+        if (!map.hasImage(iconId))
+          map.addImage(iconId, createSpeedSignIcon(ch.speed, 64), { pixelRatio: 2 });
+        const coords = f.geometry.coordinates;
+        pts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords[Math.floor(coords.length / 2)] },
+          properties: { speed: ch.speed },
+        });
+      }
+      map.getSource(SPEED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
     }
     function updatePolygonDraw() {
       if (!map.getSource(POLY_SOURCE)) {
@@ -6621,6 +6704,7 @@
       }
 
       updateClosedLinksLayer();
+      updateSpeedSignLayer();
     }
 
     // ── Doorvoeren (adjust) ──────────────────────────────────────────────────
@@ -6634,14 +6718,16 @@
       status.textContent   = T('applyStart');
 
       // Bouw changes-array (strip _label / _zoneClass / _isLink)
-      const changes = pendingChanges.map(c => {
+      // Lib-beperking: elk link-entry mag óf 'capacity' óf 'speed' bevatten, niet beide.
+      const changes = pendingChanges.flatMap(c => {
         if (c._isLink) {
-          return { linkId: c.linkId, capacity: c.capacity };
+          if (c.speed != null) return [{ linkId: c.linkId, speed: c.speed }];
+          return [{ linkId: c.linkId, capacity: c.capacity }];
         }
         const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
         if (c.production != null) obj.production = c.production;
         if (c.attraction != null) obj.attraction = c.attraction;
-        return obj;
+        return [obj];
       });
 
       const scenarioName = document.getElementById('scenarioNameInput').value.trim()
@@ -6855,6 +6941,7 @@
 
       updateLegend();
       updateClosedLinksLayer();
+      updateSpeedSignLayer();
       rebuildCars();
       updateOverlay(true);
 
