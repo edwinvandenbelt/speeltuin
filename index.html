@@ -2478,6 +2478,7 @@
 
   /** Geeft een kleur [R,G,B,A] gewogen willekeurig terug */
   function randomCarColor() {
+    if (MODE === 'BIKE') return BIKE_COLOR;
     const r = Math.random() * _cpTotal;
     const i = _cpCumul.findIndex(v => v > r);
     const c = CAR_PALETTE_WEIGHTED[i < 0 ? CAR_PALETTE_WEIGHTED.length - 1 : i];
@@ -2787,6 +2788,27 @@
     return [personenauto, stadsauto, suv, bestelwagen, vrachtauto];
   })();
 
+  // ── Fiets (voor MODE=BIKE) ────────────────────────────────────────────────
+  // Eén type, één kleur — helder amber (goed zichtbaar op donkere kaart).
+  const BIKE_COLOR = [255, 185, 0, 255];
+
+  const BIKE_VEHICLE_TYPES = (() => {
+    // Coördinatenstelsel: cx=voor/achter, cy=lateraal, cz=hoogte
+    const frame  = makeBoxGeom(1.50, 0.08, 0.08,  0,     0, 0.685); // hoofdbuis (10cm lager: bovenkant op 0.725m)
+    const zadel  = makeBoxGeom(0.28, 0.16, 0.04, -0.30,  0, 0.92);  // zadel (achter) → bumpers = zwart
+    const stuur  = makeBoxGeom(0.08, 0.55, 0.04,  0.62,  0, 0.82);  // stuur (voor, breed) → bumpers = zwart
+    const dummy  = makeBoxGeom(0.01, 0.01, 0.01,  0,     0, 0.00);  // lege placeholder
+    const wheelF = makeCylinderGeom(0.28, 0.06,  0.65, 0, 0.28);    // voorwiel
+    const wheelR = makeCylinderGeom(0.28, 0.06, -0.65, 0, 0.28);    // achterwiel
+    return [{
+      body:    mergeMeshes([frame]),
+      bumpers: mergeMeshes([stuur, zadel]),
+      windows: mergeMeshes([dummy]),
+      wheels:  mergeMeshes([wheelF, wheelR]),
+      weight:  1,
+    }];
+  })();
+
   // Gewogen type-loting (zelfde patroon als kleurpalet)
   const _vtTotal = VEHICLE_TYPES.reduce((s, v) => s + v.weight, 0);
   const _vtCumul = (() => {
@@ -2795,6 +2817,7 @@
   })();
 
   function randomVehicleType() {
+    if (MODE === 'BIKE') return 0;
     const r = Math.random() * _vtTotal;
     const i = _vtCumul.findIndex(v => v > r);
     return i < 0 ? VEHICLE_TYPES.length - 1 : i;
@@ -3369,31 +3392,14 @@
         const _bTip         = document.getElementById('buildingTooltip');
         const _TOOLTIP_ZOOM = 15;   // tooltip alleen actief op straatniveau
         let _bTipHideTimer = null;
+        let _bTipShowTimer = null;  // vertraagd tonen (2 s)
+        let _bTipLastEvent = null;  // meest recente mousemove-event
+        let _bTipVisible   = false; // is de tooltip momenteel zichtbaar?
 
-        map.on('mouseenter', 'buildings-3d', () => {
-          if (map.getZoom() < _TOOLTIP_ZOOM) return;
-          map.getCanvas().style.cursor = 'pointer';
-          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
-        });
-
-        map.on('mouseleave', 'buildings-3d', () => {
-          map.getCanvas().style.cursor = '';
-          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
-        });
-
-        // Keep tooltip visible when mouse moves over it (to allow clicking the OSM link)
-        _bTip.addEventListener('mouseenter', () => {
-          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
-        });
-        _bTip.addEventListener('mouseleave', () => {
-          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
-        });
-
-        map.on('mousemove', 'buildings-3d', e => {
+        const _bTipRender = e => {
           if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
-          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
           const f = e.features?.[0];
-          if (!f) { _bTip.style.display = 'none'; return; }
+          if (!f) { _bTip.style.display = 'none'; _bTipVisible = false; return; }
           const p = f.properties;
 
           // Properties met object-waarden zijn door MapLibre JSON-geserialiseerd
@@ -3482,6 +3488,42 @@
           const tw = _bTip.offsetWidth, th = _bTip.offsetHeight;
           _bTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
           _bTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+        };
+
+        map.on('mouseenter', 'buildings-3d', () => {
+          if (map.getZoom() < _TOOLTIP_ZOOM) return;
+          map.getCanvas().style.cursor = 'pointer';
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          // Start vertraagd tonen (2 s) als tooltip nog niet zichtbaar is
+          if (!_bTipVisible && !_bTipShowTimer) {
+            _bTipShowTimer = setTimeout(() => {
+              _bTipShowTimer = null;
+              if (_bTipLastEvent) { _bTipRender(_bTipLastEvent); _bTipVisible = true; }
+            }, 2000);
+          }
+        });
+
+        map.on('mouseleave', 'buildings-3d', () => {
+          map.getCanvas().style.cursor = '';
+          if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
+          _bTipVisible = false;
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        // Keep tooltip visible when mouse moves over it (to allow clicking the OSM link)
+        _bTip.addEventListener('mouseenter', () => {
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+        });
+        _bTip.addEventListener('mouseleave', () => {
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        map.on('mousemove', 'buildings-3d', e => {
+          if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          _bTipLastEvent = e;
+          // Tooltip is al zichtbaar: direct positie/inhoud bijwerken
+          if (_bTipVisible) _bTipRender(e);
         });
       }
     }
@@ -4578,7 +4620,7 @@
           pLat = lat + (PARK_OFFSET_M / 110540) * Math.cos(bearRad);
         }
         carData[i] = {
-          position:    [pLon, pLat, c.state === 'parked' ? 0.3 : 0.75],
+          position:    [pLon, pLat, MODE === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
           orientation: [0, 90 - bearing, 0],
           color:       c.color,
           typeIdx:     c.typeIdx,
@@ -4639,6 +4681,42 @@
     // ── What-if wegafsluiting — state ────────────────────────────────────────
     let whatifRcActive = false;           // true als what-if wegafsluiting-modus actief is
     let whatifRcLinks  = new Map();       // linkId (string) → label (string)
+
+    // ── Segment-tooltip — state en render ───────────────────────────────────
+    let _segTipTimer    = null;
+    let _segTipVisible  = false;
+    let _segTipLastInfo = null;
+    const _segTip = document.getElementById('segmentTooltip');
+    const _segTipRender = info => {
+      const p = info?.object?.properties;
+      if (!p) { _segTip.style.display = 'none'; return; }
+      const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+      const dpFlow = dpFlowOf(p);
+      const occ = p.capacity > 0 ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
+      const loc = T('numberLocale');
+      const contextLabel = _fspActiveLabel ?? dpLabels[daypart];
+      const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
+      _segTip.innerHTML = `
+        <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', Math.abs(p.linkId))}
+        </div>
+        <div><span style="color:#5a6272">${contextKey}: </span><b>${contextLabel}</b></div>
+        <div><span style="color:#5a6272">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#5a6272">${T('tooltipFlowTotal')}: </span><b>${p.flow?.toFixed(0)} ${T('tooltipFlow24Unit')}</b></div>
+        <div><span style="color:#5a6272">${T('tooltipSpeed')}: </span><b>${p.speed} km/h</b></div>
+        <div><span style="color:#5a6272">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
+        <div><span style="color:#5a6272">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
+        <div><span style="color:#5a6272">${T('tooltipOccup')}: </span><b>${occ}</b></div>
+        <div><span style="color:#5a6272">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
+      `;
+      const rect = map.getCanvas().getBoundingClientRect();
+      const x = rect.left + info.x;
+      const y = rect.top + info.y;
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
 
     function makeNetworkLayer() {
       // Bereken min/max voor de actieve metric
@@ -4717,12 +4795,30 @@
           }
         },
         pickable: !linkEditActive,
-        onHover: ({ object }) => {
+        onHover: info => {
+          const { object } = info;
           if (selectedLinkActive || whatifRcActive) {
             hoveredLinkId = object?.properties?.linkId ?? null;
           }
           if (whatifRcActive) {
             map.getCanvas().style.cursor = object ? 'pointer' : '';
+          }
+          // Segment-tooltip met 1 s vertraging
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
           }
         },
         updateTriggers: {
@@ -5103,9 +5199,10 @@
 
 
     function makeCarLayers(data) {
+      const vtypes = MODE === 'BIKE' ? BIKE_VEHICLE_TYPES : VEHICLE_TYPES;
       const layers = [];
-      for (let ti = 0; ti < VEHICLE_TYPES.length; ti++) {
-        const vt       = VEHICLE_TYPES[ti];
+      for (let ti = 0; ti < vtypes.length; ti++) {
+        const vt       = vtypes[ti];
         const typeData = data.filter(d => d.typeIdx === ti);
         if (!typeData.length) continue;
         const shared = {
@@ -5192,47 +5289,9 @@
          };
        }
 
-       // ── Netwerk-segment tooltip ──────────────────────────────────────────
-       const p  = object.properties;
-       if (!p) return null;
-      const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
-      const dpFlow = dpFlowOf(p);
-      const occ = p.capacity > 0
-        ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
-      const loc = T('numberLocale');
-      // Toon tijdstip van flow-scaler als actief, anders het dagdeel-label
-      const contextLabel = _fspActiveLabel ?? dpLabels[daypart];
-      const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
-      return {
-        html: `
-          <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
-            <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
-              ${T('tooltipSegment', Math.abs(p.linkId))}
-            </div>
-            <div><span style="color:#5a6272">${contextKey}: </span>
-              <b>${contextLabel}</b></div>
-            <div><span style="color:#5a6272">${T('tooltipFlow')}: </span>
-              <b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
-            <div><span style="color:#5a6272">${T('tooltipFlowTotal')}: </span>
-              <b>${p.flow?.toFixed(0)} ${T('tooltipFlow24Unit')}</b></div>
-            <div><span style="color:#5a6272">${T('tooltipSpeed')}: </span>
-              <b>${p.speed} km/h</b></div>
-            <div><span style="color:#5a6272">${T('tooltipLanes')}: </span>
-              <b>${p.lanes}</b></div>
-            <div><span style="color:#5a6272">${T('tooltipCap')}: </span>
-              <b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
-            <div><span style="color:#5a6272">${T('tooltipOccup')}: </span>
-              <b>${occ}</b></div>
-            <div><span style="color:#5a6272">${T('tooltipLength')}: </span>
-              <b>${p.length?.toFixed(0)} m</b></div>
-          </div>`,
-        style: {
-          background: 'rgba(13,17,23,0.95)', borderRadius: '10px',
-          padding: '12px 16px', border: '1px solid rgba(126,200,227,0.25)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.5)', pointerEvents: 'none',
-        },
-      };
-    }
+       // ── Netwerk-segment tooltip — afgehandeld via DOM-element met 1 s vertraging
+       return null;
+     }
 
     // ── 6. Initialisatie ────────────────────────────────────────────────────
 
@@ -8106,6 +8165,13 @@
   });
 
   </script>
+  <div id="segmentTooltip" style="
+    display:none; position:fixed; z-index:9998; pointer-events:none;
+    background:rgba(13,17,23,0.95); border-radius:10px; padding:12px 16px;
+    border:1px solid rgba(126,200,227,0.25); box-shadow:0 4px 20px rgba(0,0,0,0.5);
+    font:13px 'Segoe UI',sans-serif; color:#dde4f0; line-height:1.8;
+    max-width:260px;
+  "></div>
   <div id="buildingTooltip" style="
     display:none; position:fixed; z-index:9999; pointer-events:auto;
     background:rgba(13,17,23,0.95); border-radius:10px; padding:12px 16px;
