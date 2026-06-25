@@ -250,6 +250,14 @@
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #calcOverlay {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(13, 17, 23, 0.82);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px;
+    }
+    #calcOverlay p { color: #7ec8e3; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
 
     .dpBtn  { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
     .dpBtn.active  { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
@@ -884,6 +892,11 @@
   <div id="loader">
     <div class="spinner"></div>
     <p id="loaderMsg">GeoJSON laden…</p>
+  </div>
+
+  <div id="calcOverlay">
+    <div class="spinner"></div>
+    <p id="calcOverlayMsg"></p>
   </div>
 
   <div id="mapContainer">
@@ -6717,6 +6730,16 @@
       status.style.display = 'block';
       status.textContent   = T('applyStart');
 
+      // Verberg edit-schermpjes direct bij starten doorvoeren
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+
+      // Toon wacht-overlay over het netwerk
+      const overlay    = document.getElementById('calcOverlay');
+      const overlayMsg = document.getElementById('calcOverlayMsg');
+      overlay.style.display = 'flex';
+      overlayMsg.textContent = T('applyStart');
+
       // Bouw changes-array (strip _label / _zoneClass / _isLink)
       // Lib-beperking: elk link-entry mag óf 'capacity' óf 'speed' bevatten, niet beide.
       const changes = pendingChanges.flatMap(c => {
@@ -6742,24 +6765,35 @@
         if (!res.ok) throw new Error(await res.text());
         const { jobID: job_id } = await res.json();
 
-        // Poll tot done/error
+        // Poll tot done/error — afnemende intervallen: 10s, 5s, 3s, 2s, daarna 1s
         status.style.display = 'block';
         status.textContent = T('applyRunning');
-        const poll = setInterval(async () => {
+        overlayMsg.textContent = T('applyRunning');
+        const POLL_DELAYS = [10000, 5000, 3000, 2000];
+        let pollStep = 0;
+        const schedulePoll = () => {
+          const delay = pollStep < POLL_DELAYS.length ? POLL_DELAYS[pollStep] : 1000;
+          pollStep++;
+          setTimeout(doPoll, delay);
+        };
+        const doPoll = async () => {
           const sr = await fetch(`/jobs/${job_id}`);
           const sj = await sr.json();
           if (sj.status === 'running' || sj.status === 'accepted') {
             status.textContent = T('applyRunning');
+            overlayMsg.textContent = T('applyRunning');
           } else if (sj.status === 'successful') {
             status.textContent = T('applyDone');
+            overlayMsg.textContent = T('applyDone');
           } else {
             const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
             status.style.color = '#ff6b6b';
             status.textContent = errLines.length ? errLines.join('\n') : T('applyError', sj.returncode);
+            overlayMsg.textContent = T('applyError', sj.returncode);
           }
           if (sj.status === 'successful' || sj.status === 'failed') {
-            clearInterval(poll);
             btn.disabled = false;
+            overlay.style.display = 'none';
             if (sj.status === 'successful') {
                scenarioCounter++;
                clearHighlight();
@@ -6771,11 +6805,15 @@
               const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
               await loadAdjustedResult(results.new_area_id, results.compare_url);
             }
+          } else {
+            schedulePoll();
           }
-        }, 1500);
+        };
+        schedulePoll();
       } catch (err) {
         status.textContent = T('applyFetchError', err.message);
         btn.disabled = false;
+        overlay.style.display = 'none';
       }
     });
 
