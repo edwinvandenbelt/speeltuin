@@ -421,6 +421,33 @@
       margin-bottom: 8px;
     }
 
+    /* ── Read-only view (toolbar ☰-knop): footer + delete-knoppen verbergen ── */
+    .changesPanel--readonly #changesPanelFooter { display: none; }
+    .changesPanel--readonly .change-item-del    { display: none; }
+
+    /* ── Sectiekop in de wijzigingenlijst (scenario-naam / openstaand) ──────── */
+    .change-section-header {
+      padding: 4px 16px 3px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+      color: #5a6272; text-transform: uppercase;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .change-section-header:first-child { border-top: none; }
+
+    /* ── Historische wijziging (al toegepast, lichtere opmaak) ──────────────── */
+    .change-item-hist { opacity: 0.72; }
+    .change-item-hist:hover { background: rgba(255,255,255,0.04); }
+
+    /* ── Badge op toolbar-knop (wijzigingsteller) ────────────────────────────── */
+    .tb-badge {
+      position: absolute; top: 3px; right: 2px;
+      min-width: 13px; height: 13px; padding: 0 2px;
+      background: #ffb450; color: #13171f;
+      border-radius: 7px; font-size: 8px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; line-height: 1;
+    }
+
     /* ── What-if wegafsluiting panel ─────────────────────────────────── */
     #whatifRcPanel {
       display: none;
@@ -1001,6 +1028,9 @@
     <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
     <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
     <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
+    <button class="tb-btn" id="viewChangesBtn"
+            data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
+            style="position:relative">&#9776;<span id="viewChangesBadge" class="tb-badge"></span></button>
 
     <!-- Taal (verborgen, beheerd via instellingen-paneel) -->
     <select id="langSelect" class="tb-select lang-select" style="display:none" onchange="applyLang(this.value)" data-i18n-title="langSelectTitle" title="Taal kiezen">
@@ -1411,6 +1441,10 @@
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
       changeItemDel:'Verwijder',
+      noChanges:'Geen wijzigingen', viewChangesBtnTitle:'Wijzigingen bekijken',
+      changesPendingSection:'Openstaand',
+      changesHistLinkLabel: id => `Wegvak ${id}`, changesHistNodeLabel: id => `Knoop ${id}`,
+      changesHistZoneLabel: id => `Zone ${id}`,
       // Polygon-selectie
       nodeSelectTitle:'Selectiemodus',
       nodeSelectClick:'Klik op een knoop',
@@ -1579,6 +1613,10 @@
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `speed: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
       changeItemDel:'Delete',
+      noChanges:'No changes', viewChangesBtnTitle:'View changes',
+      changesPendingSection:'Pending',
+      changesHistLinkLabel: id => `Link ${id}`, changesHistNodeLabel: id => `Node ${id}`,
+      changesHistZoneLabel: id => `Zone ${id}`,
       // Polygon selection
       nodeSelectTitle:'Selection mode',
       nodeSelectClick:'Click on a node',
@@ -1744,6 +1782,10 @@
       changeCapLabel: (v, u) => `kap: ${v} ${u}`, changeSpeedLabel: v => `nopeus: ${v} km/h`,
       changeProdLabel: v => `tuot: ${v}`, changeAttrLabel: v => `houk: ${v}`,
       changeItemDel:'Poista',
+      noChanges:'Ei muutoksia', viewChangesBtnTitle:'Näytä muutokset',
+      changesPendingSection:'Odottaa',
+      changesHistLinkLabel: id => `Kaari ${id}`, changesHistNodeLabel: id => `Solmu ${id}`,
+      changesHistZoneLabel: id => `Vyöhyke ${id}`,
       // Monikulmio-valinta
       nodeSelectTitle:'Valintamoodi',
       nodeSelectClick:'Napsauta solmupistett\xe4',
@@ -5184,7 +5226,9 @@
     cars = enforceInitialSpacing(buildCarList(threshold));
     computeCarData();
 
-    let pendingChanges   = [];       // [{ nodeId, zoneId, production, attraction, label }]
+    let pendingChanges        = [];       // [{ nodeId, zoneId, production, attraction, label }]
+    let _changesPanelReadOnly = false;   // true = geopend via ☰-knop (alleen-lezen)
+    let _historicalChanges    = [];      // Properties-objecten van /collections/changes/items
 
     const overlay = new MapboxOverlay({
       interleaved: true,
@@ -6301,6 +6345,7 @@
       };
       if (activeLinkSpeed != null) entry.speed = activeLinkSpeed;
       pendingChanges.push(entry);
+      _setChangesPanelReadOnly(false);
       renderChangesList();
       closeLinkDialog();
     };
@@ -6326,6 +6371,7 @@
       change._zoneClass = p.zoneClass;
       pendingChanges.push(change);
 
+      _setChangesPanelReadOnly(false);
       renderChangesList();
       closeNodeDialog();
     };
@@ -6389,10 +6435,80 @@
          features: [{ type: 'Feature', geometry, properties: {} }],
        });
 
-       if (center)
-         map.easeTo({ center, speed: 1.2, essential: true });
+        if (center)
+          map.easeTo({ center, speed: 1.2, essential: true });
 
-       highlightedChangeIndex = idx;
+        highlightedChangeIndex = idx;
+      }
+
+      /**
+       * Highlight voor een historisch wijzigingsitem (al toegepast).
+       * Gebruikt dezelfde geometrie-opzoeking als highlightChange maar werkt
+       * direct met het wijzigings-object en het DOM-element (geen pendingChanges-index).
+       * Tweede klik op hetzelfde item: highlight uitzetten.
+       */
+      function _highlightHistChange(h, el) {
+        initHighlightLayers();          // lazy init: HL source/layers aanmaken als ze er nog niet zijn
+        const wasHighlighted = el.classList.contains('highlighted');
+        clearHighlight();
+        if (wasHighlighted) return;
+
+        let geometry = null;
+        let center   = null;
+
+        if (h.linkId != null) {
+          const coords = linkGeomMap.get(h.linkId) ?? linkGeomMap.get(Number(h.linkId));
+          if (coords && coords.length >= 2) {
+            geometry = { type: 'LineString', coordinates: coords };
+            center   = coords[Math.floor(coords.length / 2)];
+          }
+        } else {
+          const zoneId = h.zoneId ?? h.nodeId;
+          let coord = null;
+          const zf = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(zoneId));
+          if (zf) {
+            const p   = zf.properties;
+            const lon = p.centroidLon ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[0] : null);
+            const lat = p.centroidLat ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[1] : null);
+            if (lon != null) coord = [lon, lat];
+          }
+          if (!coord) coord = nodeCoords.get(Number(zoneId)) ?? nodeCoords.get(zoneId);
+          if (coord) {
+            geometry = { type: 'Point', coordinates: coord };
+            center   = coord;
+          }
+        }
+
+        if (!geometry || !map.getSource(HL_SOURCE)) return;
+        map.getSource(HL_SOURCE).setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry, properties: {} }],
+        });
+        if (center) map.easeTo({ center, speed: 1.2, essential: true });
+        el.classList.add('highlighted');
+      }
+
+     // Zet het paneel in alleen-lezen modus (☰-knop) of normale modus.
+     // Bij on=true: fetch wijzigingsketen van server, toon paneel.
+     // Bij on=false: verberg historische items, herstel normale zichtbaarheidslogica.
+     async function _setChangesPanelReadOnly(on) {
+       _changesPanelReadOnly = on;
+       const panel = document.getElementById('changesPanel');
+       const btn   = document.getElementById('viewChangesBtn');
+       panel.classList.toggle('changesPanel--readonly', on);
+       if (btn) btn.classList.toggle('active', on);
+       if (on) {
+         panel.style.display = 'block';
+         try {
+           const res  = await fetch(`/collections/changes/items?areaId=${AREA_ID}`);
+           const data = await res.json();
+           _historicalChanges = data.features?.map(f => f.properties) ?? [];
+         } catch { _historicalChanges = []; }
+         renderChangesList();
+       } else {
+         _historicalChanges = [];
+         renderChangesList();
+       }
      }
 
      function renderChangesList() {
@@ -6401,7 +6517,11 @@
       const count = document.getElementById('changesCount');
 
       const wasHidden = panel.style.display === 'none' || panel.style.display === '';
-      panel.style.display = pendingChanges.length ? 'block' : 'none';
+      panel.style.display = (pendingChanges.length || _changesPanelReadOnly) ? 'block' : 'none';
+
+      // Badge op ☰-knop bijwerken
+      const badge = document.getElementById('viewChangesBadge');
+      if (badge) badge.textContent = pendingChanges.length || '';
 
       // Vul default scenario-naam in als het veld leeg is (of paneel net zichtbaar wordt)
       const nameInput = document.getElementById('scenarioNameInput');
@@ -6412,6 +6532,14 @@
       document.getElementById('adjustDebug').checked = !!window._debugMode;
       count.textContent   = pendingChanges.length;
       list.innerHTML = '';
+
+      // ── Sectiekop boven openstaande wijzigingen (alleen als er ook historische zijn) ──
+      if (_changesPanelReadOnly && pendingChanges.length && _historicalChanges.length) {
+        const sep = document.createElement('div');
+        sep.className   = 'change-section-header';
+        sep.textContent = T('changesPendingSection');
+        list.appendChild(sep);
+      }
 
       pendingChanges.forEach((c, i) => {
         const fmt = v => {
@@ -6451,6 +6579,47 @@
         item.onclick = () => highlightChange(i);
         list.appendChild(item);
       });
+
+      // ── Historische wijzigingen (van server, alleen in read-only modus) ───────
+      if (_changesPanelReadOnly) {
+        if (!pendingChanges.length && !_historicalChanges.length) {
+          // Lege staat
+          const empty = document.createElement('div');
+          empty.style.cssText = 'color:#5a6272;padding:10px 16px;font-size:12px';
+          empty.textContent   = T('noChanges');
+          list.appendChild(empty);
+        } else {
+          // Gegroepeerd per scenario (server stuurt oudste-eerst)
+          let lastAreaId = null;
+          for (const h of _historicalChanges) {
+            if (h.areaId !== lastAreaId) {
+              const sep = document.createElement('div');
+              sep.className   = 'change-section-header';
+              sep.textContent = h.scenarioName || h.areaId;
+              list.appendChild(sep);
+              lastAreaId = h.areaId;
+            }
+            const fmt = v => v == null ? null : (String(v).match(/^[+-]/) ? `Δ${v}` : `=${v}`);
+            const parts = [];
+            if (h.linkId != null) {
+              if (h.capacity === 0) parts.push(T('changeClosedLabel'));
+              else parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+            } else {
+              if (h.production != null) parts.push(T('changeProdLabel', fmt(h.production)));
+              if (h.attraction != null) parts.push(T('changeAttrLabel', fmt(h.attraction)));
+            }
+            const label = h.linkId != null ? T('changesHistLinkLabel', h.linkId)
+                        : h.nodeId != null ? T('changesHistNodeLabel', h.nodeId)
+                        :                    T('changesHistZoneLabel', h.zoneId);
+            const item = document.createElement('div');
+            item.className = 'change-item change-item-hist';
+            item.innerHTML = `<div class="change-item-label">${label}<span>${parts.join(' · ')}</span></div>`;
+            item.onclick   = () => _highlightHistChange(h, item);
+            list.appendChild(item);
+          }
+        }
+      }
+
       updateClosedLinksLayer();
     }
 
@@ -6508,6 +6677,7 @@
             if (sj.status === 'successful') {
                scenarioCounter++;
                clearHighlight();
+               _setChangesPanelReadOnly(false);  // sluit read-only modus vóór reset
                pendingChanges = [];
               document.getElementById('scenarioNameInput').value = '';
               renderChangesList();
@@ -6694,6 +6864,7 @@
       if (splitViewActive) deactivateSplitView();
       document.getElementById('splitViewBtn').style.display = '';
       AREA_ID = newAreaId;
+      _historicalChanges = [];   // invalideer bij scenario-advance
 
       // URL bijwerken zonder pagina-reload (voor bookmarken / delen)
       const url = new URL(window.location.href);
@@ -7316,8 +7487,9 @@
           if (perAttr) change.attraction = perAttr;
           change._label     = node.zoneName;
           change._zoneClass = node.zoneClass;
-          pendingChanges.push(change);
+           pendingChanges.push(change);
         }
+       _setChangesPanelReadOnly(false);
        renderChangesList();
        closePolygonDialog();
      });
@@ -7437,7 +7609,8 @@
          };
          if (polySpeed != null) entry.speed = polySpeed;
          pendingChanges.push(entry);
-       }
+        }
+       _setChangesPanelReadOnly(false);
        renderChangesList();
        closeLinkPolygonDialog();
      });
@@ -7496,6 +7669,10 @@
       const btn = document.getElementById('pauseBtn');
       btn.classList.toggle('paused', paused);
       btn.innerHTML = paused ? '&#9654;' : '&#9208;';
+    });
+
+    document.getElementById('viewChangesBtn').addEventListener('click', () => {
+      _setChangesPanelReadOnly(!_changesPanelReadOnly);
     });
 
      document.getElementById('daypartBtns').addEventListener('click', e => {

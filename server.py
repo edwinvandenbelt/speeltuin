@@ -178,6 +178,10 @@ _COLLECTIONS = {
         'title': 'Gebouwen',
         'description': 'Gebouwen in het studiegebied (OpenStreetMap / Overpass, gecached).',
     },
+    'changes': {
+        'title': 'Wijzigingen',
+        'description': 'Gecumuleerde wijzigingen in de scenario-keten voor een gebied.',
+    },
 }
 
 # Mapping van collection-id naar bestandstype-suffix
@@ -1287,6 +1291,69 @@ def ogc_collection_items(collection_id):
             for a in areas
         ]
         return _ogc_items_response('areas', {'type': 'FeatureCollection', 'features': features}, self_url)
+
+    # ── changes: gecumuleerde wijzigingen over de scenario-keten ─────────────
+    if collection_id == 'changes':
+        area_id = request.args.get('areaId', '').strip()
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, 'Ongeldige parameter: areaId')
+
+        features, visited, current_id, depth = [], set(), area_id, 0
+        while current_id and depth < 20 and current_id not in visited:
+            visited.add(current_id)
+            area_dir = _find_area_dir(current_id)
+
+            # Scenario-naam ophalen uit eerste gevonden NETWORK-GeoJSON
+            name = current_id
+            for nf in area_dir.glob(f'{current_id}-NETWORK-*.geojson'):
+                try:
+                    props = json.loads(nf.read_text(encoding='utf-8')).get('properties', {})
+                    name  = props.get('name', current_id)
+                except Exception:
+                    pass
+                break
+
+            # Delta-wijzigingen lezen
+            cp = area_dir / f'{current_id}-changes.json'
+            if cp.exists():
+                try:
+                    for i, c in enumerate(json.loads(cp.read_text(encoding='utf-8'))):
+                        features.append({
+                            'type': 'Feature',
+                            'id': f'{current_id}|{i}',
+                            'geometry': None,
+                            'properties': {'areaId': current_id, 'scenarioName': name, **c},
+                        })
+                except Exception:
+                    pass
+
+            # Keten omhoog via .src-area-id
+            parent_id = None
+            src_path  = area_dir / '.src-area-id'
+            if src_path.exists():
+                try:
+                    parent_id = src_path.read_text(encoding='utf-8').strip() or None
+                except Exception:
+                    pass
+            # Fallback: baseAreaId in GeoJSON properties
+            if not parent_id:
+                for nf in area_dir.glob(f'{current_id}-NETWORK-*.geojson'):
+                    try:
+                        props     = json.loads(nf.read_text(encoding='utf-8')).get('properties', {})
+                        parent_id = props.get('baseAreaId') or None
+                    except Exception:
+                        pass
+                    break
+
+            current_id = parent_id
+            depth     += 1
+
+        # Oudste scenario eerst (keten staat nu in omgekeerde volgorde)
+        features.reverse()
+        fc = {'type': 'FeatureCollection', 'features': features}
+        return _ogc_items_response('changes', fc, self_url)
 
     # ── flows: flow-scaler berekening ─────────────────────────────────────
     if collection_id == 'flows':
