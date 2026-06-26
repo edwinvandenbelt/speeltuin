@@ -1022,6 +1022,7 @@
       <option value="winkelen_scaled" data-i18n="buildingPurposeWinkelenScaled">- gebouwen: winkelen (geschaald) -</option>
       <option value="recreatie"      data-i18n="buildingPurposeRecreat">- gebouwen: recreatie -</option>
       <option value="recreatie_scaled" data-i18n="buildingPurposeRecreatiScaled">- gebouwen: recreatie (geschaald) -</option>
+      <option value="hidden"         data-i18n="buildingPurposeHidden">- gebouwen: verborgen -</option>
       <option value="off"            data-i18n="buildingPurposeOff">- gebouwen: uit -</option>
     </select>
 
@@ -1568,6 +1569,7 @@
       buildingPurposeOnderwijs:'- gebouwen: onderwijs -', buildingPurposeOnderwijsScaled:'- gebouwen: onderwijs (geschaald) -',
       buildingPurposeWinkelen:'- gebouwen: winkelen -', buildingPurposeWinkelenScaled:'- gebouwen: winkelen (geschaald) -',
       buildingPurposeRecreat:'- gebouwen: recreatie -', buildingPurposeRecreatiScaled:'- gebouwen: recreatie (geschaald) -',
+      buildingPurposeHidden:'- gebouwen: verborgen -',
       buildingPurposeOff:'- gebouwen: uit -',
       // Gebouwen tooltip
       tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
@@ -1738,6 +1740,7 @@
       buildingPurposeOnderwijs:'- buildings: education -', buildingPurposeOnderwijsScaled:'- buildings: education (scaled) -',
       buildingPurposeWinkelen:'- buildings: shopping -', buildingPurposeWinkelenScaled:'- buildings: shopping (scaled) -',
       buildingPurposeRecreat:'- buildings: recreation -', buildingPurposeRecreatiScaled:'- buildings: recreation (scaled) -',
+      buildingPurposeHidden:'- buildings: hidden -',
       buildingPurposeOff:'- buildings: off -',
       // Building tooltip
       tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
@@ -1908,6 +1911,7 @@
       buildingPurposeOnderwijs:'- rakennukset: koulutus -', buildingPurposeOnderwijsScaled:'- rakennukset: koulutus (skaalattu) -',
       buildingPurposeWinkelen:'- rakennukset: ostokset -', buildingPurposeWinkelenScaled:'- rakennukset: ostokset (skaalattu) -',
       buildingPurposeRecreat:'- rakennukset: vapaa-aika -', buildingPurposeRecreatiScaled:'- rakennukset: vapaa-aika (skaalattu) -',
+      buildingPurposeHidden:'- rakennukset: piilotettu -',
       buildingPurposeOff:'- rakennukset: pois -',
       // Rakennuksen tooltip
       tooltipBuildingType:'Tyyppi', tooltipBuildingZone:'Vyöhyke',
@@ -2491,8 +2495,8 @@
   })();
 
   /** Geeft een kleur [R,G,B,A] gewogen willekeurig terug */
-  function randomCarColor() {
-    if (MODE === 'BIKE') return BIKE_COLOR;
+  function randomCarColor(vehicleMode = MODE) {
+    if (vehicleMode === 'BIKE') return BIKE_COLOR;
     const r = Math.random() * _cpTotal;
     const i = _cpCumul.findIndex(v => v > r);
     const c = CAR_PALETTE_WEIGHTED[i < 0 ? CAR_PALETTE_WEIGHTED.length - 1 : i];
@@ -2830,8 +2834,8 @@
     return VEHICLE_TYPES.map(v => { acc += v.weight; return acc; });
   })();
 
-  function randomVehicleType() {
-    if (MODE === 'BIKE') return 0;
+  function randomVehicleType(vehicleMode = MODE) {
+    if (vehicleMode === 'BIKE') return MODE === 'MIXED' ? VEHICLE_TYPES.length : 0;
     const r = Math.random() * _vtTotal;
     const i = _vtCumul.findIndex(v => v > r);
     return i < 0 ? VEHICLE_TYPES.length - 1 : i;
@@ -3383,13 +3387,22 @@
     function updateBuildingColors(val) {
       const isScaled = val.endsWith('_scaled');
       const purpose  = isScaled ? val.slice(0, -7) : val;
-      _currentPurpose = purpose;
+      // 'hidden': gebruik 'all'-kleuren intern zodat normen en tooltip correct zijn
+      _currentPurpose = purpose === 'hidden' ? 'all' : purpose;
       _isScaledMode   = isScaled;
       if (!_buildingsGeoJson || !_NORM) return;
-      _doUpdateBuildingColors(purpose, isScaled);
+      _doUpdateBuildingColors(_currentPurpose, isScaled);
       if (!map.getSource('buildings')) return;
       map.getSource('buildings').setData(_buildingsGeoJson);
-      if (isScaled) {
+      if (purpose === 'hidden') {
+        // Verborgen: toon gekleurde 2D producte/attractievlakken, verberg alle 3D geometrie
+        if (map.getLayer('buildings-3d'))  map.setLayoutProperty('buildings-3d',  'visibility', 'none');
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        if (map.getLayer('buildings-fill')) {
+          map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+          map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
+        }
+      } else if (isScaled) {
         // Geschaalde modus: eigen fill-extrusion met height_sc, Liberty verbergen
         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
         if (map.getLayer('buildings-fill'))  map.setLayoutProperty('buildings-fill',  'visibility', 'none');
@@ -3749,10 +3762,11 @@
       nodeLinkMap.set(p.linkId, { fromNode: p.fromNode, toNode: p.toNode });
       if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
       adj.get(p.fromNode).push({
-        toNode:  p.toNode,
-        length:  p.length || 1,
-        coords:  c,
-        speedMs: p.speed > 0 ? p.speed / 3.6 : 10,
+        toNode:   p.toNode,
+        length:   p.length || 1,
+        coords:   c,
+        speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+        linkMode: p.mode ? p.mode.toUpperCase() : null,
       });
     }
 
@@ -3798,9 +3812,9 @@
      * of null als onbereikbaar. Resultaten worden gecached.
      */
     const dijkstraCache = new Map();
-    function dijkstraPath(source, target) {
+    function dijkstraPath(source, target, vehicleMode) {
       if (source === target) return [];
-      const key = `${source}→${target}`;
+      const key = MODE === 'MIXED' ? `${vehicleMode ?? ''}:${source}→${target}` : `${source}→${target}`;
       if (dijkstraCache.has(key)) return dijkstraCache.get(key);
 
       const dist = new Map([[source, 0]]);
@@ -3813,6 +3827,7 @@
         if (d > (dist.get(u) ?? Infinity)) continue;
         if (u === target) break;
         for (const e of (adj.get(u) || [])) {
+          if (vehicleMode && e.linkMode && e.linkMode !== vehicleMode) continue;
           const nd = d + e.length;
           if (nd < (dist.get(e.toNode) ?? Infinity)) {
             dist.set(e.toNode, nd);
@@ -3846,79 +3861,78 @@
     // gerouteerd vanuit een gewogen willekeurige node in de herkomst-/bestemmingszone.
     const N_SKIP = 3;
 
-    try {
-      const resp = await fetch(ROUTES_FILE);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const routesGeoJson = await resp.json();
-
-      // Pre-pass: bereken per origin-zone de som van r.trips.
-      // prepare_core schrijft fracties (som ≈ 1.0); adjust_core schrijft absolute trips/dag
-      // (som >> 1.0). Als de som > 1.5 behandelen we de waarden als absoluut.
+    /**
+     * Parst een routes-GeoJSON en voegt routes toe aan routeList.
+     * @param {object|null} routesFc   - GeoJSON FeatureCollection met routes (null → skip)
+     * @param {string}      vehicleMode - 'CAR' | 'BIKE' | 'PEDESTRIAN' of MODE
+     */
+    function _parseAndAddRoutes(routesFc, vehicleMode) {
+      if (!routesFc?.features) return;
       const zoneTripSumMap = new Map();
-      for (const feat of routesGeoJson.features) {
+      for (const feat of routesFc.features) {
         const fz = feat.properties.fromZoneId;
         for (const r of feat.properties.routes ?? [])
           zoneTripSumMap.set(fz, (zoneTripSumMap.get(fz) ?? 0) + (r.trips ?? 0));
       }
-
-      for (const feat of routesGeoJson.features) {
+      for (const feat of routesFc.features) {
         const routes     = feat.properties.routes;
         const fromZoneId = feat.properties.fromZoneId;
         const toZoneId   = feat.properties.toZoneId;
         if (!routes) continue;
-
         const zoneSum    = zoneTripSumMap.get(fromZoneId) ?? 1;
-        const isAbsolute = zoneSum > 1.5;  // adjust_core-uitvoer: absolute trips/dag
-
+        const isAbsolute = zoneSum > 1.5;
         for (const r of routes) {
           const fromBoundary = zoneMap.get(fromZoneId)?.boundary ?? false;
           const toBoundary   = zoneMap.get(toZoneId)?.boundary   ?? false;
-
-          // Bepaal slice-grenzen:
-          //   BOUNDARY-kant heeft geen voedingslinks → niet overslaan
-          //   Niet-BOUNDARY-kant → N_SKIP links overslaan
           const skipStart = fromBoundary ? 0 : N_SKIP;
           const skipEnd   = toBoundary   ? 0 : N_SKIP;
           const minLen    = skipStart + skipEnd + 1;
           if (!r.linkPath || r.linkPath.length < minLen) continue;
-
           const sliced = skipEnd > 0
             ? r.linkPath.slice(skipStart, -skipEnd)
             : r.linkPath.slice(skipStart);
           const innerIds = sliced.map(id => parseInt(id));
           if (!innerIds.length) continue;
-
           const firstLink = nodeLinkMap.get(innerIds[0]);
           const lastLink  = nodeLinkMap.get(innerIds[innerIds.length - 1]);
           if (!firstLink || !lastLink) continue;
-
-          // Controleer of er geldige geometrie beschikbaar is voor alle inner-links
           const validInnerIds = innerIds.filter(id => linkGeomMap.get(id)?.length >= 2);
           if (!validInnerIds.length) continue;
-
-          // Schat totale innerlengte voor de minimumlengte-check
           const innerLen = validInnerIds.reduce((s, id) => {
             const c = linkGeomMap.get(id);
             return s + (c ? segmentLength(c) : 0);
           }, 0);
           if (innerLen < 30) continue;
-
           routeList.push({
-            innerIds:        validInnerIds,   // linkId's — per-link snelheid opgehaald in buildCarList
-            midStartNode:    firstLink.fromNode,
-            midEndNode:      lastLink.toNode,
+            innerIds:         validInnerIds,
+            midStartNode:     firstLink.fromNode,
+            midEndNode:       lastLink.toNode,
             fromZoneId,
             toZoneId,
             fromBoundary,
             toBoundary,
-            // Absoluut: gebruik zoneSum als productie, normeer weight naar [0,1]-fractie
-            // Relatief (prepare_core): originProduction en fractie-weight ongewijzigd
             originProduction: isAbsolute ? zoneSum : (feat.properties.originProduction ?? 0),
             weight:           isAbsolute ? r.trips / zoneSum : r.trips,
+            vehicleMode,
           });
         }
       }
+    }
 
+    try {
+      if (MODE === 'MIXED') {
+        const mkModeUrl = m => apiUrl('ROUTES').replace(/mode=[^&]+/, `mode=${m}`);
+        const [carFc, bikeFc] = await Promise.all([
+          fetch(mkModeUrl('CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(mkModeUrl('BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        _parseAndAddRoutes(carFc,  'CAR');
+        _parseAndAddRoutes(bikeFc, 'BIKE');
+      } else {
+        const resp = await fetch(ROUTES_FILE);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        _parseAndAddRoutes(await resp.json(), MODE);
+      }
       totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
       routeMode = routeList.length > 0;
       buildLinkRouteMap();
@@ -4275,7 +4289,7 @@
             const fromZone = zoneMap.get(route.fromZoneId);
             const fromNode = fromZone ? pickNode(fromZone.from) : null;
             if (fromNode != null && fromNode !== route.midStartNode) {
-              const segs = dijkstraPath(fromNode, route.midStartNode);
+              const segs = dijkstraPath(fromNode, route.midStartNode, route.vehicleMode);
               if (segs && segs.length) {
                 const approachObjs = segs.map(s => ({ coords: s.coords, speedMs: approachSpeedMs, flow: 0, toNode: s.toNode ?? null }));
                 allLinkObjs = [...approachObjs, ...allLinkObjs];
@@ -4291,7 +4305,7 @@
             const toZone = zoneMap.get(route.toZoneId);
             const toNode = toZone ? pickNode(toZone.to) : null;
             if (toNode != null && toNode !== route.midEndNode) {
-              const segs = dijkstraPath(route.midEndNode, toNode);
+              const segs = dijkstraPath(route.midEndNode, toNode, route.vehicleMode);
               if (segs && segs.length) {
                 const exitObjs = segs.map(s => ({ coords: s.coords, speedMs: exitSpeedMs, flow: 0, toNode: s.toNode ?? null }));
                 allLinkObjs = [...allLinkObjs, ...exitObjs];
@@ -4320,7 +4334,7 @@
         //   • r.trips: aandeel van die productie dat via dit specifieke routepad gaat [0–1]
         odGroups.clear();
         for (const rp of routePaths) {
-          const key = `${rp.route.fromZoneId}→${rp.route.toZoneId}`;
+          const key = `${rp.route.vehicleMode ?? MODE}:${rp.route.fromZoneId}→${rp.route.toZoneId}`;
           if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
           const g            = odGroups.get(key);
           const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[daypart] ?? (1 / 14.4));
@@ -4386,6 +4400,7 @@
               const endNode     = rp.route.midEndNode;
               const chainCandidates = routePaths.filter(
                 other => other !== rp && other.route.midStartNode === endNode
+                  && (other.route.vehicleMode ?? MODE) === (rp.route.vehicleMode ?? MODE)
               );
               let pendingPath = null;
               if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
@@ -4393,12 +4408,13 @@
               }
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
-                path:      rp.path,
+                path:        rp.path,
                 offset,
-                speed:     rp.path.speedMs * 0.9,
-                color:     randomCarColor(),
-                typeIdx:   randomVehicleType(),
-                state:     isParked ? 'parked' : 'moving',
+                speed:       rp.path.speedMs * 0.9,
+                color:       randomCarColor(rp.route.vehicleMode),
+                typeIdx:     randomVehicleType(rp.route.vehicleMode),
+                vehicleMode: rp.route.vehicleMode ?? MODE,
+                state:       isParked ? 'parked' : 'moving',
                 departAt,
                 canPark:   rp.canPark,
                 noRespawn: true,
@@ -4455,6 +4471,7 @@
               const endNode     = rp.route.midEndNode;
               const chainCandidates = routePaths.filter(
                 other => other !== rp && other.route.midStartNode === endNode
+                  && (other.route.vehicleMode ?? MODE) === (rp.route.vehicleMode ?? MODE)
               );
               let pendingPath = null;
               if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
@@ -4462,12 +4479,13 @@
               }
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
-                path:      rp.path,
+                path:        rp.path,
                 offset,
-                speed:     rp.path.speedMs * 0.9,
-                color:     randomCarColor(),
-                typeIdx:   randomVehicleType(),
-                state:     isParked ? 'parked' : 'moving',
+                speed:       rp.path.speedMs * 0.9,
+                color:       randomCarColor(rp.route.vehicleMode),
+                typeIdx:     randomVehicleType(rp.route.vehicleMode),
+                vehicleMode: rp.route.vehicleMode ?? MODE,
+                state:       isParked ? 'parked' : 'moving',
                 departAt,
                 canPark:   rp.canPark,
                 noRespawn: true,
@@ -4526,6 +4544,7 @@
             const endNode   = rp.route.midEndNode;
             const chainCandidates = routePaths.filter(
               other => other !== rp && other.route.midStartNode === endNode
+                && (other.route.vehicleMode ?? MODE) === (rp.route.vehicleMode ?? MODE)
             );
 
             for (let i = 0; i < count; i++) {
@@ -4549,12 +4568,13 @@
                 : 0;
 
               list.push({
-                path:      rp.path,
-                offset:    wp.offset,
-                speed:     rp.path.speedMs * 0.9,
-                color:     randomCarColor(),
-                typeIdx:   randomVehicleType(),
-                state:     isParked ? 'parked' : 'moving',
+                path:        rp.path,
+                offset:      wp.offset,
+                speed:       rp.path.speedMs * 0.9,
+                color:       randomCarColor(rp.route.vehicleMode),
+                typeIdx:     randomVehicleType(rp.route.vehicleMode),
+                vehicleMode: rp.route.vehicleMode ?? MODE,
+                state:       isParked ? 'parked' : 'moving',
                 departAt,
                 canPark:   rp.canPark,
                 noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
@@ -4590,12 +4610,14 @@
           for (let i = 0; i < count; i++) {
             // Spreid N auto's gelijkmatig over één cyclus
             const departAt = now + (i / count) * cycleTime / timeScale;
+            const segVehicleMode = MODE === 'MIXED' ? ((seg.props.mode || 'CAR').toUpperCase()) : MODE;
             list.push({
               path,
-              offset:   0,
-              speed:    0,
-              color:    randomCarColor(),
-              typeIdx:  randomVehicleType(),
+              offset:      0,
+              speed:       0,
+              color:       randomCarColor(segVehicleMode),
+              typeIdx:     randomVehicleType(segVehicleMode),
+              vehicleMode: segVehicleMode,
               state:    'spawning',
               departAt,
               canPark:  false,     // geen parkeren in segment-modus
@@ -4634,21 +4656,24 @@
      */
     function spawnProductionCar(rp) {
       // Route-chaining: ~20% kans als er een aansluitende route beschikbaar is
+      const vm = rp.route.vehicleMode ?? MODE;
       const endNode = rp.route.midEndNode;
       const allPaths = [...odGroups.values()].flatMap(g => g.paths);
       const chainCandidates = rp.isBoundary
         ? []
-        : allPaths.filter(other => other !== rp && other.route.midStartNode === endNode);
+        : allPaths.filter(other => other !== rp && other.route.midStartNode === endNode
+            && (other.route.vehicleMode ?? MODE) === vm);
       const pendingPath = (chainCandidates.length && Math.random() < 0.20)
         ? chainCandidates[Math.floor(Math.random() * chainCandidates.length)].path
         : null;
 
       cars.push({
-        path:      rp.path,
-        offset:    0,
-        speed:     0,
-        color:     randomCarColor(),
-        typeIdx:   randomVehicleType(),
+        path:        rp.path,
+        offset:      0,
+        speed:       0,
+        color:       randomCarColor(vm),
+        typeIdx:     randomVehicleType(vm),
+        vehicleMode: vm,
         state:     'moving',
         departAt:  0,
         canPark:   rp.canPark,
@@ -4713,7 +4738,7 @@
           const cosLat  = Math.cos(lat * Math.PI / 180);
           pLon = lon + (PARK_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
           pLat = lat + (PARK_OFFSET_M / 110540) * Math.cos(bearRad);
-        } else if (MODE === 'BIKE') {
+        } else if ((c.vehicleMode ?? MODE) === 'BIKE') {
           // Fiets: 1.5 m naar rechts (bearing + 90° = loodrecht rechts)
           const bearRad = (bearing + 90) * Math.PI / 180;
           const cosLat  = Math.cos(lat * Math.PI / 180);
@@ -4721,7 +4746,7 @@
           pLat = lat + (BIKE_OFFSET_M / 110540) * Math.cos(bearRad);
         }
         carData[i] = {
-          position:    [pLon, pLat, MODE === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
+          position:    [pLon, pLat, (c.vehicleMode ?? MODE) === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
           orientation: [0, 90 - bearing, 0],
           color:       c.color,
           typeIdx:     c.typeIdx,
@@ -5346,7 +5371,9 @@
 
 
     function makeCarLayers(data) {
-      const vtypes = MODE === 'BIKE' ? BIKE_VEHICLE_TYPES : VEHICLE_TYPES;
+      const vtypes = MODE === 'BIKE'  ? BIKE_VEHICLE_TYPES :
+                     MODE === 'MIXED' ? [...VEHICLE_TYPES, ...BIKE_VEHICLE_TYPES] :
+                                        VEHICLE_TYPES;
       const layers = [];
       for (let ti = 0; ti < vtypes.length; ti++) {
         const vt       = vtypes[ti];
@@ -7098,10 +7125,11 @@
         nodeLinkMap.set(p.linkId,  { fromNode: p.fromNode, toNode: p.toNode });
         if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
         adj.get(p.fromNode).push({
-          toNode:  p.toNode,
-          length:  p.length || 1,
-          coords:  c,
-          speedMs: p.speed > 0 ? p.speed / 3.6 : 10,
+          toNode:   p.toNode,
+          length:   p.length || 1,
+          coords:   c,
+          speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+          linkMode: p.mode ? p.mode.toUpperCase() : null,
         });
       }
       // Vervang geojson.features met een nieuwe array zodat deck.gl de referentiewijziging detecteert
@@ -7135,60 +7163,22 @@
 
       // ── Routes ───────────────────────────────────────────────────────────
       try {
-        const rr = await fetch(mkUrl('ROUTES'));
-        if (rr.ok) {
-          const routesFc = await rr.json();
-          // Herbouw routeList (zelfde logica als initieel laden)
-          routeList.length = 0;
-
-          // Pre-pass: detecteer absolute trips/dag (adjust_core) vs fracties (prepare_core)
-          const zoneTripSumMapR = new Map();
-          for (const feat of routesFc.features) {
-            const fz = feat.properties.fromZoneId;
-            for (const r of feat.properties.routes ?? [])
-              zoneTripSumMapR.set(fz, (zoneTripSumMapR.get(fz) ?? 0) + (r.trips ?? 0));
-          }
-
-          for (const feat of routesFc.features) {
-            const routes     = feat.properties.routes;
-            const fromZoneId = feat.properties.fromZoneId;
-            const toZoneId   = feat.properties.toZoneId;
-            if (!routes) continue;
-
-            const zoneSum    = zoneTripSumMapR.get(fromZoneId) ?? 1;
-            const isAbsolute = zoneSum > 1.5;
-
-            for (const r of routes) {
-              const fromBoundary = zoneMap.get(fromZoneId)?.boundary ?? false;
-              const toBoundary   = zoneMap.get(toZoneId)?.boundary   ?? false;
-              const skipStart = fromBoundary ? 0 : N_SKIP;
-              const skipEnd   = toBoundary   ? 0 : N_SKIP;
-              const minLen    = skipStart + skipEnd + 1;
-              if (!r.linkPath || r.linkPath.length < minLen) continue;
-              const sliced   = skipEnd > 0 ? r.linkPath.slice(skipStart, -skipEnd) : r.linkPath.slice(skipStart);
-              const innerIds = sliced.map(id => parseInt(id));
-              if (!innerIds.length) continue;
-              const firstLink = nodeLinkMap.get(innerIds[0]);
-              const lastLink  = nodeLinkMap.get(innerIds[innerIds.length - 1]);
-              if (!firstLink || !lastLink) continue;
-              const validInnerIds = innerIds.filter(id => linkGeomMap.get(id)?.length >= 2);
-              if (!validInnerIds.length) continue;
-              routeList.push({
-                innerIds:         validInnerIds,
-                fromZoneId, toZoneId,
-                midStartNode:     firstLink.fromNode,
-                midEndNode:       lastLink.toNode,
-                fromBoundary,
-                toBoundary,
-                originProduction: isAbsolute ? zoneSum : (feat.properties.originProduction ?? 0),
-                weight:           isAbsolute ? r.trips / zoneSum : r.trips,
-              });
-            }
-          }
-          totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
-          routeMode = routeList.length > 0;
-          buildLinkRouteMap();
+        routeList.length = 0;
+        if (MODE === 'MIXED') {
+          const mkModeUrl = m => mkUrl('ROUTES').replace(/mode=[^&]+/, `mode=${m}`);
+          const [carFc, bikeFc] = await Promise.all([
+            fetch(mkModeUrl('CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch(mkModeUrl('BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
+          ]);
+          _parseAndAddRoutes(carFc,  'CAR');
+          _parseAndAddRoutes(bikeFc, 'BIKE');
+        } else {
+          const rr = await fetch(mkUrl('ROUTES'));
+          if (rr.ok) _parseAndAddRoutes(await rr.json(), MODE);
         }
+        totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
+        routeMode = routeList.length > 0;
+        buildLinkRouteMap();
       } catch (e) { console.warn('Routes herlaad mislukt:', e); }
 
       // ── Node-laag bijwerken als die actief is ─────────────────────────────
