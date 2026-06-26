@@ -4696,6 +4696,7 @@
     function computeCarData() {
       if (carData.length !== cars.length) carData = new Array(cars.length);
       const PARK_OFFSET_M = 3.5;
+      const BIKE_OFFSET_M = 1.5;  // fietsen rijden rechts van het wegmidden
       for (let i = 0; i < cars.length; i++) {
         const c = cars[i];
         if (c.state === 'spawning') {
@@ -4712,6 +4713,12 @@
           const cosLat  = Math.cos(lat * Math.PI / 180);
           pLon = lon + (PARK_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
           pLat = lat + (PARK_OFFSET_M / 110540) * Math.cos(bearRad);
+        } else if (MODE === 'BIKE') {
+          // Fiets: 1.5 m naar rechts (bearing + 90° = loodrecht rechts)
+          const bearRad = (bearing + 90) * Math.PI / 180;
+          const cosLat  = Math.cos(lat * Math.PI / 180);
+          pLon = lon + (BIKE_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
+          pLat = lat + (BIKE_OFFSET_M / 110540) * Math.cos(bearRad);
         }
         carData[i] = {
           position:    [pLon, pLat, MODE === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
@@ -5024,6 +5031,52 @@
           if (linkEditActive && linkSelectMode === 'polygon') return;
           map.getCanvas().style.cursor = (linkEditActive && info.object) ? 'pointer' : '';
         },
+      });
+    }
+
+    // Toon zone-grenzen als gestippelde lijn (PathLayer) wanneer modus niet 'off' is.
+    // Altijd zwart, onafhankelijk van productie/attractie-modus.
+    // BOUNDARY- en NODE-klassen worden overgeslagen (te groot of geen polygoon).
+    function makeZoneBoundaryLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new PathLayer({ id: 'zone-boundaries', data: [] });
+
+      const color = [0, 0, 0, 160];
+
+      // Extraheer buitenranden van Polygon/MultiPolygon zones
+      const paths = [];
+      for (const f of zoneFeaturesRaw) {
+        const cl = f.properties?.zoneClass;
+        if (cl === 'BOUNDARY' || cl === 'NODE') continue;
+        const geom = f.geometry;
+        if (!geom) continue;
+        if (geom.type === 'Polygon' && geom.coordinates?.[0]?.length >= 2) {
+          paths.push(geom.coordinates[0]);
+        } else if (geom.type === 'MultiPolygon') {
+          for (const poly of geom.coordinates)
+            if (poly?.[0]?.length >= 2) paths.push(poly[0]);
+        }
+      }
+      if (!paths.length) return new PathLayer({ id: 'zone-boundaries', data: [] });
+
+      // Gebruik PathStyleExtension voor gestippeld effect indien beschikbaar
+      const dashProps = deck.PathStyleExtension
+        ? { getDashArray: [6, 5], dashJustified: true,
+            extensions: [new deck.PathStyleExtension({ dash: true })] }
+        : {};
+
+      return new PathLayer({
+        id:             'zone-boundaries',
+        data:           paths,
+        pickable:       false,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 2,
+        getPath:        d => d,
+        getColor:       color,
+        getWidth:       1.5,
+        ...dashProps,
+        updateTriggers: {},
       });
     }
 
@@ -5398,7 +5451,7 @@
 
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers: [makeNetworkLayer(), makeLinkEditLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), ...makeCarLayers([...carData])],
+      layers: [makeNetworkLayer(), makeLinkEditLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
@@ -5486,6 +5539,7 @@
           makeLinkEditLayer(),
           makeSelectedLinkHighlightLayer(),
           makeWhatifRcHighlightLayer(),
+          makeZoneBoundaryLayer(),
           makeZoneCentroidLayer(),
           makeZoneRoutesLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
