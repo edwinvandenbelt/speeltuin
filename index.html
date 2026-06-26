@@ -2965,6 +2965,8 @@
     let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
     let _currentPurpose   = 'all';  // actief geselecteerd motief
     let _mapReady         = false;
+    let _libBldOrigColor   = null;  // originele Liberty building-3d kleur (voor herstel bij 'off')
+    let _libBldOrigOpacity = null;  // originele Liberty building-3d opacity
 
     // Gebouwclassificatie op basis van OSM-tags
     function classifyBuilding(props) {
@@ -3343,50 +3345,53 @@
 
     }
 
-    // Herbereken kleuren en actualiseer de kaartlaag
+    // Herbereken kleuren en actualiseer de 2D kleur-fill laag
     function updateBuildingColors(val) {
       const isScaled = val.endsWith('_scaled');
       const purpose  = isScaled ? val.slice(0, -7) : val;
       _currentPurpose = purpose;
       if (!_buildingsGeoJson || !_NORM) return;
-      _doUpdateBuildingColors(purpose, isScaled);
+      _doUpdateBuildingColors(purpose, false);  // hoogte-schaling niet gebruikt
       if (map.getSource('buildings')) {
         map.getSource('buildings').setData(_buildingsGeoJson);
-        if (map.getLayer('buildings-3d')) {
-          map.setPaintProperty('buildings-3d', 'fill-extrusion-color',  ['get', `color_${daypart}`]);
-          map.setPaintProperty('buildings-3d', 'fill-extrusion-height',
-            isScaled
-              ? ['coalesce', ['get', 'height_sc'], 4]
-              : ['coalesce', ['get', 'height'],    4]);
-        }
+        if (map.getLayer('buildings-fill'))
+          map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
       }
     }
 
     function _tryAddBuildings() {
       if (!_mapReady || !_buildingsGeoJson) return;
-      // Verberg ingebouwde Liberty-gebouwlagen
-      try {
-        for (const layer of map.getStyle().layers) {
-          if (/building/i.test(layer.id)) {
-            map.setLayoutProperty(layer.id, 'visibility', 'none');
-          }
-        }
-      } catch (_) {}
+
+      // Verberg Liberty 2D building-laag (laag zoom); de 3D-laag blijft voor de vorm
+      try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
+
+      // Maak Liberty building-3d semi-transparant zodat onze kleur-fill eronder zichtbaar is
+      if (!_libBldOrigColor && map.getLayer('building-3d')) {
+        _libBldOrigColor   = map.getPaintProperty('building-3d', 'fill-extrusion-color');
+        _libBldOrigOpacity = map.getPaintProperty('building-3d', 'fill-extrusion-opacity') ?? 1.0;
+        map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
+        map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.40);
+      }
+
+      // OGC GeoJSON-source (kleuren)
       if (!map.getSource('buildings')) {
         map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson });
+      } else {
+        map.getSource('buildings').setData(_buildingsGeoJson);
       }
-      if (!map.getLayer('buildings-3d')) {
+
+      if (!map.getLayer('buildings-fill')) {
+        // Voeg 2D fill-laag in vóór de Liberty building-3d zodat die er transparant overheen ligt
         map.addLayer({
-          id:     'buildings-3d',
-          type:   'fill-extrusion',
+          id:     'buildings-fill',
+          type:   'fill',
           source: 'buildings',
           paint: {
-            'fill-extrusion-color':   ['get', 'color_mrh'],
-            'fill-extrusion-height':  ['coalesce', ['get', 'height'], 4],
-            'fill-extrusion-base':    0,
-            'fill-extrusion-opacity': 0.75,
+            'fill-color':         ['get', `color_${daypart}`],
+            'fill-opacity':       0.9,
+            'fill-outline-color': 'transparent',
           },
-        });
+        }, map.getLayer('building-3d') ? 'building-3d' : undefined);
 
         // ── Gebouw-tooltip via native MapLibre-events ──────────────────────
         const _bTip         = document.getElementById('buildingTooltip');
@@ -3490,7 +3495,7 @@
           _bTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
         };
 
-        map.on('mouseenter', 'buildings-3d', () => {
+        map.on('mouseenter', 'buildings-fill', () => {
           if (map.getZoom() < _TOOLTIP_ZOOM) return;
           map.getCanvas().style.cursor = 'pointer';
           if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
@@ -3503,7 +3508,7 @@
           }
         });
 
-        map.on('mouseleave', 'buildings-3d', () => {
+        map.on('mouseleave', 'buildings-fill', () => {
           map.getCanvas().style.cursor = '';
           if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
           _bTipVisible = false;
@@ -3518,7 +3523,7 @@
           _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
         });
 
-        map.on('mousemove', 'buildings-3d', e => {
+        map.on('mousemove', 'buildings-fill', e => {
           if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
           if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
           _bTipLastEvent = e;
@@ -7872,8 +7877,8 @@
        updateOverlay(true);
         updateDebugPanel();
        // Gebouwkleur synchroniseren met het geselecteerde dagdeel
-       if (map.getLayer('buildings-3d')) {
-         map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
+       if (map.getLayer('buildings-fill')) {
+         map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
        }
       });
 
@@ -7956,11 +7961,23 @@
      document.getElementById('buildingPurpose').addEventListener('change', e => {
        const val = e.target.value;
        if (val === 'off') {
-         if (map.getLayer('buildings-3d'))
-           map.setLayoutProperty('buildings-3d', 'visibility', 'none');
+         // Verberg onze fill en herstel Liberty naar originele stijl
+         if (map.getLayer('buildings-fill'))
+           map.setLayoutProperty('buildings-fill', 'visibility', 'none');
+         if (map.getLayer('building-3d') && _libBldOrigColor != null) {
+           map.setPaintProperty('building-3d', 'fill-extrusion-color',   _libBldOrigColor);
+           map.setPaintProperty('building-3d', 'fill-extrusion-opacity', _libBldOrigOpacity ?? 1.0);
+         }
+         try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'visible'); } catch (_) {}
        } else {
-         if (map.getLayer('buildings-3d'))
-           map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+         // Activeer: Liberty semi-transparant, onze fill zichtbaar
+         try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
+         if (map.getLayer('building-3d')) {
+           map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
+           map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.40);
+         }
+         if (map.getLayer('buildings-fill'))
+           map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
          updateBuildingColors(val);
        }
      });
