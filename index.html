@@ -3036,7 +3036,7 @@
       // Hierdoor erft een parkeerterrein in een woonwijk de woonwijk-scores, en een
       // parkeergarage bij een winkelcentrum de commerciële scores.
       if (['parking','garage','garages','carport','bicycle_parking'].includes(b)
-          || amenity === 'parking' || amenity === 'fuel')
+          || amenity === 'parking' || amenity === 'parking_space' || amenity === 'fuel')
         return 'parking';
 
       return 'other';
@@ -3213,13 +3213,12 @@
         }
       }
 
-      // Eerste pass: ken zone + type toe aan elk gebouw; sommeer vloeroppervlak per zone×type
-      const zoneTypeAreaMap = new Map();  // key: "{zoneId}|{type}" → totaal vloeroppervlak
+      // Eerste pass: ken zone + type toe aan elk gebouw; sla centroïde op voor nabijheidsmatching
       for (const f of _buildingsRaw.features) {
         const p    = f.properties;
         let   type = classifyBuilding(p);
         const coords = f.geometry?.coordinates;
-        if (!coords) { p._bzoneProps = null; p._bzoneId = null; p._btype = type; p._floorArea = 0; continue; }
+        if (!coords) { p._bzoneProps = null; p._bzoneId = null; p._btype = type; p._floorArea = 0; p._cx = null; p._cy = null; continue; }
 
         // Vloeroppervlak = grondoppervlak × aantal verdiepingen (min. 1)
         const footprint = _polygonArea(coords);
@@ -3227,6 +3226,7 @@
         p._floorArea    = footprint * levels;
 
         const [cx, cy] = _buildingCentroid(coords);
+        p._cx = cx; p._cy = cy;
         let foundZone = null;
         for (const z of zoneLookup) {
           if (cx < z.mnX || cx > z.mxX || cy < z.mnY || cy > z.mxY) continue;
@@ -3234,27 +3234,44 @@
         }
         p._bzoneId    = foundZone?.props?.zoneId ?? null;
         p._bzoneProps = foundZone ? foundZone.props : null;
+        p._btype      = type;
+      }
 
-        // Parkeerlocaties zonder landuse-context: herclassificeer op basis van zone-demografie.
-        // Zo gedraagt een parkeerterrein in een woonwijk zich als wonen, bij een school als
-        // onderwijs, en bij een werklocatie als kantoor (kleurt mee in het productieprofiel).
-        if (type === 'parking' && p._bzoneProps) {
-          const hh  = p._bzoneProps.huishoudens    ?? 0;
-          const ap  = p._bzoneProps.arbeidsplaatsen ?? 0;
-          const edu = (p._bzoneProps.leerlingplaatsen_basisonderwijs            || 0)
-                    + (p._bzoneProps.leerlingplaatsen_middelbaaronderwijs        || 0)
-                    + (p._bzoneProps.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
-                    + (p._bzoneProps.leerlingplaatsen_hogeronderwijs             || 0)
-                    || (p._bzoneProps.arbeidsplaatsen_onderwijsfunctie           || 0);
-          if      (edu > hh && edu > ap) type = 'education';
-          else if (hh  > ap)             type = 'residential';
-          else if (ap  > hh)             type = 'office';
-          // gelijke verdeling → bewaar 'parking' (neutraal grijs via _BUILDING_SCORES)
+      // Herclassificeer parkeergebouwen op basis van nabijgelegen gebouwen (binnen 100 m).
+      // Inverse-afstand weging: dichter bij = meer invloed.
+      {
+        const _PARK_RADIUS_M = 100;
+        const R_LAT = _PARK_RADIUS_M / 110540;  // graden breedte voor snelle voorfilter
+        for (const f of _buildingsRaw.features) {
+          const p = f.properties;
+          if (p._btype !== 'parking' || p._cx == null) continue;
+          const latCos = Math.cos(p._cy * Math.PI / 180);
+          const scores = {};
+          for (const nb of _buildingsRaw.features) {
+            const np = nb.properties;
+            if (np._btype === 'parking' || np._btype === 'other' || np._cx == null) continue;
+            if (Math.abs(np._cy - p._cy) > R_LAT) continue;  // snelle lat-voorfilter
+            const dx = (np._cx - p._cx) * latCos * 111320;
+            const dy = (np._cy - p._cy) * 110540;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > _PARK_RADIUS_M || dist < 0.1) continue;
+            scores[np._btype] = (scores[np._btype] || 0) + 1 / dist;
+          }
+          // Kies type met hoogste gewogen score; geen buren → blijft 'parking' (neutraal grijs)
+          let bestType = null, bestScore = 0;
+          for (const [t, s] of Object.entries(scores)) {
+            if (s > bestScore) { bestScore = s; bestType = t; }
+          }
+          if (bestType) p._btype = bestType;
         }
+      }
 
-        p._btype = type;
-        if (p._bzoneId) {
-          const key = `${p._bzoneId}|${type}`;
+      // Sommeer vloeroppervlak per zone×type (na herclassificatie parkeren)
+      const zoneTypeAreaMap = new Map();
+      for (const f of _buildingsRaw.features) {
+        const p = f.properties;
+        if (p._bzoneId && p._floorArea) {
+          const key = `${p._bzoneId}|${p._btype}`;
           zoneTypeAreaMap.set(key, (zoneTypeAreaMap.get(key) || 0) + p._floorArea);
         }
       }
