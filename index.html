@@ -2967,6 +2967,7 @@
     let _mapReady         = false;
     let _libBldOrigColor   = null;  // originele Liberty building-3d kleur (voor herstel bij 'off')
     let _libBldOrigOpacity = null;  // originele Liberty building-3d opacity
+    let _isScaledMode      = false; // true wanneer geschaalde hoogte-modus actief is
 
     // Gebouwclassificatie op basis van OSM-tags
     function classifyBuilding(props) {
@@ -3362,17 +3363,39 @@
 
     }
 
-    // Herbereken kleuren en actualiseer de 2D kleur-fill laag
+    // Herbereken kleuren en actualiseer lagen (schaalt ook hoogte in geschaalde modus)
     function updateBuildingColors(val) {
       const isScaled = val.endsWith('_scaled');
       const purpose  = isScaled ? val.slice(0, -7) : val;
       _currentPurpose = purpose;
+      _isScaledMode   = isScaled;
       if (!_buildingsGeoJson || !_NORM) return;
-      _doUpdateBuildingColors(purpose, false);  // hoogte-schaling niet gebruikt
-      if (map.getSource('buildings')) {
-        map.getSource('buildings').setData(_buildingsGeoJson);
-        if (map.getLayer('buildings-fill'))
+      _doUpdateBuildingColors(purpose, isScaled);
+      if (!map.getSource('buildings')) return;
+      map.getSource('buildings').setData(_buildingsGeoJson);
+      if (isScaled) {
+        // Geschaalde modus: eigen fill-extrusion met height_sc, Liberty verbergen
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        if (map.getLayer('buildings-fill'))  map.setLayoutProperty('buildings-fill',  'visibility', 'none');
+        if (map.getLayer('buildings-3d')) {
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-color',  ['get', `color_${daypart}`]);
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-height', ['coalesce', ['get', 'height_sc'], 4]);
+          map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+        }
+      } else {
+        // Niet-geschaalde modus: 2D fill voor kleuren, Liberty semi-transparant voor 3D-vorm
+        if (map.getLayer('buildings-3d'))  map.setLayoutProperty('buildings-3d',  'visibility', 'none');
+        if (map.getLayer('buildings-fill')) {
           map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+          map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
+        }
+        try {
+          if (map.getLayer('building-3d')) {
+            map.setLayoutProperty('building-3d', 'visibility', 'visible');
+            map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
+            map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
+          }
+        } catch (_) {}
       }
     }
 
@@ -3387,7 +3410,7 @@
         _libBldOrigColor   = map.getPaintProperty('building-3d', 'fill-extrusion-color');
         _libBldOrigOpacity = map.getPaintProperty('building-3d', 'fill-extrusion-opacity') ?? 1.0;
         map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
-        map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.40);
+        map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
       }
 
       // OGC GeoJSON-source (kleuren)
@@ -3546,6 +3569,22 @@
           _bTipLastEvent = e;
           // Tooltip is al zichtbaar: direct positie/inhoud bijwerken
           if (_bTipVisible) _bTipRender(e);
+        });
+      }
+
+      // Fill-extrusion laag voor geschaalde modus (height_sc als hoogte, verborgen standaard)
+      if (!map.getLayer('buildings-3d')) {
+        map.addLayer({
+          id:     'buildings-3d',
+          type:   'fill-extrusion',
+          source: 'buildings',
+          layout: { visibility: 'none' },
+          paint: {
+            'fill-extrusion-color':   ['get', 'color_mrh'],
+            'fill-extrusion-height':  ['coalesce', ['get', 'height_sc'], 4],
+            'fill-extrusion-base':    0,
+            'fill-extrusion-opacity': 0.85,
+          },
         });
       }
     }
@@ -7897,6 +7936,8 @@
        if (map.getLayer('buildings-fill')) {
          map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
        }
+       if (map.getLayer('buildings-3d'))
+         map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
       });
 
       document.getElementById('fillBtns').addEventListener('click', e => {
@@ -7978,23 +8019,19 @@
      document.getElementById('buildingPurpose').addEventListener('change', e => {
        const val = e.target.value;
        if (val === 'off') {
-         // Verberg onze fill en herstel Liberty naar originele stijl
+         // Verberg onze lagen en herstel Liberty naar originele stijl
          if (map.getLayer('buildings-fill'))
            map.setLayoutProperty('buildings-fill', 'visibility', 'none');
+         if (map.getLayer('buildings-3d'))
+           map.setLayoutProperty('buildings-3d', 'visibility', 'none');
          if (map.getLayer('building-3d') && _libBldOrigColor != null) {
            map.setPaintProperty('building-3d', 'fill-extrusion-color',   _libBldOrigColor);
            map.setPaintProperty('building-3d', 'fill-extrusion-opacity', _libBldOrigOpacity ?? 1.0);
          }
          try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'visible'); } catch (_) {}
        } else {
-         // Activeer: Liberty semi-transparant, onze fill zichtbaar
+         // updateBuildingColors regelt scaled/non-scaled mode switching volledig
          try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
-         if (map.getLayer('building-3d')) {
-           map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
-           map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.40);
-         }
-         if (map.getLayer('buildings-fill'))
-           map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
          updateBuildingColors(val);
        }
      });
