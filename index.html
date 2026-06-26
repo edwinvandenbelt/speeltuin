@@ -759,6 +759,62 @@
       overflow: hidden;
     }
     #settingsPanel.sp-visible { display: block; }
+
+    /* ── Voertuigteller-paneel ───────────────────────────────────── */
+    #counterPanel {
+      display: none;
+      position: fixed;
+      top: 52px;
+      z-index: 30;
+      width: 290px;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid rgba(126,200,227,0.25);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    #counterPanel.cp-visible { display: block; }
+    #cpHeader {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(126,200,227,0.08);
+      border-bottom: 1px solid rgba(126,200,227,0.15);
+      font-size: 12px; font-weight: 600; color: #7ec8e3; letter-spacing: 0.3px;
+    }
+    #cpHeader button {
+      background: none; border: none; color: #5a6272; cursor: pointer;
+      font-size: 15px; padding: 0; line-height: 1; transition: color 0.15s;
+    }
+    #cpHeader button:hover { color: #c9d6e8; }
+    #cpBody { padding: 8px; max-height: 380px; overflow-y: auto; }
+    .cp-hint {
+      color: rgba(255,255,255,0.35); font-size: 11px;
+      padding: 10px 4px; text-align: center; line-height: 1.5;
+    }
+    .cp-counter {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(126,200,227,0.12);
+      border-radius: 8px; margin-bottom: 6px; overflow: hidden;
+    }
+    .cp-counter-head {
+      display: flex; align-items: center; gap: 4px;
+      padding: 5px 8px 5px 10px;
+      background: rgba(126,200,227,0.06);
+      font-size: 11px; color: #7ec8e3; font-weight: 600;
+    }
+    .cp-counter-head .cp-link-label { flex: 1; }
+    .cp-ctrl { background: none; border: none; cursor: pointer; padding: 1px 4px; line-height: 1; border-radius: 3px; font-size: 12px; }
+    .cp-ctrl.cp-reset { color: rgba(126,200,227,0.5); border: 1px solid rgba(126,200,227,0.2); font-size: 11px; }
+    .cp-ctrl.cp-reset:hover { background: rgba(126,200,227,0.12); color: #7ec8e3; }
+    .cp-ctrl.cp-remove { color: rgba(255,255,255,0.3); font-size: 14px; }
+    .cp-ctrl.cp-remove:hover { color: #e57373; }
+    .cp-counter-rows { padding: 6px 10px 8px; }
+    .cp-row { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: rgba(255,255,255,0.82); padding: 1px 0; }
+    .cp-dir { color: #7ec8e3; font-weight: 700; min-width: 14px; font-size: 13px; }
+    .cp-total { font-weight: 700; min-width: 30px; }
+    .cp-modes { flex: 1; color: rgba(255,255,255,0.42); font-size: 10px; }
+    .cp-elapsed { font-size: 10px; color: rgba(255,255,255,0.28); padding-top: 3px; }
     #spHeader {
       padding: 11px 14px 10px;
       border-bottom: 1px solid rgba(255,255,255,0.07);
@@ -1041,6 +1097,7 @@
     <button class="tb-btn edit-btn" id="nodeEditBtn" data-i18n-title="nodeEditTitle" title="Productie/attractie per knoop wijzigen">&#9673;</button>
     <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
     <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
+    <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
     <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
     <button class="tb-btn" id="viewChangesBtn"
             data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
@@ -1118,6 +1175,17 @@
       <div class="sp-section">
         <button id="spApply" data-i18n="settingsApplyBtn">Toepassen</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Counter-paneel (voertuigtellers per wegvak) -->
+  <div id="counterPanel">
+    <div id="cpHeader">
+      <span data-i18n="counterPanelTitle">Voertuigtellers</span>
+      <button id="cpClose">×</button>
+    </div>
+    <div id="cpBody">
+      <div class="cp-hint" id="cpHint" data-i18n="counterHint">Klik op een wegvak om een teller te plaatsen.</div>
     </div>
   </div>
 
@@ -1545,6 +1613,9 @@
       badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',
       // Selected Link Analysis
       selectedLinkTitle:'Herkomst/bestemming per wegvak',
+      counterBtnTitle:'Voertuigteller plaatsen/verwijderen',
+      counterPanelTitle:'Voertuigtellers',
+      counterHint:'Klik op een wegvak om een teller te plaatsen.',
       // What-if wegafsluiting
       whatifRcBtnTitle:'What-if wegafsluiting',
       whatifRcTitle:'What-if wegafsluiting',
@@ -1716,6 +1787,9 @@
       badgeLeft:'Calculated scenario', badgeRight:'Source scenario',
       // Selected Link Analysis
       selectedLinkTitle:'Origin/destination per road link',
+      counterBtnTitle:'Place/remove vehicle counter',
+      counterPanelTitle:'Vehicle counters',
+      counterHint:'Click a road link to place a counter.',
       // What-if road closure
       whatifRcBtnTitle:'What-if road closure',
       whatifRcTitle:'What-if road closure',
@@ -1887,6 +1961,9 @@
       badgeLeft:'Laskettu skenaario', badgeRight:'Lähdeskenaario',
       // Selected Link Analysis
       selectedLinkTitle:'Lähtö/kohde tiejaksokohtaisesti',
+      counterBtnTitle:'Aseta/poista ajoneuvolaskuri',
+      counterPanelTitle:'Ajoneuvolaskurit',
+      counterHint:'Napsauta tiejaksoa asettaaksesi laskurin.',
       // What-if tiesulku
       whatifRcBtnTitle:'What-if tiesulku',
       whatifRcTitle:'What-if tiesulku',
@@ -4796,6 +4873,12 @@
     let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
     let selectedLinkActive = false;   // true als de link-selectie-modus actief is
     let hoveredLinkId      = null;    // linkId onder de cursor (bijgehouden via onHover)
+
+    // ── Voertuigtellers ───────────────────────────────────────────────────────
+    let _counterList      = [];           // [{ id, linkId, line, bearing, midLon, midLat, counts, startTime }]
+    let _counterPlaceMode = false;        // true terwijl plaatsings-modus actief is
+    let _counterIdSeq     = 0;            // oplopende teller voor counter-ID's
+    const _counterPrevPos = new WeakMap(); // car → { pos:[lon,lat], path } vorige frame
     let nodeSelectMode   = 'click';  // 'click' | 'polygon'
     let polygonVertices  = [];       // [[lon, lat], ...]
     let polygonNodesInside = [];     // zone-knopen binnen de gesloten polygon
@@ -4923,11 +5006,13 @@
         pickable: !linkEditActive,
         onHover: info => {
           const { object } = info;
-          if (selectedLinkActive || whatifRcActive) {
+          if (selectedLinkActive || whatifRcActive || _counterPlaceMode) {
             hoveredLinkId = object?.properties?.linkId ?? null;
           }
           if (whatifRcActive) {
             map.getCanvas().style.cursor = object ? 'pointer' : '';
+          } else if (_counterPlaceMode) {
+            map.getCanvas().style.cursor = object ? 'crosshair' : '';
           }
           // Segment-tooltip met 1 s vertraging
           if (object) {
@@ -5369,6 +5454,183 @@
       });
     }
 
+    // ── Voertuigteller: hulpfuncties ─────────────────────────────────────────
+
+    /**
+     * Berekent de geometrie van de tellerslijn loodrecht op een wegvak.
+     * Geeft { midLon, midLat, bearing, line: [[lon,lat],[lon,lat]] }
+     */
+    function _computeCounterGeom(coords) {
+      const totalLen = segmentLength(coords);
+      const [midLon, midLat, bearing] = interpolatePosition(coords, 0.5, totalLen);
+      const halfLen    = 20; // m — halve breedte van de tellerslijn
+      const perpBr     = (bearing + 90) % 360;
+      const cosLat     = Math.cos(midLat * Math.PI / 180);
+      const offLon = b => (halfLen / 111320) / cosLat * Math.sin(b * Math.PI / 180);
+      const offLat = b => (halfLen / 110540) * Math.cos(b * Math.PI / 180);
+      return {
+        midLon, midLat, bearing,
+        line: [
+          [midLon + offLon(perpBr),           midLat + offLat(perpBr)],
+          [midLon + offLon((perpBr + 180) % 360), midLat + offLat((perpBr + 180) % 360)],
+        ],
+      };
+    }
+
+    /**
+     * Geeft true als lijnstuk [a,b] het lijnstuk [c,d] snijdt (2D, lon/lat als vlak).
+     */
+    function _segmentsIntersect(a, b, c, d) {
+      function cross(o, u, v) {
+        return (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
+      }
+      const d1 = cross(c, d, a), d2 = cross(c, d, b);
+      const d3 = cross(a, b, c), d4 = cross(a, b, d);
+      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+      function onSeg(p, q, r) {
+        return Math.min(p[0], q[0]) <= r[0] && r[0] <= Math.max(p[0], q[0]) &&
+               Math.min(p[1], q[1]) <= r[1] && r[1] <= Math.max(p[1], q[1]);
+      }
+      if (d1 === 0 && onSeg(c, d, a)) return true;
+      if (d2 === 0 && onSeg(c, d, b)) return true;
+      if (d3 === 0 && onSeg(a, b, c)) return true;
+      if (d4 === 0 && onSeg(a, b, d)) return true;
+      return false;
+    }
+
+    /** Plaatst een nieuwe teller op het gegeven wegvak (linkId). */
+    function _placeCounter(linkId) {
+      const numId  = Number(linkId);
+      const coords = linkGeomMap.get(numId) ?? linkGeomMap.get(linkId);
+      if (!coords) return;
+      const geom = _computeCounterGeom(coords);
+      _counterList.push({
+        id:        ++_counterIdSeq,
+        linkId:    isNaN(numId) ? linkId : numId,
+        line:      geom.line,
+        bearing:   geom.bearing,
+        midLon:    geom.midLon,
+        midLat:    geom.midLat,
+        counts: {
+          forward:  { total: 0, CAR: 0, BIKE: 0, OTHER: 0 },
+          backward: { total: 0, CAR: 0, BIKE: 0, OTHER: 0 },
+        },
+        simElapsed: 0,
+      });
+      _updateCounterPanel();
+    }
+
+    /** Verwijdert de teller met het gegeven id. */
+    function _removeCounter(id) {
+      _counterList = _counterList.filter(c => c.id !== id);
+      _updateCounterPanel();
+    }
+
+    /** Reset de telstanden van teller met het gegeven id. */
+    function _resetCounter(id) {
+      const ct = _counterList.find(c => c.id === id);
+      if (!ct) return;
+      ct.counts.forward  = { total: 0, CAR: 0, BIKE: 0, OTHER: 0 };
+      ct.counts.backward = { total: 0, CAR: 0, BIKE: 0, OTHER: 0 };
+      ct.simElapsed = 0;
+      _updateCounterPanel();
+    }
+
+    /** Herrendert het teller-paneel op basis van _counterList. */
+    function _updateCounterPanel() {
+      const body  = document.getElementById('cpBody');
+      const hint  = document.getElementById('cpHint');
+      if (!body) return;
+
+      // Hint: zichtbaar als er geen tellers zijn EN de modus actief is
+      if (hint) hint.style.display = (_counterList.length === 0) ? '' : 'none';
+
+      const modeStr = counts => {
+        const parts = [];
+        if (counts.CAR)   parts.push(`auto:${counts.CAR}`);
+        if (counts.BIKE)  parts.push(`fiets:${counts.BIKE}`);
+        if (counts.OTHER) parts.push(`overig:${counts.OTHER}`);
+        return parts.length ? parts.join(' · ') : '';
+      };
+
+      const elapsed = ct => {
+        const s = Math.max(0, ct.simElapsed ?? 0);
+        return s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+      };
+
+      // Verwijder rijen voor tellers die niet meer bestaan
+      body.querySelectorAll('.cp-counter').forEach(el => {
+        if (!_counterList.find(c => c.id === +el.dataset.id)) el.remove();
+      });
+
+      for (const ct of _counterList) {
+        const existing = body.querySelector(`.cp-counter[data-id="${ct.id}"]`);
+        const fwd = ct.counts.forward, bwd = ct.counts.backward;
+        const fModes = modeStr(fwd), bModes = modeStr(bwd);
+        const html = `
+          <div class="cp-counter-head">
+            <span class="cp-link-label">wegvak ${ct.linkId}</span>
+            <button class="cp-ctrl cp-reset" data-reset="${ct.id}" title="Reset">↺</button>
+            <button class="cp-ctrl cp-remove" data-remove="${ct.id}" title="Verwijder">×</button>
+          </div>
+          <div class="cp-counter-rows">
+            <div class="cp-row">
+              <span class="cp-dir">→</span>
+              <span class="cp-total">${fwd.total}</span>
+              <span class="cp-modes">${fModes}</span>
+            </div>
+            <div class="cp-row">
+              <span class="cp-dir">←</span>
+              <span class="cp-total">${bwd.total}</span>
+              <span class="cp-modes">${bModes}</span>
+            </div>
+            <div class="cp-elapsed">${elapsed(ct)} verstreken (sim)</div>
+          </div>`;
+        if (existing) {
+          existing.innerHTML = html;
+          existing.querySelector('.cp-reset').onclick  = () => _resetCounter(ct.id);
+          existing.querySelector('.cp-remove').onclick = () => { _removeCounter(ct.id); updateOverlay(true); };
+        } else {
+          const el = document.createElement('div');
+          el.className = 'cp-counter';
+          el.dataset.id = ct.id;
+          el.innerHTML  = html;
+          el.querySelector('.cp-reset').onclick  = () => _resetCounter(ct.id);
+          el.querySelector('.cp-remove').onclick = () => { _removeCounter(ct.id); updateOverlay(true); };
+          body.appendChild(el);
+        }
+      }
+    }
+
+    /**
+     * Deck.gl PathLayer met alle geplaatste tellers + eventueel een preview-lijn.
+     * Geplaatste tellers: cyaan (#00ff78). Preview: geel (#ffdc00).
+     */
+    function makeCounterLayer() {
+      const lines = _counterList.map(ct => ({ path: ct.line, preview: false }));
+
+      // Preview-lijn: toon loodrecht op het wegvak waarover de cursor zweeft
+      if (_counterPlaceMode && hoveredLinkId !== null) {
+        const numId  = Number(hoveredLinkId);
+        const coords = linkGeomMap.get(numId) ?? linkGeomMap.get(hoveredLinkId);
+        if (coords) {
+          const geom = _computeCounterGeom(coords);
+          lines.push({ path: geom.line, preview: true });
+        }
+      }
+
+      return new PathLayer({
+        id:             'counters',
+        data:           lines,
+        getPath:        d => d.path,
+        getColor:       d => d.preview ? [255, 220, 0, 200] : [0, 255, 120, 230],
+        getWidth:       3,
+        widthUnits:     'pixels',
+        widthMinPixels: 2,
+        pickable:       false,
+      });
+    }
 
     function makeCarLayers(data) {
       const vtypes = MODE === 'BIKE'  ? BIKE_VEHICLE_TYPES :
@@ -5520,6 +5782,12 @@
     // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
     // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
     map.on('click', () => {
+      // Teller plaatsen: hogere prioriteit dan link-selectie
+      if (_counterPlaceMode && hoveredLinkId !== null) {
+        _placeCounter(hoveredLinkId);
+        updateOverlay(true);
+        return;
+      }
       // Link-selectie via selectedLinkActive + hoveredLinkId
       if (selectedLinkActive && hoveredLinkId !== null) {
         selectedLinkId = (selectedLinkId === hoveredLinkId) ? null : hoveredLinkId;
@@ -5569,6 +5837,7 @@
           makeZoneBoundaryLayer(),
           makeZoneCentroidLayer(),
           makeZoneRoutesLayer(),
+          makeCounterLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
@@ -5925,6 +6194,39 @@
         }
 
         computeCarData();
+
+        // ── Voertuigtellers: passage-detectie ────────────────────────────────
+        if (_counterList.length > 0) {
+          for (const ct of _counterList) ct.simElapsed = (ct.simElapsed ?? 0) + dt;
+          for (let i = 0; i < cars.length; i++) {
+            const c  = cars[i];
+            if (c.state !== 'moving') { _counterPrevPos.delete(c); continue; }
+            const cd = carData[i];
+            if (!cd || cd.position[2] === -9999) { _counterPrevPos.delete(c); continue; }
+            const curPos  = [cd.position[0], cd.position[1]];
+            const prevData = _counterPrevPos.get(c);
+            if (prevData && prevData.path === c.path) {
+              const prevPos = prevData.pos;
+              for (const ct of _counterList) {
+                if (_segmentsIntersect(prevPos, curPos, ct.line[0], ct.line[1])) {
+                  // Richting: dot-product van bewegingsvector met link-richting
+                  const dx    = curPos[0] - prevPos[0];
+                  const dy    = curPos[1] - prevPos[1];
+                  const brRad = ct.bearing * Math.PI / 180;
+                  const dir   = (dx * Math.sin(brRad) + dy * Math.cos(brRad)) >= 0
+                    ? 'forward' : 'backward';
+                  const vm     = c.vehicleMode ?? MODE;
+                  const bucket = vm === 'CAR' ? 'CAR' : vm === 'BIKE' ? 'BIKE' : 'OTHER';
+                  ct.counts[dir].total++;
+                  ct.counts[dir][bucket]++;
+                }
+              }
+            }
+            _counterPrevPos.set(c, { pos: curPos, path: c.path });
+          }
+          _updateCounterPanel();
+        }
+
         updateOverlay(true);
       }
       if (paused) lastT = null; else lastT = now;
@@ -8146,8 +8448,45 @@
          // updateBuildingColors regelt scaled/non-scaled mode switching volledig
          try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
          updateBuildingColors(val);
-       }
-     });
+        }
+      });
+
+    // ── Voertuigteller-paneel ────────────────────────────────────────────────
+
+    const counterBtn   = document.getElementById('counterBtn');
+    const counterPanel = document.getElementById('counterPanel');
+
+    function _openCounterPanel() {
+      const r = counterBtn.getBoundingClientRect();
+      counterPanel.style.top  = (r.bottom + 4) + 'px';
+      counterPanel.style.left = Math.min(r.left, window.innerWidth - 302) + 'px';
+      counterPanel.classList.add('cp-visible');
+      _updateCounterPanel();
+    }
+
+    function _closeCounterPanel() {
+      counterPanel.classList.remove('cp-visible');
+      _counterPlaceMode = false;
+      counterBtn.classList.remove('active');
+      updateOverlay(true);
+    }
+
+    counterBtn.addEventListener('click', () => {
+      if (counterPanel.classList.contains('cp-visible')) {
+        // Paneel open: knop togglet plaatsings-modus
+        _counterPlaceMode = !_counterPlaceMode;
+        counterBtn.classList.toggle('active', _counterPlaceMode);
+        updateOverlay(true);
+      } else {
+        // Paneel gesloten: open paneel en activeer plaatsings-modus
+        _openCounterPanel();
+        _counterPlaceMode = true;
+        counterBtn.classList.add('active');
+        updateOverlay(true);
+      }
+    });
+
+    document.getElementById('cpClose').addEventListener('click', _closeCounterPanel);
 
     // ── Flow-scaler knoppen ──────────────────────────────────────────────────
 
