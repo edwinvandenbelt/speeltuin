@@ -1089,6 +1089,17 @@
         </label>
       </div>
       <div class="sp-section">
+        <div class="sp-label" data-i18n="settingsBasemapLabel">Ondergrond</div>
+        <label class="sp-row">
+          <input type="radio" name="spBasemap" value="map">
+          <span data-i18n="settingsBasemapMap">Kaart</span>
+        </label>
+        <label class="sp-row">
+          <input type="radio" name="spBasemap" value="satellite">
+          <span data-i18n="settingsBasemapSat">Luchtfoto</span>
+        </label>
+      </div>
+      <div class="sp-section">
         <div class="sp-label" data-i18n="settingsLangLabel">Taal</div>
         <label class="sp-row">
           <input type="radio" name="spLang" value="NL">
@@ -1401,6 +1412,7 @@
       fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
       fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
       settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
+      settingsBasemapLabel:'Ondergrond', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto',
       spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
       timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
@@ -1581,6 +1593,7 @@
       fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
       settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
+      settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite',
       spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
       metricTitle:'Color metric',
       timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
@@ -1750,6 +1763,7 @@
       fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
       settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
+      settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva',
       spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
       timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
@@ -2968,6 +2982,8 @@
     let _libBldOrigColor   = null;  // originele Liberty building-3d kleur (voor herstel bij 'off')
     let _libBldOrigOpacity = null;  // originele Liberty building-3d opacity
     let _isScaledMode      = false; // true wanneer geschaalde hoogte-modus actief is
+    let _libertyFillLayerIds = null; // Liberty fill/background layer IDs (verborgen in satellietmodus)
+    let basemapStyle       = localStorage.getItem('basemapStyle') || 'map'; // 'map' | 'satellite'
 
     // Gebouwclassificatie op basis van OSM-tags
     function classifyBuilding(props) {
@@ -3396,6 +3412,23 @@
             map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
           }
         } catch (_) {}
+      }
+    }
+
+    // Schakel tussen kaart (Liberty vector) en satelliet (ESRI raster) ondergrond.
+    // Liberty lijnlagen (roads) en symboollagen (labels) blijven zichtbaar als overlay.
+    function _applyBasemapStyle(style) {
+      basemapStyle = style;
+      localStorage.setItem('basemapStyle', style);
+      const isSat = style === 'satellite';
+      // Toon of verberg de satelliet raster-laag
+      if (map.getLayer('satellite-bg'))
+        map.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none');
+      // Toon of verberg Liberty fill/background lagen
+      if (_libertyFillLayerIds) {
+        for (const id of _libertyFillLayerIds) {
+          try { map.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
+        }
       }
     }
 
@@ -5838,6 +5871,38 @@
       animate();
       _mapReady = true;
       _tryAddBuildings();
+
+      // ── Satelliet-ondergrond ────────────────────────────────────────────────
+      // Verzamel Liberty fill/background layer IDs die we in satellietmodus verbergen.
+      // Lijnlagen (roads) en symboollagen (labels) blijven als overlay zichtbaar.
+      _libertyFillLayerIds = map.getStyle().layers
+        .filter(l => l.type === 'background' || l.type === 'fill' || l.type === 'raster')
+        .map(l => l.id);
+
+      // Voeg ESRI World Imagery raster-source toe als ondergrond
+      if (!map.getSource('esri-satellite')) {
+        map.addSource('esri-satellite', {
+          type:        'raster',
+          tiles:       ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize:    256,
+          maxzoom:     19,
+          attribution: '© Esri, i-cubed, USDA, USGS, AEX, GeoEye',
+        });
+      }
+      if (!map.getLayer('satellite-bg')) {
+        // Invoegen vóór de eerste Liberty-laag zodat alles er bovenop ligt
+        const firstLayerId = map.getStyle().layers[0]?.id;
+        map.addLayer({
+          id:     'satellite-bg',
+          type:   'raster',
+          source: 'esri-satellite',
+          layout: { visibility: 'none' },
+          paint:  { 'raster-opacity': 1 },
+        }, firstLayerId);
+      }
+
+      // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite' had gekozen)
+      if (basemapStyle === 'satellite') _applyBasemapStyle('satellite');
     });
 
     // Zoom-event: auto-dichtheid wordt niet herberekend bij panning/zoomen
@@ -7966,6 +8031,8 @@
           const curLang = document.getElementById('langSelect').value;
           const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
           if (langRadio) langRadio.checked = true;
+          const basemapRadio = settingsPanel.querySelector(`input[name="spBasemap"][value="${basemapStyle}"]`);
+          if (basemapRadio) basemapRadio.checked = true;
           // Positioneer paneel onder de gear-knop (links-uitgelijnd, binnen viewport)
           const r = settingsBtn.getBoundingClientRect();
           settingsPanel.style.top  = (r.bottom + 4) + 'px';
@@ -7999,6 +8066,11 @@
           if (newLang && newLang !== document.getElementById('langSelect').value) {
             applyLang(newLang);
           }
+          // Lees nieuwe ondergrond-instelling en pas toe als gewijzigd
+          const newBasemap = settingsPanel.querySelector('input[name="spBasemap"]:checked')?.value;
+          if (newBasemap && newBasemap !== basemapStyle) {
+            _applyBasemapStyle(newBasemap);
+          }
           settingsPanel.classList.remove('sp-visible');
           settingsBtn.classList.remove('active');
         }
@@ -8019,16 +8091,13 @@
      document.getElementById('buildingPurpose').addEventListener('change', e => {
        const val = e.target.value;
        if (val === 'off') {
-         // Verberg onze lagen en herstel Liberty naar originele stijl
+         // Verberg alle gebouwlagen (ook Liberty-lagen)
          if (map.getLayer('buildings-fill'))
            map.setLayoutProperty('buildings-fill', 'visibility', 'none');
          if (map.getLayer('buildings-3d'))
            map.setLayoutProperty('buildings-3d', 'visibility', 'none');
-         if (map.getLayer('building-3d') && _libBldOrigColor != null) {
-           map.setPaintProperty('building-3d', 'fill-extrusion-color',   _libBldOrigColor);
-           map.setPaintProperty('building-3d', 'fill-extrusion-opacity', _libBldOrigOpacity ?? 1.0);
-         }
-         try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'visible'); } catch (_) {}
+         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+         try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
        } else {
          // updateBuildingColors regelt scaled/non-scaled mode switching volledig
          try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
