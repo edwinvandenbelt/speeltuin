@@ -4798,7 +4798,7 @@
     function computeCarData() {
       if (carData.length !== cars.length) carData = new Array(cars.length);
       const PARK_OFFSET_M = 3.5;
-      const BIKE_OFFSET_M = 1.5;  // fietsen rijden rechts van het wegmidden
+      const BIKE_OFFSET_M = 0.4;  // fietsen rijden rechts van het wegmidden (max fietspad-halfbreedte = 0.6 m)
       for (let i = 0; i < cars.length; i++) {
         const c = cars[i];
         if (c.state === 'spawning') {
@@ -4958,6 +4958,9 @@
          getLineWidth: f => {
            if (f.properties.capacity === 0) return 1;
            const lanes = f.properties.lanes || 1;
+           const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
+           const maxW = isBike ? 1.2 : 12;   // max meter per rijstrook (fiets: 1.2 m, auto: 12 m)
+           const baseW = isBike ? 1.2 : 3;   // statische breedte per rijstrook
           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
             let v;
             if (colorMetric === 'occupancy_scaled') {
@@ -4965,20 +4968,20 @@
               v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
               // Logaritmische schaal op 0–100
               const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
-              return Math.max(1.5, t * lanes * 12);
+              return Math.max(1.5, t * lanes * maxW);
             } else {
               v = dpFlowOf(f.properties);
               const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
-              return Math.max(1.5, t * lanes * 12);
+              return Math.max(1.5, t * lanes * maxW);
             }
           }
           if (colorMetric === 'flow') {
             // Ongeschaald: breedte log-proportioneel aan uurintensiteit t.o.v. netwerk-maximum
             const v = dpFlowOf(f.properties);
             const t = Math.log1p(Math.max(0, v)) / Math.log1p(globalMaxFlow || 1);
-            return Math.max(1.5, t * lanes * 12);
+            return Math.max(1.5, t * lanes * maxW);
           }
-          return Math.max(1.5, lanes * 3);
+          return Math.max(1.5, lanes * baseW);
         },
          getLineColor: f => {
            if (f.properties.capacity === 0) return [210, 40, 40, 200];
@@ -5070,26 +5073,29 @@
         getLineWidth: f => {
           if (f.properties.capacity === 0) return 1;
           const lanes = f.properties.lanes || 1;
+          const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
+          const maxW = isBike ? 1.2 : 12;   // max meter per rijstrook (fiets: 1.2 m, auto: 12 m)
+          const baseW = isBike ? 1.2 : 3;   // statische breedte per rijstrook
           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
             let v;
             if (colorMetric === 'occupancy_scaled') {
               const flow = dpFlowOf(f.properties);
               v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
               const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
-              return Math.max(1.5, t * lanes * 12);
+              return Math.max(1.5, t * lanes * maxW);
             } else {
               v = dpFlowOf(f.properties);
               const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
-              return Math.max(1.5, t * lanes * 12);
+              return Math.max(1.5, t * lanes * maxW);
             }
           }
           if (colorMetric === 'flow') {
             // Ongeschaald: breedte log-proportioneel aan uurintensiteit t.o.v. netwerk-maximum
             const v = dpFlowOf(f.properties);
             const t = Math.log1p(Math.max(0, v)) / Math.log1p(globalMaxFlow || 1);
-            return Math.max(1.5, t * lanes * 12);
+            return Math.max(1.5, t * lanes * maxW);
           }
-          return Math.max(1.5, lanes * 3);
+          return Math.max(1.5, lanes * baseW);
         },
         getLineColor: f => {
           if (f.properties.capacity === 0) return [210, 40, 40, 200];
