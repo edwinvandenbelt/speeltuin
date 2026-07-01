@@ -4146,6 +4146,18 @@
       return mx || 1;
     })();
 
+    /** Set van absolute link-IDs die zowel als positief als negatief voorkomen in het netwerk.
+     *  Gebruikt in de intensiteit-view om bidirectionele wegen (30 km/u) smaller te tekenen. */
+    const biDirLinkIds = (() => {
+      const pos = new Set(), neg = new Set();
+      for (const seg of segments) {
+        const id = seg.props.linkId;
+        if (id > 0) pos.add(id);
+        else if (id < 0) neg.add(-id);
+      }
+      return new Set([...pos].filter(id => neg.has(id)));
+    })();
+
     /** Waarde van de actieve metric voor een feature-properties object */
     function getMetricValue(p) {
       switch (colorMetric) {
@@ -4976,10 +4988,12 @@
             }
           }
           if (colorMetric === 'flow') {
-            // Ongeschaald: breedte log-proportioneel aan uurintensiteit t.o.v. netwerk-maximum
-            const v = dpFlowOf(f.properties);
-            const t = Math.log1p(Math.max(0, v)) / Math.log1p(globalMaxFlow || 1);
-            return Math.max(1.5, t * lanes * maxW);
+            // Intensiteit-view: vaste breedte, geen schaling
+            if (isBike) return Math.max(1.5, lanes * 1);
+            const speed = f.properties.speed ?? 999;
+            const absId = Math.abs(f.properties.linkId ?? 0);
+            if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
+            return Math.max(1.5, lanes * 3);
           }
           return Math.max(1.5, lanes * baseW);
         },
@@ -5090,10 +5104,12 @@
             }
           }
           if (colorMetric === 'flow') {
-            // Ongeschaald: breedte log-proportioneel aan uurintensiteit t.o.v. netwerk-maximum
-            const v = dpFlowOf(f.properties);
-            const t = Math.log1p(Math.max(0, v)) / Math.log1p(globalMaxFlow || 1);
-            return Math.max(1.5, t * lanes * maxW);
+            // Intensiteit-view: vaste breedte, geen schaling
+            if (isBike) return Math.max(1.5, lanes * 1);
+            const speed = f.properties.speed ?? 999;
+            const absId = Math.abs(f.properties.linkId ?? 0);
+            if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
+            return Math.max(1.5, lanes * 3);
           }
           return Math.max(1.5, lanes * baseW);
         },
