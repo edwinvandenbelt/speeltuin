@@ -1156,6 +1156,10 @@
           <input type="radio" name="spBasemap" value="satellite">
           <span data-i18n="settingsBasemapSat">Luchtfoto</span>
         </label>
+        <label class="sp-row">
+          <input type="radio" name="spBasemap" value="none">
+          <span data-i18n="settingsBasemapNone">Geen</span>
+        </label>
       </div>
       <div class="sp-section">
         <div class="sp-label" data-i18n="settingsLangLabel">Taal</div>
@@ -1481,7 +1485,7 @@
       fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
       fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
       settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
-      settingsBasemapLabel:'Ondergrond', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto',
+      settingsBasemapLabel:'Ondergrond', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Geen',
       spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
       timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
@@ -1666,7 +1670,7 @@
       fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
       settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
-      settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite',
+      settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'None',
       spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
       metricTitle:'Color metric',
       timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
@@ -1840,7 +1844,7 @@
       fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
       settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
-      settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva',
+      settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Ei mitään',
       spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
       timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
@@ -3064,7 +3068,7 @@
     let _libBldOrigOpacity = null;  // originele Liberty building-3d opacity
     let _isScaledMode      = false; // true wanneer geschaalde hoogte-modus actief is
     let _libertyFillLayerIds = null; // Liberty fill/background layer IDs (verborgen in satellietmodus)
-    let basemapStyle       = localStorage.getItem('basemapStyle') || 'map'; // 'map' | 'satellite'
+    let basemapStyle       = localStorage.getItem('basemapStyle') || 'map'; // 'map' | 'satellite' | 'none'
 
     // Gebouwclassificatie op basis van OSM-tags
     function classifyBuilding(props) {
@@ -3505,19 +3509,20 @@
       }
     }
 
-    // Schakel tussen kaart (Liberty vector) en satelliet (ESRI raster) ondergrond.
+    // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
     // Liberty lijnlagen (roads) en symboollagen (labels) blijven zichtbaar als overlay.
     function _applyBasemapStyle(style) {
       basemapStyle = style;
       localStorage.setItem('basemapStyle', style);
-      const isSat = style === 'satellite';
+      const isSat  = style === 'satellite';
+      const isNone = style === 'none';
       // Toon of verberg de satelliet raster-laag
       if (map.getLayer('satellite-bg'))
         map.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none');
       // Toon of verberg Liberty fill/background lagen
       if (_libertyFillLayerIds) {
         for (const id of _libertyFillLayerIds) {
-          try { map.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
+          try { map.setLayoutProperty(id, 'visibility', (isSat || isNone) ? 'none' : 'visible'); } catch (_) {}
         }
       }
     }
@@ -6306,8 +6311,8 @@
         }, firstLayerId);
       }
 
-      // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite' had gekozen)
-      if (basemapStyle === 'satellite') _applyBasemapStyle('satellite');
+      // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite' of 'none' had gekozen)
+      if (basemapStyle === 'satellite' || basemapStyle === 'none') _applyBasemapStyle(basemapStyle);
     });
 
     // Zoom-event: auto-dichtheid wordt niet herberekend bij panning/zoomen
