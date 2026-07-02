@@ -20,3 +20,7 @@ numpy>=2.0
 
 # Windows timezone database (required by zoneinfo on Windows)
 tzdata>=2024.1
+
+# GeoParquet-ondersteuning (optioneel — vereist voor het lezen van .geoparquet/.parquet invoerbestanden)
+geopandas>=0.14
+pyarrow>=14

@@ -35,6 +35,21 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, make_response, request, send_from_directory
 
 # ---------------------------------------------------------------------------
+# GeoParquet-ondersteuning (optioneel)
+# ---------------------------------------------------------------------------
+
+try:
+    import geopandas as _gpd
+    import pyarrow.parquet as _pq
+    _GEOPANDAS_AVAILABLE = True
+except ImportError:
+    _gpd = None  # type: ignore[assignment]
+    _pq  = None  # type: ignore[assignment]
+    _GEOPANDAS_AVAILABLE = False
+
+_GEOPARQUET_EXTS = ('.geoparquet', '.parquet')
+
+# ---------------------------------------------------------------------------
 # .env laden
 # ---------------------------------------------------------------------------
 
@@ -139,6 +154,72 @@ def _work_dir() -> Path:
     d = DATA_DIR / 'work'
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _has_network_file(directory: Path, area_id: str) -> bool:
+    """Controleer of de map een NETWORK-bestand bevat (GeoJSON of GeoParquet)."""
+    if any(directory.glob(f'{area_id}-NETWORK-*.geojson')):
+        return True
+    if _GEOPANDAS_AVAILABLE:
+        for ext in _GEOPARQUET_EXTS:
+            if any(directory.glob(f'{area_id}-NETWORK-*{ext}')):
+                return True
+    return False
+
+
+def _find_data_file(directory: Path, stem: str) -> 'Path | None':
+    """Zoek een geodata-bestand: eerst GeoJSON, dan GeoParquet (als geopandas beschikbaar is)."""
+    for ext in ('.geojson', '.json'):
+        p = directory / f'{stem}{ext}'
+        if p.exists():
+            return p
+    if _GEOPANDAS_AVAILABLE:
+        for ext in _GEOPARQUET_EXTS:
+            p = directory / f'{stem}{ext}'
+            if p.exists():
+                return p
+    return None
+
+
+def _read_geodata(path: Path) -> dict:
+    """Lees een GeoJSON of GeoParquet bestand en geef een GeoJSON FeatureCollection dict terug.
+
+    Voor GeoParquet worden top-level properties (name, area_id, bbox, …) opgeslagen in de
+    Parquet-bestandsmetadata onder de sleutel ``geojson_properties``.  Als die metadata
+    ontbreekt, wordt een lege properties-dict gebruikt.
+    """
+    if path.suffix.lower() in _GEOPARQUET_EXTS:
+        if not _GEOPANDAS_AVAILABLE:
+            raise ImportError(
+                'geopandas en pyarrow zijn vereist voor het lezen van GeoParquet-bestanden. '
+                'Installeer ze via: pip install geopandas pyarrow'
+            )
+        gdf = _gpd.read_parquet(path)  # type: ignore[union-attr]
+        # Herprojecteer naar WGS 84 (EPSG:4326) als de CRS afwijkt
+        if gdf.crs is not None and not gdf.crs.equals('EPSG:4326'):
+            gdf = gdf.to_crs('EPSG:4326')
+        fc: dict = json.loads(gdf.to_json())
+        # Kolommen die als JSON-string zijn opgeslagen in Parquet terugzetten naar Python-objecten
+        # (geopandas slaat complexe types op als serialised JSON string; to_json() emit ze as-is)
+        for feat in fc.get('features', []):
+            props = feat.get('properties') or {}
+            for key, val in props.items():
+                if isinstance(val, str) and len(val) > 1 and val[0] in ('{', '['):
+                    try:
+                        props[key] = json.loads(val)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+        # Probeer top-level properties te herstellen uit Parquet-bestandsmetadata
+        try:
+            raw = _pq.read_metadata(path).metadata.get(b'geojson_properties')  # type: ignore[union-attr]
+            if raw:
+                fc['properties'] = json.loads(raw.decode('utf-8'))
+        except Exception:
+            pass
+        return fc
+    # GeoJSON / JSON
+    with open(path, encoding='utf-8') as fh:
+        return json.load(fh)
 
 
 # ---------------------------------------------------------------------------
@@ -353,10 +434,10 @@ def _find_area_dir(area_id: str) -> Path:
     """Zoek de work-submap die de bestanden voor area_id bevat."""
     work   = _work_dir()
     direct = work / area_id
-    if direct.is_dir() and any(direct.glob(f'{area_id}-NETWORK-*.geojson')):
+    if direct.is_dir() and _has_network_file(direct, area_id):
         return direct
     for subdir in work.iterdir():
-        if subdir.is_dir() and any(subdir.glob(f'{area_id}-NETWORK-*.geojson')):
+        if subdir.is_dir() and _has_network_file(subdir, area_id):
             return subdir
     return direct  # fallback (leidt tot 404 downstream)
 
@@ -365,27 +446,45 @@ def _geojson_path(area_id: str, mode: str, file_type: str) -> Path:
     return _find_area_dir(area_id) / f'{area_id}-{file_type}-{mode}.geojson'
 
 
+def _data_path(area_id: str, mode: str, file_type: str) -> 'Path | None':
+    """Zoek het beste geodata-bestand (GeoJSON heeft voorrang op GeoParquet)."""
+    return _find_data_file(_find_area_dir(area_id), f'{area_id}-{file_type}-{mode}')
+
+
 def _discover_areas() -> list:
     areas   = []
-    pattern = re.compile(r'^(.+)-NETWORK-([A-Za-z0-9_]+)\.geojson$')
+    seen: set = set()
+    pattern_geojson    = re.compile(r'^(.+)-NETWORK-([A-Za-z0-9_]+)\.geojson$')
+    pattern_geoparquet = re.compile(r'^(.+)-NETWORK-([A-Za-z0-9_]+)\.(?:geo)?parquet$')
     work    = _work_dir()
     for subdir in sorted(work.iterdir()):
         if not subdir.is_dir():
             continue
+        # Verzamel NETWORK-kandidaten: GeoJSON heeft voorrang op GeoParquet
+        candidates: dict = {}
         for f in sorted(subdir.glob('*-NETWORK-*.geojson')):
-            m = pattern.match(f.name)
-            if not m:
+            m = pattern_geojson.match(f.name)
+            if m:
+                candidates[(m.group(1), m.group(2))] = f
+        if _GEOPANDAS_AVAILABLE:
+            for ext in _GEOPARQUET_EXTS:
+                for f in sorted(subdir.glob(f'*-NETWORK-*{ext}')):
+                    m = pattern_geoparquet.match(f.name)
+                    if m:
+                        key = (m.group(1), m.group(2))
+                        if key not in candidates:
+                            candidates[key] = f
+        for (area_id, mode), f in sorted(candidates.items()):
+            if (area_id, mode) in seen:
                 continue
-            area_id = m.group(1)
-            mode    = m.group(2)
+            seen.add((area_id, mode))
             name    = area_id
             src_area_id = None
             try:
-                with open(f, encoding='utf-8') as fh:
-                    data = json.load(fh)
-                    props       = data.get('properties', {})
-                    name        = props.get('name', area_id)
-                    src_area_id = props.get('baseAreaId') or None
+                data        = _read_geodata(f)
+                props       = data.get('properties', {})
+                name        = props.get('name', area_id)
+                src_area_id = props.get('baseAreaId') or None
             except Exception:
                 pass
             if not src_area_id:
@@ -481,7 +580,7 @@ def _ogc_items_response(collection_id: str, data, self_url: str):
             {'href': self_url,                   'rel': 'self',       'type': 'application/geo+json', 'title': 'Dit document'},
             {'href': f'/collections/{collection_id}', 'rel': 'collection', 'type': 'application/json',     'title': 'Collectiebeschrijving'},
         ],
-        'timeStamp':      _dt.datetime.utcnow().isoformat() + 'Z',
+        'timeStamp':      _dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds'),
         'numberMatched':  len(features),
         'numberReturned': len(features),
     }
@@ -1049,15 +1148,20 @@ def ogc_collection_items(collection_id):
             visited.add(current_id)
             area_dir = _find_area_dir(current_id)
 
-            # Scenario-naam ophalen uit eerste gevonden NETWORK-GeoJSON
+            # Scenario-naam ophalen uit eerste gevonden NETWORK-bestand
             name = current_id
-            for nf in area_dir.glob(f'{current_id}-NETWORK-*.geojson'):
+            _nf_list = list(area_dir.glob(f'{current_id}-NETWORK-*.geojson'))
+            if not _nf_list and _GEOPANDAS_AVAILABLE:
+                for _ext in _GEOPARQUET_EXTS:
+                    _nf_list = list(area_dir.glob(f'{current_id}-NETWORK-*{_ext}'))
+                    if _nf_list:
+                        break
+            if _nf_list:
                 try:
-                    props = json.loads(nf.read_text(encoding='utf-8')).get('properties', {})
+                    props = _read_geodata(_nf_list[0]).get('properties', {})
                     name  = props.get('name', current_id)
                 except Exception:
                     pass
-                break
 
             # Delta-wijzigingen lezen
             cp = area_dir / f'{current_id}-changes.json'
@@ -1081,15 +1185,20 @@ def ogc_collection_items(collection_id):
                     parent_id = src_path.read_text(encoding='utf-8').strip() or None
                 except Exception:
                     pass
-            # Fallback: baseAreaId in GeoJSON properties
+            # Fallback: baseAreaId in bestandseigenschappen (GeoJSON of GeoParquet)
             if not parent_id:
-                for nf in area_dir.glob(f'{current_id}-NETWORK-*.geojson'):
+                _nf_list2 = list(area_dir.glob(f'{current_id}-NETWORK-*.geojson'))
+                if not _nf_list2 and _GEOPANDAS_AVAILABLE:
+                    for _ext in _GEOPARQUET_EXTS:
+                        _nf_list2 = list(area_dir.glob(f'{current_id}-NETWORK-*{_ext}'))
+                        if _nf_list2:
+                            break
+                if _nf_list2:
                     try:
-                        props     = json.loads(nf.read_text(encoding='utf-8')).get('properties', {})
+                        props     = _read_geodata(_nf_list2[0]).get('properties', {})
                         parent_id = props.get('baseAreaId') or None
                     except Exception:
                         pass
-                    break
 
             current_id = parent_id
             depth     += 1
@@ -1112,9 +1221,9 @@ def ogc_collection_items(collection_id):
         if not _safe(area_id):
             abort(400, 'Ongeldige parameter: areaId')
 
-        network_path = _geojson_path(area_id, mode, 'NETWORK')
-        if not network_path.exists():
-            abort(404, f'Netwerkbestand niet gevonden: {network_path.name}')
+        network_path = _data_path(area_id, mode, 'NETWORK')
+        if network_path is None or not network_path.exists():
+            abort(404, f'Netwerkbestand niet gevonden: {area_id}-NETWORK-{mode}')
 
         purpose_index_path = _find_local_file('purpose_index.json')
         if purpose_index_path is None:
@@ -1151,8 +1260,10 @@ def ogc_collection_items(collection_id):
             regio=regio, purpose=purpose, holiday_index=holiday_index,
         )
 
-        with open(network_path, encoding='utf-8') as fh:
-            network_fc = json.load(fh)
+        try:
+            network_fc = _read_geodata(network_path)
+        except ImportError as exc:
+            abort(503, str(exc))
 
         n_features = len(network_fc.get('features', []))
         filtered   = filterNetwork(network_fc, bbox=None, offset=0, limit=max(n_features, 1))
@@ -1201,11 +1312,15 @@ def ogc_collection_items(collection_id):
         for _ in range(6):
             try:
                 cur_dir       = _find_area_dir(cur_id)
-                network_files = list(cur_dir.glob(f'{cur_id}-NETWORK-*.geojson'))
-                if not network_files:
+                _nw_list = list(cur_dir.glob(f'{cur_id}-NETWORK-*.geojson'))
+                if not _nw_list and _GEOPANDAS_AVAILABLE:
+                    for _ext in _GEOPARQUET_EXTS:
+                        _nw_list = list(cur_dir.glob(f'{cur_id}-NETWORK-*{_ext}'))
+                        if _nw_list:
+                            break
+                if not _nw_list:
                     break
-                with open(network_files[0], encoding='utf-8') as fh:
-                    props     = json.load(fh).get('properties', {})
+                props     = _read_geodata(_nw_list[0]).get('properties', {})
                 parent_id = props.get('baseAreaId') or None
             except Exception:
                 break
@@ -1232,10 +1347,14 @@ def ogc_collection_items(collection_id):
         # 3) Bepaal bbox en query Overpass
         bbox = None
         try:
-            network_files = list(area_dir.glob(f'{area_id}-NETWORK-*.geojson'))
-            if network_files:
-                with open(network_files[0], encoding='utf-8') as fh:
-                    ndata = json.load(fh)
+            _nw_list2 = list(area_dir.glob(f'{area_id}-NETWORK-*.geojson'))
+            if not _nw_list2 and _GEOPANDAS_AVAILABLE:
+                for _ext in _GEOPARQUET_EXTS:
+                    _nw_list2 = list(area_dir.glob(f'{area_id}-NETWORK-*{_ext}'))
+                    if _nw_list2:
+                        break
+            if _nw_list2:
+                ndata = _read_geodata(_nw_list2[0])
                 props = ndata.get('properties', {})
                 bbox  = props.get('bbox')
                 if not bbox or len(bbox) < 4:
@@ -1270,7 +1389,7 @@ def ogc_collection_items(collection_id):
 
         return _ogc_items_response('buildings', data, self_url)
 
-    # ── overige collections: lees GeoJSON-bestand ─────────────────────────
+    # ── overige collections: lees geodata-bestand (GeoJSON of GeoParquet) ────
     area_id = request.args.get('areaId', '').strip()
     mode    = request.args.get('mode', '').upper().strip()
 
@@ -1284,13 +1403,15 @@ def ogc_collection_items(collection_id):
         abort(400, 'Ongeldige parameter: mode')
 
     file_type = _COLLECTION_FILE_TYPE[collection_id]
-    path      = _geojson_path(area_id, mode, file_type)
+    path      = _data_path(area_id, mode, file_type)
 
-    if not path.exists():
-        abort(404, f'Bestand niet gevonden: {path.name}')
+    if path is None or not path.exists():
+        abort(404, f'Bestand niet gevonden: {area_id}-{file_type}-{mode}')
 
-    with open(path, encoding='utf-8') as fh:
-        data = json.load(fh)
+    try:
+        data = _read_geodata(path)
+    except ImportError as exc:
+        abort(503, str(exc))
 
     return _ogc_items_response(collection_id, data, self_url)
 
