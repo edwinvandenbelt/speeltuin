@@ -2942,12 +2942,58 @@
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
 
-    // ── 1. Netwerkdata laden ────────────────────────────────────────────────
-    setLoaderMsg(T('loaderNetwork'));
-    const geojson = await fetch(GEOJSON_FILE).then(r => {
+    // ── 0. Pre-fetch alle databestanden parallel (start vóór elke await) ───
+    const _nwFetch = fetch(GEOJSON_FILE).then(r => {
       if (!r.ok) throw new Error(`Netwerkbestand niet gevonden (${r.status}) — gebied bestaat niet meer of is verplaatst.`);
       return r.json();
     });
+    const _zFetch  = fetch(apiUrl('ZONE')).then(r => r.ok ? r.json() : null).catch(() => null);
+    const _rtFetch = MODE === 'MIXED'
+      ? Promise.all([
+          fetch(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
+        ])
+      : fetch(ROUTES_FILE).then(r => r.ok ? r.json() : null).catch(() => null);
+
+    // ── 3. MapLibre kaart — start parallel met laden van data ─────────────
+    const map = new maplibregl.Map({
+      container: 'map',
+      style:     'https://tiles.openfreemap.org/styles/liberty',
+      center:    CENTER,
+      zoom:      14.5,
+      pitch:     58,
+      bearing:   -10,
+      antialias: true,
+      maxPitch:  85,
+    });
+
+    // fitBounds en lucht worden ingesteld zodra zowel kaart als areaBounds gereed zijn
+    let _mapLoadFired  = false;
+    let _areaBoundsSet = false;
+
+    function _fitAndSky() {
+      map.fitBounds(
+        [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]],
+        { padding: 60, pitch: 58, bearing: -10, duration: 0 }
+      );
+      map.setSky({
+        'sky-color':         '#87b9e8',
+        'sky-horizon-blend': 0.5,
+        'horizon-color':     '#c8dff0',
+        'horizon-fog-blend': 0.1,
+        'fog-color':         '#d8e8f0',
+        'fog-ground-blend':  0.9,
+      });
+    }
+
+    map.once('load', () => {
+      _mapLoadFired = true;
+      if (_areaBoundsSet) _fitAndSky();
+    });
+
+    // ── 1. Netwerkdata laden ────────────────────────────────────────────────
+    setLoaderMsg(T('loaderNetwork'));
+    const geojson = await _nwFetch;
     if (!Array.isArray(geojson?.features))
       throw new Error(`Ongeldig netwerkbestand — geen GeoJSON FeatureCollection ontvangen.`);
 
@@ -3055,6 +3101,9 @@
       }
       areaBounds = [minLon, minLat, maxLon, maxLat];
     }
+    // Kaart kan nu naar het gebied navigeren (race met map.once('load'))
+    _areaBoundsSet = true;
+    if (_mapLoadFired) _fitAndSky();
 
     // ── Gebouwen: classificatie, kleur en kaartlaag ──────────────────────────
 
@@ -3857,10 +3906,9 @@
     const zoneMap = new Map();   // zoneId → { from: {nodeId: prop}, to: {nodeId: prop} }
     let zoneFeaturesRaw = [];    // alle zone-features (voor node-laag)
     try {
-      const zoneFile = apiUrl('ZONE');
-      const zr = await fetch(zoneFile);
-      if (zr.ok) {
-        zoneFeaturesRaw = (await zr.json()).features || [];
+      const zoneData = await _zFetch;
+      if (zoneData) {
+        zoneFeaturesRaw = zoneData.features || [];
         for (const f of zoneFeaturesRaw) {
           const p = f.properties;
           if (p.zoneId) zoneMap.set(p.zoneId, {
@@ -4003,17 +4051,13 @@
 
     try {
       if (MODE === 'MIXED') {
-        const mkModeUrl = m => apiUrl('ROUTES').replace(/mode=[^&]+/, `mode=${m}`);
-        const [carFc, bikeFc] = await Promise.all([
-          fetch(mkModeUrl('CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch(mkModeUrl('BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
-        ]);
+        const [carFc, bikeFc] = await _rtFetch;
         _parseAndAddRoutes(carFc,  'CAR');
         _parseAndAddRoutes(bikeFc, 'BIKE');
       } else {
-        const resp = await fetch(ROUTES_FILE);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        _parseAndAddRoutes(await resp.json(), MODE);
+        const routesFc = await _rtFetch;
+        if (!routesFc) throw new Error('geen data');
+        _parseAndAddRoutes(routesFc, MODE);
       }
       totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
       routeMode = routeList.length > 0;
@@ -4021,37 +4065,6 @@
     } catch (e) {
       console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
     }
-
-    // ── 3. MapLibre kaart ───────────────────────────────────────────────────
-    setLoaderMsg(T('loaderMap'));
-    const map = new maplibregl.Map({
-      container: 'map',
-      style:     'https://tiles.openfreemap.org/styles/liberty',
-      center:    CENTER,
-      zoom:      14.5,
-      pitch:     58,
-      bearing:   -10,
-      antialias: true,
-      maxPitch:  85,
-    });
-
-    // Navigeer naar het gebied zodra de kaart klaar is
-    map.once('load', () => {
-      map.fitBounds(
-        [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]],
-        { padding: 60, pitch: 58, bearing: -10, duration: 0 }
-      );
-
-      // Realistische lucht
-      map.setSky({
-        'sky-color':             '#87b9e8',
-        'sky-horizon-blend':     0.5,
-        'horizon-color':         '#c8dff0',
-        'horizon-fog-blend':     0.1,
-        'fog-color':             '#d8e8f0',
-        'fog-ground-blend':      0.9,
-      });
-    });
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
      let timeScale = 1;
@@ -5847,6 +5860,15 @@
       updateOverlay(true);
     });
 
+    // ── Afgesloten wegvakken symboollaag ───────────────────────────────────────
+    const CLOSED_SOURCE = 'closed-links-src';
+    const CLOSED_LAYER  = 'closed-links-layer';
+    const CLOSED_ICON   = 'no-entry';
+
+    // ── Snelheidsbordje symboollaag ────────────────────────────────────────────
+    const SPEED_SOURCE = 'speed-signs-src';
+    const SPEED_LAYER  = 'speed-signs-layer';
+
     // Initialiseer afsluiting-symbolen zodra de kaart-stijl gereed is (ook zonder edit-modus)
     if (map.isStyleLoaded()) {
       initClosedLinksLayer();
@@ -6276,10 +6298,12 @@
       map.addImage(e.id, empty);
     });
 
-    map.on('load', () => {
+    function _onMapStyleLoad() {
       hideLaadscherm();
-      animate();
-      _mapReady = true;
+      if (!_mapReady) {
+        animate();
+        _mapReady = true;
+      }
       _tryAddBuildings();
 
       // ── Satelliet-ondergrond ────────────────────────────────────────────────
@@ -6313,7 +6337,13 @@
 
       // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite' of 'none' had gekozen)
       if (basemapStyle === 'satellite' || basemapStyle === 'none') _applyBasemapStyle(basemapStyle);
-    });
+    }
+
+    map.on('load', _onMapStyleLoad);
+    // Als de 'load'-event al gevuurd is vóór registratie, direct uitvoeren.
+    // Gebruik _mapLoadFired i.p.v. map.isStyleLoaded(): addSource/addLayer (door
+    // initClosedLinksLayer hierboven) zetten isStyleLoaded() tijdelijk op false.
+    if (_mapLoadFired) _onMapStyleLoad();
 
     // Zoom-event: auto-dichtheid wordt niet herberekend bij panning/zoomen
     // zodat de verkeersafwikkeling niet wordt gereset.
@@ -6344,15 +6374,6 @@
     const HL_SOURCE     = 'highlight-src';
     const HL_LINE_LAYER = 'highlight-line';
     const HL_POINT_LAYER= 'highlight-point';
-
-    // ── Afgesloten wegvakken symboollaag ───────────────────────────────────────
-    const CLOSED_SOURCE = 'closed-links-src';
-    const CLOSED_LAYER  = 'closed-links-layer';
-    const CLOSED_ICON   = 'no-entry';
-
-    // ── Snelheidsbordje symboollaag ────────────────────────────────────────────
-    const SPEED_SOURCE = 'speed-signs-src';
-    const SPEED_LAYER  = 'speed-signs-layer';
 
     let highlightedChangeIndex = null;
 
@@ -8697,6 +8718,7 @@
 
   function hideLaadscherm() {
     const el = document.getElementById('loader');
+    if (!el) return;
     el.classList.add('fade');
     setTimeout(() => el.remove(), 700);
   }

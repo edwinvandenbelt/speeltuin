@@ -3,6 +3,7 @@
 
 # Web framework
 flask>=3.1
+flask-compress>=1.15
 
 # AWS / S3 (gebruikt door network_fetcher, zone_fetcher, feedlink_fetcher)
 boto3>=1.42

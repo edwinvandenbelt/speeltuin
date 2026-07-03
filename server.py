@@ -33,6 +33,7 @@ import uuid
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, make_response, request, send_from_directory
+from flask_compress import Compress
 
 # ---------------------------------------------------------------------------
 # GeoParquet-ondersteuning (optioneel)
@@ -391,6 +392,7 @@ _WI_PERIODS              = {'etmaal': 0, 'ochtendspits': 1, 'avondspits': 2, 're
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__, static_folder=None)
+Compress(app)
 
 # ---------------------------------------------------------------------------
 # Job-store
@@ -1408,12 +1410,28 @@ def ogc_collection_items(collection_id):
     if path is None or not path.exists():
         abort(404, f'Bestand niet gevonden: {area_id}-{file_type}-{mode}')
 
+    # HTTP-caching: ETag gebaseerd op bestandswijzigingstijd (milliseconde-nauwkeurig)
+    mtime         = path.stat().st_mtime
+    etag          = f'"{int(mtime * 1000):x}"'
+    last_modified = _dt.datetime.fromtimestamp(mtime, tz=_dt.timezone.utc).strftime(
+        '%a, %d %b %Y %H:%M:%S GMT'
+    )
+    if request.headers.get('If-None-Match') == etag:
+        resp = make_response('', 304)
+        resp.headers['ETag']          = etag
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
     try:
         data = _read_geodata(path)
     except ImportError as exc:
         abort(503, str(exc))
 
-    return _ogc_items_response(collection_id, data, self_url)
+    resp = _ogc_items_response(collection_id, data, self_url)
+    resp.headers['ETag']          = etag
+    resp.headers['Last-Modified'] = last_modified
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
 
 
 @app.route('/processes')
