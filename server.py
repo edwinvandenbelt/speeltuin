@@ -210,9 +210,12 @@ def _read_geodata(path: Path) -> dict:
                         props[key] = json.loads(val)
                     except (json.JSONDecodeError, ValueError):
                         pass
-        # Probeer top-level properties te herstellen uit Parquet-bestandsmetadata
+        # Probeer top-level properties te herstellen uit Parquet-bestandsmetadata.
+        # Ondersteunt zowel de eigen 'geojson_properties'-key als de GMT-productiepipeline
+        # die 'gmt_properties' schrijft (met o.a. name, areaId, baseAreaId, bbox).
         try:
-            raw = _pq.read_metadata(path).metadata.get(b'geojson_properties')  # type: ignore[union-attr]
+            file_meta = _pq.read_metadata(path).metadata  # type: ignore[union-attr]
+            raw = file_meta.get(b'geojson_properties') or file_meta.get(b'gmt_properties')
             if raw:
                 fc['properties'] = json.loads(raw.decode('utf-8'))
         except Exception:
@@ -880,9 +883,9 @@ def _execute_adjust(inputs: dict):
         abort(400, 'Parameter "changes" moet een niet-lege array zijn')
 
     src_dir     = _find_area_dir(area_id)
-    routes_file = src_dir / f'{area_id}-ROUTES-{mode}.geojson'
-    if not routes_file.exists():
-        abort(404, f'Routes-bestand niet gevonden: {routes_file.name}')
+    routes_file = _find_data_file(src_dir, f'{area_id}-ROUTES-{mode}')
+    if routes_file is None:
+        abort(404, f'Routes-bestand niet gevonden: {area_id}-ROUTES-{mode}')
 
     new_area_id = str(uuid.uuid4())
     if scenario_name:

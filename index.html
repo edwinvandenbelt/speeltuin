@@ -3986,14 +3986,11 @@
     let routeList        = [];
     let totalRouteWeight = 1;
 
-    // Aantal voedingslinks aan begin én eind van het pad dat wordt overgeslagen.
-    // De auto's rijden het middelste stuk; aanloop en uitloop worden via Dijkstra
-    // gerouteerd vanuit een gewogen willekeurige node in de herkomst-/bestemmingszone.
-    const N_SKIP = 3;
-
     /**
      * Parst een routes-GeoJSON en voegt routes toe aan routeList.
-     * @param {object|null} routesFc   - GeoJSON FeatureCollection met routes (null → skip)
+     * Gebruikt het volledige linkPath; voedingslinks die niet in linkGeomMap staan
+     * worden gefilterd. Geen N_SKIP-trim, geen Dijkstra aanloop/uitloop.
+     * @param {object|null} routesFc    - GeoJSON FeatureCollection met routes (null → skip)
      * @param {string}      vehicleMode - 'CAR' | 'BIKE' | 'PEDESTRIAN' of MODE
      */
     function _parseAndAddRoutes(routesFc, vehicleMode) {
@@ -4012,35 +4009,20 @@
         const zoneSum    = zoneTripSumMap.get(fromZoneId) ?? 1;
         const isAbsolute = zoneSum > 1.5;
         for (const r of routes) {
-          const fromBoundary = zoneMap.get(fromZoneId)?.boundary ?? false;
-          const toBoundary   = zoneMap.get(toZoneId)?.boundary   ?? false;
-          const skipStart = fromBoundary ? 0 : N_SKIP;
-          const skipEnd   = toBoundary   ? 0 : N_SKIP;
-          const minLen    = skipStart + skipEnd + 1;
-          if (!r.linkPath || r.linkPath.length < minLen) continue;
-          const sliced = skipEnd > 0
-            ? r.linkPath.slice(skipStart, -skipEnd)
-            : r.linkPath.slice(skipStart);
-          const innerIds = sliced.map(id => parseInt(id));
-          if (!innerIds.length) continue;
-          const firstLink = nodeLinkMap.get(innerIds[0]);
-          const lastLink  = nodeLinkMap.get(innerIds[innerIds.length - 1]);
-          if (!firstLink || !lastLink) continue;
-          const validInnerIds = innerIds.filter(id => linkGeomMap.get(id)?.length >= 2);
-          if (!validInnerIds.length) continue;
-          const innerLen = validInnerIds.reduce((s, id) => {
+          if (!r.linkPath || !r.linkPath.length) continue;
+          // Gebruik het volledige linkPath; filter op aanwezigheid in linkGeomMap
+          const allIds  = r.linkPath.map(id => parseInt(id));
+          const linkIds = allIds.filter(id => linkGeomMap.get(id)?.length >= 2);
+          if (!linkIds.length) continue;
+          const totalLen = linkIds.reduce((s, id) => {
             const c = linkGeomMap.get(id);
             return s + (c ? segmentLength(c) : 0);
           }, 0);
-          if (innerLen < 30) continue;
+          if (totalLen < 30) continue;
           routeList.push({
-            innerIds:         validInnerIds,
-            midStartNode:     firstLink.fromNode,
-            midEndNode:       lastLink.toNode,
+            linkIds,
             fromZoneId,
             toZoneId,
-            fromBoundary,
-            toBoundary,
             originProduction: isAbsolute ? zoneSum : (feat.properties.originProduction ?? 0),
             weight:           isAbsolute ? r.trips / zoneSum : r.trips,
             vehicleMode,
@@ -4252,6 +4234,32 @@
     }
 
     /**
+     * Bouw een vlakke [lon,lat][] uit een reeks link-ID's via linkGeomMap.
+     * Het eerste punt van elke volgende link (dubbel eindpunt) wordt overgeslagen.
+     * Opeenvolgende identieke punten worden gededupliceerd (zelfde als Python _path_to_linestring).
+     * @param {number[]} linkIds
+     * @returns {number[][]}
+     */
+    function _linkIdsToCoords(linkIds) {
+      const result = [];
+      let first = true;
+      for (const id of linkIds) {
+        const seg = linkGeomMap.get(id);
+        if (!seg || seg.length < 2) continue;
+        const start = first ? 0 : 1;
+        for (let j = start; j < seg.length; j++) result.push(seg[j]);
+        first = false;
+      }
+      // Dedupliceer opeenvolgende identieke punten
+      const deduped = [];
+      for (const pt of result) {
+        const last = deduped[deduped.length - 1];
+        if (!last || pt[0] !== last[0] || pt[1] !== last[1]) deduped.push(pt);
+      }
+      return deduped;
+    }
+
+    /**
      * Geeft de doelsnelheid voor een auto op basis van zijn huidige positie:
      *   - 90 % van de linksnelheid bij vrij rijden
      *   - lineair teruggebracht naar 50 % in de laatste SLOW_ZONE meter van de link
@@ -4376,8 +4384,8 @@
         for (const route of routeList) {
           if (route.weight < minWeight) continue;
 
-          // innerLinkPairs bevat het id-veld (nodig voor LD-vulmethode: offset per inner-link)
-          const innerLinkPairs = route.innerIds.map(id => {
+          // Bouw link-objecten op uit het volledige linkpad (voedingslinks al gefilterd in _parseAndAddRoutes)
+          const allLinkObjs = route.linkIds.map(id => {
             const coords  = linkGeomMap.get(id);
             const speedMs = linkSpeedMap.get(id) ?? 10;
             const flow    = linkFlowMap.get(id) ?? 0;
@@ -4385,47 +4393,16 @@
             return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
           }).filter(Boolean);
 
-          if (!innerLinkPairs.length) continue;
+          if (!allLinkObjs.length) continue;
 
-          const approachSpeedMs = innerLinkPairs[0].speedMs;
-          const exitSpeedMs     = innerLinkPairs[innerLinkPairs.length - 1].speedMs;
-
-          let allLinkObjs = [...innerLinkPairs];
-
-          if (!route.fromBoundary) {
-            const fromZone = zoneMap.get(route.fromZoneId);
-            const fromNode = fromZone ? pickNode(fromZone.from) : null;
-            if (fromNode != null && fromNode !== route.midStartNode) {
-              const segs = dijkstraPath(fromNode, route.midStartNode, route.vehicleMode);
-              if (segs && segs.length) {
-                const approachObjs = segs.map(s => ({ coords: s.coords, speedMs: approachSpeedMs, flow: 0, toNode: s.toNode ?? null }));
-                allLinkObjs = [...approachObjs, ...allLinkObjs];
-              }
-            }
-          }
-
-          // approachCount: aantal approach-links vóór de inner-links in allLinkObjs
-          // (vastgesteld nádat approach is prepended, vóór exit wordt appended)
-          const approachCount = allLinkObjs.length - innerLinkPairs.length;
-
-          if (!route.toBoundary) {
-            const toZone = zoneMap.get(route.toZoneId);
-            const toNode = toZone ? pickNode(toZone.to) : null;
-            if (toNode != null && toNode !== route.midEndNode) {
-              const segs = dijkstraPath(route.midEndNode, toNode, route.vehicleMode);
-              if (segs && segs.length) {
-                const exitObjs = segs.map(s => ({ coords: s.coords, speedMs: exitSpeedMs, flow: 0, toNode: s.toNode ?? null }));
-                allLinkObjs = [...allLinkObjs, ...exitObjs];
-              }
-            }
-          }
+          const innerLinkPairs = allLinkObjs;
+          const approachCount  = 0;
 
           const path = buildPathFromLinks(allLinkObjs);
           if (!path || path.length < 30) continue;
 
-          const isBoundary = route.fromBoundary || route.toBoundary;
-          const canPark    = path.speedMs <= (50 / 3.6) && !isBoundary;
-
+          const isBoundary = false;
+          const canPark    = path.speedMs <= (50 / 3.6);
           routePaths.push({ path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount });
         }
 
@@ -4504,15 +4481,7 @@
               const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
               const offset      = Math.min(posInMetres / rp.path.length, 0.999);
               const isParked    = rp.canPark && Math.random() < parkRatio;
-              const endNode     = rp.route.midEndNode;
-              const chainCandidates = routePaths.filter(
-                other => other !== rp && other.route.midStartNode === endNode
-                  && (other.route.vehicleMode ?? MODE) === (rp.route.vehicleMode ?? MODE)
-              );
-              let pendingPath = null;
-              if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
-                pendingPath = chainCandidates[Math.floor(Math.random() * chainCandidates.length)].path;
-              }
+              const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
                 path:        rp.path,
@@ -4575,15 +4544,7 @@
               const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
               const offset      = Math.min(posInMetres / rp.path.length, 0.999);
               const isParked    = rp.canPark && Math.random() < parkRatio;
-              const endNode     = rp.route.midEndNode;
-              const chainCandidates = routePaths.filter(
-                other => other !== rp && other.route.midStartNode === endNode
-                  && (other.route.vehicleMode ?? MODE) === (rp.route.vehicleMode ?? MODE)
-              );
-              let pendingPath = null;
-              if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
-                pendingPath = chainCandidates[Math.floor(Math.random() * chainCandidates.length)].path;
-              }
+              const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
                 path:        rp.path,
@@ -4647,13 +4608,6 @@
           for (const rp of routePaths) {
             const count = rp.count;
 
-            // Zoek mogelijke chaining-partner (route die begint waar deze eindigt)
-            const endNode   = rp.route.midEndNode;
-            const chainCandidates = routePaths.filter(
-              other => other !== rp && other.route.midStartNode === endNode
-                && (other.route.vehicleMode ?? MODE) === (rp.route.vehicleMode ?? MODE)
-            );
-
             for (let i = 0; i < count; i++) {
               const isParked = rp.canPark && Math.random() < parkRatio;
 
@@ -4661,12 +4615,7 @@
               const wp = buildWeightedPath(rp.allLinkObjs);
               if (!wp) continue;
 
-              // Route-chaining: ~30% van rijdende stadswegauto's krijgt een vervolgroute
-              let pendingPath = null;
-              if (!rp.isBoundary && chainCandidates.length && Math.random() < 0.30) {
-                const partner = chainCandidates[Math.floor(Math.random() * chainCandidates.length)];
-                pendingPath = partner.path;
-              }
+              const pendingPath = null;
 
               // Geparkeerde auto's: resterende wachttijd uniform verdeeld over [0, PARK_MEAN_S].
               // Ze staan er al een tijdje — niet allemaal tegelijk vertrekken.
@@ -4762,17 +4711,8 @@
      * productiemechanisme aangemaakt.
      */
     function spawnProductionCar(rp) {
-      // Route-chaining: ~20% kans als er een aansluitende route beschikbaar is
-      const vm = rp.route.vehicleMode ?? MODE;
-      const endNode = rp.route.midEndNode;
-      const allPaths = [...odGroups.values()].flatMap(g => g.paths);
-      const chainCandidates = rp.isBoundary
-        ? []
-        : allPaths.filter(other => other !== rp && other.route.midStartNode === endNode
-            && (other.route.vehicleMode ?? MODE) === vm);
-      const pendingPath = (chainCandidates.length && Math.random() < 0.20)
-        ? chainCandidates[Math.floor(Math.random() * chainCandidates.length)].path
-        : null;
+      const vm          = rp.route.vehicleMode ?? MODE;
+      const pendingPath = null;
 
       cars.push({
         path:        rp.path,
@@ -5404,11 +5344,7 @@
         const counterpart  = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
         flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
 
-        const coords = [];
-        for (const id of route.innerIds) {
-          const seg = linkGeomMap.get(id);
-          if (seg) coords.push(...seg);
-        }
+        const coords = _linkIdsToCoords(route.linkIds);
         if (coords.length >= 2) pathData.push({ coords, flow });
       }
 
@@ -5420,7 +5356,7 @@
     function buildLinkRouteMap() {
       linkRouteMap.clear();
       for (const route of routeList) {
-        for (const id of route.innerIds) {
+        for (const id of route.linkIds) {
           if (!linkRouteMap.has(id)) linkRouteMap.set(id, []);
           linkRouteMap.get(id).push(route);
         }
@@ -5444,11 +5380,7 @@
         flowByFromZone.set(route.fromZoneId, (flowByFromZone.get(route.fromZoneId) ?? 0) + flow);
         flowByToZone.set(route.toZoneId,   (flowByToZone.get(route.toZoneId)   ?? 0) + flow);
         // Geometrie van de volledige route opbouwen voor de PathLayer
-        const coords = [];
-        for (const id of route.innerIds) {
-          const seg = linkGeomMap.get(id);
-          if (seg) coords.push(...seg);
-        }
+        const coords = _linkIdsToCoords(route.linkIds);
         if (coords.length >= 2) pathData.push({ coords, flow });
       }
       return { flowByFromZone, flowByToZone, pathData };
@@ -7709,6 +7641,9 @@
             layers: [makeNetworkLayer2()].filter(Boolean),
           });
           map2.addControl(overlay2);
+          // Gebouwen uitschakelen op de rechterkaart (Liberty-lagen)
+          try { if (map2.getLayer('building-3d')) map2.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+          try { if (map2.getLayer('building'))    map2.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
         });
 
         // ── Camera-sync ────────────────────────────────────────────────────
@@ -7726,6 +7661,13 @@
 
         // ── Cars verbergen (splitViewActive = true → visible: false) ───────
         updateOverlay(true);
+
+        // ── Gebouwen uitschakelen op beide kaarten ─────────────────────────
+        const _bpSel = document.getElementById('buildingPurpose');
+        if (_bpSel && _bpSel.value !== 'off') {
+          _bpSel.value = 'off';
+          _bpSel.dispatchEvent(new Event('change'));
+        }
 
         // Knop als actief markeren
         document.getElementById('splitViewBtn').classList.add('active');
