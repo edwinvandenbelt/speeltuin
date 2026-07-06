@@ -287,16 +287,18 @@ _PROCESS_DESCRIPTIONS = {
         'jobControlOptions': ['async-execute'],
         'outputTransmission': ['value'],
         'inputs': {
-            'name':    {'title': 'Gebiedsnaam', 'schema': {'type': 'string'}, 'minOccurs': 1},
-            'mode':    {'title': 'Modus', 'schema': {'type': 'string', 'enum': ['CAR', 'BIKE', 'PEDESTRIAN']}, 'minOccurs': 1},
-            'min_lon': {'title': 'Min. lengtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
-            'min_lat': {'title': 'Min. breedtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
-            'max_lon': {'title': 'Max. lengtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
-            'max_lat': {'title': 'Max. breedtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
-            'catalog': {'title': 'Catalogus', 'schema': {'type': 'string'}, 'minOccurs': 0},
-            'schema':  {'title': 'Schema', 'schema': {'type': 'string'}, 'minOccurs': 0},
-            'refresh': {'title': 'Vernieuwen', 'schema': {'type': 'boolean'}, 'minOccurs': 0},
-            'debug':   {'title': 'Debug', 'schema': {'type': 'boolean'}, 'minOccurs': 0},
+            'name':       {'title': 'Gebiedsnaam', 'schema': {'type': 'string'}, 'minOccurs': 1},
+            'mode':       {'title': 'Modus (enkelvoudig, achterwaartse compatibiliteit)', 'schema': {'type': 'string', 'enum': ['CAR', 'BIKE', 'PEDESTRIAN']}, 'minOccurs': 0},
+            'modes':      {'title': 'Modi', 'schema': {'type': 'array', 'items': {'type': 'string', 'enum': ['CAR', 'BIKE', 'PEDESTRIAN']}}, 'minOccurs': 0},
+            'mode_label': {'title': 'Modusaanduiding (bijv. MIXED)', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'min_lon':    {'title': 'Min. lengtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'min_lat':    {'title': 'Min. breedtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'max_lon':    {'title': 'Max. lengtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'max_lat':    {'title': 'Max. breedtegraad', 'schema': {'type': 'number'}, 'minOccurs': 1},
+            'catalog':    {'title': 'Catalogus', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'schema':     {'title': 'Schema', 'schema': {'type': 'string'}, 'minOccurs': 0},
+            'refresh':    {'title': 'Vernieuwen', 'schema': {'type': 'boolean'}, 'minOccurs': 0},
+            'debug':      {'title': 'Debug', 'schema': {'type': 'boolean'}, 'minOccurs': 0},
         },
         'outputs': {
             'collection': {'title': 'Collectie-URL', 'schema': {'type': 'string'}},
@@ -403,28 +405,44 @@ Compress(app)
 
 _jobs: dict = {}
 _jobs_lock  = threading.Lock()
+# Serialiseert redirect_stdout/redirect_stderr over alle job-threads: contextlib.redirect_*
+# past sys.stdout/sys.stderr globaal aan, dus gelijktijdige jobs zouden elkaars stream
+# overschrijven.  Door de pipeline-uitvoering te serialiseren voorkom je dat.
+_pipeline_stdout_lock = threading.Lock()
 
 
 class _LogStream(io.TextIOBase):
-    """Schrijft stdout/stderr van run_pipeline door naar de job-loglijst."""
+    """Schrijft stdout/stderr van run_pipeline door naar de job-loglijst.
+
+    Thread-safe: meerdere threads (bijv. ThreadPoolExecutor-workers in run_pipeline)
+    kunnen gelijktijdig schrijven.  _buf_lock beschermt de buffer; _lock beschermt
+    de gedeelde loglijst.
+    """
     def __init__(self, log_list, lock):
-        self._log  = log_list
-        self._lock = lock
-        self._buf  = ''
+        self._log      = log_list
+        self._lock     = lock
+        self._buf      = ''
+        self._buf_lock = threading.Lock()
 
     def write(self, s):
-        self._buf += s
-        while '\n' in self._buf:
-            line, self._buf = self._buf.split('\n', 1)
+        with self._buf_lock:
+            self._buf += s
+            lines = []
+            while '\n' in self._buf:
+                line, self._buf = self._buf.split('\n', 1)
+                lines.append(line)
+        if lines:
             with self._lock:
-                self._log.append(line)
+                self._log.extend(lines)
         return len(s)
 
     def flush(self):
-        if self._buf:
-            with self._lock:
-                self._log.append(self._buf)
+        with self._buf_lock:
+            remainder = self._buf
             self._buf = ''
+        if remainder:
+            with self._lock:
+                self._log.append(remainder)
 
 
 # ---------------------------------------------------------------------------
@@ -605,14 +623,15 @@ def _now_iso() -> str:
 # Achtergrond-job runners
 # ---------------------------------------------------------------------------
 
-def _run_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str, mode: str):
+def _run_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str, mode_label: str):
     """Voer prepare-pipeline uit in achtergrondthread."""
     with _jobs_lock:
         _jobs[job_id]['status']  = 'running'
         _jobs[job_id]['started'] = _now_iso()
     stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
     try:
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+        with _pipeline_stdout_lock, \
+             contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
             _prepare_run_pipeline(**kwargs)
         stream.flush()
         with _jobs_lock:
@@ -620,12 +639,12 @@ def _run_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str, mode: 
             _jobs[job_id]['status']     = 'successful'
             _jobs[job_id]['finished']   = _now_iso()
             _jobs[job_id]['_results']   = {
-                'collection': f'/collections/network/items?areaId={name}&mode={mode}',
+                'collection': f'/collections/network/items?areaId={name}&mode={mode_label}',
             }
-    except Exception as exc:
+    except BaseException as exc:
         stream.flush()
         with _jobs_lock:
-            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
+            _jobs[job_id]['log'].append(f'[server] Fout: {type(exc).__name__}: {exc}')
             _jobs[job_id]['status']     = 'failed'
             _jobs[job_id]['returncode'] = -1
             _jobs[job_id]['finished']   = _now_iso()
@@ -639,7 +658,8 @@ def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
         _jobs[job_id]['started'] = _now_iso()
     stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
     try:
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+        with _pipeline_stdout_lock, \
+             contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
             _adjust_run_pipeline(**kwargs)
         stream.flush()
 
@@ -659,10 +679,10 @@ def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
                 'collection':  f'/collections/network/items?areaId={new_area_id}&mode={mode}',
                 'compare_url': compare_url,
             }
-    except Exception as exc:
+    except BaseException as exc:
         stream.flush()
         with _jobs_lock:
-            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
+            _jobs[job_id]['log'].append(f'[server] Fout: {type(exc).__name__}: {exc}')
             _jobs[job_id]['status']     = 'failed'
             _jobs[job_id]['returncode'] = -1
             _jobs[job_id]['finished']   = _now_iso()
@@ -681,7 +701,8 @@ def _run_whatif_road_closure_job(job_id: str, path_geojson: str, path_csv: str,
     stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
 
     try:
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+        with _pipeline_stdout_lock, \
+             contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
 
             # ── 1. Inlezen ────────────────────────────────────────────────
             print('[whatif] Netwerk en NVP-routes inlezen …')
@@ -800,10 +821,10 @@ def _run_whatif_road_closure_job(job_id: str, path_geojson: str, path_csv: str,
                 'collection':  f'/collections/network/items?areaId={new_area_id}&mode={mode}',
             }
 
-    except Exception as exc:
+    except BaseException as exc:
         stream.flush()
         with _jobs_lock:
-            _jobs[job_id]['log'].append(f'[server] Fout: {exc}')
+            _jobs[job_id]['log'].append(f'[server] Fout: {type(exc).__name__}: {exc}')
             _jobs[job_id]['status']     = 'failed'
             _jobs[job_id]['returncode'] = -1
             _jobs[job_id]['finished']   = _now_iso()
@@ -819,8 +840,26 @@ def _execute_prepare(inputs: dict):
         abort(503, 'prepare-package niet beschikbaar')
 
     name    = str(inputs.get('name', '')).strip()
-    mode    = str(inputs.get('mode', 'CAR')).upper()
     out_dir = Path(inputs.get('out_dir') or str(_work_dir() / name)).resolve()
+
+    # Modes: accepteer 'modes' (array) of 'mode' (string, achterwaartse compatibiliteit)
+    raw_modes = inputs.get('modes')
+    if raw_modes and isinstance(raw_modes, list) and len(raw_modes) > 0:
+        modes = [str(m).upper() for m in raw_modes]
+    else:
+        modes = [str(inputs.get('mode', 'CAR')).upper()]
+
+    # Valideer modes
+    _valid_modes = {'CAR', 'BIKE', 'PEDESTRIAN'}
+    for m in modes:
+        if m not in _valid_modes:
+            abort(400, f'Ongeldige modus: {m!r}. Toegestaan: {", ".join(sorted(_valid_modes))}')
+    if len(modes) > 1 and 'PEDESTRIAN' in modes:
+        abort(400, 'PEDESTRIAN kan niet gecombineerd worden met andere modi')
+
+    # mode_label: expliciet meegegeven of automatisch bepaald
+    raw_label  = str(inputs.get('mode_label', '')).strip().upper()
+    mode_label = raw_label if raw_label else ('MIXED' if len(modes) > 1 else modes[0])
 
     try:
         min_lon = float(inputs['min_lon'])
@@ -838,12 +877,11 @@ def _execute_prepare(inputs: dict):
 
     kwargs = dict(
         min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat,
-        mode=mode, name=name, out_dir=out_dir,
+        modes=modes, mode_label=mode_label, name=name, out_dir=out_dir,
         catalog=inputs.get('catalog', 'spectrum'),
         schema=inputs.get('schema', '2023_01'),
         refresh=bool(inputs.get('refresh')),
         debug=bool(inputs.get('debug', False)),
-
     )
 
     job_id = str(uuid.uuid4())
@@ -862,7 +900,7 @@ def _execute_prepare(inputs: dict):
         }
 
     threading.Thread(target=_run_prepare_job,
-                     args=(job_id, out_dir, kwargs, name, mode),
+                     args=(job_id, out_dir, kwargs, name, mode_label),
                      daemon=True).start()
     return {'jobID': job_id, 'status': 'accepted'}, 201, {'Location': f'/jobs/{job_id}'}
 

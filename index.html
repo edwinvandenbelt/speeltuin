@@ -190,6 +190,21 @@
       padding: 7px 10px; font-size: 13px;
     }
     #newPanel input::placeholder { color: #3a4455; }
+    .new-mode-group {
+      display: flex; flex-direction: column; gap: 6px;
+      font-size: 12px; color: #5a6272;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    #newModes { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
+    .new-mode-check {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: #c9d6e8; text-transform: none; letter-spacing: 0;
+      cursor: pointer;
+    }
+    .new-mode-check input[type=checkbox] {
+      width: 14px; height: 14px; margin: 0;
+      accent-color: #7ec8e3; cursor: pointer;
+    }
     #bboxDisplay {
       font-size: 11px; color: #5a6272; font-family: monospace;
       background: #1a2233; border-radius: 6px; padding: 8px 10px;
@@ -973,13 +988,14 @@
         <input type="text" id="newName" placeholder="bijv. Merwehaven" data-i18n-ph="newAreaNamePh"/>
       </label>
 
-      <label><span data-i18n="newAreaMode">Transportmodus</span>
-        <select id="newMode">
-          <option value="CAR" data-i18n="newAreaCar">Auto (CAR)</option>
-          <option value="BIKE" data-i18n="newAreaBike">Fiets (BIKE)</option>
-          <option value="PEDESTRIAN" data-i18n="newAreaPed">Voetganger (PEDESTRIAN)</option>
-        </select>
-      </label>
+      <div class="new-mode-group">
+        <span data-i18n="newAreaMode">Transportmodus</span>
+        <div id="newModes">
+          <label class="new-mode-check"><input type="checkbox" value="CAR" checked/> <span data-i18n="newAreaCar">Auto (CAR)</span></label>
+          <label class="new-mode-check"><input type="checkbox" value="BIKE"/>        <span data-i18n="newAreaBike">Fiets (BIKE)</span></label>
+          <label class="new-mode-check"><input type="checkbox" value="PEDESTRIAN"/>  <span data-i18n="newAreaPed">Voetganger (PEDESTRIAN)</span></label>
+        </div>
+      </div>
 
       <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa" data-i18n="newAreaBboxHint">
         Teken een rechthoek op de kaart om de bbox te bepalen.
@@ -1210,6 +1226,13 @@
       <span id="legendMin">0</span>
       <span id="legendLabel">Intensiteit</span>
       <span id="legendMax">–</span>
+    </div>
+    <!-- Fiets-kleurschaal — alleen zichtbaar in MIXED-modus bij flow/flow_scaled -->
+    <div class="legend-bar" id="legendBarBike" style="display:none; margin-top:3px;"></div>
+    <div class="legend-labels" id="legendLabelsBike" style="display:none;">
+      <span id="legendMinBike">0</span>
+      <span id="legendLabelBike">Fiets</span>
+      <span id="legendMaxBike">–</span>
     </div>
     <div id="carCountStrip"></div>
   </div>
@@ -1520,6 +1543,7 @@
       newAreaStatusRunning:'Pipeline actief\u2026', newAreaStatusDone:'Klaar! Gebied is beschikbaar.',
       newAreaStatusBack:'Terug naar overzicht', newAreaStatusError: c => `Fout (exitcode ${c}).`,
       newAreaAlertName:'Voer een naam in.', newAreaAlertBbox:'Teken eerst een bbox op de kaart.',
+      newAreaAlertMode:'Selecteer minstens één transportmodus.',
       // Link-dialoog
       linkDialogDefault:'Wegvak', linkDialogName: n => `Wegvak: ${n}`, linkDialogId: id => `Link ${id}`,
       linkDialogCap:'Capaciteit', linkDialogCapUnit:'vtg/u',
@@ -1701,6 +1725,7 @@
       newAreaStatusRunning:'Pipeline running\u2026', newAreaStatusDone:'Done! Area is available.',
       newAreaStatusBack:'Back to overview', newAreaStatusError: c => `Error (exit code ${c}).`,
       newAreaAlertName:'Please enter a name.', newAreaAlertBbox:'Please draw a bounding box on the map first.',
+      newAreaAlertMode:'Select at least one transport mode.',
       linkDialogDefault:'Road link', linkDialogName: n => `Road link: ${n}`, linkDialogId: id => `Link ${id}`,
       linkDialogCap:'Capacity', linkDialogCapUnit:'veh/h',
       linkDialogSpeed:'Set speed', linkDialogSpeedHint:'adjusts capacity',
@@ -1875,6 +1900,7 @@
       newAreaStatusRunning:'Putkilinja k\xe4ynniss\xe4\u2026', newAreaStatusDone:'Valmis! Alue on k\xe4ytett\xe4viss\xe4.',
       newAreaStatusBack:'Takaisin yleiskatsaukseen', newAreaStatusError: c => `Virhe (paluuarvo ${c}).`,
       newAreaAlertName:'Sy\xf6t\xe4 nimi.', newAreaAlertBbox:'Piirrä ensin rajausalue kartalle.',
+      newAreaAlertMode:'Valitse v\xe4hint\xe4\xe4n yksi kulkutapa.',
       linkDialogDefault:'Tiejakso', linkDialogName: n => `Tiejakso: ${n}`, linkDialogId: id => `Tiejakso ${id}`,
       linkDialogCap:'Kapasiteetti', linkDialogCapUnit:'ajon/h',
       linkDialogSpeed:'Aseta nopeus', linkDialogSpeedHint:'s\xe4\xe4t\xe4\xe4 kapasiteettia',
@@ -2339,83 +2365,95 @@
       newMap.remove();
     };
 
-    document.getElementById('newSubmitBtn').onclick = async () => {
-      const name = document.getElementById('newName').value.trim();
-      if (!name) { alert(T('newAreaAlertName')); return; }
-      if (!bbox)  { alert(T('newAreaAlertBbox')); return; }
+  document.getElementById('newSubmitBtn').onclick = async () => {
+    const name = document.getElementById('newName').value.trim();
+    if (!name) { alert(T('newAreaAlertName')); return; }
+    if (!bbox)  { alert(T('newAreaAlertBbox')); return; }
 
-      const mode   = document.getElementById('newMode').value;
+    const selectedModes = [...document.querySelectorAll('#newModes input[type=checkbox]:checked')]
+      .map(cb => cb.value);
+    if (!selectedModes.length) { alert(T('newAreaAlertMode')); return; }
 
-      // UI in wacht-modus
-      const progressEl = document.getElementById('newProgress');
-      const statusEl   = document.getElementById('newStatus');
-      const logEl      = document.getElementById('newLog');
-      const fillEl     = document.getElementById('newProgressFill');
-      progressEl.style.display = 'flex';
-      document.getElementById('newSubmitBtn').disabled = true;
-      statusEl.textContent = T('newAreaStatusStart');
-      fillEl.style.width = '5%';
+    // UI in wacht-modus
+    const progressEl = document.getElementById('newProgress');
+    const statusEl   = document.getElementById('newStatus');
+    const logEl      = document.getElementById('newLog');
+    const fillEl     = document.getElementById('newProgressFill');
+    progressEl.style.display = 'flex';
+    document.getElementById('newSubmitBtn').disabled = true;
+    statusEl.textContent = T('newAreaStatusStart');
+    fillEl.style.width = '5%';
 
+    // Start één job met alle geselecteerde modi tegelijk (modes-array → pipeline doet fusing)
+    const jobStates = [];
+    try {
       const body = {
-        name, mode,
+        name, modes: selectedModes,
         min_lon: bbox.minLon, min_lat: bbox.minLat,
         max_lon: bbox.maxLon, max_lat: bbox.maxLat,
         debug: !!window._debugMode,
       };
-      let jobId;
-      try {
-        const res  = await fetch('/processes/prepare/execution', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ inputs: body }),
-        });
-        const data = await res.json();
-        if (!res.ok) { statusEl.style.color = '#ff6b6b'; statusEl.textContent = data.error; return; }
-        jobId = data.jobID;
-      } catch (e) {
+      const res  = await fetch('/processes/prepare/execution', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: body }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
         statusEl.style.color = '#ff6b6b';
-        statusEl.textContent = T('newAreaStatusConn');
+        statusEl.textContent = data.error;
+        document.getElementById('newSubmitBtn').disabled = false;
         return;
       }
+      jobStates.push({ jobId: data.jobID, logLen: 0, done: false });
+    } catch (e) {
+      statusEl.style.color = '#ff6b6b';
+      statusEl.textContent = T('newAreaStatusConn');
+      document.getElementById('newSubmitBtn').disabled = false;
+      return;
+    }
 
-      // Poll job-status
-      let lastLogLen = 0;
-      const poll = setInterval(async () => {
+    // Peil alle jobs tegelijk met één interval
+    const poll = setInterval(async () => {
+      let anyFailed = false;
+      for (const js of jobStates) {
+        if (js.done) continue;
         try {
-          const res  = await fetch(`/jobs/${jobId}`);
-          const job  = await res.json();
-
-          // Append nieuwe logregels
-          const newLines = job.log.slice(lastLogLen);
+          const res = await fetch(`/jobs/${js.jobId}`);
+          const job = await res.json();
+          const newLines = job.log.slice(js.logLen);
           if (newLines.length) {
             logEl.textContent += newLines.join('\n') + '\n';
             logEl.scrollTop = logEl.scrollHeight;
-            lastLogLen = job.log.length;
+            js.logLen = job.log.length;
           }
-
-          if (job.status === 'running') {
-            statusEl.textContent = T('newAreaStatusRunning');
-            fillEl.style.width = '60%';
-          } else if (job.status === 'successful') {
-            clearInterval(poll);
-            fillEl.style.width = '100%';
-            fillEl.style.animation = 'none';
-            statusEl.style.color = '#00e676';
-            statusEl.textContent = T('newAreaStatusDone');
-            document.getElementById('newSubmitBtn').disabled = false;
-            document.getElementById('newSubmitBtn').textContent = T('newAreaStatusBack');
-            document.getElementById('newSubmitBtn').onclick = () => window.location.reload();
-          } else if (job.status === 'failed') {
-            clearInterval(poll);
-            fillEl.style.background = '#ff1744';
-            fillEl.style.animation = 'none';
-            statusEl.style.color = '#ff6b6b';
-            statusEl.textContent = T('newAreaStatusError', job.returncode);
-            document.getElementById('newSubmitBtn').disabled = false;
-          }
+          if      (job.status === 'successful') { js.done = true; }
+          else if (job.status === 'failed')     { js.done = true; anyFailed = true; }
         } catch (_) {}
-      }, 1500);
-    };
-  }
+      }
+      const doneCnt = jobStates.filter(js => js.done).length;
+      const total   = jobStates.length;
+      if (anyFailed) {
+        clearInterval(poll);
+        fillEl.style.background = '#ff1744';
+        statusEl.style.color    = '#ff6b6b';
+        statusEl.textContent    = T('newAreaStatusError', '');
+        document.getElementById('newSubmitBtn').disabled = false;
+      } else if (doneCnt === total) {
+        clearInterval(poll);
+        fillEl.style.width     = '100%';
+        fillEl.style.animation = 'none';
+        statusEl.style.color   = '#00e676';
+        statusEl.textContent   = T('newAreaStatusDone');
+        document.getElementById('newSubmitBtn').disabled = false;
+        document.getElementById('newSubmitBtn').textContent = T('newAreaStatusBack');
+        document.getElementById('newSubmitBtn').onclick = () => window.location.reload();
+      } else {
+        statusEl.textContent = T('newAreaStatusRunning');
+        fillEl.style.width   = `${10 + 80 * doneCnt / total}%`;
+      }
+    }, 1500);
+  };
+}
 
   function apiUrl(type) {
     const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
@@ -2513,6 +2551,25 @@
       }
       return [r, g, b, 210];
     }
+
+  /** Fiets-specifieke kleurschaal (multimodaal MIXED): donkerpaars → magenta → amber.
+   *  Geen rood-tint, geen overlap met de auto-schaal (blauw→groen→geel→rood).
+   *  norm=0 (laag): [80,0,160] diep paars  |  norm=0.5: [220,40,200] magenta  |  norm=1 (hoog): [255,170,0] amber */
+  function bikeFlowToRgba(norm) {
+    let r, g, b;
+    if (norm <= 0.5) {
+      const t = norm * 2;
+      r = Math.round(80  + t * 140);   // 80  → 220
+      g = Math.round(0   + t * 40);    // 0   → 40
+      b = Math.round(160 + t * 40);    // 160 → 200
+    } else {
+      const t = (norm - 0.5) * 2;
+      r = Math.round(220 + t * 35);    // 220 → 255
+      g = Math.round(40  + t * 130);   // 40  → 170
+      b = Math.round(200 - t * 200);   // 200 → 0
+    }
+    return [r, Math.min(255, Math.max(0, g)), Math.min(255, Math.max(0, b)), 210];
+  }
 
   // Groen→geel→rood (zelfde als flow, herbruikbaar voor bezettingsgraad)
   function greenRedRgba(norm) { return flowToRgba(norm); }
@@ -2930,7 +2987,8 @@
   }
 
   // Globaal maximum flow — toegankelijk voor flowToRgba() die buiten de async IIFE staat
-  let globalMaxFlow = 1;
+  let globalMaxFlow     = 1;
+  let globalMaxFlowBike = 1;  // idem, alleen voor fietslinks (MIXED-modus)
 
   // OD-productie: voor elk OD-paar een set van paden gewogen op route.weight
   let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
@@ -3053,7 +3111,18 @@
       };
       const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
       document.getElementById('legendBar').style.background = gradient;
-      document.getElementById('legendLabel').textContent = T(labelKey);
+
+      // MIXED + flow/flow_scaled: toon aparte balk voor fiets; label de auto-balk "Auto"
+      const showBike = MODE === 'MIXED' && (colorMetric === 'flow' || colorMetric === 'flow_scaled');
+      document.getElementById('legendLabel').textContent =
+        showBike ? T('legendFlow') + ' — Auto' : T(labelKey);
+      document.getElementById('legendBarBike').style.display   = showBike ? '' : 'none';
+      document.getElementById('legendLabelsBike').style.display = showBike ? '' : 'none';
+      if (showBike) {
+        document.getElementById('legendBarBike').style.background =
+          'linear-gradient(to right, #5000a0, #dc28c8 50%, #ffaa00)';
+      }
+
       const fmt = u === '%'
         ? v => Math.round(v) + ' %'
         : v => Math.round(v).toLocaleString(T('numberLocale')) + ' ' + u;
@@ -3061,6 +3130,10 @@
         // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
         document.getElementById('legendMin').textContent = fmt(0);
         document.getElementById('legendMax').textContent = fmt(globalMaxFlow);
+        if (showBike) {
+          document.getElementById('legendMinBike').textContent = fmt(0);
+          document.getElementById('legendMaxBike').textContent = fmt(globalMaxFlowBike);
+        }
       } else if (colorMetric === 'capacity') {
         // Vaste schaal 0–4000, onafhankelijk van de data
         document.getElementById('legendMin').textContent = fmt(0);
@@ -4146,6 +4219,23 @@
       return mx || 1;
     })();
 
+    /** Maximum uurintensiteit uitsluitend over fietslinks; schaalbovengrens voor bikeFlowToRgba(). */
+    globalMaxFlowBike = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        if ((seg.props.mode ?? '').toUpperCase() !== 'BIKE') continue;
+        for (const dp of Object.keys(DP_FRACTION)) {
+          const props   = seg.props;
+          const dpFlows = props.flowsPerDaypart;
+          const v = (dpFlows && dpFlows[dp])
+            ? dpFlows[dp]
+            : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
+          if (v > mx) mx = v;
+        }
+      }
+      return mx || 1;
+    })();
+
     /** Set van absolute link-IDs die zowel als positief als negatief voorkomen in het netwerk.
      *  Gebruikt in de intensiteit-view om bidirectionele wegen (30 km/u) smaller te tekenen. */
     const biDirLinkIds = (() => {
@@ -4959,12 +5049,14 @@
            if (f.properties.capacity === 0) return [210, 40, 40, 200];
            const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          // MIXED-modus: fietslinks krijgen eigen kleurschaal (paars→magenta→amber) én eigen normalisatie
+          const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
           let norm;
           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
             norm = Math.max(0, Math.min(1, v / 100));
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-            // Statische schaal: norm altijd t.o.v. netwerk-brede maximum (dagdeel-onafhankelijk)
-            norm = Math.max(0, Math.min(1, v / globalMaxFlow));
+            // Statische schaal t.o.v. modus-specifiek maximum
+            norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
           } else if (colorMetric === 'capacity') {
             // Vaste schaal 0–4000 met sqrt-schaling
             norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
@@ -4975,7 +5067,7 @@
             case 'speed':    return speedRgba(norm);
             case 'capacity': return capacityRgba(norm);
             case 'occupancy': return greenRedRgba(norm);
-            default:         return flowToRgba(norm);
+            default:         return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
           }
         },
         pickable: !linkEditActive,
@@ -5075,11 +5167,12 @@
           if (f.properties.capacity === 0) return [210, 40, 40, 200];
           const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
           let norm;
           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
             norm = Math.max(0, Math.min(1, v / 100));
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-            norm = Math.max(0, Math.min(1, v / globalMaxFlow));
+            norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
           } else if (colorMetric === 'capacity') {
             // Vaste schaal 0–4000 met sqrt-schaling
             norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
@@ -5090,7 +5183,7 @@
             case 'speed':     return speedRgba(norm);
             case 'capacity':  return capacityRgba(norm);
             case 'occupancy': return greenRedRgba(norm);
-            default:          return flowToRgba(norm);
+            default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
           }
         },
         updateTriggers: {
