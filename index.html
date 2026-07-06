@@ -1060,6 +1060,15 @@
 
     <div class="tb-sep"></div>
 
+    <!-- Modi aan/uit (alleen zichtbaar in MIXED-modus) -->
+    <div id="modeBtns" style="display:none; gap:3px; align-items:center">
+      <button class="tb-btn modeBtn active" data-mode="CAR"        title="Auto-laag tonen/verbergen">🚗</button>
+      <button class="tb-btn modeBtn active" data-mode="BIKE"       title="Fiets-laag tonen/verbergen">🚲</button>
+      <button class="tb-btn modeBtn active" data-mode="PEDESTRIAN" title="Voetgangers-laag tonen/verbergen">🚶</button>
+    </div>
+
+    <div class="tb-sep"></div>
+
     <!-- Kleur-metriek -->
     <select id="colorMetric" class="tb-select" data-i18n-title="metricTitle" title="Kleur-metriek">
       <option value="flow" data-i18n="metricFlow">Intensiteit</option>
@@ -2990,6 +2999,9 @@
   let globalMaxFlow     = 1;
   let globalMaxFlowBike = 1;  // idem, alleen voor fietslinks (MIXED-modus)
 
+  /** Welke transportmodi zichtbaar zijn. Alleen relevant in MIXED-modus. */
+  const visibleModes = new Set(['CAR', 'BIKE', 'PEDESTRIAN']);
+
   // OD-productie: voor elk OD-paar een set van paden gewogen op route.weight
   let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
   let lastProductionT      = 0;   // performance.now()/1000 van laatste productie-cyclus
@@ -4473,6 +4485,7 @@
         const routePaths = [];  // { path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount }
         for (const route of routeList) {
           if (route.weight < minWeight) continue;
+          if (!visibleModes.has(route.vehicleMode ?? MODE)) continue;
 
           // Bouw link-objecten op uit het volledige linkpad (voedingslinks al gefilterd in _parseAndAddRoutes)
           const allLinkObjs = route.linkIds.map(id => {
@@ -4757,6 +4770,7 @@
             // Spreid N auto's gelijkmatig over één cyclus
             const departAt = now + (i / count) * cycleTime / timeScale;
             const segVehicleMode = MODE === 'MIXED' ? ((seg.props.mode || 'CAR').toUpperCase()) : MODE;
+            if (!visibleModes.has(segVehicleMode)) continue;
             list.push({
               path,
               offset:      0,
@@ -4802,6 +4816,7 @@
      */
     function spawnProductionCar(rp) {
       const vm          = rp.route.vehicleMode ?? MODE;
+      if (!visibleModes.has(vm)) return;
       const pendingPath = null;
 
       cars.push({
@@ -5009,7 +5024,9 @@
 
       return new GeoJsonLayer({
         id: 'network',
-        data: geojson.features,  // features-array ipv wrapper-object: deck.gl detecteert nieuwe referentie na reload
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
         visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && !selectedZoneId && !selectedLinkId,
         stroked: false,
         filled: false,
@@ -8433,6 +8450,41 @@
        if (map.getLayer('buildings-3d'))
          map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
       });
+
+    // ── Modi aan/uit (MIXED-modus) ────────────────────────────────────────
+    if (MODE === 'MIXED') {
+      // Bepaal welke modi daadwerkelijk in het netwerk aanwezig zijn.
+      const networkModes = new Set(
+        segments.map(s => (s.props.mode ?? 'CAR').toUpperCase())
+      );
+      // Toon alleen de knopjes waarvan de modus in het netwerk zit;
+      // verberg de rest en verwijder ze ook uit visibleModes.
+      document.querySelectorAll('.modeBtn').forEach(btn => {
+        const m = btn.dataset.mode;
+        if (networkModes.has(m)) {
+          btn.style.display = '';
+        } else {
+          btn.style.display = 'none';
+          visibleModes.delete(m);
+        }
+      });
+      document.getElementById('modeBtns').style.display = 'flex';
+      document.getElementById('modeBtns').addEventListener('click', e => {
+        const btn = e.target.closest('.modeBtn');
+        if (!btn) return;
+        const m = btn.dataset.mode;
+        if (visibleModes.has(m)) {
+          visibleModes.delete(m);
+          btn.classList.remove('active');
+        } else {
+          visibleModes.add(m);
+          btn.classList.add('active');
+        }
+        rebuildCars();
+        updateOverlay(true);
+        updateLegend();
+      });
+    }
 
       document.getElementById('fillBtns').addEventListener('click', e => {
         const btn = e.target.closest('.fillBtn');
