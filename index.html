@@ -3201,7 +3201,8 @@
     let _libBldOrigColor   = null;  // originele Liberty building-3d kleur (voor herstel bij 'off')
     let _libBldOrigOpacity = null;  // originele Liberty building-3d opacity
     let _isScaledMode      = false; // true wanneer geschaalde hoogte-modus actief is
-    let _libertyFillLayerIds = null; // Liberty fill/background layer IDs (verborgen in satellietmodus)
+    let _libertyFillLayerIds = null; // Liberty fill/background/raster layer IDs (verborgen in satellietmodus)
+    let _libertyAllLayerIds  = null; // Alle Liberty layer IDs (verborgen in geen-kaart-modus)
     let basemapStyle       = localStorage.getItem('basemapStyle') || 'map'; // 'map' | 'satellite' | 'none'
 
     // Gebouwclassificatie op basis van OSM-tags
@@ -3653,10 +3654,17 @@
       // Toon of verberg de satelliet raster-laag
       if (map.getLayer('satellite-bg'))
         map.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none');
-      // Toon of verberg Liberty fill/background lagen
-      if (_libertyFillLayerIds) {
+      // Geen-kaart-modus: verberg alle Liberty lagen en maak achtergrond zwart
+      if (_libertyAllLayerIds) {
+        for (const id of _libertyAllLayerIds) {
+          try { map.setLayoutProperty(id, 'visibility', isNone ? 'none' : 'visible'); } catch (_) {}
+        }
+      }
+      map.getContainer().style.backgroundColor = isNone ? '#000000' : '';
+      // Satelliet: verberg ook de Liberty fill/background lagen (roads/labels blijven overlay)
+      if (!isNone && _libertyFillLayerIds) {
         for (const id of _libertyFillLayerIds) {
-          try { map.setLayoutProperty(id, 'visibility', (isSat || isNone) ? 'none' : 'visible'); } catch (_) {}
+          try { map.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
         }
       }
     }
@@ -6354,6 +6362,8 @@
       _libertyFillLayerIds = map.getStyle().layers
         .filter(l => l.type === 'background' || l.type === 'fill' || l.type === 'raster')
         .map(l => l.id);
+      // Alle Liberty layer IDs — verborgen in geen-kaart-modus (alleen zwart vlak).
+      _libertyAllLayerIds = map.getStyle().layers.map(l => l.id);
 
       // Voeg ESRI World Imagery raster-source toe als ondergrond
       if (!map.getSource('esri-satellite')) {
