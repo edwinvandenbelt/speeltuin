@@ -97,6 +97,13 @@
       background: rgba(255,255,255,0.1);
       margin: 0 3px; flex-shrink: 0;
     }
+    .tb-icon-group {
+      display: flex; align-items: center; gap: 3px; flex-shrink: 0;
+    }
+    .tb-icon {
+      font-size: 15px; line-height: 1;
+      cursor: default; user-select: none; flex-shrink: 0;
+    }
     .tb-btn {
       width: 30px; height: 30px;
       border-radius: 6px;
@@ -742,6 +749,39 @@
     #linkPolygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
 
     /* ── Flow-scaler panel ───────────────────────────────────────────── */
+    /* ── Simulatie-paneel (floating, draggable, collapsible) ──────────────── */
+    #simPanel {
+      position: fixed;
+      z-index: 25;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid rgba(126,200,227,0.18);
+      border-radius: 10px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+      min-width: 170px;
+      backdrop-filter: blur(6px);
+    }
+    #simPanelHeader {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 8px 6px 12px;
+      cursor: grab;
+      font-size: 11px; font-weight: 600; color: #7ec8e3;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      border-bottom: 1px solid rgba(126,200,227,0.12);
+      border-radius: 10px 10px 0 0;
+    }
+    #simPanelHeader:active { cursor: grabbing; }
+    #simPanelCollapseBtn {
+      background: none; border: none; color: #5a6272;
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      flex-shrink: 0;
+    }
+    #simPanelCollapseBtn:hover { color: #7ec8e3; }
+    #simPanelBody {
+      padding: 8px 10px;
+      display: flex; flex-direction: column; gap: 7px;
+    }
+    .sim-row { display: flex; align-items: center; gap: 6px; }
+
     #flowScalerPanel {
       display: none;
       position: fixed;
@@ -1038,18 +1078,6 @@
     <!-- Netwerknaam -->
     <span class="tb-title" id="networkTitle">Verkeersnetwerk Rotterdam</span>
 
-    <div class="tb-sep"></div>
-
-    <!-- Dagdeel: OS / AS / RD + flow-scaler -->
-    <div id="daypartBtns" style="display:flex;gap:3px;align-items:center">
-      <button class="tb-btn dpBtn" data-dp="mrh" data-i18n="dpMrhLabel" data-i18n-title="dpMrhTitle" title="Ochtendspits">OS</button>
-      <button class="tb-btn dpBtn active" data-dp="erh" data-i18n="dpErhLabel" data-i18n-title="dpErhTitle" title="Avondspits">AS</button>
-      <button class="tb-btn dpBtn" data-dp="rest" data-i18n="dpRestLabel" data-i18n-title="dpRestTitle" title="Restdag">RD</button>
-      <div style="width:1px;height:16px;background:rgba(255,255,255,0.12);margin:0 2px;flex-shrink:0"></div>
-      <button class="tb-btn" id="fspBtn" data-i18n-title="fspBtnTitle" title="Flow-scaler instellen">&#9201;</button>
-    </div>
-
-    <div class="tb-sep"></div>
 
     <!-- Initiële vulmethode (verborgen, beheerd via instellingen-paneel) -->
     <div id="fillBtns" style="display:none">
@@ -1085,40 +1113,35 @@
             title="ScenarioVergelijker" style="display:none">⧉</button>
 
     <!-- Zone-centroids weergave -->
-    <select id="zoneCentroidSelect" class="tb-select" title="Zone-centroids">
-      <option value="off">- zones onzichtbaar -</option>
-      <option value="production">- productie -</option>
-      <option value="attraction">- attractie -</option>
-    </select>
-
-    <!-- Gebouw-motief weergave (zichtbaar zodra gebouwen geladen zijn) -->
-    <select id="buildingPurpose" class="tb-select" style="display:none" title="Gebouwen: motief">
-      <option value="all"            data-i18n="buildingPurposeAll">- gebouwen: alles -</option>
-      <option value="all_scaled"     data-i18n="buildingPurposeAllScaled">- gebouwen: alles (geschaald) -</option>
-      <option value="werk"           data-i18n="buildingPurposeWerk">- gebouwen: werk -</option>
-      <option value="werk_scaled"    data-i18n="buildingPurposeWerkScaled">- gebouwen: werk (geschaald) -</option>
-      <option value="onderwijs"      data-i18n="buildingPurposeOnderwijs">- gebouwen: onderwijs -</option>
-      <option value="onderwijs_scaled" data-i18n="buildingPurposeOnderwijsScaled">- gebouwen: onderwijs (geschaald) -</option>
-      <option value="winkelen"       data-i18n="buildingPurposeWinkelen">- gebouwen: winkelen -</option>
-      <option value="winkelen_scaled" data-i18n="buildingPurposeWinkelenScaled">- gebouwen: winkelen (geschaald) -</option>
-      <option value="recreatie"      data-i18n="buildingPurposeRecreat">- gebouwen: recreatie -</option>
-      <option value="recreatie_scaled" data-i18n="buildingPurposeRecreatiScaled">- gebouwen: recreatie (geschaald) -</option>
-      <option value="hidden"         data-i18n="buildingPurposeHidden">- gebouwen: verborgen -</option>
-      <option value="off"            data-i18n="buildingPurposeOff">- gebouwen: uit -</option>
-    </select>
-
-    <div class="tb-sep"></div>
-
-    <!-- Tijdschaal -->
-    <div class="tb-scale" data-i18n-title="timeScaleTitle" title="Tijdschaal">
-      <span class="tb-scale-lbl">&#9200; <b id="scaleVal">1&times;</b></span>
-      <input type="range" id="timeScale" min="1" max="10" value="1" step="1" data-i18n-title="timeScaleRangeTitle" title="Tijdschaal aanpassen"/>
+    <div class="tb-icon-group">
+      <span class="tb-icon" title="Zones">⬡</span>
+      <select id="zoneCentroidSelect" class="tb-select" title="Zone-centroids">
+        <option value="off">- zones onzichtbaar -</option>
+        <option value="production">- productie -</option>
+        <option value="attraction">- attractie -</option>
+      </select>
     </div>
 
-    <div class="tb-sep"></div>
+    <!-- Gebouwen (zichtbaar zodra gebouwen geladen zijn) -->
+    <div class="tb-icon-group" id="buildingGroup" style="display:none">
+      <span class="tb-icon" title="Gebouwen">🏠</span>
+      <select id="buildingPurpose" class="tb-select" title="Gebouwen: motief">
+        <option value="all">alles</option>
+        <option value="werk">werk</option>
+        <option value="onderwijs">onderwijs</option>
+        <option value="winkelen">winkelen</option>
+        <option value="recreatie">recreatie</option>
+      </select>
+      <select id="buildingDisplay" class="tb-select" title="Gebouwen: weergave">
+        <option value="normaal">normaal</option>
+        <option value="geschaald">geschaald</option>
+        <option value="verborgen">verborgen</option>
+        <option value="uit">uit</option>
+      </select>
+    </div>
+
 
     <!-- Simulatie & bewerkingsknoppen -->
-    <button class="tb-btn" id="pauseBtn" data-i18n-title="pauseTitle" title="Pauzeer simulatie">&#9208;</button>
     <button class="tb-btn edit-btn" id="nodeEditBtn" data-i18n-title="nodeEditTitle" title="Productie/attractie per knoop wijzigen">&#9673;</button>
     <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
     <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
@@ -1142,6 +1165,32 @@
 
     <!-- Instellingen-knop (uiterst rechts) -->
     <button class="tb-btn" id="settingsBtn" data-i18n-title="settingsTitle" title="Instellingen">&#9881;</button>
+  </div>
+
+  <!-- ── Simulatie-paneel ──────────────────────────────────────────────────── -->
+  <div id="simPanel">
+    <div id="simPanelHeader">
+      <span>Simulatie</span>
+      <button id="simPanelCollapseBtn" title="Inklappen">▾</button>
+    </div>
+    <div id="simPanelBody">
+      <div class="sim-row">
+        <div id="daypartBtns" style="display:flex;gap:3px;align-items:center">
+          <button class="tb-btn dpBtn" data-dp="mrh" data-i18n="dpMrhLabel" data-i18n-title="dpMrhTitle" title="Ochtendspits">OS</button>
+          <button class="tb-btn dpBtn active" data-dp="erh" data-i18n="dpErhLabel" data-i18n-title="dpErhTitle" title="Avondspits">AS</button>
+          <button class="tb-btn dpBtn" data-dp="rest" data-i18n="dpRestLabel" data-i18n-title="dpRestTitle" title="Restdag">RD</button>
+          <div style="width:1px;height:16px;background:rgba(255,255,255,0.12);margin:0 2px;flex-shrink:0"></div>
+          <button class="tb-btn" id="fspBtn" data-i18n-title="fspBtnTitle" title="Flow-scaler instellen">&#9201;</button>
+        </div>
+      </div>
+      <div class="sim-row">
+        <button class="tb-btn" id="pauseBtn" data-i18n-title="pauseTitle" title="Pauzeer simulatie">&#9208;</button>
+        <div class="tb-scale" data-i18n-title="timeScaleTitle" title="Tijdschaal">
+          <span class="tb-scale-lbl">&#9200; <b id="scaleVal">1&times;</b></span>
+          <input type="range" id="timeScale" min="1" max="10" value="1" step="1" data-i18n-title="timeScaleRangeTitle" title="Tijdschaal aanpassen"/>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ── Instellingen-paneel ──────────────────────────────────────────────── -->
@@ -3545,9 +3594,9 @@
 
       _doUpdateBuildingColors('all');
 
-      // Toon de motief-dropdown nu gebouwen verrijkt zijn
-      const selEl = document.getElementById('buildingPurpose');
-      if (selEl) selEl.style.display = '';
+      // Toon de gebouwengroep (icoon + beide dropdowns) nu gebouwen verrijkt zijn
+      const buildingGroup = document.getElementById('buildingGroup');
+      if (buildingGroup) buildingGroup.style.display = 'flex';
 
       _tryAddBuildings();
     }
@@ -3599,18 +3648,24 @@
 
     }
 
-    // Herbereken kleuren en actualiseer lagen (schaalt ook hoogte in geschaalde modus)
+    // Herbereken kleuren en actualiseer lagen (schaalt ook hoogte in geschaalde modus).
+    // val-formaat: '<purpose>'          → normaal (fill + Liberty 3D)
+    //              '<purpose>_scaled'   → geschaald (custom fill-extrusion)
+    //              '<purpose>_hidden'   → vlakken zichtbaar, geen 3D (ook: 'hidden' = 'all_hidden')
+    //              'off'                → alles verborgen
     function updateBuildingColors(val) {
-      const isScaled = val.endsWith('_scaled');
-      const purpose  = isScaled ? val.slice(0, -7) : val;
-      // 'hidden': gebruik 'all'-kleuren intern zodat normen en tooltip correct zijn
-      _currentPurpose = purpose === 'hidden' ? 'all' : purpose;
+      const isHidden = val === 'hidden' || val.endsWith('_hidden');
+      const isScaled = !isHidden && val.endsWith('_scaled');
+      const purpose  = isHidden ? (val === 'hidden' ? 'all' : val.slice(0, -7))
+                     : isScaled ? val.slice(0, -7)
+                     : val;
+      _currentPurpose = purpose;
       _isScaledMode   = isScaled;
       if (!_buildingsGeoJson || !_NORM) return;
       _doUpdateBuildingColors(_currentPurpose, isScaled);
       if (!map.getSource('buildings')) return;
       map.getSource('buildings').setData(_buildingsGeoJson);
-      if (purpose === 'hidden') {
+      if (isHidden) {
         // Verborgen: toon gekleurde 2D producte/attractievlakken, verberg alle 3D geometrie
         if (map.getLayer('buildings-3d'))  map.setLayoutProperty('buildings-3d',  'visibility', 'none');
         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
@@ -3642,6 +3697,27 @@
           }
         } catch (_) {}
       }
+    }
+
+    /** Leest #buildingPurpose + #buildingDisplay en roept updateBuildingColors aan
+     *  met het gecombineerde val-formaat dat de interne logica begrijpt. */
+    function _applyBuildingDisplay() {
+      const purpose = document.getElementById('buildingPurpose')?.value ?? 'all';
+      const display = document.getElementById('buildingDisplay')?.value ?? 'normaal';
+      if (display === 'uit') {
+        if (map.getLayer('buildings-fill'))
+          map.setLayoutProperty('buildings-fill', 'visibility', 'none');
+        if (map.getLayer('buildings-3d'))
+          map.setLayoutProperty('buildings-3d',   'visibility', 'none');
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+        return;
+      }
+      try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
+      const val = display === 'geschaald' ? purpose + '_scaled'
+                : display === 'verborgen' ? purpose + '_hidden'
+                : purpose;
+      updateBuildingColors(val);
     }
 
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
@@ -7783,10 +7859,10 @@
         updateOverlay(true);
 
         // ── Gebouwen uitschakelen op beide kaarten ─────────────────────────
-        const _bpSel = document.getElementById('buildingPurpose');
-        if (_bpSel && _bpSel.value !== 'off') {
-          _bpSel.value = 'off';
-          _bpSel.dispatchEvent(new Event('change'));
+        const _bdSel = document.getElementById('buildingDisplay');
+        if (_bdSel && _bdSel.value !== 'uit') {
+          _bdSel.value = 'uit';
+          _bdSel.dispatchEvent(new Event('change'));
         }
 
         // Knop als actief markeren
@@ -8579,22 +8655,8 @@
        updateOverlay(true);
      });
 
-     document.getElementById('buildingPurpose').addEventListener('change', e => {
-       const val = e.target.value;
-       if (val === 'off') {
-         // Verberg alle gebouwlagen (ook Liberty-lagen)
-         if (map.getLayer('buildings-fill'))
-           map.setLayoutProperty('buildings-fill', 'visibility', 'none');
-         if (map.getLayer('buildings-3d'))
-           map.setLayoutProperty('buildings-3d', 'visibility', 'none');
-         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
-         try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
-       } else {
-         // updateBuildingColors regelt scaled/non-scaled mode switching volledig
-         try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
-         updateBuildingColors(val);
-        }
-      });
+     document.getElementById('buildingPurpose').addEventListener('change', _applyBuildingDisplay);
+     document.getElementById('buildingDisplay').addEventListener('change', _applyBuildingDisplay);
 
     // ── Voertuigteller-paneel ────────────────────────────────────────────────
 
@@ -8796,6 +8858,12 @@
       const panel  = document.getElementById('flowScalerPanel');
       const isOpen = panel.classList.toggle('fsp-visible');
       document.querySelectorAll('.dpBtn').forEach(b => b.disabled = isOpen);
+      if (isOpen) {
+        // Positioneer het paneel recht onder de fspBtn
+        const r = document.getElementById('fspBtn').getBoundingClientRect();
+        panel.style.top  = (r.bottom + 6) + 'px';
+        panel.style.left = Math.min(r.left, window.innerWidth - 316) + 'px';
+      }
       if (!isOpen && !_fspOriginal) {
         document.getElementById('fspBtn').classList.remove('active');
       }
@@ -8808,6 +8876,64 @@
     if (el) el.style.cssText += ';color:#ff6b6b;white-space:pre-wrap;max-width:480px';
   });
   // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Simulatie-paneel: slepen, inklappen, positie opslaan ────────────────
+  (function () {
+    const panel  = document.getElementById('simPanel');
+    const header = document.getElementById('simPanelHeader');
+    const colBtn = document.getElementById('simPanelCollapseBtn');
+    const body   = document.getElementById('simPanelBody');
+
+    // Positie herstellen (of standaard linksboven, net onder toolbar)
+    const savedPos = JSON.parse(localStorage.getItem('simPanelPos') || 'null');
+    if (savedPos) {
+      panel.style.left = savedPos.x + 'px';
+      panel.style.top  = savedPos.y + 'px';
+    } else {
+      panel.style.left = '16px';
+      panel.style.top  = '60px';
+    }
+
+    // Inklap-staat herstellen
+    if (localStorage.getItem('simPanelCollapsed') === '1') {
+      body.style.display = 'none';
+      colBtn.textContent = '▸';
+    }
+
+    // Toggle inklappen
+    colBtn.addEventListener('click', () => {
+      const willCollapse = body.style.display !== 'none';
+      body.style.display = willCollapse ? 'none' : '';
+      colBtn.textContent  = willCollapse ? '▸' : '▾';
+      localStorage.setItem('simPanelCollapsed', willCollapse ? '1' : '0');
+    });
+
+    // Slepen via de header
+    let dragging = false, ox = 0, oy = 0;
+    header.addEventListener('mousedown', e => {
+      if (e.target === colBtn) return;
+      dragging = true;
+      const r = panel.getBoundingClientRect();
+      ox = e.clientX - r.left;
+      oy = e.clientY - r.top;
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const x = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth,  e.clientX - ox));
+      const y = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, e.clientY - oy));
+      panel.style.left = x + 'px';
+      panel.style.top  = y + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      localStorage.setItem('simPanelPos', JSON.stringify({
+        x: parseInt(panel.style.left),
+        y: parseInt(panel.style.top),
+      }));
+    });
+  }());
 
   function setLoaderMsg(msg) {
     document.getElementById('loaderMsg').textContent = msg;

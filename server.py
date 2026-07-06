@@ -626,25 +626,17 @@ def _now_iso() -> str:
 def _run_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str, mode_label: str):
     """Voer prepare-pipeline uit in achtergrondthread.
 
-    kwargs bevat 'modes' (lijst) en 'mode_label'; de pipeline-functie zelf
-    verwacht echter 'mode' (enkelvoud).  Deze runner roept de pipeline één keer
-    per modus aan zodat alle bestanden (NETWORK-CAR, NETWORK-BIKE, …) naar
-    dezelfde out_dir worden geschreven.
+    De nieuwe pipeline-versie accepteert 'modes' (lijst) en 'mode_label' rechtstreeks,
+    zodat kwargs ongewijzigd doorgegeven kan worden.
     """
     with _jobs_lock:
         _jobs[job_id]['status']  = 'running'
         _jobs[job_id]['started'] = _now_iso()
     stream = _LogStream(_jobs[job_id]['log'], _jobs_lock)
-
-    # Haal modes/mode_label uit het dict; de pipeline-functie accepteert deze niet.
-    pipeline_kwargs = {k: v for k, v in kwargs.items() if k not in ('modes', 'mode_label')}
-    modes = kwargs.get('modes', [kwargs.get('mode', 'CAR')])
-
     try:
         with _pipeline_stdout_lock, \
              contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            for mode in modes:
-                _prepare_run_pipeline(**pipeline_kwargs, mode=mode)
+            _prepare_run_pipeline(**kwargs)
         stream.flush()
         with _jobs_lock:
             _jobs[job_id]['returncode'] = 0
