@@ -3006,18 +3006,39 @@
   // Eén type, één kleur — helder amber (goed zichtbaar op donkere kaart).
   const BIKE_COLOR = [255, 185, 0, 255];
 
+  // Willekeurige kledingkleuren voor de fietser (torso + hoofd).
+  // Lichte, herkenbare tinten — goed zichtbaar op de donkere kaart.
+  const CLOTHING_PALETTE = [
+    [220,  50,  50, 230],  // rood
+    [ 50, 130, 220, 230],  // blauw
+    [ 40, 160,  70, 230],  // groen
+    [230, 140,  20, 230],  // oranje
+    [ 90,  60, 160, 230],  // paars
+    [200, 200, 200, 230],  // lichtgrijs
+    [ 30,  30,  30, 230],  // zwart
+    [240, 200,  60, 230],  // geel
+    [200,  90, 150, 230],  // roze
+    [ 60, 180, 180, 230],  // cyaan/teal
+  ];
+  function randomClothingColor() {
+    return CLOTHING_PALETTE[Math.floor(Math.random() * CLOTHING_PALETTE.length)];
+  }
+
   const BIKE_VEHICLE_TYPES = (() => {
     // Coördinatenstelsel: cx=voor/achter, cy=lateraal, cz=hoogte
-    const frame  = makeBoxGeom(1.50, 0.08, 0.08,  0,     0, 0.685); // hoofdbuis (10cm lager: bovenkant op 0.725m)
-    const zadel  = makeBoxGeom(0.28, 0.16, 0.04, -0.30,  0, 0.92);  // zadel (achter) → bumpers = zwart
-    const stuur  = makeBoxGeom(0.08, 0.55, 0.04,  0.62,  0, 0.82);  // stuur (voor, breed) → bumpers = zwart
-    const dummy  = makeBoxGeom(0.01, 0.01, 0.01,  0,     0, 0.00);  // lege placeholder
+    const frame  = makeBoxGeom(1.50, 0.08, 0.08,  0,     0, 0.685); // hoofdbuis (bovenkant op 0.725m)
+    const zadel  = makeBoxGeom(0.28, 0.16, 0.04, -0.30,  0, 0.92);  // zadel (achter)
+    const stuur  = makeBoxGeom(0.08, 0.55, 0.04,  0.62,  0, 0.82);  // stuur (voor, breed)
     const wheelF = makeCylinderGeom(0.28, 0.06,  0.65, 0, 0.28);    // voorwiel
     const wheelR = makeCylinderGeom(0.28, 0.06, -0.65, 0, 0.28);    // achterwiel
+    // ── Fietser (zichtbaar bij zoom ≥ 15) ──────────────────────────────────
+    // Torso: licht voorovergebogen, van z=0.72m tot z=1.12m
+    const torso  = makeBoxGeom(0.30, 0.18, 0.42,  0.05,  0, 0.92);  // romp
+    const hoofd  = makeBoxGeom(0.22, 0.22, 0.24,  0.10,  0, 1.22);  // hoofd
     return [{
       body:    mergeMeshes([frame]),
       bumpers: mergeMeshes([stuur, zadel]),
-      windows: mergeMeshes([dummy]),
+      windows: mergeMeshes([torso, hoofd]),   // kledingkleur via clothingColor
       wheels:  mergeMeshes([wheelF, wheelR]),
       weight:  1,
     }];
@@ -4671,13 +4692,14 @@
               const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
-                path:        rp.path,
+                path:          rp.path,
                 offset,
-                speed:       rp.path.speedMs * 0.9,
-                color:       randomCarColor(rp.route.vehicleMode),
-                typeIdx:     randomVehicleType(rp.route.vehicleMode),
-                vehicleMode: rp.route.vehicleMode ?? MODE,
-                state:       isParked ? 'parked' : 'moving',
+                speed:         rp.path.speedMs * 0.9,
+                color:         randomCarColor(rp.route.vehicleMode),
+                clothingColor: randomClothingColor(),
+                typeIdx:       randomVehicleType(rp.route.vehicleMode),
+                vehicleMode:   rp.route.vehicleMode ?? MODE,
+                state:         isParked ? 'parked' : 'moving',
                 departAt,
                 canPark:   rp.canPark,
                 noRespawn: true,
@@ -4734,13 +4756,14 @@
               const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
-                path:        rp.path,
+                path:          rp.path,
                 offset,
-                speed:       rp.path.speedMs * 0.9,
-                color:       randomCarColor(rp.route.vehicleMode),
-                typeIdx:     randomVehicleType(rp.route.vehicleMode),
-                vehicleMode: rp.route.vehicleMode ?? MODE,
-                state:       isParked ? 'parked' : 'moving',
+                speed:         rp.path.speedMs * 0.9,
+                color:         randomCarColor(rp.route.vehicleMode),
+                clothingColor: randomClothingColor(),
+                typeIdx:       randomVehicleType(rp.route.vehicleMode),
+                vehicleMode:   rp.route.vehicleMode ?? MODE,
+                state:         isParked ? 'parked' : 'moving',
                 departAt,
                 canPark:   rp.canPark,
                 noRespawn: true,
@@ -4811,13 +4834,14 @@
                 : 0;
 
               list.push({
-                path:        rp.path,
-                offset:      wp.offset,
-                speed:       rp.path.speedMs * 0.9,
-                color:       randomCarColor(rp.route.vehicleMode),
-                typeIdx:     randomVehicleType(rp.route.vehicleMode),
-                vehicleMode: rp.route.vehicleMode ?? MODE,
-                state:       isParked ? 'parked' : 'moving',
+                path:          rp.path,
+                offset:        wp.offset,
+                speed:         rp.path.speedMs * 0.9,
+                color:         randomCarColor(rp.route.vehicleMode),
+                clothingColor: randomClothingColor(),
+                typeIdx:       randomVehicleType(rp.route.vehicleMode),
+                vehicleMode:   rp.route.vehicleMode ?? MODE,
+                state:         isParked ? 'parked' : 'moving',
                 departAt,
                 canPark:   rp.canPark,
                 noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
@@ -4857,11 +4881,12 @@
             if (!visibleModes.has(segVehicleMode)) continue;
             list.push({
               path,
-              offset:      0,
-              speed:       0,
-              color:       randomCarColor(segVehicleMode),
-              typeIdx:     randomVehicleType(segVehicleMode),
-              vehicleMode: segVehicleMode,
+              offset:        0,
+              speed:         0,
+              color:         randomCarColor(segVehicleMode),
+              clothingColor: randomClothingColor(),
+              typeIdx:       randomVehicleType(segVehicleMode),
+              vehicleMode:   segVehicleMode,
               state:    'spawning',
               departAt,
               canPark:  false,     // geen parkeren in segment-modus
@@ -4962,7 +4987,7 @@
         const c = cars[i];
         if (c.state === 'spawning') {
           // Onzichtbaar: buiten beeld plaatsen
-          carData[i] = { position: [0, 0, -9999], orientation: [0, 0, 0], color: [0,0,0,0], typeIdx: c.typeIdx };
+          carData[i] = { position: [0, 0, -9999], orientation: [0, 0, 0], color: [0,0,0,0], clothingColor: [0,0,0,0], typeIdx: c.typeIdx };
           continue;
         }
         const [lon, lat, bearing] = interpolatePosition(
@@ -4982,10 +5007,11 @@
           pLat = lat + (BIKE_OFFSET_M / 110540) * Math.cos(bearRad);
         }
         carData[i] = {
-          position:    [pLon, pLat, (c.vehicleMode ?? MODE) === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
-          orientation: [0, 90 - bearing, 0],
-          color:       c.color,
-          typeIdx:     c.typeIdx,
+          position:     [pLon, pLat, (c.vehicleMode ?? MODE) === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
+          orientation:  [0, 90 - bearing, 0],
+          color:        c.color,
+          clothingColor: c.clothingColor ?? [100, 100, 100, 230],
+          typeIdx:      c.typeIdx,
         };
       }
     }
@@ -5803,13 +5829,25 @@
                      MODE === 'MIXED' ? [...VEHICLE_TYPES, ...BIKE_VEHICLE_TYPES] :
                                         VEHICLE_TYPES;
       const layers = [];
+
+      // Zoom-gebaseerde LOD-drempels voor fietsen
+      const zoom           = map.getZoom();
+      const bikeFirstIdx   = VEHICLE_TYPES.length;   // in MIXED: index van het fietstype
+      const showBikeDetail = zoom >= 13;   // wielen + stuur/zadel zichtbaar
+      const showBikeRider  = zoom >= 15;   // fietser (torso + hoofd) zichtbaar
+
       for (let ti = 0; ti < vtypes.length; ti++) {
         const vt       = vtypes[ti];
         const typeData = data.filter(d => d.typeIdx === ti);
         if (!typeData.length) continue;
+
+        // Is dit het fietstype?
+        const isBikeType = (MODE === 'BIKE') || (MODE === 'MIXED' && ti >= bikeFirstIdx);
+
+        const baseVisible = colorMetric !== 'compare' && !splitViewActive;
         const shared = {
           data:           typeData,
-          visible:        colorMetric !== 'compare' && !splitViewActive,
+          visible:        baseVisible,
           getPosition:    d => d.position,
           getOrientation: d => d.orientation,
           sizeScale: 1,
@@ -5825,21 +5863,30 @@
           }),
           new SimpleMeshLayer({
             ...shared,
+            // Voor fietsen: fietser (clothingColor) zichtbaar bij zoom ≥ 15
+            // Voor auto's: ruiten altijd zichtbaar
             id:       `cars-windows-${ti}`,
+            visible:  baseVisible && (!isBikeType || showBikeRider),
             mesh:     vt.windows,
-            getColor: [12, 28, 72, 210],
-            material: { ambient: 0.3, diffuse: 0.5, shininess: 120, specularColor: [160, 200, 255] },
+            getColor: isBikeType ? (d => d.clothingColor ?? [100, 100, 100, 230]) : [12, 28, 72, 210],
+            material: isBikeType
+              ? { ambient: 0.5, diffuse: 0.8, shininess: 20, specularColor: [60, 60, 60] }
+              : { ambient: 0.3, diffuse: 0.5, shininess: 120, specularColor: [160, 200, 255] },
           }),
           new SimpleMeshLayer({
             ...shared,
+            // Wielen: altijd voor auto's, bij zoom ≥ 13 voor fietsen
             id:       `cars-wheels-${ti}`,
+            visible:  baseVisible && (!isBikeType || showBikeDetail),
             mesh:     vt.wheels,
             getColor: [22, 22, 24, 255],
             material: { ambient: 0.4, diffuse: 0.6, shininess: 20, specularColor: [30, 30, 30] },
           }),
           new SimpleMeshLayer({
             ...shared,
+            // Stuur/zadel: altijd voor auto's, bij zoom ≥ 13 voor fietsen
             id:       `cars-bumpers-${ti}`,
+            visible:  baseVisible && (!isBikeType || showBikeDetail),
             mesh:     vt.bumpers,
             getColor: [28, 28, 28, 255],
             material: { ambient: 0.35, diffuse: 0.5, shininess: 15, specularColor: [20, 20, 20] },
