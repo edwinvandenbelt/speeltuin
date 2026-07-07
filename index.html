@@ -1219,6 +1219,10 @@
           <input type="checkbox" id="spDebug">
           <span data-i18n="settingsDebugLabel">Debug-uitvoer</span>
         </label>
+        <label class="sp-row">
+          <input type="checkbox" id="spTrafficSigns" checked>
+          <span data-i18n="settingsTrafficSignsLabel">Verkeersborden</span>
+        </label>
       </div>
       <div class="sp-section">
         <div class="sp-label" data-i18n="settingsBasemapLabel">Ondergrond</div>
@@ -1567,6 +1571,7 @@
       fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
       settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
       settingsBasemapLabel:'Ondergrond', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Geen',
+      settingsTrafficSignsLabel:'Verkeersborden',
       spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
       timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
@@ -1753,6 +1758,7 @@
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
       settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
       settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'None',
+      settingsTrafficSignsLabel:'Traffic signs',
       spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
       metricTitle:'Color metric',
       timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
@@ -1928,6 +1934,7 @@
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
       settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
       settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Ei mitään',
+      settingsTrafficSignsLabel:'Liikennemerkit',
       spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
       timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
@@ -3264,6 +3271,9 @@
 
     let _buildingsGeoJson = null;
     let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
+    let _trafficSignsGeoJson = null;
+    let _trafficSignsVisible = localStorage.getItem('trafficSignsVisible') !== 'false';
+    let _trafficSignsReady   = false;  // laag is eenmalig opgezet
     let _zonesForJoin     = null;   // zone-features beschikbaar voor ruimtelijke koppeling
     let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
     let _currentPurpose   = 'all';  // actief geselecteerd motief
@@ -3956,6 +3966,191 @@
       }
     }
 
+    // ─── Verkeersborden-ondersteuning ─────────────────────────────────────────
+
+    // Canvas-gebaseerd fallback-icoon per RVV-categorie (48×48 px, pixelRatio 1)
+    function _makeSignFallbackIcon(rvvCode) {
+      const S = 48;
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = S;
+      const ctx = cv.getContext('2d');
+      const cat = (rvvCode || '?').charAt(0).toUpperCase();
+      ctx.clearRect(0, 0, S, S);
+      // Hulpfunctie afgeronde rechthoek
+      function rr(x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+        ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+        ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
+      }
+      const M = 4;
+      if (cat === 'A' || cat === 'J') {
+        // Gevaarswaarschuwing: rode driehoek, witte vulling
+        ctx.beginPath(); ctx.moveTo(S/2, M); ctx.lineTo(S-M, S-M); ctx.lineTo(M, S-M); ctx.closePath();
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 3.5; ctx.stroke();
+      } else if (cat === 'B') {
+        // Voorrang/verlenen: omgekeerde driehoek
+        ctx.beginPath(); ctx.moveTo(S/2, S-M); ctx.lineTo(S-M, M); ctx.lineTo(M, M); ctx.closePath();
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 3.5; ctx.stroke();
+      } else if (cat === 'C') {
+        // Verbodsbord: rode cirkel, witte horizontale balk
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 3.5; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(M+4, S/2); ctx.lineTo(S-M-4, S/2);
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 8; ctx.stroke();
+      } else if (cat === 'D') {
+        // Gebodsbord: blauwe cirkel
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fillStyle = '#1a73e8'; ctx.fill();
+      } else if (cat === 'E' || cat === 'F' || cat === 'G') {
+        // Informatie/richtingsbord: blauw rechthoek
+        rr(M, M+3, S-2*M, S-2*M-6, 4);
+        ctx.fillStyle = '#1a73e8'; ctx.fill();
+      } else if (cat === 'H') {
+        // Infrastructuur: lichtgrijs rechthoek
+        rr(M, M+3, S-2*M, S-2*M-6, 4);
+        ctx.fillStyle = '#f0f0f0'; ctx.fill();
+        ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.stroke();
+      } else if (cat === 'L') {
+        // Onderbord: wit rechthoek met dunne rand
+        rr(M, S/2-9, S-2*M, 20, 3);
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 2; ctx.stroke();
+      } else {
+        // Onbekend: grijs
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fillStyle = '#9b9b9b'; ctx.fill();
+      }
+      return ctx.getImageData(0, 0, S, S);
+    }
+
+    // Laad en toon verkeersborden; async vanwege afbeelding-laad
+    async function _tryAddTrafficSigns() {
+      if (!_mapReady || !_trafficSignsGeoJson) return;
+
+      // Laag al opgezet → alleen databron bijwerken
+      if (_trafficSignsReady) {
+        map.getSource('traffic-signs')?.setData(_trafficSignsGeoJson);
+        return;
+      }
+      _trafficSignsReady = true;
+
+      // Verzamel unieke icoon-codes: composite (rvvCode-blackCode) én basis (rvvCode)
+      const codes = new Set();
+      for (const f of _trafficSignsGeoJson.features) {
+        const p = f.properties || {};
+        const rvv = p.rvvCode;
+        if (!rvv) continue;
+        const black = (p.blackCode || '').trim();
+        if (black) codes.add(`${rvv}-${black}`); // bijv. "A1-30", "D2-RO"
+        codes.add(rvv);                           // altijd basis-code als fallback
+      }
+
+      // Laad afbeeldingen parallel: NDW PNG-iconen per code, canvas-fallback bij 404
+      const SIGN_PX = 64;
+      await Promise.allSettled([...codes].map(async (code) => {
+        const imgId = 'ts-' + code;
+        if (map.hasImage(imgId)) return;
+        try {
+          const imgData = await new Promise((res, rej) => {
+            const el = new Image(SIGN_PX, SIGN_PX);
+            el.onload = () => {
+              const cv = document.createElement('canvas');
+              cv.width = cv.height = SIGN_PX;
+              const ctx2 = cv.getContext('2d');
+              ctx2.drawImage(el, 0, 0, SIGN_PX, SIGN_PX);
+              res(ctx2.getImageData(0, 0, SIGN_PX, SIGN_PX));
+            };
+            el.onerror = rej;
+            el.src = `/traffic-sign-icon/${encodeURIComponent(code)}?v=2`;
+          });
+          if (!map.hasImage(imgId)) map.addImage(imgId, imgData);
+        } catch {
+          // PNG niet beschikbaar → canvas-fallback per categorie
+          if (!map.hasImage(imgId)) map.addImage(imgId, _makeSignFallbackIcon(code));
+        }
+      }));
+
+      // Generiek fallback-icoon voor ontbrekende codes
+      if (!map.hasImage('ts-fallback')) {
+        map.addImage('ts-fallback', _makeSignFallbackIcon('?'));
+      }
+
+      // GeoJSON-bron toevoegen
+      if (!map.getSource('traffic-signs')) {
+        map.addSource('traffic-signs', { type: 'geojson', data: _trafficSignsGeoJson });
+      }
+
+      // Symboollaag toevoegen
+      if (!map.getLayer('traffic-signs-symbol')) {
+        map.addLayer({
+          id:      'traffic-signs-symbol',
+          type:    'symbol',
+          source:  'traffic-signs',
+          minzoom: 17,
+          layout: {
+            'icon-image': [
+              'coalesce',
+              // Eerste keuze: composite rvvCode-blackCode (bijv. "ts-A1-30", "ts-D2-RO")
+              ['image', ['concat', 'ts-',
+                ['coalesce', ['get', 'rvvCode'], ''],
+                ['case',
+                  ['all',
+                    ['has', 'blackCode'],
+                    ['!', ['==', ['coalesce', ['get', 'blackCode'], ''], '']]
+                  ],
+                  ['concat', '-', ['get', 'blackCode']],
+                  ''
+                ]
+              ]],
+              // Tweede keuze: alleen rvvCode (bijv. "ts-A1", "ts-D2")
+              ['image', ['concat', 'ts-', ['coalesce', ['get', 'rvvCode'], '']]],
+              ['image', 'ts-fallback'],
+            ],
+            // Vaste fysieke diameter 0.5 m: icon_size = 0.5 × 2^z / (96374 × 64)
+            // Exponentieel basis 2 → exacte verdubbeling per zoomlevel = constante grondafmeting
+            'icon-size': ['interpolate', ['exponential', 2], ['zoom'],
+              17, 0.0106,
+              22, 0.340,
+            ],
+            'icon-allow-overlap':    true,
+            'icon-ignore-placement': true,
+            'visibility': _trafficSignsVisible ? 'visible' : 'none',
+          },
+        });
+
+        // Klik-popup: toon bord-foto + RVV-code + straatnaam
+        map.on('click', 'traffic-signs-symbol', e => {
+          const f = e.features?.[0];
+          if (!f) return;
+          const p      = f.properties || {};
+          const black  = (p.blackCode || '').trim();
+          const rvv    = p.rvvCode ? (black ? `${p.rvvCode}-${black}` : p.rvvCode) : '—';
+          const road   = p.roadName || p.road_name || '';
+          const imgUrl = p.imageUrl || '';
+          let html = '<div style="text-align:center;min-width:90px">';
+          if (imgUrl) {
+            html += `<img src="${imgUrl}" style="display:block;max-width:130px;max-height:90px;margin:0 auto 6px;border-radius:4px" onerror="this.style.display='none'">`;
+          }
+          html += `<strong>${rvv}</strong>`;
+          if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+          html += '</div>';
+          new maplibregl.Popup({ closeButton: false, offset: 10 })
+            .setLngLat(e.lngLat)
+            .setHTML(html)
+            .addTo(map);
+        });
+        map.on('mouseenter', 'traffic-signs-symbol', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'traffic-signs-symbol', () => { map.getCanvas().style.cursor = ''; });
+      }
+    }
+
     // Laad gebouwen asynchroon; verrijking vindt plaats zodra ook zones beschikbaar zijn
     fetch(`/collections/buildings/items?areaId=${AREA_ID}`)
       .then(r => r.ok ? r.json() : null)
@@ -4017,6 +4212,16 @@
         _tryZoneJoin();
       })
       .catch(() => {});  // gebouwen zijn optioneel; stil negeren bij fout
+
+    // Laad verkeersborden asynchroon
+    fetch(`/collections/traffic_signs/items?areaId=${AREA_ID}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || !Array.isArray(data.features)) return;
+        _trafficSignsGeoJson = data;
+        _tryAddTrafficSigns();
+      })
+      .catch(() => {});  // verkeersborden zijn optioneel; stil negeren bij fout
 
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments    = features.map(f => ({
@@ -6478,6 +6683,7 @@
         _mapReady = true;
       }
       _tryAddBuildings();
+      _tryAddTrafficSigns();
 
       // ── Satelliet-ondergrond ────────────────────────────────────────────────
       // Verzamel Liberty fill/background layer IDs die we in satellietmodus verbergen.
@@ -8642,6 +8848,7 @@
           const radio = settingsPanel.querySelector(`input[name="spFill"][value="${initFillMethod}"]`);
           if (radio) radio.checked = true;
           document.getElementById('spDebug').checked = !!window._debugMode;
+          document.getElementById('spTrafficSigns').checked = _trafficSignsVisible;
           const curLang = document.getElementById('langSelect').value;
           const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
           if (langRadio) langRadio.checked = true;
@@ -8674,6 +8881,15 @@
             const adj = document.getElementById('adjustDebug');
             if (adj) adj.checked = window._debugMode;
             if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+          }
+          // Lees verkeersborden-instelling en pas zichtbaarheid toe
+          const newTrafficSigns = document.getElementById('spTrafficSigns').checked;
+          if (newTrafficSigns !== _trafficSignsVisible) {
+            _trafficSignsVisible = newTrafficSigns;
+            localStorage.setItem('trafficSignsVisible', _trafficSignsVisible ? 'true' : 'false');
+            if (map.getLayer('traffic-signs-symbol')) {
+              map.setLayoutProperty('traffic-signs-symbol', 'visibility', _trafficSignsVisible ? 'visible' : 'none');
+            }
           }
           // Lees nieuwe taal en pas toe als gewijzigd
           const newLang = settingsPanel.querySelector('input[name="spLang"]:checked')?.value;

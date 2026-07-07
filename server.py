@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import threading
+import urllib.request as _urllib_req
 import uuid
 from pathlib import Path
 
@@ -132,6 +133,14 @@ except ImportError as _e:
 from buildings_fetcher.core.buildings_fetcher_core import (  # noqa: E402
     BUILDINGS_QUERY_VER as _BUILDINGS_QUERY_VER,
     fetch_buildings_overpass as _fetch_buildings_overpass,
+)
+
+from traffic_signs_fetcher.core.traffic_signs_fetcher_core import (  # noqa: E402
+    TRAFFIC_SIGNS_QUERY_VER as _TRAFFIC_SIGNS_QUERY_VER,
+    is_netherlands as _is_netherlands,
+    download_ndw_dataset as _download_ndw_dataset,
+    fetch_traffic_signs_ndw as _fetch_traffic_signs_ndw,
+    fetch_traffic_signs_overpass as _fetch_traffic_signs_overpass,
 )
 
 # ---------------------------------------------------------------------------
@@ -262,6 +271,10 @@ _COLLECTIONS = {
     'buildings': {
         'title': 'Gebouwen',
         'description': 'Gebouwen in het studiegebied (OpenStreetMap / Overpass, gecached).',
+    },
+    'traffic_signs': {
+        'title': 'Verkeersborden',
+        'description': 'Verkeersborden in het studiegebied (NDW voor NL, OSM Overpass voor buitenland, gecached).',
     },
     'changes': {
         'title': 'Wijzigingen',
@@ -409,6 +422,35 @@ _jobs_lock  = threading.Lock()
 # past sys.stdout/sys.stderr globaal aan, dus gelijktijdige jobs zouden elkaars stream
 # overschrijven.  Door de pipeline-uitvoering te serialiseren voorkom je dat.
 _pipeline_stdout_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# NDW-achtergronddownload (verkeersborden NL)
+# ---------------------------------------------------------------------------
+
+# _ndw_ready wordt gezet zodra het NDW-bestand beschikbaar is (of de download
+# is mislukt).  Route-handlers voor traffic_signs wachten op dit event.
+_ndw_ready:  threading.Event = threading.Event()
+_ndw_error:  'str | None'    = None
+
+
+def _ensure_ndw_data() -> None:
+    """Controleer of het NDW-bestand aanwezig is; download het indien nodig."""
+    global _ndw_error
+    p = DATA_DIR / 'ndw_traffic_signs.json'
+    if p.exists():
+        _ndw_ready.set()
+        return
+    print('[server] NDW-verkeersborden downloaden …')
+    ok = _download_ndw_dataset(p)
+    if ok:
+        print(f'[server] NDW-verkeersborden opgeslagen: {p}')
+    else:
+        _ndw_error = 'NDW-download mislukt'
+        print(f'[server]  {_ndw_error}')
+    _ndw_ready.set()
+
+
+threading.Thread(target=_ensure_ndw_data, daemon=True).start()
 
 
 class _LogStream(io.TextIOBase):
@@ -1436,6 +1478,119 @@ def ogc_collection_items(collection_id):
 
         return _ogc_items_response('buildings', data, self_url)
 
+    # ── traffic_signs: verkeersborden, gecached per gebied ────────────────
+    if collection_id == 'traffic_signs':
+        area_id = request.args.get('areaId', '').strip()
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, 'Ongeldige parameter: areaId')
+
+        area_dir   = _find_area_dir(area_id)
+        cache_path = area_dir / f'{area_id}-TRAFFIC-SIGNS.geojson'
+
+        # 1) Gebruik aggregate cache als aanwezig én actueel
+        if cache_path.exists():
+            with open(cache_path, encoding='utf-8') as fh:
+                data = json.load(fh)
+            if data.get('properties', {}).get('_qv') == _TRAFFIC_SIGNS_QUERY_VER:
+                return _ogc_items_response('traffic_signs', data, self_url)
+            # Verouderde cache: verwijder en herlaad
+            try:
+                cache_path.unlink()
+            except Exception:
+                pass
+
+        # 2) Bepaal bbox uit NETWORK-bestand
+        bbox = None
+        try:
+            _nw_list = list(area_dir.glob(f'{area_id}-NETWORK-*.geojson'))
+            if not _nw_list and _GEOPANDAS_AVAILABLE:
+                for _ext in _GEOPARQUET_EXTS:
+                    _nw_list = list(area_dir.glob(f'{area_id}-NETWORK-*{_ext}'))
+                    if _nw_list:
+                        break
+            if _nw_list:
+                ndata = _read_geodata(_nw_list[0])
+                props = ndata.get('properties', {})
+                bbox  = props.get('bbox')
+                if not bbox or len(bbox) < 4:
+                    lons, lats = [], []
+                    for feat in ndata.get('features', []):
+                        for coord in feat.get('geometry', {}).get('coordinates', []):
+                            lons.append(coord[0])
+                            lats.append(coord[1])
+                    if lons:
+                        bbox = [min(lons), min(lats), max(lons), max(lats)]
+        except Exception as exc:
+            abort(500, f'Fout bij lezen netwerk voor bbox: {exc}')
+
+        if not bbox:
+            abort(404, 'Geen bbox beschikbaar voor verkeersborden-query')
+
+        # 3) NDW (NL) of Overpass (buitenland)
+        if _is_netherlands(bbox):
+            # Wacht tot de NDW-achtergronddownload klaar is (blokkeert request)
+            _ndw_ready.wait()
+            if _ndw_error:
+                abort(502, f'NDW-dataset niet beschikbaar: {_ndw_error}')
+            ndw_path = DATA_DIR / 'ndw_traffic_signs.json'
+            if not ndw_path.exists():
+                abort(503, 'NDW-dataset nog niet beschikbaar, probeer later opnieuw')
+            try:
+                data = _fetch_traffic_signs_ndw(ndw_path, bbox)
+            except Exception as exc:
+                abort(500, f'Fout bij lezen NDW-dataset: {exc}')
+        else:
+            # Zoek fallback tegel-cache in base-scenario (via baseAreaId-keten)
+            visited = {area_id}
+            cur_id  = area_id
+            base_tile_cache_dir = None
+            for _ in range(6):
+                try:
+                    cur_dir  = _find_area_dir(cur_id)
+                    _nw2     = list(cur_dir.glob(f'{cur_id}-NETWORK-*.geojson'))
+                    if not _nw2 and _GEOPANDAS_AVAILABLE:
+                        for _ext in _GEOPARQUET_EXTS:
+                            _nw2 = list(cur_dir.glob(f'{cur_id}-NETWORK-*{_ext}'))
+                            if _nw2:
+                                break
+                    if not _nw2:
+                        break
+                    p2        = _read_geodata(_nw2[0]).get('properties', {})
+                    parent_id = p2.get('baseAreaId') or None
+                except Exception:
+                    break
+                if not parent_id or parent_id in visited:
+                    break
+                visited.add(parent_id)
+                cur_id    = parent_id
+                parent_dir = _find_area_dir(parent_id)
+                ptcd = parent_dir / f'{parent_id}-TRAFFIC-SIGNS-tiles'
+                if ptcd.exists() and base_tile_cache_dir is None:
+                    base_tile_cache_dir = ptcd
+
+            try:
+                tile_cache_dir = area_dir / f'{area_id}-TRAFFIC-SIGNS-tiles'
+                data = _fetch_traffic_signs_overpass(
+                    bbox,
+                    tile_cache_dir=tile_cache_dir,
+                    fallback_tile_cache_dir=base_tile_cache_dir,
+                )
+            except Exception as exc:
+                abort(502, f'Overpass-query mislukt: {exc}')
+
+        # Cache opslaan — alleen als volledig
+        try:
+            if not data.get('properties', {}).get('_partial'):
+                area_dir.mkdir(parents=True, exist_ok=True)
+                with open(cache_path, 'w', encoding='utf-8') as fh:
+                    json.dump(data, fh, ensure_ascii=False)
+        except Exception:
+            pass
+
+        return _ogc_items_response('traffic_signs', data, self_url)
+
     # ── overige collections: lees geodata-bestand (GeoJSON of GeoParquet) ────
     area_id = request.args.get('areaId', '').strip()
     mode    = request.args.get('mode', '').upper().strip()
@@ -1475,6 +1630,20 @@ def ogc_collection_items(collection_id):
     resp = _ogc_items_response(collection_id, data, self_url)
     resp.headers['ETag']          = etag
     resp.headers['Last-Modified'] = last_modified
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@app.route('/traffic-sign-icon/<string:code>')
+def traffic_sign_icon(code):
+    """Serveer een NDW PNG-icoon voor een RVV-bordcode; 404 als niet beschikbaar."""
+    safe = re.sub(r'[^A-Za-z0-9-]', '', code)   # koppelteken toegestaan (bijv. E8-vracht)
+    icon_dir = Path(__file__).parent / 'traffic_sign_icons'
+    png_path = icon_dir / f'{safe}.png'
+    if not png_path.exists():
+        from flask import abort
+        abort(404)
+    resp = send_from_directory(str(icon_dir), f'{safe}.png', mimetype='image/png')
     resp.headers['Cache-Control'] = 'no-cache'
     return resp
 
