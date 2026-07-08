@@ -1105,6 +1105,7 @@
       <option value="occupancy_scaled" data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</option>
       <option value="speed" data-i18n="metricSpeed">Snelheid</option>
       <option value="capacity" data-i18n="metricCapacity">Capaciteit</option>
+      <option value="none" data-i18n="metricNone">Geen</option>
       <option value="compare" id="compareOption" data-i18n="metricCompare" style="display:none">Vergelijking tonen</option>
     </select>
 
@@ -1583,7 +1584,7 @@
       // Metriek-opties
       metricFlow:'Intensiteit', metricFlowScaled:'Intensiteit (geschaald)',
       metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
-      metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricCompare:'Vergelijking tonen',
+      metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricNone:'Geen', metricCompare:'Vergelijking tonen',
       // Laadscherm
       loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
       loaderZones:'Zones laden\u2026', loaderRoutes:'Routes laden\u2026', loaderMap:'Kaart laden\u2026',
@@ -1769,7 +1770,7 @@
       addKnoopTitle:'Add node (not yet available)',
       metricFlow:'Intensity', metricFlowScaled:'Intensity (scaled)',
       metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
-      metricSpeed:'Speed', metricCapacity:'Capacity', metricCompare:'Show comparison',
+      metricSpeed:'Speed', metricCapacity:'Capacity', metricNone:'None', metricCompare:'Show comparison',
       loaderInit:'Loading GeoJSON\u2026', loaderNetwork:'Loading network data\u2026',
       loaderZones:'Loading zones\u2026', loaderRoutes:'Loading routes\u2026', loaderMap:'Loading map\u2026',
       areaTitle:'Traffic network visualisation', areaSubtitle:'Select an area to load:',
@@ -1945,7 +1946,7 @@
       addKnoopTitle:'Lis\xe4\xe4 solmupiste (ei viel\xe4 saatavilla)',
       metricFlow:'Intensiteetti', metricFlowScaled:'Intensiteetti (skaalattu)',
       metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
-      metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricCompare:'N\xe4yt\xe4 vertailu',
+      metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
       loaderInit:'Ladataan GeoJSON\u2026', loaderNetwork:'Ladataan verkkodata\u2026',
       loaderZones:'Ladataan alueita\u2026', loaderRoutes:'Ladataan reittej\xe4\u2026', loaderMap:'Ladataan karttaa\u2026',
       areaTitle:'Liikenneverkkovisualisointi', areaSubtitle:'Valitse alue ladattavaksi:',
@@ -3177,6 +3178,9 @@
 
     /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
     function updateLegend() {
+      const legendStrip = document.getElementById('legendStrip');
+      if (colorMetric === 'none') { legendStrip.style.display = 'none'; return; }
+      legendStrip.style.display = '';
       const unit = T('legendUnit');
       // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
       const bp = Math.max(2, Math.round(25 / (globalMaxFlow || 1) * 100));
@@ -5348,7 +5352,7 @@
         data: MODE !== 'MIXED'
           ? geojson.features
           : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
-        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && !selectedZoneId && !selectedLinkId,
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && !selectedZoneId && !selectedLinkId,
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
@@ -7743,78 +7747,109 @@
       overlay.style.display = 'flex';
       overlayMsg.textContent = T('applyStart');
 
-      // Bouw changes-array (strip _label / _zoneClass / _isLink)
-      // Lib-beperking: elk link-entry mag óf 'capacity' óf 'speed' bevatten, niet beide.
-      const changes = pendingChanges.flatMap(c => {
+      // Bouw changes-array op modus —
+      // MIXED: per modus één API-aanroep op basis van de link-modus in segments.
+      // Overige: één aanroep voor de gehele MODE.
+      const serializeChange = c => {
         if (c._isLink) {
-          if (c.speed != null) return [{ linkId: c.linkId, speed: c.speed }];
-          return [{ linkId: c.linkId, capacity: c.capacity }];
+          return c.speed != null ? { linkId: c.linkId, speed: c.speed }
+                                 : { linkId: c.linkId, capacity: c.capacity };
         }
         const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
         if (c.production != null) obj.production = c.production;
         if (c.attraction != null) obj.attraction = c.attraction;
-        return [obj];
-      });
+        return obj;
+      };
 
       const scenarioName = document.getElementById('scenarioNameInput').value.trim()
                         || `${networkName} (${scenarioCounter})`;
 
-      try {
-        const res = await fetch('/processes/adjust/execution', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ inputs: { area_id: AREA_ID, mode: MODE, changes, scenario_name: scenarioName, debug: document.getElementById('adjustDebug').checked } }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const { jobID: job_id } = await res.json();
+      // Bouw job-wachtrij: één invoer per getroffen modus
+      let jobQueue;
+      if (MODE === 'MIXED') {
+        // Bouw linkId → modus-map vanuit de netwerksegmenten
+        const linkModeMap = {};
+        for (const seg of segments) {
+          const lid = String(seg.props.linkId ?? seg.props.id ?? '');
+          if (lid) linkModeMap[lid] = (seg.props.mode || 'CAR').toUpperCase();
+        }
+        const constituentModes = [...new Set(Object.values(linkModeMap))];
+        // Verdeel wijzigingen per modus; zone/knoop-wijzigingen gelden voor alle modi
+        const changesByMode = {};
+        for (const c of pendingChanges) {
+          const affected = c._isLink
+            ? [linkModeMap[String(c.linkId)] ?? 'CAR']
+            : constituentModes;
+          for (const m of affected) {
+            (changesByMode[m] = changesByMode[m] ?? []).push(c);
+          }
+        }
+        jobQueue = Object.entries(changesByMode)
+          .map(([m, mChanges]) => ({ mode: m, changes: mChanges.map(serializeChange) }));
+      } else {
+        jobQueue = [{ mode: MODE, changes: pendingChanges.map(serializeChange) }];
+      }
 
-        // Poll tot done/error — afnemende intervallen: 10s, 5s, 3s, 2s, daarna 1s
-        status.style.display = 'block';
-        status.textContent = T('applyRunning');
-        overlayMsg.textContent = T('applyRunning');
+      // Hulpfunctie: poll een job tot gereed; geeft job_id terug bij succes
+      const pollJobPromise = job_id => new Promise((resolve, reject) => {
         const POLL_DELAYS = [10000, 5000, 3000, 2000];
         let pollStep = 0;
-        const schedulePoll = () => {
-          const delay = pollStep < POLL_DELAYS.length ? POLL_DELAYS[pollStep] : 1000;
-          pollStep++;
-          setTimeout(doPoll, delay);
-        };
+        const schedulePoll = () => setTimeout(doPoll,
+          pollStep < POLL_DELAYS.length ? POLL_DELAYS[pollStep++] : 1000);
         const doPoll = async () => {
-          const sr = await fetch(`/jobs/${job_id}`);
-          const sj = await sr.json();
-          if (sj.status === 'running' || sj.status === 'accepted') {
-            status.textContent = T('applyRunning');
-            overlayMsg.textContent = T('applyRunning');
-          } else if (sj.status === 'successful') {
-            status.textContent = T('applyDone');
-            overlayMsg.textContent = T('applyDone');
-          } else {
-            const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
-            status.style.color = '#ff6b6b';
-            status.textContent = errLines.length ? errLines.join('\n') : T('applyError', sj.returncode);
-            overlayMsg.textContent = T('applyError', sj.returncode);
-          }
-          if (sj.status === 'successful' || sj.status === 'failed') {
-            btn.disabled = false;
-            overlay.style.display = 'none';
-            if (sj.status === 'successful') {
-               scenarioCounter++;
-               clearHighlight();
-               _setChangesPanelReadOnly(false);  // sluit read-only modus vóór reset
-               pendingChanges = [];
-              document.getElementById('scenarioNameInput').value = '';
-              renderChangesList();
-              // Laad nieuw netwerk en optioneel COMPARE-laag
-              const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
-              await loadAdjustedResult(results.new_area_id, results.compare_url);
+          try {
+            const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
+            if (sj.status === 'running' || sj.status === 'accepted') {
+              status.textContent = overlayMsg.textContent = T('applyRunning');
+              schedulePoll();
+            } else if (sj.status === 'successful') {
+              resolve(job_id);
+            } else {
+              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
+              reject(new Error(errLines.length
+                ? errLines.join('\n')
+                : T('applyError', sj.returncode)));
             }
-          } else {
-            schedulePoll();
-          }
+          } catch (e) { reject(e); }
         };
         schedulePoll();
+      });
+
+      status.style.display = 'block';
+      try {
+        let lastResults = null;
+        for (let qi = 0; qi < jobQueue.length; qi++) {
+          const { mode: jobMode, changes: jobChanges } = jobQueue[qi];
+          const effectiveSource = qi === 0 ? AREA_ID : lastResults.new_area_id;
+          const res = await fetch('/processes/adjust/execution', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inputs: {
+              area_id: effectiveSource,
+              mode: jobMode,
+              changes: jobChanges,
+              scenario_name: scenarioName,
+              debug: document.getElementById('adjustDebug').checked,
+            }}),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const { jobID: job_id } = await res.json();
+          status.textContent = overlayMsg.textContent = T('applyRunning');
+          await pollJobPromise(job_id);
+          lastResults = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+        }
+        btn.disabled = false;
+        overlay.style.display = 'none';
+        scenarioCounter++;
+        clearHighlight();
+        _setChangesPanelReadOnly(false);
+        pendingChanges = [];
+        document.getElementById('scenarioNameInput').value = '';
+        renderChangesList();
+        await loadAdjustedResult(lastResults.new_area_id, lastResults.compare_url);
       } catch (err) {
-        status.textContent = T('applyFetchError', err.message);
+        status.style.color = '#ff6b6b';
+        status.textContent = overlayMsg.textContent = err?.message || T('applyFetchError', String(err));
         btn.disabled = false;
         overlay.style.display = 'none';
       }

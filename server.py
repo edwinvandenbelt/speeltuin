@@ -636,6 +636,90 @@ def _merge_mixed_outputs(new_area_id: str, output_folder: Path, modes: list) -> 
                 break
 
 
+def _post_process_mixed_output(new_area_id: str, output_folder: Path,
+                               src_area_id: str, src_dir: Path,
+                               adjusted_mode: str, all_modes: list) -> None:
+    """Verwerk de output van één per-modus adjust-run tot een compleet MIXED-artefact.
+
+    Na een adjust-run voor bijv. CAR op een MIXED-brongebied:
+    1. ROUTES voor niet-aangepaste modi van bron kopiëren.
+    2. Features van niet-aangepaste modi uit bron-NETWORK-MIXED extraheren.
+    3. Aangepaste NETWORK-{mode}.geojson samenvoegen met de overige features
+       → NETWORK-MIXED.geojson.  Per-modus bestand verwijderen.
+    4. ZONE en FEEDLINK hernoemen van {adjusted_mode} → MIXED.
+    5. COMPARE hernoemen van {adjusted_mode} → MIXED.
+    """
+    import shutil
+
+    other_modes = [m for m in all_modes if m != adjusted_mode]
+
+    # ── 1. ROUTES voor niet-aangepaste modi kopiëren ────────────────────────
+    for m in other_modes:
+        src_routes = _find_data_file(src_dir, f'{src_area_id}-ROUTES-{m}')
+        if src_routes:
+            dst = output_folder / f'{new_area_id}-ROUTES-{m}{src_routes.suffix}'
+            if not dst.exists():
+                shutil.copy2(str(src_routes), str(dst))
+
+    # ── 2. Features van niet-aangepaste modi uit bron halen ─────────────────
+    other_features: list = []
+    src_network_path = _find_data_file(src_dir, f'{src_area_id}-NETWORK-MIXED')
+    if src_network_path is not None:
+        try:
+            fc_src = _read_geodata(src_network_path)
+            for feat in fc_src.get('features', []):
+                feat_mode = ((feat.get('properties') or {}).get('mode') or 'CAR').upper()
+                if feat_mode != adjusted_mode:
+                    other_features.append(feat)
+        except Exception as exc:
+            print(f'[adjust-mixed] Kon bron-NETWORK-MIXED niet lezen: {exc}')
+    else:
+        # Geketende aanroep: bron kan per-modus NETWORK-bestanden hebben
+        for m in other_modes:
+            src_net_m = _find_data_file(src_dir, f'{src_area_id}-NETWORK-{m}')
+            if src_net_m:
+                try:
+                    fc_m = _read_geodata(src_net_m)
+                    for feat in fc_m.get('features', []):
+                        feat.setdefault('properties', {}).setdefault('mode', m)
+                    other_features.extend(fc_m.get('features', []))
+                except Exception as exc:
+                    print(f'[adjust-mixed] Kon bron-NETWORK-{m} niet lezen: {exc}')
+
+    # ── 3. Aangepaste NETWORK samenvoegen met overige features ───────────────
+    adj_network = output_folder / f'{new_area_id}-NETWORK-{adjusted_mode}.geojson'
+    adj_features: list = []
+    if adj_network.exists():
+        try:
+            fc_adj = json.loads(adj_network.read_text(encoding='utf-8'))
+            for feat in fc_adj.get('features', []):
+                feat.setdefault('properties', {}).setdefault('mode', adjusted_mode)
+            adj_features = fc_adj.get('features', [])
+        except Exception as exc:
+            print(f'[adjust-mixed] Kon aangepast NETWORK-{adjusted_mode} niet lezen: {exc}')
+    merged_path = output_folder / f'{new_area_id}-NETWORK-MIXED.geojson'
+    merged_path.write_text(
+        json.dumps({'type': 'FeatureCollection', 'features': adj_features + other_features},
+                   ensure_ascii=False),
+        encoding='utf-8',
+    )
+    if adj_network.exists():
+        adj_network.unlink()
+
+    # ── 4. ZONE en FEEDLINK hernoemen naar MIXED ─────────────────────────────
+    for file_type in ('ZONE', 'FEEDLINK'):
+        src_f = output_folder / f'{new_area_id}-{file_type}-{adjusted_mode}.geojson'
+        dst_f = output_folder / f'{new_area_id}-{file_type}-MIXED.geojson'
+        if src_f.exists() and not dst_f.exists():
+            src_f.rename(dst_f)
+
+    # ── 5. COMPARE hernoemen naar MIXED ──────────────────────────────────────
+    c_src = output_folder / f'{new_area_id}-COMPARE-{adjusted_mode}.geojson'
+    c_dst = output_folder / f'{new_area_id}-COMPARE-MIXED.geojson'
+    if c_src.exists() and not c_dst.exists():
+        c_src.rename(c_dst)
+
+
 def _find_local_file(filename: str):
     """Zoek bestand in DATA_DIR en STATIC_DIR; geeft None als niet gevonden."""
     for base in (DATA_DIR, STATIC_DIR):
@@ -766,8 +850,15 @@ def _run_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str, mode_l
 
 
 def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
-                    new_area_id: str, mode: str, scenario_name):
-    """Voer adjust-pipeline uit in achtergrondthread."""
+                    new_area_id: str, mode: str, scenario_name,
+                    all_constituent_modes=None):
+    """Voer adjust-pipeline uit in achtergrondthread.
+
+    Als *all_constituent_modes* opgegeven is (lijst met ≥2 modi, bijv. ['CAR', 'BIKE'])
+    weet de functie dat de bron een MIXED-gebied is.  Na de pipeline-run wordt
+    _post_process_mixed_output aangeroepen om de per-modus output samen te voegen
+    tot een volledig MIXED-artefact; het resultaat krijgt dan mode='MIXED'.
+    """
     with _jobs_lock:
         _jobs[job_id]['status']  = 'running'
         _jobs[job_id]['started'] = _now_iso()
@@ -778,11 +869,25 @@ def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
             _adjust_run_pipeline(**kwargs)
         stream.flush()
 
-        if scenario_name:
-            _patch_geojson_properties(new_area_id, mode, scenario_name)
+        # Post-process naar MIXED als bron een MIXED-gebied was
+        is_mixed = all_constituent_modes and len(all_constituent_modes) > 1
+        if is_mixed:
+            src_dir = kwargs['folder']
+            output_folder = kwargs['output_folder']
+            _post_process_mixed_output(
+                new_area_id, output_folder,
+                src_area_id, src_dir,
+                mode, all_constituent_modes,
+            )
+            result_mode = 'MIXED'
+        else:
+            result_mode = mode
 
-        compare_file = _geojson_path(new_area_id, mode, 'COMPARE')
-        compare_url  = (f'/collections/comparison/items?areaId={new_area_id}&mode={mode}'
+        if scenario_name:
+            _patch_geojson_properties(new_area_id, result_mode, scenario_name)
+
+        compare_file = _geojson_path(new_area_id, result_mode, 'COMPARE')
+        compare_url  = (f'/collections/comparison/items?areaId={new_area_id}&mode={result_mode}'
                         if compare_file.exists() else None)
 
         with _jobs_lock:
@@ -791,7 +896,7 @@ def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
             _jobs[job_id]['finished']   = _now_iso()
             _jobs[job_id]['_results']   = {
                 'new_area_id': new_area_id,
-                'collection':  f'/collections/network/items?areaId={new_area_id}&mode={mode}',
+                'collection':  f'/collections/network/items?areaId={new_area_id}&mode={result_mode}',
                 'compare_url': compare_url,
             }
     except BaseException as exc:
@@ -1104,6 +1209,10 @@ def _execute_adjust(inputs: dict):
         if routes_file is None:
             abort(404, f'Routes-bestand niet gevonden: {area_id}-ROUTES-{mode}')
 
+        # Detecteer of de bron een MIXED-gebied is (heeft ROUTES voor ≥2 modi)
+        all_constituent = _discover_constituent_modes(area_id, src_dir)
+        is_mixed_source = len(all_constituent) > 1 and mode in all_constituent
+
     new_area_id = str(uuid.uuid4())
     if scenario_name:
         folder_name = re.sub(r'[^\w\-]', '_', scenario_name.strip())
@@ -1159,7 +1268,8 @@ def _execute_adjust(inputs: dict):
             debug=bool(inputs.get('debug', False)),
         )
         threading.Thread(target=_run_adjust_job,
-                         args=(job_id, kwargs, area_id, new_area_id, mode, scenario_name),
+                         args=(job_id, kwargs, area_id, new_area_id, mode, scenario_name,
+                               all_constituent if is_mixed_source else None),
                          daemon=True).start()
     return {'jobID': job_id, 'status': 'accepted'}, 201, {'Location': f'/jobs/{job_id}'}
 
