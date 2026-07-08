@@ -3181,6 +3181,8 @@
      * Leest de huidige tijdsbron (flow-scaler-paneel of dagdeel + vandaag)
      * en past MapLibre belichting en hemelkleur aan.
      */
+    let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
+    let daypart         = 'erh'; // idem
     function updateSunLight() {
       if (!map || !map.isStyleLoaded()) return;
 
@@ -4574,9 +4576,9 @@
      *  OS=2u, AS=2u, restdag=20u; wegingsbasis 14.4
      *  Formule: (weging/duur) / 14.4  */
     const DP_FRACTION = { mrh: (2/2)/14.4, erh: (2/2)/14.4, rest: (10.4/20)/14.4 };
-    let daypart    = 'erh';
+    // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
-    rebuildLinkFlowMap();  // Nu pas: daypart is gedeclareerd
+    rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan)
     let widthScale = false;
     let colorMetric = 'flow';
     let cars      = [];
@@ -4589,8 +4591,7 @@
     let _fspVersion  = 0;
     /** Overschreven max-flow voor de legenda terwijl de flow-scaler actief is; null = gebruik per-dagdeel scan. */
     let _fspMaxFlow  = null;
-    /** Label dat in de tooltip getoond wordt als de scaler actief is (bijv. "2026-06-15 08:00"). */
-    let _fspActiveLabel = null;
+    // _fspActiveLabel is declared near updateSunLight() (above) to avoid temporal dead zone errors.
 
     /** Ververs het debug-paneel met actuele statistieken over data en simulatie. */
     function updateDebugPanel() {
