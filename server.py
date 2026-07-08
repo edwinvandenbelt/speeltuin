@@ -567,6 +567,75 @@ def _discover_areas() -> list:
     return areas
 
 
+def _discover_constituent_modes(area_id: str, src_dir: Path) -> list:
+    """Geef de per-modus namen terug waarvoor een ROUTES-bestand bestaat (niet MIXED zelf).
+
+    Gebruikt bij adjust op een MIXED-gebied om te weten welke modi verwerkt moeten worden.
+    """
+    stem_pat = re.compile(
+        r'^' + re.escape(area_id) + r'-ROUTES-([A-Za-z0-9]+)\.(geojson|json|parquet|geoparquet)$'
+    )
+    modes: list = []
+    seen: set   = set()
+    for f in sorted(src_dir.iterdir()):
+        m = stem_pat.match(f.name)
+        if m:
+            mode_m = m.group(1).upper()
+            if mode_m != 'MIXED' and mode_m not in seen:
+                modes.append(mode_m)
+                seen.add(mode_m)
+    return modes
+
+
+def _merge_mixed_outputs(new_area_id: str, output_folder: Path, modes: list) -> None:
+    """Samenvoegen van per-modus adjust-output naar een MIXED-artefact.
+
+    Per bestandstype:
+    - NETWORK, COMPARE: features uit alle modi samenvoegen; mode-property toevoegen indien absent.
+    - ZONE, FEEDLINK:   eerste beschikbare per-modus versie overnemen als MIXED-variant.
+    - Per-modus NETWORK- en COMPARE-bestanden worden verwijderd zodat _discover_areas
+      de uitvoer niet als afzonderlijke CAR/BIKE-gebieden toont.
+    """
+    # ── NETWORK en COMPARE: merge ────────────────────────────────────────────
+    for file_type in ('NETWORK', 'COMPARE'):
+        all_features: list = []
+        any_found = False
+        for m in modes:
+            path = output_folder / f'{new_area_id}-{file_type}-{m}.geojson'
+            if not path.exists():
+                continue
+            any_found = True
+            try:
+                data = json.loads(path.read_text(encoding='utf-8'))
+            except Exception:
+                continue
+            for feat in data.get('features', []):
+                feat.setdefault('properties', {})
+                if 'mode' not in feat['properties']:
+                    feat['properties']['mode'] = m
+            all_features.extend(data.get('features', []))
+            path.unlink()   # verwijder per-modus bestand
+        if any_found:
+            merged_path = output_folder / f'{new_area_id}-{file_type}-MIXED.geojson'
+            merged_path.write_text(
+                json.dumps({'type': 'FeatureCollection', 'features': all_features},
+                           ensure_ascii=False),
+                encoding='utf-8',
+            )
+
+    # ── ZONE en FEEDLINK: eerste beschikbare modus als MIXED ────────────────
+    for file_type in ('ZONE', 'FEEDLINK'):
+        for m in modes:
+            path = output_folder / f'{new_area_id}-{file_type}-{m}.geojson'
+            if path.exists():
+                mixed_path = output_folder / f'{new_area_id}-{file_type}-MIXED.geojson'
+                if not mixed_path.exists():
+                    path.rename(mixed_path)
+                else:
+                    path.unlink()
+                break
+
+
 def _find_local_file(filename: str):
     """Zoek bestand in DATA_DIR en STATIC_DIR; geeft None als niet gevonden."""
     for base in (DATA_DIR, STATIC_DIR):
@@ -723,6 +792,56 @@ def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
             _jobs[job_id]['_results']   = {
                 'new_area_id': new_area_id,
                 'collection':  f'/collections/network/items?areaId={new_area_id}&mode={mode}',
+                'compare_url': compare_url,
+            }
+    except BaseException as exc:
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]['log'].append(f'[server] Fout: {type(exc).__name__}: {exc}')
+            _jobs[job_id]['status']     = 'failed'
+            _jobs[job_id]['returncode'] = -1
+            _jobs[job_id]['finished']   = _now_iso()
+
+
+def _run_adjust_job_mixed(job_id: str, base_kwargs: dict, src_area_id: str,
+                          new_area_id: str, routes_per_mode: dict, scenario_name):
+    """Voer adjust-pipeline uit voor elk samenstellend modus van een MIXED-gebied.
+
+    Volgorde:
+    1. Per modus (bijv. CAR, BIKE) de adjust-pipeline draaien met de bijbehorende routes.
+    2. Per-modus NETWORK/COMPARE/ZONE/FEEDLINK samenvoegen tot MIXED-artefacten.
+    3. Job-status bijwerken.
+    """
+    with _jobs_lock:
+        _jobs[job_id]['status']  = 'running'
+        _jobs[job_id]['started'] = _now_iso()
+    stream      = _LogStream(_jobs[job_id]['log'], _jobs_lock)
+    output_folder = base_kwargs['output_folder']
+    try:
+        with _pipeline_stdout_lock, \
+             contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            for m, routes_path in routes_per_mode.items():
+                print(f'[adjust-mixed] Modus {m} verwerken …')
+                kwargs_m = {**base_kwargs, 'routes_path': routes_path}
+                _adjust_run_pipeline(**kwargs_m)
+        stream.flush()
+
+        _merge_mixed_outputs(new_area_id, output_folder, list(routes_per_mode.keys()))
+
+        if scenario_name:
+            _patch_geojson_properties(new_area_id, 'MIXED', scenario_name)
+
+        compare_file = _geojson_path(new_area_id, 'MIXED', 'COMPARE')
+        compare_url  = (f'/collections/comparison/items?areaId={new_area_id}&mode=MIXED'
+                        if compare_file.exists() else None)
+
+        with _jobs_lock:
+            _jobs[job_id]['returncode'] = 0
+            _jobs[job_id]['status']     = 'successful'
+            _jobs[job_id]['finished']   = _now_iso()
+            _jobs[job_id]['_results']   = {
+                'new_area_id': new_area_id,
+                'collection':  f'/collections/network/items?areaId={new_area_id}&mode=MIXED',
                 'compare_url': compare_url,
             }
     except BaseException as exc:
@@ -966,10 +1085,24 @@ def _execute_adjust(inputs: dict):
     if not isinstance(changes, list) or not changes:
         abort(400, 'Parameter "changes" moet een niet-lege array zijn')
 
-    src_dir     = _find_area_dir(area_id)
-    routes_file = _find_data_file(src_dir, f'{area_id}-ROUTES-{mode}')
-    if routes_file is None:
-        abort(404, f'Routes-bestand niet gevonden: {area_id}-ROUTES-{mode}')
+    src_dir = _find_area_dir(area_id)
+
+    # ── Bepaal routes-bestand(en) ────────────────────────────────────────────
+    if mode == 'MIXED':
+        # MIXED-gebied: per samenstellend modus (bijv. CAR, BIKE) een eigen ROUTES-bestand
+        constituent_modes = _discover_constituent_modes(area_id, src_dir)
+        if not constituent_modes:
+            abort(404, f'Geen per-modus ROUTES-bestanden gevonden voor MIXED-gebied: {area_id}')
+        routes_per_mode: dict = {}
+        for m in constituent_modes:
+            rf = _find_data_file(src_dir, f'{area_id}-ROUTES-{m}')
+            if rf is None:
+                abort(404, f'Routes-bestand niet gevonden: {area_id}-ROUTES-{m}')
+            routes_per_mode[m] = rf
+    else:
+        routes_file = _find_data_file(src_dir, f'{area_id}-ROUTES-{mode}')
+        if routes_file is None:
+            abort(404, f'Routes-bestand niet gevonden: {area_id}-ROUTES-{mode}')
 
     new_area_id = str(uuid.uuid4())
     if scenario_name:
@@ -987,16 +1120,6 @@ def _execute_adjust(inputs: dict):
 
     (src_dir / '.area-uuid').write_text(area_id, encoding='utf-8')
 
-    kwargs = dict(
-        folder=src_dir,
-        changes=str(changes_file),
-        output_folder=output_folder,
-        routes_path=routes_file,
-        new_area_id=new_area_id,
-        min_link_trips=1.0,
-        debug=bool(inputs.get('debug', False)),
-    )
-
     job_id = str(uuid.uuid4())
     with _jobs_lock:
         _jobs[job_id] = {
@@ -1012,9 +1135,32 @@ def _execute_adjust(inputs: dict):
             '_results':   {},
         }
 
-    threading.Thread(target=_run_adjust_job,
-                     args=(job_id, kwargs, area_id, new_area_id, mode, scenario_name),
-                     daemon=True).start()
+    if mode == 'MIXED':
+        base_kwargs = dict(
+            folder=src_dir,
+            changes=str(changes_file),
+            output_folder=output_folder,
+            new_area_id=new_area_id,
+            min_link_trips=1.0,
+            debug=bool(inputs.get('debug', False)),
+        )
+        threading.Thread(target=_run_adjust_job_mixed,
+                         args=(job_id, base_kwargs, area_id, new_area_id,
+                               routes_per_mode, scenario_name),
+                         daemon=True).start()
+    else:
+        kwargs = dict(
+            folder=src_dir,
+            changes=str(changes_file),
+            output_folder=output_folder,
+            routes_path=routes_file,
+            new_area_id=new_area_id,
+            min_link_trips=1.0,
+            debug=bool(inputs.get('debug', False)),
+        )
+        threading.Thread(target=_run_adjust_job,
+                         args=(job_id, kwargs, area_id, new_area_id, mode, scenario_name),
+                         daemon=True).start()
     return {'jobID': job_id, 'status': 'accepted'}, 201, {'Location': f'/jobs/{job_id}'}
 
 
@@ -1637,7 +1783,7 @@ def ogc_collection_items(collection_id):
 @app.route('/traffic-sign-icon/<string:code>')
 def traffic_sign_icon(code):
     """Serveer een NDW PNG-icoon voor een RVV-bordcode; 404 als niet beschikbaar."""
-    safe = re.sub(r'[^A-Za-z0-9-]', '', code)   # koppelteken toegestaan (bijv. E8-vracht)
+    safe = re.sub(r'[^A-Za-z0-9.\-]', '', code)   # koppelteken en decimaalpunt toegestaan
     icon_dir = Path(__file__).parent / 'traffic_sign_icons'
     png_path = icon_dir / f'{safe}.png'
     if not png_path.exists():

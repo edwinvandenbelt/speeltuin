@@ -4218,6 +4218,12 @@
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data || !Array.isArray(data.features)) return;
+        // Normaliseer blackCode: komma → punt (bijv. "4,1" → "4.1" voor decimale waarden)
+        for (const f of data.features) {
+          if (f.properties?.blackCode) {
+            f.properties.blackCode = f.properties.blackCode.trim().replace(/,/g, '.');
+          }
+        }
         _trafficSignsGeoJson = data;
         _tryAddTrafficSigns();
       })
