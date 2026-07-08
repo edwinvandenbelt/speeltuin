@@ -3746,7 +3746,6 @@
           map.setLayoutProperty('buildings-3d',   'visibility', 'none');
         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
         try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
-        _syncSatellitePosition();
         return;
       }
       try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
@@ -3754,7 +3753,6 @@
                 : display === 'verborgen' ? purpose + '_hidden'
                 : purpose;
       updateBuildingColors(val);
-      _syncSatellitePosition();
     }
 
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
@@ -3778,37 +3776,6 @@
       if (!isNone && _libertyFillLayerIds) {
         for (const id of _libertyFillLayerIds) {
           try { map.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
-        }
-      }
-      _syncSatellitePosition();
-    }
-
-    // Positioneer satellite-bg boven of onder de gebouwlagen afhankelijk van de actieve modus.
-    // Wanneer zowel de luchtfoto als gebouwen actief zijn, schuift de luchtfoto boven de
-    // gebouw-extrusies zodat de zijkanten als silhouet door de foto heen steken ('draperen').
-    function _syncSatellitePosition() {
-      if (!_mapReady || !map.getLayer('satellite-bg')) return;
-      const isSat = basemapStyle === 'satellite';
-      const bldOn = _buildingsGeoJson != null
-        && (document.getElementById('buildingDisplay')?.value ?? 'normaal') !== 'uit';
-      if (isSat && bldOn) {
-        // Zoek de laatste gebouwlaag in de huidige stack
-        const bldIds = new Set(['buildings-3d', 'buildings-fill', 'building-3d']);
-        const layers = map.getStyle().layers;
-        let lastIdx = -1;
-        for (let i = layers.length - 1; i >= 0; i--) {
-          if (bldIds.has(layers[i].id)) { lastIdx = i; break; }
-        }
-        const afterId = lastIdx >= 0 && lastIdx < layers.length - 1
-          ? layers[lastIdx + 1].id
-          : undefined;  // undefined → append naar top van de stack
-        if (afterId !== 'satellite-bg') map.moveLayer('satellite-bg', afterId);
-      } else {
-        // Terugzetten vóór de eerste niet-satellite laag (onderaan de stack)
-        const allLayers = map.getStyle().layers;
-        if (allLayers[0]?.id !== 'satellite-bg') {
-          const firstOther = allLayers.find(l => l.id !== 'satellite-bg');
-          if (firstOther) map.moveLayer('satellite-bg', firstOther.id);
         }
       }
     }
@@ -4001,8 +3968,6 @@
           },
         });
       }
-      // Satelliet boven gebouwen plaatsen als dat van toepassing is
-      _syncSatellitePosition();
     }
 
     // ─── Verkeersborden-ondersteuning ─────────────────────────────────────────
