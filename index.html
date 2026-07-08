@@ -477,6 +477,8 @@
       display: flex; align-items: center; justify-content: center;
       pointer-events: none; line-height: 1;
     }
+    .tb-badge:empty { display: none; }
+    #viewChangesBtn { padding-right: 16px; }
 
     /* ── What-if wegafsluiting panel ─────────────────────────────────── */
     #whatifRcPanel {
@@ -781,6 +783,38 @@
       display: flex; flex-direction: column; gap: 7px;
     }
     .sim-row { display: flex; align-items: center; gap: 6px; }
+
+    /* ── Aanpassingen-paneel (floating, draggable, collapsible) ──────────────── */
+    #editPanel {
+      position: fixed;
+      z-index: 25;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid rgba(126,200,227,0.18);
+      border-radius: 10px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+      min-width: 170px;
+      backdrop-filter: blur(6px);
+    }
+    #editPanelHeader {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 8px 6px 12px;
+      cursor: grab;
+      font-size: 11px; font-weight: 600; color: #7ec8e3;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      border-bottom: 1px solid rgba(126,200,227,0.12);
+      border-radius: 10px 10px 0 0;
+    }
+    #editPanelHeader:active { cursor: grabbing; }
+    #editPanelCollapseBtn {
+      background: none; border: none; color: #5a6272;
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      flex-shrink: 0;
+    }
+    #editPanelCollapseBtn:hover { color: #7ec8e3; }
+    #editPanelBody {
+      padding: 8px 10px;
+      display: flex; flex-direction: column; gap: 7px;
+    }
 
     #flowScalerPanel {
       display: none;
@@ -1142,15 +1176,10 @@
     </div>
 
 
-    <!-- Simulatie & bewerkingsknoppen -->
-    <button class="tb-btn edit-btn" id="nodeEditBtn" data-i18n-title="nodeEditTitle" title="Productie/attractie per knoop wijzigen">&#9673;</button>
-    <button class="tb-btn edit-btn" id="linkEditBtn" data-i18n-title="linkEditTitle" title="Capaciteit per wegvak wijzigen">&#9644;</button>
+    <!-- Analyse & navigatie knoppen -->
     <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
     <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
     <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
-    <button class="tb-btn" id="viewChangesBtn"
-            data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
-            style="position:relative">&#9776;<span id="viewChangesBadge" class="tb-badge"></span></button>
 
     <!-- Taal (verborgen, beheerd via instellingen-paneel) -->
     <select id="langSelect" class="tb-select lang-select" style="display:none" onchange="applyLang(this.value)" data-i18n-title="langSelectTitle" title="Taal kiezen">
@@ -1190,6 +1219,30 @@
           <span class="tb-scale-lbl">&#9200; <b id="scaleVal">1&times;</b></span>
           <input type="range" id="timeScale" min="1" max="10" value="1" step="1" data-i18n-title="timeScaleRangeTitle" title="Tijdschaal aanpassen"/>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Aanpassingen-paneel ──────────────────────────────────────────────────── -->
+  <div id="editPanel">
+    <div id="editPanelHeader">
+      <span>Aanpassingen</span>
+      <button id="editPanelCollapseBtn" title="Inklappen">▾</button>
+    </div>
+    <div id="editPanelBody">
+      <div class="sim-row">
+        <!-- Productie/attractie per knoop wijzigen -->
+        <button class="tb-btn edit-btn" id="nodeEditBtn"
+                data-i18n-title="nodeEditTitle"
+                title="Productie/attractie per knoop wijzigen">ZONE</button>
+        <!-- Capaciteit per wegvak wijzigen -->
+        <button class="tb-btn edit-btn" id="linkEditBtn"
+                data-i18n-title="linkEditTitle"
+                title="Capaciteit per wegvak wijzigen">LINK</button>
+        <!-- Wijzigingen bekijken -->
+        <button class="tb-btn" id="viewChangesBtn"
+                data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
+                style="position:relative">LIJST<span id="viewChangesBadge" class="tb-badge"></span></button>
       </div>
     </div>
   </div>
@@ -8623,8 +8676,8 @@
       deactivateWhatifRc();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
-      document.getElementById('nodeEditBtn').textContent =
-        nodeEditActive ? '✕' : '◉';
+      document.getElementById('nodeEditBtn').innerHTML =
+        nodeEditActive ? '✕' : 'ZONE';
 
       if (nodeEditActive) {
         // Stop animatie en verwijder voertuigen uit beeld
@@ -8670,7 +8723,7 @@
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
       document.getElementById('linkEditBtn').innerHTML =
-        linkEditActive ? '✕' : '&#9644;';
+        linkEditActive ? '✕' : 'LINK';
 
       if (linkEditActive) {
         paused = true;
@@ -9402,6 +9455,64 @@
       if (!dragging) return;
       dragging = false;
       localStorage.setItem('simPanelPos', JSON.stringify({
+        x: parseInt(panel.style.left),
+        y: parseInt(panel.style.top),
+      }));
+    });
+  }());
+
+  // ── Aanpassingen-paneel: slepen, inklappen, positie opslaan ─────────────
+  (function () {
+    const panel  = document.getElementById('editPanel');
+    const header = document.getElementById('editPanelHeader');
+    const colBtn = document.getElementById('editPanelCollapseBtn');
+    const body   = document.getElementById('editPanelBody');
+
+    // Positie herstellen (of standaard links, net onder simPanel)
+    const savedPos = JSON.parse(localStorage.getItem('editPanelPos') || 'null');
+    if (savedPos) {
+      panel.style.left = savedPos.x + 'px';
+      panel.style.top  = savedPos.y + 'px';
+    } else {
+      panel.style.left = '16px';
+      panel.style.top  = '180px';
+    }
+
+    // Inklap-staat herstellen
+    if (localStorage.getItem('editPanelCollapsed') === '1') {
+      body.style.display = 'none';
+      colBtn.textContent = '▸';
+    }
+
+    // Toggle inklappen
+    colBtn.addEventListener('click', () => {
+      const willCollapse = body.style.display !== 'none';
+      body.style.display = willCollapse ? 'none' : '';
+      colBtn.textContent  = willCollapse ? '▸' : '▾';
+      localStorage.setItem('editPanelCollapsed', willCollapse ? '1' : '0');
+    });
+
+    // Slepen via de header
+    let dragging = false, ox = 0, oy = 0;
+    header.addEventListener('mousedown', e => {
+      if (e.target === colBtn) return;
+      dragging = true;
+      const r = panel.getBoundingClientRect();
+      ox = e.clientX - r.left;
+      oy = e.clientY - r.top;
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const x = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth,  e.clientX - ox));
+      const y = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, e.clientY - oy));
+      panel.style.left = x + 'px';
+      panel.style.top  = y + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      localStorage.setItem('editPanelPos', JSON.stringify({
         x: parseInt(panel.style.left),
         y: parseInt(panel.style.top),
       }));
