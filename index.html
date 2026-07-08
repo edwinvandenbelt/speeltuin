@@ -4117,14 +4117,24 @@
 
     // ─── Verkeersborden-ondersteuning ─────────────────────────────────────────
 
-    // Canvas-gebaseerd fallback-icoon per RVV-categorie (48×48 px, pixelRatio 1)
+    // Teken een metalen paal in de canvas-context, startend op y=signH.
+    function _drawSignPole(ctx, signH, poleH, canvasW) {
+      const cx = Math.round(canvasW / 2);
+      const pw = Math.max(3, Math.round(canvasW * 0.09));
+      ctx.fillStyle = '#9e9e9e';
+      ctx.fillRect(cx - Math.round(pw / 2), signH, pw, poleH);
+      ctx.fillStyle = '#bdbdbd';
+      ctx.fillRect(cx - Math.round(pw / 2), signH, Math.max(1, Math.round(pw / 4)), poleH);
+    }
+
+    // Canvas-gebaseerd fallback-icoon per RVV-categorie (48×84 px: 48 bord + 36 paal)
     function _makeSignFallbackIcon(rvvCode) {
-      const S = 48;
+      const S = 48, POLE_H = 36;
       const cv = document.createElement('canvas');
-      cv.width = cv.height = S;
+      cv.width = S; cv.height = S + POLE_H;
       const ctx = cv.getContext('2d');
       const cat = (rvvCode || '?').charAt(0).toUpperCase();
-      ctx.clearRect(0, 0, S, S);
+      ctx.clearRect(0, 0, S, S + POLE_H);
       // Hulpfunctie afgeronde rechthoek
       function rr(x, y, w, h, r) {
         ctx.beginPath();
@@ -4176,7 +4186,8 @@
         ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
         ctx.fillStyle = '#9b9b9b'; ctx.fill();
       }
-      return ctx.getImageData(0, 0, S, S);
+      _drawSignPole(ctx, S, POLE_H, S);
+      return ctx.getImageData(0, 0, S, S + POLE_H);
     }
 
     // Laad en toon verkeersborden; async vanwege afbeelding-laad
@@ -4202,7 +4213,7 @@
       }
 
       // Laad afbeeldingen parallel: NDW PNG-iconen per code, canvas-fallback bij 404
-      const SIGN_PX = 64;
+      const SIGN_PX = 64, POLE_PX = 48;
       await Promise.allSettled([...codes].map(async (code) => {
         const imgId = 'ts-' + code;
         if (map.hasImage(imgId)) return;
@@ -4211,10 +4222,11 @@
             const el = new Image(SIGN_PX, SIGN_PX);
             el.onload = () => {
               const cv = document.createElement('canvas');
-              cv.width = cv.height = SIGN_PX;
+              cv.width = SIGN_PX; cv.height = SIGN_PX + POLE_PX;
               const ctx2 = cv.getContext('2d');
               ctx2.drawImage(el, 0, 0, SIGN_PX, SIGN_PX);
-              res(ctx2.getImageData(0, 0, SIGN_PX, SIGN_PX));
+              _drawSignPole(ctx2, SIGN_PX, POLE_PX, SIGN_PX);
+              res(ctx2.getImageData(0, 0, SIGN_PX, SIGN_PX + POLE_PX));
             };
             el.onerror = rej;
             el.src = `/traffic-sign-icon/${encodeURIComponent(code)}?v=2`;
@@ -4270,6 +4282,7 @@
             ],
             'icon-allow-overlap':    true,
             'icon-ignore-placement': true,
+            'icon-anchor':           'bottom',
             'visibility': _trafficSignsVisible ? 'visible' : 'none',
           },
         });
