@@ -687,24 +687,42 @@ def _post_process_mixed_output(new_area_id: str, output_folder: Path,
                     print(f'[adjust-mixed] Kon bron-NETWORK-{m} niet lezen: {exc}')
 
     # ── 3. Aangepaste NETWORK samenvoegen met overige features ───────────────
-    adj_network = output_folder / f'{new_area_id}-NETWORK-{adjusted_mode}.geojson'
-    adj_features: list = []
-    if adj_network.exists():
-        try:
-            fc_adj = json.loads(adj_network.read_text(encoding='utf-8'))
-            for feat in fc_adj.get('features', []):
-                feat.setdefault('properties', {}).setdefault('mode', adjusted_mode)
-            adj_features = fc_adj.get('features', [])
-        except Exception as exc:
-            print(f'[adjust-mixed] Kon aangepast NETWORK-{adjusted_mode} niet lezen: {exc}')
     merged_path = output_folder / f'{new_area_id}-NETWORK-MIXED.geojson'
-    merged_path.write_text(
-        json.dumps({'type': 'FeatureCollection', 'features': adj_features + other_features},
-                   ensure_ascii=False),
-        encoding='utf-8',
-    )
-    if adj_network.exists():
-        adj_network.unlink()
+
+    # Geval A: library heeft al een compleet NETWORK-MIXED geschreven omdat de
+    # bronmap ook MIXED was (mode-detectie levert 'MIXED', niet adjusted_mode).
+    # Dit bestand bevat al alle modi; direct converteren naar geojson is voldoende.
+    adj_mixed_src = _find_data_file(output_folder, f'{new_area_id}-NETWORK-MIXED')
+    if adj_mixed_src and adj_mixed_src != merged_path:
+        try:
+            fc_complete = _read_geodata(adj_mixed_src)
+            merged_path.write_text(
+                json.dumps(fc_complete, ensure_ascii=False),
+                encoding='utf-8',
+            )
+            if adj_mixed_src.suffix != '.geojson':
+                adj_mixed_src.unlink()
+        except Exception as exc:
+            print(f'[adjust-mixed] Kon NETWORK-MIXED-output niet converteren: {exc}')
+    else:
+        # Geval B: library schreef een per-modus bestand (bron was per-modus).
+        adj_network  = output_folder / f'{new_area_id}-NETWORK-{adjusted_mode}.geojson'
+        adj_features: list = []
+        if adj_network.exists():
+            try:
+                fc_adj = json.loads(adj_network.read_text(encoding='utf-8'))
+                for feat in fc_adj.get('features', []):
+                    feat.setdefault('properties', {}).setdefault('mode', adjusted_mode)
+                adj_features = fc_adj.get('features', [])
+            except Exception as exc:
+                print(f'[adjust-mixed] Kon aangepast NETWORK-{adjusted_mode} niet lezen: {exc}')
+        merged_path.write_text(
+            json.dumps({'type': 'FeatureCollection', 'features': adj_features + other_features},
+                       ensure_ascii=False),
+            encoding='utf-8',
+        )
+        if adj_network.exists():
+            adj_network.unlink()
 
     # ── 4. ZONE en FEEDLINK hernoemen naar MIXED ─────────────────────────────
     for file_type in ('ZONE', 'FEEDLINK'):
