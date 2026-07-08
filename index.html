@@ -3183,6 +3183,7 @@
      */
     let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
     let daypart         = 'erh'; // idem
+    let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
     function updateSunLight() {
       if (!map || !map.isStyleLoaded()) return;
 
@@ -3206,21 +3207,29 @@
 
       const sun = _getSunState(month, hour);
 
-      map.setLight({
+      const lightProps = {
         anchor:    'map',
         color:     sun.lightColor,
         intensity: sun.intensity,
         position:  [1.15, sun.azimuthal, sun.polar],
-      });
-
-      map.setSky({
+      };
+      const skyProps = {
         'sky-color':         sun.skyColor,
         'sky-horizon-blend': 0.5,
         'horizon-color':     sun.horizonColor,
         'horizon-fog-blend': 0.1,
         'fog-color':         sun.fogColor,
         'fog-ground-blend':  0.9,
-      });
+      };
+
+      map.setLight(lightProps);
+      map.setSky(skyProps);
+
+      // Rechterkaart meenemen als split-view actief is
+      if (map2 && map2.isStyleLoaded()) {
+        map2.setLight(lightProps);
+        map2.setSky(skyProps);
+      }
     }
 
     // ── 3. MapLibre kaart — start parallel met laden van data ─────────────
@@ -3875,22 +3884,45 @@
       localStorage.setItem('basemapStyle', style);
       const isSat  = style === 'satellite';
       const isNone = style === 'none';
-      // Toon of verberg de satelliet raster-laag
-      if (map.getLayer('satellite-bg'))
-        map.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none');
-      // Geen-kaart-modus: verberg alle Liberty lagen en maak achtergrond zwart
-      if (_libertyAllLayerIds) {
-        for (const id of _libertyAllLayerIds) {
-          try { map.setLayoutProperty(id, 'visibility', isNone ? 'none' : 'visible'); } catch (_) {}
+
+      // Helper: past de basemap-stijl toe op één MapLibre-instantie.
+      // Voegt de satelliet-source/laag toe indien die nog ontbreekt.
+      function _applyToMap(m) {
+        if (!m || !m.isStyleLoaded()) return;
+        // Satelliet raster-laag
+        if (!m.getSource('esri-satellite')) {
+          m.addSource('esri-satellite', {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256, maxzoom: 19,
+            attribution: '© Esri, i-cubed, USDA, USGS, AEX, GeoEye',
+          });
+        }
+        if (!m.getLayer('satellite-bg')) {
+          const firstLayerId = m.getStyle().layers[0]?.id;
+          m.addLayer({
+            id: 'satellite-bg', type: 'raster', source: 'esri-satellite',
+            layout: { visibility: 'none' }, paint: { 'raster-opacity': 1 },
+          }, firstLayerId);
+        }
+        try { m.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none'); } catch (_) {}
+        // Liberty lagen aan/uit
+        if (_libertyAllLayerIds) {
+          for (const id of _libertyAllLayerIds) {
+            try { m.setLayoutProperty(id, 'visibility', isNone ? 'none' : 'visible'); } catch (_) {}
+          }
+        }
+        m.getContainer().style.backgroundColor = isNone ? '#000000' : '';
+        // Satelliet: verberg ook de Liberty fill/background lagen
+        if (!isNone && _libertyFillLayerIds) {
+          for (const id of _libertyFillLayerIds) {
+            try { m.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
+          }
         }
       }
-      map.getContainer().style.backgroundColor = isNone ? '#000000' : '';
-      // Satelliet: verberg ook de Liberty fill/background lagen (roads/labels blijven overlay)
-      if (!isNone && _libertyFillLayerIds) {
-        for (const id of _libertyFillLayerIds) {
-          try { map.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
-        }
-      }
+
+      _applyToMap(map);
+      if (map2) _applyToMap(map2);
     }
 
     function _tryAddBuildings() {
@@ -5366,7 +5398,7 @@
     // ── ScenarioVergelijker — state (vóór makeCarLayers zodat er geen TDZ-fout optreedt) ──
     let splitViewActive    = false;
     let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
-    let map2               = null;   // rechter MapLibre-instantie
+    // map2 is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let overlay2           = null;   // deck.gl MapboxOverlay voor rechterkaart
     let origSegments       = [];     // segments-array voor rechterkaart
     let origGeojsonFeatures = [];    // geojson.features voor rechterkaart
@@ -5582,8 +5614,10 @@
 
       return new GeoJsonLayer({
         id: 'network2',
-        data: origGeojsonFeatures,
-        visible: true,
+        data: MODE !== 'MIXED'
+          ? origGeojsonFeatures
+          : origGeojsonFeatures.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        visible: colorMetric !== 'none' && colorMetric !== 'compare',
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
@@ -8246,6 +8280,9 @@
           // Gebouwen uitschakelen op de rechterkaart (Liberty-lagen)
           try { if (map2.getLayer('building-3d')) map2.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
           try { if (map2.getLayer('building'))    map2.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+          // Zon/sky en achtergrond gelijkstellen aan linkerkaart
+          updateSunLight();
+          if (basemapStyle && basemapStyle !== 'map') _applyBasemapStyle(basemapStyle);
         });
 
         // ── Camera-sync ────────────────────────────────────────────────────
