@@ -166,6 +166,122 @@ def _work_dir() -> Path:
     return d
 
 
+# ---------------------------------------------------------------------------
+# S3-ondersteuning (optioneel — backward compatible)
+# Stel S3_WORK_BUCKET in om S3 te gebruiken; zonder configuratie werkt de
+# server volledig lokaal zoals voorheen.
+# ---------------------------------------------------------------------------
+
+_S3_BUCKET: str = os.environ.get('S3_WORK_BUCKET', '').strip()
+_S3_PREFIX: str = os.environ.get('S3_WORK_PREFIX', 'work').strip().strip('/') + '/'
+_s3_client_cache = None
+
+
+def _s3_enabled() -> bool:
+    return bool(_S3_BUCKET)
+
+
+def _s3_client():
+    global _s3_client_cache
+    if _s3_client_cache is None:
+        import boto3
+        _s3_client_cache = boto3.client('s3')
+    return _s3_client_cache
+
+
+def _s3_key(area_id: str, filename: str) -> str:
+    return f'{_S3_PREFIX}{area_id}/{filename}'
+
+
+def _s3_area_prefix(area_id: str) -> str:
+    return f'{_S3_PREFIX}{area_id}/'
+
+
+def _s3_list_keys(prefix: str) -> list:
+    """Geef alle S3-objectsleutels terug met het opgegeven prefix."""
+    paginator = _s3_client().get_paginator('list_objects_v2')
+    keys = []
+    for page in paginator.paginate(Bucket=_S3_BUCKET, Prefix=prefix):
+        for obj in page.get('Contents', []):
+            keys.append(obj['Key'])
+    return keys
+
+
+def _s3_exists(key: str) -> bool:
+    try:
+        _s3_client().head_object(Bucket=_S3_BUCKET, Key=key)
+        return True
+    except Exception:
+        return False
+
+
+def _s3_read_bytes(key: str) -> bytes:
+    response = _s3_client().get_object(Bucket=_S3_BUCKET, Key=key)
+    return response['Body'].read()
+
+
+def _s3_write_bytes(key: str, data: bytes,
+                    content_type: str = 'application/octet-stream') -> None:
+    _s3_client().put_object(Bucket=_S3_BUCKET, Key=key,
+                            Body=data, ContentType=content_type)
+
+
+def _s3_write_text(key: str, text: str) -> None:
+    _s3_write_bytes(key, text.encode('utf-8'), 'text/plain')
+
+
+def _s3_read_text(key: str) -> str:
+    return _s3_read_bytes(key).decode('utf-8')
+
+
+def _s3_delete_prefix(prefix: str) -> None:
+    """Verwijder alle S3-objecten waarvan de sleutel begint met *prefix*."""
+    keys = _s3_list_keys(prefix)
+    if not keys:
+        return
+    for i in range(0, len(keys), 1000):
+        _s3_client().delete_objects(
+            Bucket=_S3_BUCKET,
+            Delete={'Objects': [{'Key': k} for k in keys[i:i + 1000]]},
+        )
+
+
+def _s3_sync_to(local_dir: Path, area_id: str) -> None:
+    """Upload alle bestanden in *local_dir* naar S3 onder {prefix}{area_id}/."""
+    if not _s3_enabled():
+        return
+    for f in local_dir.iterdir():
+        if not f.is_file():
+            continue
+        key = _s3_key(area_id, f.name)
+        ct = ('application/json'
+              if f.suffix.lower() in ('.json', '.geojson') else
+              'application/octet-stream')
+        _s3_write_bytes(key, f.read_bytes(), ct)
+        print(f'[s3] geüpload: s3://{_S3_BUCKET}/{key}')
+
+
+def _s3_sync_from(area_id: str, local_dir: Path) -> bool:
+    """Download alle bestanden voor *area_id* van S3 naar *local_dir*.
+
+    Geeft True terug als er minstens één bestand gevonden is.
+    """
+    if not _s3_enabled():
+        return False
+    keys = _s3_list_keys(_s3_area_prefix(area_id))
+    if not keys:
+        return False
+    local_dir.mkdir(parents=True, exist_ok=True)
+    for key in keys:
+        filename = key.split('/')[-1]
+        if not filename:
+            continue
+        local_path = local_dir / filename
+        local_path.write_bytes(_s3_read_bytes(key))
+        print(f'[s3] gedownload: {key} → {local_path}')
+    return True
+
+
 def _has_network_file(directory: Path, area_id: str) -> bool:
     """Controleer of de map een NETWORK-bestand bevat (GeoJSON of GeoParquet)."""
     if any(directory.glob(f'{area_id}-NETWORK-*.geojson')):
@@ -178,7 +294,11 @@ def _has_network_file(directory: Path, area_id: str) -> bool:
 
 
 def _find_data_file(directory: Path, stem: str) -> 'Path | None':
-    """Zoek een geodata-bestand: eerst GeoJSON, dan GeoParquet (als geopandas beschikbaar is)."""
+    """Zoek een geodata-bestand: eerst GeoJSON, dan GeoParquet (als geopandas beschikbaar is).
+
+    Als het bestand lokaal niet gevonden wordt én S3 geconfigureerd is, wordt het
+    automatisch van S3 gedownload naar de lokale cache-map.
+    """
     for ext in ('.geojson', '.json'):
         p = directory / f'{stem}{ext}'
         if p.exists():
@@ -188,6 +308,22 @@ def _find_data_file(directory: Path, stem: str) -> 'Path | None':
             p = directory / f'{stem}{ext}'
             if p.exists():
                 return p
+
+    # S3 read-through: zoek bestand in S3 en download naar lokale cache
+    if _s3_enabled():
+        area_id = directory.name
+        for ext in ('.geojson', '.json') + _GEOPARQUET_EXTS:
+            key = _s3_key(area_id, f'{stem}{ext}')
+            if _s3_exists(key):
+                try:
+                    local_path = directory / f'{stem}{ext}'
+                    directory.mkdir(parents=True, exist_ok=True)
+                    local_path.write_bytes(_s3_read_bytes(key))
+                    print(f'[s3] gecached: {key} → {local_path}')
+                    return local_path
+                except Exception as _e:
+                    print(f'[s3] download mislukt ({key}): {_e}')
+
     return None
 
 
@@ -496,7 +632,11 @@ def _safe(value) -> bool:
 
 
 def _find_area_dir(area_id: str) -> Path:
-    """Zoek de work-submap die de bestanden voor area_id bevat."""
+    """Zoek de work-submap die de bestanden voor area_id bevat.
+
+    Als het gebied lokaal niet gevonden wordt én S3 geconfigureerd is, wordt het
+    automatisch van S3 gedownload naar de lokale cache-map.
+    """
     work   = _work_dir()
     direct = work / area_id
     if direct.is_dir() and _has_network_file(direct, area_id):
@@ -504,6 +644,12 @@ def _find_area_dir(area_id: str) -> Path:
     for subdir in work.iterdir():
         if subdir.is_dir() and _has_network_file(subdir, area_id):
             return subdir
+
+    # S3 fallback: download het volledige gebied naar lokale cache
+    if _s3_enabled():
+        if _s3_sync_from(area_id, direct):
+            return direct
+
     return direct  # fallback (leidt tot 404 downstream)
 
 
@@ -564,6 +710,50 @@ def _discover_areas() -> list:
             areas.append({'areaId': area_id, 'mode': mode, 'name': name,
                           'hasCompare': has_compare, 'srcAreaId': src_area_id,
                           'hasNvpRoutes': has_nvp_routes})
+
+    # S3: voeg gebieden toe die alleen in S3 bestaan (niet lokaal gecached)
+    if _s3_enabled():
+        try:
+            all_keys = _s3_list_keys(_S3_PREFIX)
+        except Exception as _exc:
+            print(f'[s3] _discover_areas S3-listing mislukt: {_exc}')
+            all_keys = []
+
+        s3_candidates: dict = {}
+        for key in all_keys:
+            filename = key.split('/')[-1]
+            for pat in (pattern_geojson, pattern_geoparquet):
+                m = pat.match(filename)
+                if m:
+                    aid, mod = m.group(1), m.group(2)
+                    if (aid, mod) not in s3_candidates:
+                        s3_candidates[(aid, mod)] = key
+
+        for (area_id, mode), key in sorted(s3_candidates.items()):
+            if (area_id, mode) in seen:
+                continue
+            seen.add((area_id, mode))
+            name        = area_id
+            src_area_id = None
+            try:
+                data        = json.loads(_s3_read_bytes(key).decode('utf-8'))
+                props       = data.get('properties', {})
+                name        = props.get('name', area_id)
+                src_area_id = props.get('baseAreaId') or None
+            except Exception:
+                pass
+            if not src_area_id:
+                try:
+                    src_area_id = _s3_read_text(
+                        _s3_key(area_id, '.src-area-id')).strip() or None
+                except Exception:
+                    pass
+            has_compare    = _s3_exists(_s3_key(area_id, f'{area_id}-COMPARE-{mode}.geojson'))
+            has_nvp_routes = _s3_exists(_s3_key(area_id, f'{area_id}-NVP-ROUTES-{mode}.parquet'))
+            areas.append({'areaId': area_id, 'mode': mode, 'name': name,
+                          'hasCompare': has_compare, 'srcAreaId': src_area_id,
+                          'hasNvpRoutes': has_nvp_routes})
+
     return areas
 
 
@@ -851,6 +1041,14 @@ def _run_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str, mode_l
              contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
             _prepare_run_pipeline(**kwargs)
         stream.flush()
+
+        # Sync naar S3 als geconfigureerd
+        if _s3_enabled():
+            try:
+                _s3_sync_to(out_dir, name)
+            except Exception as _e:
+                print(f'[s3] sync na prepare mislukt: {_e}')
+
         with _jobs_lock:
             _jobs[job_id]['returncode'] = 0
             _jobs[job_id]['status']     = 'successful'
@@ -908,6 +1106,13 @@ def _run_adjust_job(job_id: str, kwargs: dict, src_area_id: str,
         compare_url  = (f'/collections/comparison/items?areaId={new_area_id}&mode={result_mode}'
                         if compare_file.exists() else None)
 
+        # Sync naar S3 als geconfigureerd
+        if _s3_enabled():
+            try:
+                _s3_sync_to(kwargs['output_folder'], new_area_id)
+            except Exception as _e:
+                print(f'[s3] sync na adjust mislukt: {_e}')
+
         with _jobs_lock:
             _jobs[job_id]['returncode'] = 0
             _jobs[job_id]['status']     = 'successful'
@@ -957,6 +1162,13 @@ def _run_adjust_job_mixed(job_id: str, base_kwargs: dict, src_area_id: str,
         compare_file = _geojson_path(new_area_id, 'MIXED', 'COMPARE')
         compare_url  = (f'/collections/comparison/items?areaId={new_area_id}&mode=MIXED'
                         if compare_file.exists() else None)
+
+        # Sync naar S3 als geconfigureerd
+        if _s3_enabled():
+            try:
+                _s3_sync_to(output_folder, new_area_id)
+            except Exception as _e:
+                print(f'[s3] sync na adjust-mixed mislukt: {_e}')
 
         with _jobs_lock:
             _jobs[job_id]['returncode'] = 0
@@ -1162,6 +1374,11 @@ def _execute_prepare(inputs: dict):
 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / '.area-uuid').write_text(name, encoding='utf-8')
+    if _s3_enabled():
+        try:
+            _s3_write_text(_s3_key(name, '.area-uuid'), name)
+        except Exception as _e:
+            print(f'[s3] .area-uuid schrijven mislukt: {_e}')
 
     kwargs = dict(
         min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat,
@@ -1246,6 +1463,18 @@ def _execute_adjust(inputs: dict):
     changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding='utf-8')
 
     (src_dir / '.area-uuid').write_text(area_id, encoding='utf-8')
+
+    if _s3_enabled():
+        try:
+            _s3_write_text(_s3_key(new_area_id, '.src-area-id'), area_id)
+            _s3_write_bytes(
+                _s3_key(new_area_id, f'{new_area_id}-changes.json'),
+                json.dumps(changes, ensure_ascii=False).encode('utf-8'),
+                'application/json',
+            )
+            _s3_write_text(_s3_key(area_id, '.area-uuid'), area_id)
+        except Exception as _e:
+            print(f'[s3] metadata schrijven mislukt: {_e}')
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:
@@ -1385,6 +1614,11 @@ def _execute_delete_area(inputs: dict):
         shutil.rmtree(str(area_dir))
     except Exception as exc:
         abort(500, str(exc))
+    if _s3_enabled():
+        try:
+            _s3_delete_prefix(_s3_area_prefix(area_id))
+        except Exception as _e:
+            print(f'[s3] delete-area S3 mislukt: {_e}')
     return {'deleted': area_id}, 200, {}
 
 
@@ -1746,6 +1980,15 @@ def ogc_collection_items(collection_id):
                 area_dir.mkdir(parents=True, exist_ok=True)
                 with open(cache_path, 'w', encoding='utf-8') as fh:
                     json.dump(data, fh, ensure_ascii=False)
+                if _s3_enabled():
+                    try:
+                        _s3_write_bytes(
+                            _s3_key(area_id, cache_path.name),
+                            json.dumps(data, ensure_ascii=False).encode('utf-8'),
+                            'application/json',
+                        )
+                    except Exception as _e:
+                        print(f'[s3] buildings-cache uploaden mislukt: {_e}')
         except Exception:
             pass
 
@@ -1859,6 +2102,15 @@ def ogc_collection_items(collection_id):
                 area_dir.mkdir(parents=True, exist_ok=True)
                 with open(cache_path, 'w', encoding='utf-8') as fh:
                     json.dump(data, fh, ensure_ascii=False)
+                if _s3_enabled():
+                    try:
+                        _s3_write_bytes(
+                            _s3_key(area_id, cache_path.name),
+                            json.dumps(data, ensure_ascii=False).encode('utf-8'),
+                            'application/json',
+                        )
+                    except Exception as _e:
+                        print(f'[s3] traffic-signs-cache uploaden mislukt: {_e}')
         except Exception:
             pass
 
