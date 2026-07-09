@@ -21,6 +21,9 @@ $fixedFiles = @(
     "requirements.txt",
     "start.bat",
     "update.bat",
+    "startDocker.bat",
+    "Dockerfile",
+    ".dockerignore",
     "default-gmt-env",
     "daylight.json",
     "holiday_indices.csv",
@@ -31,7 +34,7 @@ $fixedFiles = @(
 
 # ── Dynamisch: wheels en release-notes (versienummer kan wijzigen) ───────────
 $dynamicFiles = @()
-$dynamicFiles += Get-ChildItem -Path $scriptDir -Filter "*.whl"              -File | Select-Object -ExpandProperty Name
+$dynamicFiles += Get-ChildItem -Path $scriptDir -Filter "*.whl"               -File | Select-Object -ExpandProperty Name
 $dynamicFiles += Get-ChildItem -Path $scriptDir -Filter "release-notes-*.html" -File | Select-Object -ExpandProperty Name
 
 # ── Mappen ───────────────────────────────────────────────────────────────────
@@ -64,5 +67,6 @@ Write-Host ""
 Write-Host "Instructies voor de collega:" -ForegroundColor Yellow
 Write-Host "  1. ZIP uitpakken naar een map naar keuze"
 Write-Host "  2. .env-bestand (met Databricks-credentials) in die map plaatsen"
-Write-Host "  3. update.bat uitvoeren -> installeert alles en start de server"
+Write-Host "  3a. Zonder Docker : update.bat uitvoeren"
+Write-Host "  3b. Met Docker    : startDocker.bat uitvoeren (Docker Desktop vereist)"
 Write-Host ""

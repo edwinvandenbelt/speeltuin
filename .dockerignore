@@ -1,0 +1,12 @@
+# Uitgesloten van Docker build-context (snelheid + veiligheid)
+.venv/
+work/
+.env
+.gmt-env
+.git/
+.vscode/
+__pycache__/
+whl_extract/
+*.zip
+*.pyc
+*.pyo
