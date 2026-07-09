@@ -18,6 +18,24 @@ if not errorlevel 1 (
 )
 echo [INFO] Python executable: %PYTHON%
 
+rem ── Eerste installatie: venv aanmaken en requirements installeren ────────────
+if not exist "%~dp0.venv\Scripts\python.exe" (
+    echo [INFO] Eerste installatie: virtuele omgeving aanmaken...
+    %PYTHON% -m venv "%~dp0.venv"
+    if errorlevel 1 (
+        echo [ERROR] Aanmaken virtuele omgeving mislukt.
+        exit /b 1
+    )
+    echo [INFO] Virtuele omgeving aangemaakt.
+    echo [INFO] Requirements installeren...
+    "%~dp0.venv\Scripts\python.exe" -m pip install -r "%~dp0requirements.txt"
+    if errorlevel 1 (
+        echo [ERROR] pip install -r requirements.txt mislukt.
+        exit /b 1
+    )
+    echo [INFO] Requirements succesvol geinstalleerd.
+)
+
 rem ── Standaardwaarden ────────────────────────────────────────────────────────
 set "WHEEL_DIR="
 set "CODE_DIR="
