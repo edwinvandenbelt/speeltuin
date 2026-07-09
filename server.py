@@ -89,13 +89,13 @@ except ImportError as _e:
 try:
     from flow_scaler.core.flow_scaler_core import (
         load_purpose_index, parse_date, normalise_temperature,
-        normalise_weather, filterNetwork, determineIndiceKeys,
-        read_indexes, applyIndices, Params as FlowScalerParams,
+        normalise_weather, filterNetwork, resolve_indexes_by_mode,
+        applyIndices, Params as FlowScalerParams,
     )
     _FLOW_SCALER_AVAILABLE = True
 except ImportError as _e:
     load_purpose_index = normalise_temperature = normalise_weather = None  # type: ignore[assignment]
-    parse_date = filterNetwork = determineIndiceKeys = read_indexes = applyIndices = None  # type: ignore[assignment]
+    parse_date = filterNetwork = resolve_indexes_by_mode = applyIndices = None  # type: ignore[assignment]
     FlowScalerParams = None  # type: ignore[assignment,misc]
     _FLOW_SCALER_AVAILABLE = False
     print(f'[server] WAARSCHUWING: flow_scaler niet beschikbaar — {_e}')
@@ -1632,9 +1632,8 @@ def ogc_collection_items(collection_id):
         filtered   = filterNetwork(network_fc, bbox=None, offset=0, limit=max(n_features, 1))
         filtered.params = params
 
-        keys    = determineIndiceKeys(params, filtered.metadata)
-        indexes = read_indexes(keys, purpose_index)
-        result  = applyIndices(filtered, indexes, run_cleaner=False)
+        indexes_by_mode = resolve_indexes_by_mode(params, filtered, purpose_index)
+        result  = applyIndices(filtered, indexes_by_mode)
 
         # Normaliseer naar plain dict voor OGC-envelope
         if not isinstance(result, dict):
