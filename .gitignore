@@ -7,4 +7,5 @@
 .vscode/launch.json
 whl_extract
 work
-GMT-speeltuin-deploy-*.zip
+GMT-*.zip
+output

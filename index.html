@@ -1750,6 +1750,12 @@
       tooltipZoneProd:'Productie', tooltipZoneProdUnit:'vtg/dag',
       tooltipZoneAttr:'Attractie',  tooltipZoneAttrUnit:'vtg/dag',
       tooltipZoneRoute:'Rituitwisseling', tooltipZoneRouteUnit:'vtg/u',
+      tooltipZoneFloorTitle:'Vloeroppervlak per functie',
+      tooltipZoneFloorResidential:'Wonen', tooltipZoneFloorOffice:'Kantoor',
+      tooltipZoneFloorIndustrial:'Industrie', tooltipZoneFloorCommercial:'Winkel/horeca',
+      tooltipZoneFloorEducation:'Onderwijs', tooltipZoneFloorRecreation:'Recreatie',
+      tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Overig',
+      tooltipZoneFloorUnit:'m²',
       dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
       // Netwerktitel
       networkTitle: n => `Verkeersnetwerk ${n}`, pageTitle: n => `Verkeersnetwerk ${n}`,
@@ -1927,6 +1933,12 @@
       tooltipZoneProd:'Production', tooltipZoneProdUnit:'veh/day',
       tooltipZoneAttr:'Attraction',  tooltipZoneAttrUnit:'veh/day',
       tooltipZoneRoute:'Trip exchange', tooltipZoneRouteUnit:'veh/h',
+      tooltipZoneFloorTitle:'Floor area by function',
+      tooltipZoneFloorResidential:'Residential', tooltipZoneFloorOffice:'Office',
+      tooltipZoneFloorIndustrial:'Industrial', tooltipZoneFloorCommercial:'Retail/hospitality',
+      tooltipZoneFloorEducation:'Education', tooltipZoneFloorRecreation:'Recreation',
+      tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Other',
+      tooltipZoneFloorUnit:'m²',
       dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
       networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
       // Scenario comparator
@@ -3764,11 +3776,16 @@
 
       // Sommeer vloeroppervlak per zone×type (na herclassificatie parkeren)
       const zoneTypeAreaMap = new Map();
+      zoneAreaBreakdown = new Map();
       for (const f of _buildingsRaw.features) {
         const p = f.properties;
         if (p._bzoneId && p._floorArea) {
           const key = `${p._bzoneId}|${p._btype}`;
           zoneTypeAreaMap.set(key, (zoneTypeAreaMap.get(key) || 0) + p._floorArea);
+          // Bouw ook de per-zone breakdown voor de tooltip
+          if (!zoneAreaBreakdown.has(p._bzoneId)) zoneAreaBreakdown.set(p._bzoneId, {});
+          const bd = zoneAreaBreakdown.get(p._bzoneId);
+          bd[p._btype] = (bd[p._btype] || 0) + p._floorArea;
         }
       }
 
@@ -4627,7 +4644,10 @@
         for (const r of routes) {
           if (!r.linkPath || !r.linkPath.length) continue;
           // Gebruik het volledige linkPath; filter op aanwezigheid in linkGeomMap
-          const allIds  = r.linkPath.map(id => parseInt(id));
+          // Normaliseer linkPath IDs naar het type dat linkGeomMap gebruikt:
+          // - string-keyed maps (bijv. Vreden: linkId is large_string met _N-suffix)
+          // - number-keyed maps (bijv. Hasselt: linkId is int64)
+          const allIds  = r.linkPath.map(id => linkGeomMap.has(id) ? id : parseInt(id));
           const linkIds = allIds.filter(id => linkGeomMap.get(id)?.length >= 2);
           if (!linkIds.length) continue;
           const totalLen = linkIds.reduce((s, id) => {
@@ -4670,6 +4690,7 @@
      let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
      let selectedZoneId   = null;    // zoneId van geselecteerde zone (voor route-highlight)
      let hoveredZoneId    = null;    // zoneId onder de cursor (bijgehouden via onHover)
+     let zoneAreaBreakdown = new Map(); // zoneId → { residential, office, industrial, commercial, education, recreation, other } in m²
     /** Weegfactoren dagdeel → uurintensiteit.
      *  OS=2u, AS=2u, restdag=20u; wegingsbasis 14.4
      *  Formule: (weging/duur) / 14.4  */
@@ -6343,6 +6364,36 @@
            ? `<div><span style="color:#5a6272">${T('tooltipZoneRoute')} (${dpLabels[daypart]}): </span>
                 <b>${d.flow.toFixed(0)}\u202f${T('tooltipZoneRouteUnit')}</b></div>`
            : '';
+
+         // Vloeroppervlak-breakdown uit gebouwen-data (alleen als geladen)
+         const floorTypes = [
+           ['residential', 'tooltipZoneFloorResidential'],
+           ['office',       'tooltipZoneFloorOffice'],
+           ['industrial',   'tooltipZoneFloorIndustrial'],
+           ['commercial',   'tooltipZoneFloorCommercial'],
+           ['education',    'tooltipZoneFloorEducation'],
+           ['recreation',   'tooltipZoneFloorRecreation'],
+           ['transport',    'tooltipZoneFloorTransport'],
+           ['other',        'tooltipZoneFloorOther'],
+         ];
+         const bd = zoneAreaBreakdown.get(d.zoneId);
+         const floorRows = bd
+           ? floorTypes
+               .map(([type, key]) => {
+                 const m2 = Math.round(bd[type] || 0);
+                 if (!m2) return '';
+                 return `<div style="display:flex;justify-content:space-between;gap:16px">
+                   <span style="color:#5a6272">${T(key)}</span>
+                   <b>${m2.toLocaleString(loc)}\u202f${T('tooltipZoneFloorUnit')}</b></div>`;
+               })
+               .join('')
+           : '';
+         const floorSection = floorRows
+           ? `<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px">
+                <div style="color:#7a8494;font-size:11px;margin-bottom:3px">${T('tooltipZoneFloorTitle')}</div>
+                ${floorRows}
+              </div>`
+           : '';
          return {
            html: `
              <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
@@ -6353,9 +6404,10 @@
                  <b>${classLabel}</b></div>
                <div><span style="color:#5a6272">${T('tooltipZoneProd')}: </span>
                  <b>${(d.production).toLocaleString(loc)}\u202f${T('tooltipZoneProdUnit')}</b></div>
-               <div><span style="color:#5a6272">${T('tooltipZoneAttr')}: </span>
-                 <b>${(d.attraction).toLocaleString(loc)}\u202f${T('tooltipZoneAttrUnit')}</b></div>
-               ${flowRow}
+                <div><span style="color:#5a6272">${T('tooltipZoneAttr')}: </span>
+                  <b>${(d.attraction).toLocaleString(loc)}\u202f${T('tooltipZoneAttrUnit')}</b></div>
+                ${flowRow}
+                ${floorSection}
              </div>`,
            style: {
              background: 'rgba(13,17,23,0.95)', borderRadius: '10px',
