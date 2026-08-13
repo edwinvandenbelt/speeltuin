@@ -499,7 +499,14 @@
       padding: 12px 16px 10px;
       border-bottom: 1px solid rgba(255,255,255,0.07);
       font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
     }
+    #purposeChartClose {
+      background: transparent; border: none; color: #4a5568;
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      transition: color 0.15s;
+    }
+    #purposeChartClose:hover { color: #c9d6e8; }
     #purposeChartBody {
       padding: 12px 14px;
       display: flex; align-items: center; gap: 12px;
@@ -1598,11 +1605,16 @@
   <div id="purposeChartPanel" style="display:none">
     <div id="purposeChartHeader">
       <span data-i18n="purposeChartTitle">Motiefverdeling</span>
+      <span id="purposeChartEstTag" style="display:none;font-size:10px;opacity:.65;margin-left:4px"
+            data-i18n="purposeChartEstimated">(geschat)</span>
+      <button id="purposeChartClose" title="Sluiten">&#10005;</button>
     </div>
     <div id="purposeChartBody">
       <svg id="purposeChartSvg" width="130" height="130" viewBox="0 0 130 130"></svg>
       <div id="purposeChartLegend"></div>
     </div>
+    <div id="purposeChartNoData" style="display:none;padding:8px 10px;font-size:11px;opacity:.7"
+         data-i18n="purposeChartNoData">Onvoldoende data</div>
   </div>
 
   <!-- ── Flow-scaler panel ─────────────────────────────────────────────────── -->
@@ -1808,10 +1820,12 @@
       dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
       // Motiefverdeling (purposeChart)
       purposeChartTitle:'Motiefverdeling',
+      purposeChartEstimated:'(geschat)', purposeChartNoData:'Onvoldoende data',
       motifLabel_house:'Thuis', motifLabel_work:'Werk', motifLabel_shopping:'Winkelen',
       motifLabel_school:'Onderwijs', motifLabel_recreational:'Recreatie',
       motifLabel_hospital:'Ziekenhuis', motifLabel_parking:'Parkeren',
       motifLabel_other:'Overig', motifLabel_unclassified:'Niet geclassificeerd',
+      motifLabel_unknown:'Onbekend',
       // Netwerktitel
       networkTitle: n => `Verkeersnetwerk ${n}`, pageTitle: n => `Verkeersnetwerk ${n}`,
       // ScenarioVergelijker
@@ -1997,10 +2011,12 @@
       dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
       // Purpose chart
       purposeChartTitle:'Trip purposes',
+      purposeChartEstimated:'(estimated)', purposeChartNoData:'Insufficient data',
       motifLabel_house:'Home', motifLabel_work:'Work', motifLabel_shopping:'Shopping',
       motifLabel_school:'Education', motifLabel_recreational:'Recreation',
       motifLabel_hospital:'Hospital', motifLabel_parking:'Parking',
       motifLabel_other:'Other', motifLabel_unclassified:'Unclassified',
+      motifLabel_unknown:'Unknown',
       networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
       // Scenario comparator
       splitViewTitle:'Scenario comparator: calculated ↔ source',
@@ -4675,6 +4691,123 @@
       return segs;
     }
 
+    /**
+     * Single-source Dijkstra vanuit startNode.
+     * Stopt zodra alle bereikbare knopen binnen maxDistM zijn bezocht.
+     * Geeft Map<nodeId, distanceM> terug.
+     */
+    function dijkstraDistances(startNode, maxDistM) {
+      const dist = new Map([[startNode, 0]]);
+      const open = [[0, startNode]];
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > maxDistM) break;
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        for (const e of (adj.get(u) || [])) {
+          const nd = d + e.length;
+          if (nd <= maxDistM && nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+      return dist;
+    }
+
+    /**
+     * Zoek de nodeId die geografisch het dichtst bij (lon, lat) ligt
+     * én aanwezig is in nodeDistMap. Geeft { nodeId, distM } of null.
+     */
+    function _nearestReachableNode(lon, lat, nodeDistMap) {
+      let bestNode = null, bestGeo = Infinity;
+      for (const [nodeId] of nodeDistMap) {
+        const c = nodeCoords.get(nodeId);
+        if (!c) continue;
+        const dx = (c[0] - lon) * 80000;   // ~m per degree lon (BE)
+        const dy = (c[1] - lat) * 111000;  // ~m per degree lat
+        const geo = dx * dx + dy * dy;
+        if (geo < bestGeo) { bestGeo = geo; bestNode = nodeId; }
+      }
+      return bestNode ? { nodeId: bestNode, distM: nodeDistMap.get(bestNode) } : null;
+    }
+
+    /** EXTERNAL highway-types die Groep B bepalen */
+    const _EXTERNAL_HW = new Set([
+      'motorway','motorway_link','trunk','trunk_link','primary','primary_link'
+    ]);
+
+    /**
+     * Schat de motiefverdeling voor een link zonder route-data.
+     * Combineert:
+     *   Groep A – Top-20 zones (intern + EXTERN) op basis van Dijkstra-afstand
+     *   Groep B – EXTERNAL zones waarvan centroid dicht bij een hoofdweg-link ligt
+     * Geeft Map<motief, gewogenFlow> of null als niets gevonden.
+     */
+    function estimatePurposeFlowForLink(linkId) {
+      const nlm = nodeLinkMap.get(linkId) ?? nodeLinkMap.get(Number(linkId));
+      if (!nlm) return null;
+
+      const nodeDistMap = dijkstraDistances(nlm.fromNode, 15000);
+      if (nodeDistMap.size < 2) return null;
+
+      // ── Groep B: EXTERNAL zones bij een hoofdweg-link ──────────────────────
+      const externalMainNodes = new Set();
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!p) continue;
+        const hw = p.highway ?? p.linkType ?? p.road_type ?? '';
+        if (!_EXTERNAL_HW.has(hw)) continue;
+        // Neem fromNode/toNode van dit wegvak als potentieel zone-koppelknoop
+        const lnm = nodeLinkMap.get(p.linkId) ?? nodeLinkMap.get(Number(p.linkId));
+        if (lnm) { externalMainNodes.add(lnm.fromNode); externalMainNodes.add(lnm.toNode); }
+      }
+
+      // ── Alle zones rangschikken op afstand ──────────────────────────────────
+      const zoneScores = [];
+      for (const f of zoneFeaturesRaw) {
+        const p = f.properties;
+        if (!p?.zoneId) continue;
+        const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+        const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+        if (lon == null || lat == null) continue;
+
+        const nr = _nearestReachableNode(lon, lat, nodeDistMap);
+        if (!nr) continue;
+
+        const isExternal = p.zoneClass === 'EXTERNAL';
+        const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
+        const distKm     = nr.distM / 1000;
+        const weight     = (p.production || 0) / (1 + distKm * distKm);
+
+        zoneScores.push({ zoneId: p.zoneId, weight, isGroupB });
+      }
+
+      if (!zoneScores.length) return null;
+
+      // Groep A: top 20 op weight
+      zoneScores.sort((a, b) => b.weight - a.weight);
+      const selectedZones = new Set(zoneScores.slice(0, 20).map(z => z.zoneId));
+      // Groep B: EXTERNAL zones bij hoofdwegen (altijd toevoegen)
+      for (const z of zoneScores) { if (z.isGroupB) selectedZones.add(z.zoneId); }
+
+      // ── Aggregeer motifRatio van matching routes ────────────────────────────
+      const purposeFlow = new Map();
+      const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+
+      for (const route of routeList) {
+        if (!selectedZones.has(route.fromZoneId)) continue;
+        if (!route.motifRatio) continue;
+        const zs = zoneScores.find(z => z.zoneId === route.fromZoneId);
+        const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0) * (zs ? zs.weight : 1);
+        for (const [m, ratio] of Object.entries(route.motifRatio)) {
+          purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + flow * ratio);
+        }
+      }
+
+      return purposeFlow.size > 0 ? purposeFlow : null;
+    }
+
     setLoaderMsg(T('loaderRoutes'));
     let routeMode        = false;
     let routeList        = [];
@@ -6134,6 +6267,7 @@
       parking:       '#636e72',
       other:         '#b2bec3',
       unclassified:  '#78909c',
+      unknown:       '#546e7a',
     };
     // Fallback-reeks voor onbekende sleutels
     const _MOTIF_FALLBACK = ['#00b894','#00cec9','#fdcb6e','#e17055','#6c5ce7','#fab1a0'];
@@ -6150,9 +6284,12 @@
     /** Rendert het taartdiagram + legenda in #purposeChartPanel.
      *  Verbergt het paneel als er geen motifRatio-data beschikbaar is. */
     function updatePurposeChart() {
-      const panel  = document.getElementById('purposeChartPanel');
-      const svg    = document.getElementById('purposeChartSvg');
-      const legend = document.getElementById('purposeChartLegend');
+      const panel   = document.getElementById('purposeChartPanel');
+      const svg     = document.getElementById('purposeChartSvg');
+      const legend  = document.getElementById('purposeChartLegend');
+      const estTag  = document.getElementById('purposeChartEstTag');
+      const noData  = document.getElementById('purposeChartNoData');
+      const body    = document.getElementById('purposeChartBody');
 
       if (!selectedLinkId) {
         panel.style.display = 'none';
@@ -6161,17 +6298,52 @@
 
       const { purposeFlow } = computeLinkRouteData();
 
-      if (!purposeFlow.size) {
-        panel.style.display = 'none';
-        return;
-      }
-
-      // Sorteer aflopend op flow-waarde
-      const entries = [...purposeFlow.entries()]
+      // ── Fallback: flowsPerMotive van de link zelf ─────────────────────────
+      let entries = [...purposeFlow.entries()]
         .filter(([k, v]) => v > 0 && k !== 'house')
         .sort(([, a], [, b]) => b - a);
 
-      if (!entries.length) { panel.style.display = 'none'; return; }
+      let estimated = false;
+
+      if (!entries.length) {
+        // Geen route-data: probeer flowsPerMotive van het geselecteerde wegvak
+        const feat = geojson.features.find(
+          f => f.properties?.linkId === selectedLinkId
+            || f.properties?.linkId === Number(selectedLinkId)
+        );
+        const fpm = feat?.properties?.flowsPerMotive;
+        if (fpm) {
+          const d = typeof fpm === 'string' ? JSON.parse(fpm) : fpm;
+          entries = Object.entries(d)
+            .filter(([k]) => k !== 'house')
+            .sort(([, a], [, b]) => b - a);
+          const sum = entries.reduce((s, [, v]) => s + v, 0);
+          if (sum === 0) entries = [];   // verwijder "unknown 100%" — probeer schatting
+        }
+      }
+
+      // ── Schatting via Dijkstra als nog steeds geen bruikbare data ─────────
+      if (!entries.length) {
+        const estFlow = estimatePurposeFlowForLink(selectedLinkId);
+        if (estFlow) {
+          entries = [...estFlow.entries()]
+            .filter(([k, v]) => v > 0 && k !== 'house')
+            .sort(([, a], [, b]) => b - a);
+          if (entries.length) estimated = true;
+        }
+      }
+
+      // ── Toon "Onvoldoende data" als ook schatting niets oplevert ──────────
+      estTag.style.display  = estimated ? 'inline' : 'none';
+      noData.style.display  = 'none';
+      body.style.display    = 'flex';
+
+      if (!entries.length) {
+        body.style.display   = 'none';
+        noData.style.display = 'block';
+        panel.style.display  = 'block';
+        return;
+      }
 
       const total = entries.reduce((s, [, v]) => s + v, 0);
 
@@ -6191,7 +6363,6 @@
         const color = _motifColor(key);
 
         if (Math.abs(slice - 2 * Math.PI) < 1e-6) {
-          // Enige slice: volledig cirkeltje
           svgHtml += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`;
         } else {
           svgHtml += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z"
@@ -8662,6 +8833,10 @@
     });
 
     // ── Selected Link Analysis — knop ─────────────────────────────────────────
+    document.getElementById('purposeChartClose').addEventListener('click', () => {
+      document.getElementById('purposeChartPanel').style.display = 'none';
+    });
+
     document.getElementById('selectedLinkBtn').addEventListener('click', () => {
       deactivateWhatifRc();
       selectedLinkActive = !selectedLinkActive;
