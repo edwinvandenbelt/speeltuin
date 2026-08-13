@@ -611,6 +611,90 @@
     /* Rode gloedkleur voor active what-if-knop */
     #whatifRcBtn:hover { background: rgba(255,80,80,0.15) !important; color: #ff8080 !important; }
     #whatifRcBtn.active { background: rgba(255,80,80,0.22) !important; color: #ff6b6b !important; border-color: rgba(255,80,80,0.5) !important; }
+    /* OD-paar aanpassen knop */
+    #odEditBtn:hover  { background: rgba(100,180,255,0.15) !important; color: #7ec8e3 !important; }
+    #odEditBtn.active { background: rgba(100,180,255,0.22) !important; color: #5bc0de !important; border-color: rgba(100,180,255,0.5) !important; }
+
+    /* ── OD-edit paneel ─────────────────────────────────────────────────── */
+    #odEditPanel {
+      display: none;
+      position: absolute;
+      top: 56px; right: 24px;
+      z-index: 20;
+      width: 320px;
+      max-height: calc(100vh - 80px);
+      overflow-y: auto;
+      background: rgba(13,17,23,0.95);
+      border: 1px solid rgba(100,180,255,0.25);
+      border-radius: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px; color: #c9d6e8;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+      backdrop-filter: blur(10px);
+    }
+    #odEditHeader {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center; gap:6px;
+    }
+    #odEditHeader span { flex:1; }
+    #odEditClose {
+      background: none; border: none; cursor: pointer;
+      color: #5a6272; font-size: 14px; padding: 0 2px; line-height:1;
+    }
+    #odEditClose:hover { color: #ff6b6b; }
+    #odEditBody { padding: 12px 16px; }
+    .ode-step {
+      margin-bottom: 10px; padding: 8px 10px;
+      border-radius: 8px; background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .ode-step-label { font-size: 10px; color: #5a6272; text-transform: uppercase; letter-spacing:.4px; margin-bottom:4px; }
+    .ode-step-value { font-size: 12px; color: #e8edf5; font-weight: 500; min-height:16px; }
+    .ode-step-value.waiting { color:#4a5568; font-style:italic; }
+    .ode-section-title {
+      font-size: 10px; color: #5a6272; text-transform: uppercase;
+      letter-spacing:.4px; margin: 12px 0 6px;
+    }
+    .ode-field-row {
+      display: flex; align-items: center; gap:8px;
+      margin-bottom: 6px;
+    }
+    .ode-field-label { flex:1; color:#7a8699; font-size:11px; }
+    .ode-field-input {
+      width: 88px; padding: 3px 7px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12); border-radius:5px;
+      color: #e8edf5; font-size:12px; text-align:right;
+    }
+    .ode-field-input:focus { outline:none; border-color: rgba(100,180,255,0.45); }
+    .ode-motif-grid {
+      display: grid; grid-template-columns: 1fr auto auto;
+      gap: 4px 8px; align-items: center;
+      margin-bottom:8px;
+    }
+    .ode-motif-key  { color:#7a8699; font-size:11px; }
+    .ode-motif-dot  { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .ode-motif-pct  {
+      width:60px; padding:2px 6px;
+      background:rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.12); border-radius:5px;
+      color:#e8edf5; font-size:12px; text-align:right;
+    }
+    .ode-motif-pct:focus { outline:none; border-color:rgba(100,180,255,0.45); }
+    .ode-motif-sum { font-size:10px; margin-bottom:8px; }
+    .ode-motif-sum.ok   { color:#5cb85c; }
+    .ode-motif-sum.bad  { color:#ff6b6b; }
+    #odEditSaveBtn {
+      width:100%; padding:7px 0; margin-top:6px;
+      background:rgba(100,180,255,0.15); border:1px solid rgba(100,180,255,0.3);
+      border-radius:7px; color:#7ec8e3; font-size:12px; font-weight:600;
+      cursor:pointer; transition:background .15s;
+    }
+    #odEditSaveBtn:hover    { background:rgba(100,180,255,0.28); }
+    #odEditSaveBtn:disabled { opacity:.4; cursor:not-allowed; }
+    #odEditRouteInfo { font-size:11px; color:#5a6272; margin-bottom:8px; line-height:1.5; }
 
     /* ── COMPARE laag-toggle ──────────────────────────────────────────── */
     .compare-btn {
@@ -1284,6 +1368,10 @@
         <button class="tb-btn edit-btn" id="linkEditBtn"
                 data-i18n-title="linkEditTitle"
                 title="Capaciteit per wegvak wijzigen">LINK</button>
+        <!-- OD-paar aanpassen -->
+        <button class="tb-btn edit-btn" id="odEditBtn"
+                data-i18n-title="odEditBtnTitle"
+                title="OD-paar aanpassen" style="display:none">OD</button>
         <!-- Wijzigingen bekijken -->
         <button class="tb-btn" id="viewChangesBtn"
                 data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
@@ -1601,6 +1689,43 @@
     </div>
   </div>
 
+  <!-- ── OD-paar aanpassen paneel ──────────────────────────────────────────── -->
+  <div id="odEditPanel">
+    <div id="odEditHeader">
+      <span data-i18n="odEditTitle">OD-paar aanpassen</span>
+      <button id="odEditClose" title="Sluiten">&#10005;</button>
+    </div>
+    <div id="odEditBody">
+      <!-- Stap 1: herkomstzone -->
+      <div class="ode-step">
+        <div class="ode-step-label" data-i18n="odEditFromLabel">Herkomst</div>
+        <div class="ode-step-value waiting" id="odEditFromVal" data-i18n="odEditWaiting">Klik een zone…</div>
+      </div>
+      <!-- Stap 2: bestemmingszone -->
+      <div class="ode-step">
+        <div class="ode-step-label" data-i18n="odEditToLabel">Bestemming</div>
+        <div class="ode-step-value waiting" id="odEditToVal" data-i18n="odEditWaiting">Klik een zone…</div>
+      </div>
+
+      <!-- Huidige data + invoer (zichtbaar na selectie beide zones) -->
+      <div id="odEditFields" style="display:none">
+        <div id="odEditRouteInfo"></div>
+
+        <div class="ode-section-title" data-i18n="odEditTripsSection">Verplaatsingen</div>
+        <div class="ode-field-row">
+          <span class="ode-field-label" data-i18n="odEditTripsLabel">Ritten/dag</span>
+          <input type="number" id="odEditTripsInput" class="ode-field-input" min="0" step="1"/>
+        </div>
+
+        <div class="ode-section-title" data-i18n="odEditMotifSection">Motiefverdeling (%)</div>
+        <div class="ode-motif-grid" id="odEditMotifGrid"></div>
+        <div class="ode-motif-sum" id="odEditMotifSum"></div>
+
+        <button id="odEditSaveBtn" data-i18n="odEditSaveBtn">+ Toevoegen aan wijzigingen</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Motiefverdeling paneel (selected link) ─────────────────────────────── -->
   <div id="purposeChartPanel" style="display:none">
     <div id="purposeChartHeader">
@@ -1776,6 +1901,21 @@
       linkPolygonNoLinks:'Geen wegvakken gevonden in de polygon.',
       linkCloseBtnTitle:'Weg afsluiten (capaciteit = 0)',
       changeClosedLabel:'afgesloten (cap = 0)',
+      changeOdTripsLabel: t => `OD: ${t} rit/dag`,
+      // OD-paar aanpassen
+      odEditBtnTitle:'OD-paar aanpassen',
+      odEditBtnLabel:'OD-paar aanpassen',
+      odEditTitle:'OD-paar aanpassen',
+      odEditFromLabel:'Herkomst',
+      odEditToLabel:'Bestemming',
+      odEditWaiting:'Klik een zone…',
+      odEditTripsSection:'Verplaatsingen',
+      odEditTripsLabel:'Ritten/dag',
+      odEditMotifSection:'Motiefverdeling (%)',
+      odEditSaveBtn:'+ Toevoegen aan wijzigingen',
+      odEditFoundRoutes: n => `${n} route(s) gevonden`,
+      odEditCurrentTrips:'Huidig:',
+      odEditNoRoutes:'Geen routes gevonden voor dit OD-paar.',
       // Legenda
       legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad',
       legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
@@ -1969,6 +2109,21 @@
       linkPolygonNoLinks:'No road links found within the polygon.',
       linkCloseBtnTitle:'Close road (capacity = 0)',
       changeClosedLabel:'closed (cap = 0)',
+      changeOdTripsLabel: t => `OD: ${t} trips/day`,
+      // OD-pair adjustment
+      odEditBtnTitle:'Adjust OD pair',
+      odEditBtnLabel:'Adjust OD pair',
+      odEditTitle:'Adjust OD pair',
+      odEditFromLabel:'Origin',
+      odEditToLabel:'Destination',
+      odEditWaiting:'Click a zone…',
+      odEditTripsSection:'Trips',
+      odEditTripsLabel:'Trips/day',
+      odEditMotifSection:'Motive split (%)',
+      odEditSaveBtn:'+ Add to changes',
+      odEditFoundRoutes: n => `${n} route(s) found`,
+      odEditCurrentTrips:'Current:',
+      odEditNoRoutes:'No routes found for this OD pair.',
       legendFlow:'Intensity', legendOccupancy:'Occupancy',
       legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
       legendUnit:'veh/h',
@@ -4716,6 +4871,45 @@
     }
 
     /**
+     * Dijkstra met padreconstructie.
+     * Geeft { dist: Map<node,m>, prev: Map<node,{fromNode,linkId}> }
+     */
+    function dijkstraWithPaths(startNode, maxDistM) {
+      const dist = new Map([[startNode, 0]]);
+      const prev = new Map();           // node → { fromNode, linkId }
+      const open = [[0, startNode]];
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > maxDistM) break;
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        for (const e of (adj.get(u) || [])) {
+          const nd = d + e.length;
+          if (nd <= maxDistM && nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            prev.set(e.toNode, { fromNode: u, linkId: e.linkId });
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+      return { dist, prev };
+    }
+
+    /** Reconstrueer een lijst van linkIds van startNode naar targetNode via prev-map. */
+    function _reconstructLinkPath(prev, startNode, targetNode) {
+      const links = [];
+      let cur = targetNode;
+      let safety = 2000;
+      while (cur !== startNode && safety-- > 0) {
+        const p = prev.get(cur);
+        if (!p) return null;          // geen pad gevonden
+        if (p.linkId != null) links.push(p.linkId);
+        cur = p.fromNode;
+      }
+      return links.reverse();
+    }
+
+    /**
      * Zoek de nodeId die geografisch het dichtst bij (lon, lat) ligt
      * én aanwezig is in nodeDistMap. Geeft { nodeId, distM } of null.
      */
@@ -4808,6 +5002,87 @@
       return purposeFlow.size > 0 ? purposeFlow : null;
     }
 
+    /**
+     * Schat route-paden voor een link zonder route-data via Dijkstra.
+     * Geeft { pathData, flowByFromZone, flowByToZone } — zelfde structuur als computeLinkRouteData.
+     * pathData-items hebben extra veld `estimated: true`.
+     */
+    function computeEstimatedLinkRouteData(linkId) {
+      const nlm = nodeLinkMap.get(linkId) ?? nodeLinkMap.get(Number(linkId));
+      if (!nlm) return { pathData: [], flowByFromZone: new Map(), flowByToZone: new Map() };
+
+      // Dijkstra vanuit fromNode én toNode (bidirectioneel)
+      const { dist: distFwd, prev: prevFwd } = dijkstraWithPaths(nlm.fromNode, 25000);
+      const { dist: distBwd, prev: prevBwd } = dijkstraWithPaths(nlm.toNode,   25000);
+
+      // ── Groep B: EXTERNAL zones bij hoofdwegen ──────────────────────────────
+      const externalMainNodes = new Set();
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!p) continue;
+        const hw = p.highway ?? p.linkType ?? p.road_type ?? '';
+        if (!_EXTERNAL_HW.has(hw)) continue;
+        const lnm = nodeLinkMap.get(p.linkId) ?? nodeLinkMap.get(Number(p.linkId));
+        if (lnm) { externalMainNodes.add(lnm.fromNode); externalMainNodes.add(lnm.toNode); }
+      }
+
+      // ── Rangschik zones op gravity-gewicht ─────────────────────────────────
+      const zoneScores = [];
+      for (const f of zoneFeaturesRaw) {
+        const p = f.properties;
+        if (!p?.zoneId) continue;
+        const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+        const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+        if (lon == null || lat == null) continue;
+        const nr = _nearestReachableNode(lon, lat, distFwd);
+        if (!nr) continue;
+        const isExternal = p.zoneClass === 'EXTERNAL';
+        const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
+        const distKm     = nr.distM / 1000;
+        const weight     = (p.production || 1) / (1 + distKm * distKm);
+        zoneScores.push({ zoneId: p.zoneId, lon, lat, nr, weight, isGroupB,
+                          production: p.production || 0, attraction: p.attraction || 0 });
+      }
+
+      zoneScores.sort((a, b) => b.weight - a.weight);
+      const selected = new Set(zoneScores.slice(0, 20).map(z => z.zoneId));
+      for (const z of zoneScores) { if (z.isGroupB) selected.add(z.zoneId); }
+
+      // ── Bouw paden en flows ─────────────────────────────────────────────────
+      const dpFrac        = DP_FRACTION[daypart] ?? (1 / 14.4);
+      const pathData      = [];
+      const flowByFromZone = new Map();
+      const flowByToZone   = new Map();
+      const maxWeight     = zoneScores[0]?.weight ?? 1;
+
+      for (const z of zoneScores) {
+        if (!selected.has(z.zoneId)) continue;
+
+        // Probeer het pad te reconstrueren: zone-node → toNode van de link (rijrichting)
+        const targetNode = z.nr.nodeId;
+        const linkPath = _reconstructLinkPath(prevBwd, nlm.toNode, targetNode);
+        if (!linkPath) continue;
+
+        // Geometrie opbouwen
+        const coords = [];
+        for (const lid of linkPath) {
+          const geom = linkGeomMap.get(lid) ?? linkGeomMap.get(Number(lid));
+          if (geom) for (const c of geom) coords.push(c);
+        }
+        if (coords.length < 2) continue;
+
+        // Genormaliseerde flow op basis van gravity-gewicht
+        const normFlow = z.weight / maxWeight;
+        const flow     = normFlow * dpFrac * (z.production || 1);
+
+        pathData.push({ coords, flow, estimated: true, zoneId: z.zoneId });
+        flowByFromZone.set(z.zoneId, (flowByFromZone.get(z.zoneId) ?? 0) + flow);
+        flowByToZone.set(z.zoneId,   (flowByToZone.get(z.zoneId)   ?? 0) + flow);
+      }
+
+      return { pathData, flowByFromZone, flowByToZone };
+    }
+
     setLoaderMsg(T('loaderRoutes'));
     let routeMode        = false;
     let routeList        = [];
@@ -4822,11 +5097,18 @@
      */
     function _parseAndAddRoutes(routesFc, vehicleMode) {
       if (!routesFc?.features) return;
-      const zoneTripSumMap = new Map();
+      // Pass 1: bereken zone-totaal én OD-totaal voor de isAbsolute-detectie
+      const zoneTripSumMap = new Map(); // fromZoneId → totaal r.trips
+      const odTripSumMap   = new Map(); // "from_to"  → totaal r.trips voor dit OD-paar
       for (const feat of routesFc.features) {
-        const fz = feat.properties.fromZoneId;
-        for (const r of feat.properties.routes ?? [])
-          zoneTripSumMap.set(fz, (zoneTripSumMap.get(fz) ?? 0) + (r.trips ?? 0));
+        const fz  = feat.properties.fromZoneId;
+        const tz  = feat.properties.toZoneId;
+        const key = `${fz}_${tz}`;
+        for (const r of feat.properties.routes ?? []) {
+          const t = r.trips ?? 0;
+          zoneTripSumMap.set(fz, (zoneTripSumMap.get(fz) ?? 0) + t);
+          odTripSumMap.set(key,  (odTripSumMap.get(key)  ?? 0) + t);
+        }
       }
       for (const feat of routesFc.features) {
         const routes     = feat.properties.routes;
@@ -4835,6 +5117,15 @@
         if (!routes) continue;
         const zoneSum    = zoneTripSumMap.get(fromZoneId) ?? 1;
         const isAbsolute = zoneSum > 1.5;
+        const odKey      = `${fromZoneId}_${toZoneId}`;
+        const odSum      = odTripSumMap.get(odKey) ?? 0;
+
+        // originProduction: absolute dagproductie van de herkomstzone (veh/dag)
+        // tripFraction: aandeel van de productie dat naar deze bestemming gaat
+        const originProd = feat.properties.originProduction ?? (isAbsolute ? zoneSum : 0);
+        const tripFrac   = feat.properties.tripFraction
+                         ?? (isAbsolute && zoneSum > 0 ? odSum / zoneSum : odSum);
+
         for (const r of routes) {
           if (!r.linkPath || !r.linkPath.length) continue;
           // Gebruik het volledige linkPath; filter op aanwezigheid in linkGeomMap
@@ -4853,7 +5144,8 @@
             linkIds,
             fromZoneId,
             toZoneId,
-            originProduction: isAbsolute ? zoneSum : (feat.properties.originProduction ?? 0),
+            originProduction: originProd,
+            tripFraction:     tripFrac,
             weight:           isAbsolute ? r.trips / zoneSum : r.trips,
             vehicleMode,
             motifRatio:       feat.properties.motifRatio ?? null,
@@ -4875,6 +5167,10 @@
       totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
       routeMode = routeList.length > 0;
       buildLinkRouteMap();
+      if (routeMode) {
+        document.getElementById('whatifRcBtn').style.display = '';
+        document.getElementById('odEditBtn').style.display   = '';
+      }
     } catch (e) {
       console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
     }
@@ -5675,6 +5971,195 @@
       return groups;
     }
 
+    // ── OD-paar bewerking — state ────────────────────────────────────────────
+    let odEditActive   = false;       // true als OD-edit modus actief
+    let odEditStep     = 'from';      // 'from' | 'to'
+    let odEditFromZone = null;        // { zoneId, label }
+    let odEditToZone   = null;        // { zoneId, label }
+
+    /** Verberg het OD-edit paneel en reset de state volledig. */
+    function deactivateOdEdit() {
+      if (!odEditActive) return;
+      odEditActive   = false;
+      odEditStep     = 'from';
+      odEditFromZone = null;
+      odEditToZone   = null;
+      document.getElementById('odEditBtn').classList.remove('active');
+      document.getElementById('odEditPanel').style.display = 'none';
+      map.getCanvas().style.cursor = '';
+    }
+
+    /** Toon het OD-edit paneel in stap-1 (herkomst kiezen) toestand. */
+    function _odEditShowPanel() {
+      const panel = document.getElementById('odEditPanel');
+      panel.style.display = 'block';
+      _odEditUpdateStepDisplay();
+    }
+
+    /** Bijwerken van de step-labels en cursor. */
+    function _odEditUpdateStepDisplay() {
+      const fromVal  = document.getElementById('odEditFromVal');
+      const toVal    = document.getElementById('odEditToVal');
+      const fields   = document.getElementById('odEditFields');
+
+      if (odEditFromZone) {
+        fromVal.textContent = odEditFromZone.label;
+        fromVal.classList.remove('waiting');
+      } else {
+        fromVal.textContent = T('odEditWaiting');
+        fromVal.classList.add('waiting');
+      }
+      if (odEditToZone) {
+        toVal.textContent = odEditToZone.label;
+        toVal.classList.remove('waiting');
+      } else {
+        toVal.textContent = T('odEditWaiting');
+        toVal.classList.add('waiting');
+      }
+
+      const bothSelected = odEditFromZone && odEditToZone;
+      fields.style.display = bothSelected ? 'block' : 'none';
+      if (bothSelected) _odEditLoadPair();
+
+      // Cursor: kruishaar zolang in kies-modus
+      map.getCanvas().style.cursor = (!bothSelected || odEditStep !== 'done') ? 'crosshair' : '';
+      // Herbereken lagen (toon/verberg bestemmingszones)
+      updateOverlay(true);
+    }
+
+    /** Lees de routes voor het geselecteerde OD-paar en vul het formulier. */
+    function _odEditLoadPair() {
+      const fromId = odEditFromZone.zoneId;
+      const toId   = odEditToZone.zoneId;
+
+      // Zoek het matching OD-paar in routeList
+      const pairRoutes = routeList.filter(
+        r => String(r.fromZoneId) === String(fromId)
+          && String(r.toZoneId)   === String(toId)
+      );
+
+      // originProduction van eerste route (alle routes in het paar hebben dezelfde)
+      const originProd = pairRoutes.length > 0 ? (pairRoutes[0].originProduction ?? 0) : 0;
+      const tripFrac   = pairRoutes.length > 0 ? (pairRoutes[0].tripFraction    ?? 0) : 0;
+      const totalTrips = originProd * tripFrac;
+
+      // Aggregeer motifRatio (gewogen op weight/trips)
+      const motifAgg = {};
+      let   motifTotal = 0;
+      for (const r of pairRoutes) {
+        if (!r.motifRatio) continue;
+        const w = r.weight ?? 0;
+        for (const [m, v] of Object.entries(r.motifRatio)) {
+          motifAgg[m] = (motifAgg[m] ?? 0) + v * w;
+          motifTotal += v * w;
+        }
+      }
+      // Normaliseer
+      if (motifTotal > 0) {
+        for (const m of Object.keys(motifAgg)) motifAgg[m] /= motifTotal;
+      }
+
+      // Toon info-rij
+      const infoEl = document.getElementById('odEditRouteInfo');
+      const loc    = T('numberLocale');
+      infoEl.innerHTML = pairRoutes.length
+        ? `${T('odEditFoundRoutes', pairRoutes.length)} &nbsp;·&nbsp; `
+          + `${T('odEditCurrentTrips')} <b>${totalTrips.toLocaleString(loc, {maximumFractionDigits:1})}</b>`
+        : `<span style="color:#ff6b6b">${T('odEditNoRoutes')}</span>`;
+
+      // Trips invoer
+      document.getElementById('odEditTripsInput').value = totalTrips.toFixed(1);
+
+      // Sla originProduction op als data-attribuut voor later gebruik
+      document.getElementById('odEditTripsInput').dataset.originProd = String(originProd);
+
+      // Bouw motief-grid
+      const grid = document.getElementById('odEditMotifGrid');
+      grid.innerHTML = '';
+      const motifKeys = Object.keys(motifAgg).length ? Object.keys(motifAgg)
+        : ['work','shopping','recreational','school','hospital','parking','other','unclassified'];
+
+      for (const key of motifKeys) {
+        if (key === 'house' || key === 'unknown') continue;
+        const pct = ((motifAgg[key] ?? 0) * 100).toFixed(1);
+        const color = _motifColor(key);
+        const label = T(`motifLabel_${key}`) ?? key;
+        grid.insertAdjacentHTML('beforeend', `
+          <span class="ode-motif-dot" style="background:${color};display:inline-block"></span>
+          <span class="ode-motif-key">${label}</span>
+          <input type="number" class="ode-motif-pct" data-motif="${key}"
+            min="0" max="100" step="0.1" value="${pct}"/>
+        `);
+      }
+      _odEditCheckMotifSum();
+
+      // Toon routes op de kaart (hergebruik zone-centroid modus)
+      _odEditHighlightRoutes(fromId, toId);
+    }
+
+    /** Controleer of de motiefpercentages optellen tot ~100 %. */
+    function _odEditCheckMotifSum() {
+      const inputs = document.querySelectorAll('.ode-motif-pct');
+      const sum    = [...inputs].reduce((s, el) => s + (parseFloat(el.value) || 0), 0);
+      const sumEl  = document.getElementById('odEditMotifSum');
+      const ok     = Math.abs(sum - 100) < 0.5;
+      sumEl.textContent = `∑ = ${sum.toFixed(1)} %`;
+      sumEl.className   = `ode-motif-sum ${ok ? 'ok' : 'bad'}`;
+      document.getElementById('odEditSaveBtn').disabled = !ok;
+    }
+
+    /** Markeer routes van het geselecteerde OD-paar op de kaart (PathLayer). */
+    function _odEditHighlightRoutes(fromId, toId) {
+      // Vul _odEditHighlightedRoutes voor use in makeLayers (hergebruikt selectedLinkId-flow)
+      window._odEditRouteData = routeList.filter(
+        r => String(r.fromZoneId) === String(fromId)
+          && String(r.toZoneId)   === String(toId)
+      );
+      updateOverlay(true);
+    }
+
+    /** Sla de bewerking op als pendingChange en sluit het paneel. */
+    function _odEditSave() {
+      if (!odEditFromZone || !odEditToZone) return;
+
+      const tripsInput = document.getElementById('odEditTripsInput');
+      const originProd = parseFloat(tripsInput.dataset.originProd) || 0;
+      const newTrips   = parseFloat(tripsInput.value) || 0;
+      const newFrac    = originProd > 0 ? newTrips / originProd : 0;
+
+      // Bouw motifRatio
+      const motifRatio = {};
+      let   total = 0;
+      for (const el of document.querySelectorAll('.ode-motif-pct')) {
+        const v = parseFloat(el.value) || 0;
+        motifRatio[el.dataset.motif] = v / 100;
+        total += v;
+      }
+      // Normaliseer naar 1.0 als nodig
+      if (Math.abs(total - 100) > 0.1 && total > 0) {
+        for (const k of Object.keys(motifRatio)) motifRatio[k] /= (total / 100);
+      }
+
+      const change = {
+        _isOd:            true,
+        fromZoneId:       odEditFromZone.zoneId,
+        toZoneId:         odEditToZone.zoneId,
+        originProduction: originProd,
+        tripFraction:     newFrac,
+        motifRatio,
+        _label: `${odEditFromZone.label} → ${odEditToZone.label}`,
+      };
+      pendingChanges.push(change);
+      renderChangesList();
+
+      // Reset voor volgend OD-paar (herkomst nog behouden voor snelle serie-invoer)
+      odEditToZone = null;
+      odEditStep   = 'to';
+      window._odEditRouteData = null;
+      _odEditUpdateStepDisplay();
+      updateOverlay(true);
+    }
+
     // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
 
     // ── ScenarioVergelijker — state (vóór makeCarLayers zodat er geen TDZ-fout optreedt) ──
@@ -5722,7 +6207,7 @@
     let _segTipVisible  = false;
     let _segTipLastInfo = null;
     const _segTip = document.getElementById('segmentTooltip');
-    const _segTipRender = info => {
+    const _segTipRender = (info, sourceMap) => {
       const p = info?.object?.properties;
       if (!p) { _segTip.style.display = 'none'; return; }
       const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
@@ -5744,7 +6229,7 @@
         <div><span style="color:#5a6272">${T('tooltipOccup')}: </span><b>${occ}</b></div>
         <div><span style="color:#5a6272">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
       `;
-      const rect = map.getCanvas().getBoundingClientRect();
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
       const x = rect.left + info.x;
       const y = rect.top + info.y;
       _segTip.style.display = '';
@@ -5956,6 +6441,26 @@
             default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
           }
         },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
         updateTriggers: {
           getLineColor: [daypart, colorMetric, _fspVersion],
           getLineWidth: [daypart, colorMetric, _fspVersion],
@@ -6035,9 +6540,67 @@
 
     function makeZoneCentroidLayer() {
       // Zones verbergen als: mode=off EN geen zone/link geselecteerd, OF geen data
-      const showForLinkSel = selectedLinkId !== null && zoneFeaturesRaw.length > 0;
-      if ((zoneCentroidMode === 'off' && !selectedZoneId && !showForLinkSel) || !zoneFeaturesRaw.length) {
+      const showForLinkSel  = selectedLinkId !== null && zoneFeaturesRaw.length > 0;
+      const showForOdEdit   = odEditActive && odEditStep === 'to' && odEditFromZone;
+      if ((zoneCentroidMode === 'off' && !selectedZoneId && !showForLinkSel && !showForOdEdit) || !zoneFeaturesRaw.length) {
         return new ScatterplotLayer({ id: 'zone-centroids', data: [] });
+      }
+
+      // In OD-edit stap 'to': toon bestemmingszones die routes hebben vanuit de herkomst
+      if (showForOdEdit) {
+        const fromId = String(odEditFromZone.zoneId);
+        // Bereken trips per bestemming
+        const tripsByTo = new Map();
+        for (const r of routeList) {
+          if (String(r.fromZoneId) !== fromId) continue;
+          const toId = String(r.toZoneId);
+          tripsByTo.set(toId, (tripsByTo.get(toId) ?? 0) + (r.originProduction ?? 0) * (r.weight ?? 0));
+        }
+        const maxTrips = Math.max(...tripsByTo.values(), 1);
+        const normAlpha = norm => Math.round(50 + 190 * Math.sqrt(Math.max(0, Math.min(1, norm))));
+
+        const pts = [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties || {};
+          const zId = String(p.zoneId ?? '');
+          const trips = tripsByTo.get(zId) ?? 0;
+          if (trips <= 0) continue;
+
+          let lon = p.centroidLon ?? null;
+          let lat = p.centroidLat ?? null;
+          if (lon == null && f.geometry?.type === 'Point') {
+            [lon, lat] = f.geometry.coordinates;
+          } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+            const ring = f.geometry.coordinates[0];
+            lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+            lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+          }
+          if (lon == null || lat == null) continue;
+
+          pts.push({
+            lon, lat, zoneId: p.zoneId ?? null,
+            zoneName:  p.zoneName || String(p.zoneId ?? ''),
+            zoneClass: p.zoneClass || '',
+            production: p.production ?? 0,
+            attraction: p.attraction ?? 0,
+            flow: trips,
+            isSelected: false,
+            alpha: normAlpha(trips / maxTrips),
+          });
+        }
+
+        return new ScatterplotLayer({
+          id: 'zone-centroids', data: pts, pickable: true,
+          stroked: true, filled: true,
+          radiusUnits: 'pixels', lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
+          getPosition:    d => [d.lon, d.lat],
+          getRadius:      10,
+          getFillColor:   d => [30, 120, 255, d.alpha],
+          getLineColor:   d => [30,  80, 200, Math.min(d.alpha + 40, 255)],
+          getLineWidth:   1.5,
+          updateTriggers: { getFillColor: [odEditFromZone?.zoneId, daypart],
+                            getLineColor: [odEditFromZone?.zoneId, daypart] },
+        });
       }
 
       // Effectieve modus: bij link-selectie met mode=off valt terug op 'production'
@@ -6058,7 +6621,10 @@
         ({ flowByZone } = computeZoneRouteData());
         maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
       } else if (showForLinkSel) {
-        const { flowByFromZone, flowByToZone } = computeLinkRouteData();
+        let { flowByFromZone, flowByToZone } = computeLinkRouteData();
+        if (!flowByFromZone.size && !flowByToZone.size) {
+          ({ flowByFromZone, flowByToZone } = computeEstimatedLinkRouteData(selectedLinkId));
+        }
         flowByZone = isProduction ? flowByFromZone : flowByToZone;
         maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
       }
@@ -6143,28 +6709,86 @@
 
 
     function makeZoneRoutesLayer() {
+      // ── OD-edit: toon routes van het geselecteerde OD-paar ────────────────
+      if (odEditActive && window._odEditRouteData?.length) {
+        const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+        const pathData = [];
+        for (const route of window._odEditRouteData) {
+          const coords = _linkIdsToCoords(route.linkIds);
+          if (coords.length >= 2) {
+            pathData.push({ coords, flow: (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0) });
+          }
+        }
+        if (pathData.length) {
+          const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+          return new PathLayer({
+            id:             'zone-routes',
+            data:           pathData,
+            pickable:       false,
+            widthUnits:     'pixels',
+            widthMinPixels: 1.5,
+            widthMaxPixels: 10,
+            getPath:        d => d.coords,
+            getWidth:       d => Math.max(1.5, (d.flow / maxFlow) * 10),
+            getColor:       [100, 200, 255, 220],
+            updateTriggers: { getPath: [odEditFromZone?.zoneId, odEditToZone?.zoneId, daypart] },
+          });
+        }
+        return new PathLayer({ id: 'zone-routes', data: [] });
+      }
+
       // ── Selected Link: toon alle routes die door het geselecteerde wegvak lopen ──
       if (selectedLinkId) {
-        const { pathData } = computeLinkRouteData();
+        let { pathData, flowByFromZone, flowByToZone } = computeLinkRouteData();
+        let estimated = false;
+        if (!pathData.length) {
+          // Geen routes in data → schat via Dijkstra
+          ({ pathData, flowByFromZone, flowByToZone } = computeEstimatedLinkRouteData(selectedLinkId));
+          estimated = true;
+        }
         if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
         const maxFlow      = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
         const isProduction = zoneCentroidMode !== 'attraction';
+        // Geschatte routes: stippellijn-effect via smallere lijnen en lager alpha
+        const alpha = estimated ? 120 : 180;
+        const color = estimated ? [200, 200,  80, alpha]
+                    : isProduction ? [255, 120, 0, alpha] : [0, 220, 255, alpha];
         return new PathLayer({
           id:             'zone-routes',
           data:           pathData,
           pickable:       false,
           widthUnits:     'pixels',
-          widthMinPixels: 1,
-          widthMaxPixels: 8,
+          widthMinPixels: estimated ? 0.5 : 1,
+          widthMaxPixels: estimated ? 5   : 8,
           getPath:        d => d.coords,
-          getWidth:       d => Math.max(1, (d.flow / maxFlow) * 8),
-          getColor:       isProduction ? [255, 120, 0, 180] : [0, 220, 255, 180],
-          updateTriggers: {
-            getColor: [zoneCentroidMode],
-            getPath:  [selectedLinkId, zoneCentroidMode, daypart],
-          },
-        });
-      }
+          getWidth:       d => Math.max(estimated ? 0.5 : 1, (d.flow / maxFlow) * (estimated ? 5 : 8)),
+          getColor:       color,
+        updateTriggers: {
+          getLineColor: [daypart, colorMetric, _fspVersion],
+          getLineWidth: [daypart, colorMetric, _fspVersion],
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+      });
+    }
 
       // ── Selected Zone: toon routes van/naar de geselecteerde zone ─────────────
       if (!selectedZoneId || zoneCentroidMode === 'off') {
@@ -6842,6 +7466,22 @@
         return;
       }
       if (zoneCentroidMode === 'off' || !hoveredZoneId) return;
+
+      // OD-edit zone-selectie (hogere prioriteit dan gewone zone-selectie)
+      if (odEditActive) {
+        const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === hoveredZoneId);
+        const label = zFeat?.properties?.name ?? String(hoveredZoneId);
+        if (odEditStep === 'from') {
+          odEditFromZone = { zoneId: hoveredZoneId, label };
+          odEditStep     = 'to';
+        } else {
+          odEditToZone = { zoneId: hoveredZoneId, label };
+          odEditStep   = 'done';
+        }
+        _odEditUpdateStepDisplay();
+        return;
+      }
+
       selectedZoneId = (selectedZoneId === hoveredZoneId) ? null : hoveredZoneId;
       updateOverlay(true);
     });
@@ -8257,6 +8897,11 @@
             parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
             if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
           }
+        } else if (c._isOd) {
+          const loc  = T('numberLocale');
+          const prod = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(c.fromZoneId))?.properties?.production ?? 0;
+          const trips = (prod * c.tripFraction).toLocaleString(loc, { maximumFractionDigits: 1 });
+          parts.push(T('changeOdTripsLabel', trips));
         } else {
           if (c.production != null) parts.push(T('changeProdLabel', fmt(c.production)));
           if (c.attraction != null) parts.push(T('changeAttrLabel', fmt(c.attraction)));
@@ -8301,17 +8946,24 @@
               lastAreaId = h.areaId;
             }
             const fmt = v => v == null ? null : (String(v).match(/^[+-]/) ? `Δ${v}` : `=${v}`);
+            const isOdHist = h.fromZoneId != null && h.toZoneId != null;
             const parts = [];
-            if (h.linkId != null) {
+            if (isOdHist) {
+              const prod = h.originProduction ?? 0;
+              const frac = h.tripFraction    ?? 0;
+              const trips = (prod * frac).toLocaleString(T('numberLocale'), { maximumFractionDigits: 1 });
+              parts.push(T('changeOdTripsLabel', trips));
+            } else if (h.linkId != null) {
               if (h.capacity === 0) parts.push(T('changeClosedLabel'));
               else parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
             } else {
               if (h.production != null) parts.push(T('changeProdLabel', fmt(h.production)));
               if (h.attraction != null) parts.push(T('changeAttrLabel', fmt(h.attraction)));
             }
-            const label = h.linkId != null ? T('changesHistLinkLabel', h.linkId)
-                        : h.nodeId != null ? T('changesHistNodeLabel', h.nodeId)
-                        :                    T('changesHistZoneLabel', h.zoneId);
+            const label = isOdHist                ? `OD ${h.fromZoneId} → ${h.toZoneId}`
+                        : h.linkId != null        ? T('changesHistLinkLabel', h.linkId)
+                        : h.nodeId != null        ? T('changesHistNodeLabel', h.nodeId)
+                        :                           T('changesHistZoneLabel', h.zoneId);
             const item = document.createElement('div');
             item.className = 'change-item change-item-hist';
             item.innerHTML = `<div class="change-item-label">${label}<span>${parts.join(' · ')}</span></div>`;
@@ -8352,6 +9004,13 @@
         if (c._isLink) {
           return c.speed != null ? { linkId: c.linkId, speed: c.speed }
                                  : { linkId: c.linkId, capacity: c.capacity };
+        }
+        if (c._isOd) {
+          const obj = { fromZoneId: c.fromZoneId, toZoneId: c.toZoneId,
+                        tripFraction: c.tripFraction,
+                        originProduction: c.originProduction };
+          if (c.motifRatio) obj.motifRatio = c.motifRatio;
+          return obj;
         }
         const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
         if (c.production != null) obj.production = c.production;
@@ -8549,6 +9208,10 @@
         totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
         routeMode = routeList.length > 0;
         buildLinkRouteMap();
+        if (routeMode) {
+          document.getElementById('whatifRcBtn').style.display = '';
+          document.getElementById('odEditBtn').style.display   = '';
+        }
       } catch (e) { console.warn('Routes herlaad mislukt:', e); }
 
       // ── Node-laag bijwerken als die actief is ─────────────────────────────
@@ -8727,8 +9390,10 @@
           overlay2 = new MapboxOverlay({
             interleaved: true,
             layers: [makeNetworkLayer2()].filter(Boolean),
+            getTooltip: () => null,
           });
           map2.addControl(overlay2);
+
           // Gebouwen uitschakelen op de rechterkaart (Liberty-lagen)
           try { if (map2.getLayer('building-3d')) map2.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
           try { if (map2.getLayer('building'))    map2.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
@@ -8976,6 +9641,59 @@
     document.getElementById('whatifRcClearBtn').addEventListener('click', () => {
       whatifRcLinks.clear();
       renderWhatifRcList();
+      updateOverlay(true);
+    });
+
+    // ── OD-paar aanpassen — knop en paneel ───────────────────────────────────
+    document.getElementById('odEditBtn').addEventListener('click', () => {
+      if (nodeEditActive)     document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)     document.getElementById('linkEditBtn').click();
+      if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
+      deactivateWhatifRc();
+
+      if (odEditActive) {
+        deactivateOdEdit();
+      } else {
+        odEditActive   = true;
+        odEditStep     = 'from';
+        odEditFromZone = null;
+        odEditToZone   = null;
+        window._odEditRouteData = null;
+        document.getElementById('odEditBtn').classList.add('active');
+        // Zones aanzetten als ze uit staan
+        if (zoneCentroidMode === 'off') {
+          document.getElementById('zoneCentroidSelect').value = 'production';
+          document.getElementById('zoneCentroidSelect').dispatchEvent(new Event('change'));
+        }
+        _odEditShowPanel();
+        updateOverlay(true);
+      }
+    });
+
+    document.getElementById('odEditClose').addEventListener('click', deactivateOdEdit);
+
+    document.getElementById('odEditSaveBtn').addEventListener('click', _odEditSave);
+
+    document.getElementById('odEditFields').addEventListener('input', e => {
+      if (e.target.classList.contains('ode-motif-pct')) _odEditCheckMotifSum();
+    });
+
+    // Herstart zone-keuze: klik op herkomst/bestemming-stap-vak
+    document.getElementById('odEditFromVal').closest('.ode-step').addEventListener('click', () => {
+      if (!odEditActive) return;
+      odEditFromZone = null;
+      odEditToZone   = null;
+      odEditStep     = 'from';
+      window._odEditRouteData = null;
+      _odEditUpdateStepDisplay();
+      updateOverlay(true);
+    });
+    document.getElementById('odEditToVal').closest('.ode-step').addEventListener('click', () => {
+      if (!odEditActive || !odEditFromZone) return;
+      odEditToZone  = null;
+      odEditStep    = 'to';
+      window._odEditRouteData = null;
+      _odEditUpdateStepDisplay();
       updateOverlay(true);
     });
 
