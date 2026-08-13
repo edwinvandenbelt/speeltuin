@@ -480,6 +480,44 @@
     .tb-badge:empty { display: none; }
     #viewChangesBtn { padding-right: 16px; }
 
+    /* ── Motiefverdeling paneel ───────────────────────────────────────── */
+    #purposeChartPanel {
+      display: none;
+      position: absolute;
+      bottom: 24px; right: 340px;
+      z-index: 20;
+      width: 280px;
+      background: rgba(13,17,23,0.93);
+      border: 1px solid rgba(78,154,241,0.25);
+      border-radius: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    #purposeChartHeader {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+    }
+    #purposeChartBody {
+      padding: 12px 14px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    #purposeChartSvg { flex-shrink: 0; }
+    #purposeChartLegend {
+      flex: 1; display: flex; flex-direction: column; gap: 4px;
+    }
+    .pcl-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: #c9d6e8; white-space: nowrap;
+    }
+    .pcl-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    }
+    .pcl-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .pcl-pct { color: #7a8699; font-size: 10px; flex-shrink: 0; }
+
     /* ── What-if wegafsluiting panel ─────────────────────────────────── */
     #whatifRcPanel {
       display: none;
@@ -1556,6 +1594,17 @@
     </div>
   </div>
 
+  <!-- ── Motiefverdeling paneel (selected link) ─────────────────────────────── -->
+  <div id="purposeChartPanel" style="display:none">
+    <div id="purposeChartHeader">
+      <span data-i18n="purposeChartTitle">Motiefverdeling</span>
+    </div>
+    <div id="purposeChartBody">
+      <svg id="purposeChartSvg" width="130" height="130" viewBox="0 0 130 130"></svg>
+      <div id="purposeChartLegend"></div>
+    </div>
+  </div>
+
   <!-- ── Flow-scaler panel ─────────────────────────────────────────────────── -->
   <div id="flowScalerPanel">
     <div id="fspHeader">
@@ -1757,6 +1806,12 @@
       tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Overig',
       tooltipZoneFloorUnit:'m²',
       dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
+      // Motiefverdeling (purposeChart)
+      purposeChartTitle:'Motiefverdeling',
+      motifLabel_house:'Thuis', motifLabel_work:'Werk', motifLabel_shopping:'Winkelen',
+      motifLabel_school:'Onderwijs', motifLabel_recreational:'Recreatie',
+      motifLabel_hospital:'Ziekenhuis', motifLabel_parking:'Parkeren',
+      motifLabel_other:'Overig', motifLabel_unclassified:'Niet geclassificeerd',
       // Netwerktitel
       networkTitle: n => `Verkeersnetwerk ${n}`, pageTitle: n => `Verkeersnetwerk ${n}`,
       // ScenarioVergelijker
@@ -1940,6 +1995,12 @@
       tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Other',
       tooltipZoneFloorUnit:'m²',
       dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
+      // Purpose chart
+      purposeChartTitle:'Trip purposes',
+      motifLabel_house:'Home', motifLabel_work:'Work', motifLabel_shopping:'Shopping',
+      motifLabel_school:'Education', motifLabel_recreational:'Recreation',
+      motifLabel_hospital:'Hospital', motifLabel_parking:'Parking',
+      motifLabel_other:'Other', motifLabel_unclassified:'Unclassified',
       networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
       // Scenario comparator
       splitViewTitle:'Scenario comparator: calculated ↔ source',
@@ -4662,6 +4723,7 @@
             originProduction: isAbsolute ? zoneSum : (feat.properties.originProduction ?? 0),
             weight:           isAbsolute ? r.trips / zoneSum : r.trips,
             vehicleMode,
+            motifRatio:       feat.properties.motifRatio ?? null,
           });
         }
       }
@@ -6043,15 +6105,115 @@
       const flowByFromZone = new Map();
       const flowByToZone   = new Map();
       const pathData       = [];
+      const purposeFlow    = new Map();
       for (const route of relevant) {
         const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
         flowByFromZone.set(route.fromZoneId, (flowByFromZone.get(route.fromZoneId) ?? 0) + flow);
         flowByToZone.set(route.toZoneId,   (flowByToZone.get(route.toZoneId)   ?? 0) + flow);
+        // Aggregeer motiefverdeling: flow × motifRatio per motief
+        if (route.motifRatio) {
+          for (const [m, ratio] of Object.entries(route.motifRatio)) {
+            purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + flow * ratio);
+          }
+        }
         // Geometrie van de volledige route opbouwen voor de PathLayer
         const coords = _linkIdsToCoords(route.linkIds);
         if (coords.length >= 2) pathData.push({ coords, flow });
       }
-      return { flowByFromZone, flowByToZone, pathData };
+      return { flowByFromZone, flowByToZone, pathData, purposeFlow };
+    }
+
+    // ── Kleurenpalet per motief ──────────────────────────────────────────────
+    const MOTIF_COLORS = {
+      house:         '#4e9af1',
+      work:          '#f4b942',
+      shopping:      '#e05c5c',
+      recreational:  '#5cb85c',
+      school:        '#a29bfe',
+      hospital:      '#fd79a8',
+      parking:       '#636e72',
+      other:         '#b2bec3',
+      unclassified:  '#78909c',
+    };
+    // Fallback-reeks voor onbekende sleutels
+    const _MOTIF_FALLBACK = ['#00b894','#00cec9','#fdcb6e','#e17055','#6c5ce7','#fab1a0'];
+    let   _motifFallbackIdx = 0;
+    const _motifColorCache  = {};
+    function _motifColor(key) {
+      if (MOTIF_COLORS[key]) return MOTIF_COLORS[key];
+      if (!_motifColorCache[key]) {
+        _motifColorCache[key] = _MOTIF_FALLBACK[_motifFallbackIdx++ % _MOTIF_FALLBACK.length];
+      }
+      return _motifColorCache[key];
+    }
+
+    /** Rendert het taartdiagram + legenda in #purposeChartPanel.
+     *  Verbergt het paneel als er geen motifRatio-data beschikbaar is. */
+    function updatePurposeChart() {
+      const panel  = document.getElementById('purposeChartPanel');
+      const svg    = document.getElementById('purposeChartSvg');
+      const legend = document.getElementById('purposeChartLegend');
+
+      if (!selectedLinkId) {
+        panel.style.display = 'none';
+        return;
+      }
+
+      const { purposeFlow } = computeLinkRouteData();
+
+      if (!purposeFlow.size) {
+        panel.style.display = 'none';
+        return;
+      }
+
+      // Sorteer aflopend op flow-waarde
+      const entries = [...purposeFlow.entries()]
+        .filter(([k, v]) => v > 0 && k !== 'house')
+        .sort(([, a], [, b]) => b - a);
+
+      if (!entries.length) { panel.style.display = 'none'; return; }
+
+      const total = entries.reduce((s, [, v]) => s + v, 0);
+
+      // ── SVG taart ────────────────────────────────────────────────────────
+      const cx = 65, cy = 65, r = 58;
+      let svgHtml = '';
+      let angle   = -Math.PI / 2;   // begin bovenaan
+
+      for (const [key, val] of entries) {
+        const slice  = (val / total) * 2 * Math.PI;
+        const endAng = angle + slice;
+        const x1 = cx + r * Math.cos(angle);
+        const y1 = cy + r * Math.sin(angle);
+        const x2 = cx + r * Math.cos(endAng);
+        const y2 = cy + r * Math.sin(endAng);
+        const large = slice > Math.PI ? 1 : 0;
+        const color = _motifColor(key);
+
+        if (Math.abs(slice - 2 * Math.PI) < 1e-6) {
+          // Enige slice: volledig cirkeltje
+          svgHtml += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`;
+        } else {
+          svgHtml += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z"
+            fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`;
+        }
+        angle = endAng;
+      }
+      svg.innerHTML = svgHtml;
+
+      // ── Legenda ───────────────────────────────────────────────────────────
+      legend.innerHTML = entries.map(([key, val]) => {
+        const pct   = ((val / total) * 100).toFixed(1);
+        const label = T(`motifLabel_${key}`) ?? key;
+        const color = _motifColor(key);
+        return `<div class="pcl-item">
+          <span class="pcl-dot" style="background:${color}"></span>
+          <span class="pcl-label">${label}</span>
+          <span class="pcl-pct">${pct}%</span>
+        </div>`;
+      }).join('');
+
+      panel.style.display = 'block';
     }
 
     /** GeoJsonLayer die het geselecteerde wegvak markeert (geel, dik). */
@@ -6493,6 +6655,7 @@
             '| zoneFeaturesRaw.length:', zoneFeaturesRaw.length);
         }
         updateOverlay(true);
+        updatePurposeChart();
         return;
       }
       // What-if wegafsluiting link-selectie
@@ -8506,6 +8669,7 @@
       hoveredLinkId      = null;
       document.getElementById('selectedLinkBtn').classList.toggle('active', selectedLinkActive);
       updateOverlay(true);
+      updatePurposeChart();   // verbergt het paneel omdat selectedLinkId nu null is
     });
 
     // ── What-if wegafsluiting — hulpfunctie & knop ───────────────────────────
