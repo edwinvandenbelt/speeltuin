@@ -1335,9 +1335,52 @@
     <div id="simPanelBody">
       <div class="sim-row">
         <div id="daypartBtns" style="display:flex;gap:3px;align-items:center">
-          <button class="tb-btn dpBtn" data-dp="mrh" data-i18n="dpMrhLabel" data-i18n-title="dpMrhTitle" title="Ochtendspits">OS</button>
-          <button class="tb-btn dpBtn active" data-dp="erh" data-i18n="dpErhLabel" data-i18n-title="dpErhTitle" title="Avondspits">AS</button>
-          <button class="tb-btn dpBtn" data-dp="rest" data-i18n="dpRestLabel" data-i18n-title="dpRestTitle" title="Restdag">RD</button>
+          <!-- Ochtendspits: zon boven horizon + stralen + pijl omhoog -->
+          <button class="tb-btn dpBtn" data-dp="mrh" data-i18n-title="dpMrhTitle" title="Ochtendspits">
+            <svg viewBox="0 0 28 20" width="21" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <!-- horizon -->
+              <line x1="1" y1="15" x2="17" y2="15"/>
+              <!-- halve zon -->
+              <path d="M4 13a5 5 0 0 1 10 0"/>
+              <!-- stralen: omhoog, schuin links, schuin rechts -->
+              <line x1="9" y1="7"    x2="9"    y2="5"/>
+              <line x1="4.5" y1="8.5" x2="3.1"  y2="7.1"/>
+              <line x1="13.5" y1="8.5" x2="14.9" y2="7.1"/>
+              <!-- pijl omhoog, rechts -->
+              <line x1="23" y1="16" x2="23" y2="4"/>
+              <polyline points="19,8 23,4 27,8"/>
+            </svg>
+          </button>
+          <!-- Avondspits: zon boven horizon + stralen + pijl omlaag -->
+          <button class="tb-btn dpBtn active" data-dp="erh" data-i18n-title="dpErhTitle" title="Avondspits">
+            <svg viewBox="0 0 28 20" width="21" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <!-- horizon -->
+              <line x1="1" y1="15" x2="17" y2="15"/>
+              <!-- halve zon -->
+              <path d="M4 13a5 5 0 0 1 10 0"/>
+              <!-- stralen: omhoog, schuin links, schuin rechts -->
+              <line x1="9" y1="7"    x2="9"    y2="5"/>
+              <line x1="4.5" y1="8.5" x2="3.1"  y2="7.1"/>
+              <line x1="13.5" y1="8.5" x2="14.9" y2="7.1"/>
+              <!-- pijl omlaag, rechts -->
+              <line x1="23" y1="4" x2="23" y2="16"/>
+              <polyline points="19,12 23,16 27,12"/>
+            </svg>
+          </button>
+          <!-- Restdag: zon volledig zichtbaar -->
+          <button class="tb-btn dpBtn" data-dp="rest" data-i18n-title="dpRestTitle" title="Restdag">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4"/>
+              <line x1="12" y1="2"  x2="12" y2="4"/>
+              <line x1="12" y1="20" x2="12" y2="22"/>
+              <line x1="2"  y1="12" x2="4"  y2="12"/>
+              <line x1="20" y1="12" x2="22" y2="12"/>
+              <line x1="4.93" y1="4.93"  x2="6.34" y2="6.34"/>
+              <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
+              <line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/>
+              <line x1="17.66" y1="6.34"  x2="19.07" y2="4.93"/>
+            </svg>
+          </button>
           <div style="width:1px;height:16px;background:rgba(255,255,255,0.12);margin:0 2px;flex-shrink:0"></div>
           <button class="tb-btn" id="fspBtn" data-i18n-title="fspBtnTitle" title="Flow-scaler instellen">&#9201;</button>
         </div>
@@ -1361,21 +1404,45 @@
     <div id="editPanelBody">
       <div class="sim-row">
         <!-- Productie/attractie per knoop wijzigen -->
+        <!-- Productie/attractie per knoop wijzigen -->
         <button class="tb-btn edit-btn" id="nodeEditBtn"
                 data-i18n-title="nodeEditTitle"
-                title="Productie/attractie per knoop wijzigen">ZONE</button>
+                title="Productie/attractie per knoop wijzigen">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+            <polygon points="12,3 21,8.5 21,15.5 12,21 3,15.5 3,8.5"/>
+          </svg>
+        </button>
         <!-- Capaciteit per wegvak wijzigen -->
         <button class="tb-btn edit-btn" id="linkEditBtn"
                 data-i18n-title="linkEditTitle"
-                title="Capaciteit per wegvak wijzigen">LINK</button>
+                title="Capaciteit per wegvak wijzigen">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <circle cx="3"  cy="12" r="2.2" fill="currentColor" stroke="none"/>
+            <circle cx="21" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
         <!-- OD-paar aanpassen -->
         <button class="tb-btn edit-btn" id="odEditBtn"
                 data-i18n-title="odEditBtnTitle"
-                title="OD-paar aanpassen" style="display:none">OD</button>
+                title="OD-paar aanpassen" style="display:none">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="19" y2="12"/>
+            <polyline points="14,7 19,12 14,17"/>
+          </svg>
+        </button>
         <!-- Wijzigingen bekijken -->
         <button class="tb-btn" id="viewChangesBtn"
                 data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
-                style="position:relative">LIJST<span id="viewChangesBadge" class="tb-badge"></span></button>
+                style="position:relative">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <rect x="4" y="2" width="16" height="20" rx="2"/>
+            <line x1="8"  y1="8"  x2="16" y2="8"/>
+            <line x1="8"  y1="12" x2="16" y2="12"/>
+            <line x1="8"  y1="16" x2="13" y2="16"/>
+          </svg>
+          <span id="viewChangesBadge" class="tb-badge"></span>
+        </button>
       </div>
     </div>
   </div>
@@ -1862,6 +1929,7 @@
       // Wijzigingenlijst
       changesTitle:'Wijzigingen', scenarioNamePh:'Scenario-naam', applyBtn:'\u25b6 Doorvoeren',
       applyStart:'Adjust starten\u2026', applyRunning:'Bezig\u2026', applyDone:'Klaar!',
+      estimatingRoutes: 'Routes schatten via Dijkstra\u2026',
       applyError: c => `Onbekende fout (returncode: ${c})`, applyFetchError: e => `Fout: ${e}`,
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
@@ -2070,6 +2138,7 @@
       dialogCancel:'Cancel', dialogOk:'OK',
       changesTitle:'Changes', scenarioNamePh:'Scenario name', applyBtn:'\u25b6 Apply',
       applyStart:'Starting adjust\u2026', applyRunning:'Processing\u2026', applyDone:'Done!',
+      estimatingRoutes: 'Estimating routes via Dijkstra\u2026',
       applyError: c => `Unknown error (return code: ${c})`, applyFetchError: e => `Error: ${e}`,
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `speed: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
@@ -2275,6 +2344,7 @@
       dialogCancel:'Peruuta', dialogOk:'OK',
       changesTitle:'Muutokset', scenarioNamePh:'Skenaarion nimi', applyBtn:'\u25b6 K\xe4yt\xe4',
       applyStart:'K\xe4ynnistet\xe4\xe4n s\xe4\xe4t\xf6\xe4\u2026', applyRunning:'K\xe4sitell\xe4\xe4n\u2026', applyDone:'Valmis!',
+      estimatingRoutes: 'Lasketaan reittej\xe4 Dijkstralla\u2026',
       applyError: c => `Tuntematon virhe (paluuarvo: ${c})`, applyFetchError: e => `Virhe: ${e}`,
       changeCapLabel: (v, u) => `kap: ${v} ${u}`, changeSpeedLabel: v => `nopeus: ${v} km/h`,
       changeProdLabel: v => `tuot: ${v}`, changeAttrLabel: v => `houk: ${v}`,
@@ -4190,7 +4260,7 @@
       // Helper: past de basemap-stijl toe op één MapLibre-instantie.
       // Voegt de satelliet-source/laag toe indien die nog ontbreekt.
       function _applyToMap(m) {
-        if (!m || !m.isStyleLoaded()) return;
+        if (!m) return;
         // Satelliet raster-laag
         if (!m.getSource('esri-satellite')) {
           m.addSource('esri-satellite', {
@@ -4749,7 +4819,8 @@
     // Alle links inclusief voedingslinks zodat zone-nodes bereikbaar zijn.
     const nodeCoords  = new Map();   // nodeId → [lon, lat]
     const nodeLinkMap = new Map();   // linkId → { fromNode, toNode }
-    const adj         = new Map();   // nodeId → [{ toNode, length, coords, speedMs }]
+    const adj         = new Map();   // nodeId → [{ toNode, linkId, length, coords, speedMs }]
+    const adjReverse  = new Map();   // nodeId → [{ toNode, linkId, length, coords, speedMs }] (omgekeerde graph)
     for (const f of geojson.features) {
       if (f.geometry?.type !== 'LineString') continue;
       const p = f.properties, c = f.geometry.coordinates;
@@ -4759,6 +4830,16 @@
       if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
       adj.get(p.fromNode).push({
         toNode:   p.toNode,
+        linkId:   p.linkId,
+        length:   p.length || 1,
+        coords:   c,
+        speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+        linkMode: p.mode ? p.mode.toUpperCase() : null,
+      });
+      if (!adjReverse.has(p.toNode)) adjReverse.set(p.toNode, []);
+      adjReverse.get(p.toNode).push({
+        toNode:   p.fromNode,
+        linkId:   p.linkId,
         length:   p.length || 1,
         coords:   c,
         speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
@@ -4874,7 +4955,7 @@
      * Dijkstra met padreconstructie.
      * Geeft { dist: Map<node,m>, prev: Map<node,{fromNode,linkId}> }
      */
-    function dijkstraWithPaths(startNode, maxDistM) {
+    function dijkstraWithPaths(startNode, maxDistM, adjMap = adj) {
       const dist = new Map([[startNode, 0]]);
       const prev = new Map();           // node → { fromNode, linkId }
       const open = [[0, startNode]];
@@ -4883,7 +4964,7 @@
         const [d, u] = open.shift();
         if (d > maxDistM) break;
         if (d > (dist.get(u) ?? Infinity)) continue;
-        for (const e of (adj.get(u) || [])) {
+        for (const e of (adjMap.get(u) || [])) {
           const nd = d + e.length;
           if (nd <= maxDistM && nd < (dist.get(e.toNode) ?? Infinity)) {
             dist.set(e.toNode, nd);
@@ -5011,9 +5092,10 @@
       const nlm = nodeLinkMap.get(linkId) ?? nodeLinkMap.get(Number(linkId));
       if (!nlm) return { pathData: [], flowByFromZone: new Map(), flowByToZone: new Map() };
 
-      // Dijkstra vanuit fromNode én toNode (bidirectioneel)
-      const { dist: distFwd, prev: prevFwd } = dijkstraWithPaths(nlm.fromNode, 25000);
-      const { dist: distBwd, prev: prevBwd } = dijkstraWithPaths(nlm.toNode,   25000);
+      // Dijkstra vanuit fromNode op reverse graph (productiekant: zones → fromNode)
+      const { dist: distFwd, prev: prevFwd } = dijkstraWithPaths(nlm.fromNode, 25000, adjReverse);
+      // Dijkstra vanuit toNode op forward graph (attractiekant: toNode → zones)
+      const { dist: distBwd, prev: prevBwd } = dijkstraWithPaths(nlm.toNode,   25000, adj);
 
       // ── Groep B: EXTERNAL zones bij hoofdwegen ──────────────────────────────
       const externalMainNodes = new Set();
@@ -5026,60 +5108,75 @@
         if (lnm) { externalMainNodes.add(lnm.fromNode); externalMainNodes.add(lnm.toNode); }
       }
 
-      // ── Rangschik zones op gravity-gewicht ─────────────────────────────────
-      const zoneScores = [];
-      for (const f of zoneFeaturesRaw) {
-        const p = f.properties;
-        if (!p?.zoneId) continue;
-        const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
-        const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
-        if (lon == null || lat == null) continue;
-        const nr = _nearestReachableNode(lon, lat, distFwd);
-        if (!nr) continue;
-        const isExternal = p.zoneClass === 'EXTERNAL';
-        const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
-        const distKm     = nr.distM / 1000;
-        const weight     = (p.production || 1) / (1 + distKm * distKm);
-        zoneScores.push({ zoneId: p.zoneId, lon, lat, nr, weight, isGroupB,
-                          production: p.production || 0, attraction: p.attraction || 0 });
+      // ── Helper: score zones gegeven een distMap en gewichtskolom ───────────
+      function scoreZones(distMap, weightKey) {
+        const scores = [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties;
+          if (!p?.zoneId) continue;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) continue;
+          const nr = _nearestReachableNode(lon, lat, distMap);
+          if (!nr) continue;
+          const isExternal = p.zoneClass === 'EXTERNAL';
+          const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
+          const distKm     = nr.distM / 1000;
+          const wVal       = (p[weightKey] || p.production || 1);
+          const weight     = wVal / (1 + distKm * distKm);
+          scores.push({ zoneId: p.zoneId, lon, lat, nr, weight, isGroupB,
+                        production: p.production || 0, attraction: p.attraction || 0 });
+        }
+        scores.sort((a, b) => b.weight - a.weight);
+        const selected = new Set(scores.slice(0, 20).map(z => z.zoneId));
+        for (const z of scores) { if (z.isGroupB) selected.add(z.zoneId); }
+        return { scores, selected };
       }
 
-      zoneScores.sort((a, b) => b.weight - a.weight);
-      const selected = new Set(zoneScores.slice(0, 20).map(z => z.zoneId));
-      for (const z of zoneScores) { if (z.isGroupB) selected.add(z.zoneId); }
+      // ── Bouw paden voor één richting ────────────────────────────────────────
+      function buildPaths(scores, selected, prev, anchorNode, flowKey, color, flowByZone, reverseOrder = false) {
+        const dpFrac   = DP_FRACTION[daypart] ?? (1 / 14.4);
+        const maxW     = scores[0]?.weight ?? 1;
+        let count = 0;
+        for (const z of scores) {
+          if (!selected.has(z.zoneId)) continue;
+          const linkPath = _reconstructLinkPath(prev, anchorNode, z.nr.nodeId);
+          if (!linkPath || !linkPath.length) continue;
+          // Bij reverse Dijkstra zit de volgorde omgekeerd door de built-in reverse() in
+          // _reconstructLinkPath: nog een keer omdraaien geeft de juiste zone→anchorNode volgorde.
+          if (reverseOrder) linkPath.reverse();
+          const coords = [];
+          for (const lid of linkPath) {
+            const geom = linkGeomMap.get(lid) ?? linkGeomMap.get(Number(lid));
+            if (geom) for (const c of geom) coords.push(c);
+          }
+          if (coords.length < 2) continue;
+          const flow = (z.weight / maxW) * dpFrac * (z[flowKey] || 1);
+          pathData.push({ coords, flow, color, zoneId: z.zoneId });
+          flowByZone.set(z.zoneId, (flowByZone.get(z.zoneId) ?? 0) + flow);
+          count++;
+        }
+        return count;
+      }
 
-      // ── Bouw paden en flows ─────────────────────────────────────────────────
-      const dpFrac        = DP_FRACTION[daypart] ?? (1 / 14.4);
-      const pathData      = [];
+      const pathData       = [];
       const flowByFromZone = new Map();
       const flowByToZone   = new Map();
-      const maxWeight     = zoneScores[0]?.weight ?? 1;
 
-      for (const z of zoneScores) {
-        if (!selected.has(z.zoneId)) continue;
+      // Productiekant: zones → fromNode via reverse graph (oranje)
+      const { scores: prodScores, selected: prodSel } = scoreZones(distFwd, 'production');
+      const nProd = buildPaths(prodScores, prodSel, prevFwd, nlm.fromNode,
+                               'production', [255, 120, 0, 200], flowByFromZone, true);
 
-        // Probeer het pad te reconstrueren: zone-node → toNode van de link (rijrichting)
-        const targetNode = z.nr.nodeId;
-        const linkPath = _reconstructLinkPath(prevBwd, nlm.toNode, targetNode);
-        if (!linkPath) continue;
+      // Attractiekant: toNode → attractiezones via forward graph (cyaan)
+      const { scores: attrScores, selected: attrSel } = scoreZones(distBwd, 'attraction');
+      const nAttr = buildPaths(attrScores, attrSel, prevBwd, nlm.toNode,
+                               'attraction', [0, 210, 255, 200], flowByToZone, false);
 
-        // Geometrie opbouwen
-        const coords = [];
-        for (const lid of linkPath) {
-          const geom = linkGeomMap.get(lid) ?? linkGeomMap.get(Number(lid));
-          if (geom) for (const c of geom) coords.push(c);
-        }
-        if (coords.length < 2) continue;
-
-        // Genormaliseerde flow op basis van gravity-gewicht
-        const normFlow = z.weight / maxWeight;
-        const flow     = normFlow * dpFrac * (z.production || 1);
-
-        pathData.push({ coords, flow, estimated: true, zoneId: z.zoneId });
-        flowByFromZone.set(z.zoneId, (flowByFromZone.get(z.zoneId) ?? 0) + flow);
-        flowByToZone.set(z.zoneId,   (flowByToZone.get(z.zoneId)   ?? 0) + flow);
-      }
-
+      console.log('[Dijkstra] linkId:', linkId,
+        '| productie:', nProd, '/', prodSel.size,
+        '| attractie:', nAttr, '/', attrSel.size,
+        '| pathData totaal:', pathData.length);
       return { pathData, flowByFromZone, flowByToZone };
     }
 
@@ -6184,6 +6281,7 @@
     let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
     let selectedLinkActive = false;   // true als de link-selectie-modus actief is
     let hoveredLinkId      = null;    // linkId onder de cursor (bijgehouden via onHover)
+    const _estimatedRouteCache = new Map(); // linkId → {pathData, flowByFromZone, flowByToZone} (Dijkstra-schatting)
 
     // ── Voertuigtellers ───────────────────────────────────────────────────────
     let _counterList      = [];           // [{ id, linkId, line, bearing, midLon, midLat, counts, startTime }]
@@ -6740,29 +6838,25 @@
       // ── Selected Link: toon alle routes die door het geselecteerde wegvak lopen ──
       if (selectedLinkId) {
         let { pathData, flowByFromZone, flowByToZone } = computeLinkRouteData();
-        let estimated = false;
-        if (!pathData.length) {
-          // Geen routes in data → schat via Dijkstra
-          ({ pathData, flowByFromZone, flowByToZone } = computeEstimatedLinkRouteData(selectedLinkId));
-          estimated = true;
+        const numKey = Number(selectedLinkId);
+        if (!pathData.length && _estimatedRouteCache.has(numKey)) {
+          // Gebruik gecachete Dijkstra-schatting (zelfde stijl als echte routes)
+          ({ pathData, flowByFromZone, flowByToZone } = _estimatedRouteCache.get(numKey));
         }
         if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
         const maxFlow      = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
         const isProduction = zoneCentroidMode !== 'attraction';
-        // Geschatte routes: stippellijn-effect via smallere lijnen en lager alpha
-        const alpha = estimated ? 120 : 180;
-        const color = estimated ? [200, 200,  80, alpha]
-                    : isProduction ? [255, 120, 0, alpha] : [0, 220, 255, alpha];
+        const defaultColor = isProduction ? [255, 120, 0, 180] : [0, 210, 255, 180];
         return new PathLayer({
           id:             'zone-routes',
           data:           pathData,
           pickable:       false,
           widthUnits:     'pixels',
-          widthMinPixels: estimated ? 0.5 : 1,
-          widthMaxPixels: estimated ? 5   : 8,
+          widthMinPixels: 1,
+          widthMaxPixels: 8,
           getPath:        d => d.coords,
-          getWidth:       d => Math.max(estimated ? 0.5 : 1, (d.flow / maxFlow) * (estimated ? 5 : 8)),
-          getColor:       color,
+          getWidth:       d => Math.max(1, (d.flow / maxFlow) * 8),
+          getColor:       d => d.color ?? defaultColor,
         updateTriggers: {
           getLineColor: [daypart, colorMetric, _fspVersion],
           getLineWidth: [daypart, colorMetric, _fspVersion],
@@ -6873,9 +6967,15 @@
             purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + flow * ratio);
           }
         }
-        // Geometrie van de volledige route opbouwen voor de PathLayer
-        const coords = _linkIdsToCoords(route.linkIds);
-        if (coords.length >= 2) pathData.push({ coords, flow });
+        // Splits route op de geselecteerde link: upstream = oranje, downstream = cyaan
+        // Sla eerste link (voedingslink herkomst) en laatste link (voedingslink bestemming) over
+        const idx = route.linkIds.findIndex(id => id === numKey || id === selectedLinkId);
+        const upIds   = idx > 1              ? route.linkIds.slice(1, idx)                        : [];
+        const downIds = idx < route.linkIds.length - 2 ? route.linkIds.slice(idx + 1, -1) : [];
+        const upCoords   = upIds.length   ? _linkIdsToCoords(upIds)   : [];
+        const downCoords = downIds.length ? _linkIdsToCoords(downIds) : [];
+        if (upCoords.length   >= 2) pathData.push({ coords: upCoords,   flow, color: [255, 120, 0,   200] });
+        if (downCoords.length >= 2) pathData.push({ coords: downCoords, flow, color: [0,   210, 255, 200] });
       }
       return { flowByFromZone, flowByToZone, pathData, purposeFlow };
     }
@@ -6909,6 +7009,11 @@
      *  Verbergt het paneel als er geen motifRatio-data beschikbaar is. */
     function updatePurposeChart() {
       const panel   = document.getElementById('purposeChartPanel');
+      // tijdelijk verborgen — later verder mee
+      panel.style.display = 'none';
+      return;
+
+      /* eslint-disable no-unreachable */
       const svg     = document.getElementById('purposeChartSvg');
       const legend  = document.getElementById('purposeChartLegend');
       const estTag  = document.getElementById('purposeChartEstTag');
@@ -6916,7 +7021,6 @@
       const body    = document.getElementById('purposeChartBody');
 
       if (!selectedLinkId) {
-        panel.style.display = 'none';
         return;
       }
 
@@ -6942,11 +7046,11 @@
             .filter(([k]) => k !== 'house')
             .sort(([, a], [, b]) => b - a);
           const sum = entries.reduce((s, [, v]) => s + v, 0);
-          if (sum === 0) entries = [];   // verwijder "unknown 100%" — probeer schatting
+          if (sum === 0) entries = [];
         }
       }
 
-      // ── Schatting via Dijkstra als nog steeds geen bruikbare data ─────────
+      // ── Schatting via nabijgelegen zones als nog steeds geen bruikbare data ──
       if (!entries.length) {
         const estFlow = estimatePurposeFlowForLink(selectedLinkId);
         if (estFlow) {
@@ -6957,17 +7061,14 @@
         }
       }
 
-      // ── Toon "Onvoldoende data" als ook schatting niets oplevert ──────────
+      // ── Laatste fallback: toon "100% onbekend" als er werkelijk geen data is ──
+      if (!entries.length) {
+        entries = [['unknown', 1]];
+      }
+
       estTag.style.display  = estimated ? 'inline' : 'none';
       noData.style.display  = 'none';
       body.style.display    = 'flex';
-
-      if (!entries.length) {
-        body.style.display   = 'none';
-        noData.style.display = 'block';
-        panel.style.display  = 'block';
-        return;
-      }
 
       const total = entries.reduce((s, [, v]) => s + v, 0);
 
@@ -7011,20 +7112,41 @@
       panel.style.display = 'block';
     }
 
-    /** GeoJsonLayer die het geselecteerde wegvak markeert (geel, dik). */
-    function makeSelectedLinkHighlightLayer() {
-      if (!selectedLinkId) return new GeoJsonLayer({ id: 'selected-link', data: [] });
-      const feat = geojson.features.find(f => f.properties?.linkId === selectedLinkId);
-      return new GeoJsonLayer({
-        id: 'selected-link',
-        data: feat ? [feat] : [],
-        stroked: false, filled: false,
-        lineWidthUnits: 'pixels',
-        lineWidthMinPixels: 6,
-        getLineWidth: 6,
-        getLineColor: [255, 220, 0, 230],
-        updateTriggers: { getLineColor: [selectedLinkId] },
-      });
+    /** Twee GeoJsonLayers die het geselecteerde wegvak markeren als glowing red. */
+    function makeSelectedLinkHighlightLayers() {
+      if (!selectedLinkId) return [
+        new GeoJsonLayer({ id: 'selected-link-glow', data: [] }),
+        new GeoJsonLayer({ id: 'selected-link-core', data: [] }),
+      ];
+      const feat = geojson.features.find(
+        f => f.properties?.linkId === selectedLinkId
+          || f.properties?.linkId === Number(selectedLinkId)
+      );
+      const data = feat ? [feat] : [];
+      return [
+        // Buitenste gloed: breed, semi-transparant rood
+        new GeoJsonLayer({
+          id: 'selected-link-glow',
+          data,
+          stroked: false, filled: false,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 22,
+          getLineWidth: 22,
+          getLineColor: [255, 0, 0, 160],
+          updateTriggers: { getLineColor: [selectedLinkId] },
+        }),
+        // Binnenste kern: smal, vol wit-rood
+        new GeoJsonLayer({
+          id: 'selected-link-core',
+          data,
+          stroked: false, filled: false,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 6,
+          getLineWidth: 6,
+          getLineColor: [255, 220, 220, 255],
+          updateTriggers: { getLineColor: [selectedLinkId] },
+        }),
+      ];
     }
 
     function makeWhatifRcHighlightLayer() {
@@ -7439,7 +7561,10 @@
       }
       // Link-selectie via selectedLinkActive + hoveredLinkId
       if (selectedLinkActive && hoveredLinkId !== null) {
+        const prevId = selectedLinkId;
         selectedLinkId = (selectedLinkId === hoveredLinkId) ? null : hoveredLinkId;
+        // Cache opschonen als een ander link geselecteerd wordt
+        if (prevId !== null && prevId !== selectedLinkId) _estimatedRouteCache.delete(prevId);
         if (selectedLinkId !== null) {
           const numKey = Number(selectedLinkId);
           const routes = linkRouteMap.get(numKey) ?? linkRouteMap.get(selectedLinkId) ?? [];
@@ -7448,6 +7573,25 @@
             '| routes voor dit link:', routes.length,
             '| routeList.length:', routeList.length,
             '| zoneFeaturesRaw.length:', zoneFeaturesRaw.length);
+          // Geen routes in de data → schat async via Dijkstra (20 nearest + extern)
+          if (routes.length === 0 && !_estimatedRouteCache.has(numKey)) {
+            const calcOverlay    = document.getElementById('calcOverlay');
+            const calcOverlayMsg = document.getElementById('calcOverlayMsg');
+            calcOverlay.style.display = 'flex';
+            calcOverlayMsg.textContent = T('estimatingRoutes');
+            const capturedId = numKey;
+            setTimeout(() => {
+              try {
+                const result = computeEstimatedLinkRouteData(capturedId);
+                _estimatedRouteCache.set(capturedId, result);
+              } finally {
+                calcOverlay.style.display = 'none';
+                updateOverlay(true);
+                updatePurposeChart();
+              }
+            }, 0);
+            return; // updateOverlay/updatePurposeChart volgen na de berekening
+          }
         }
         updateOverlay(true);
         updatePurposeChart();
@@ -7507,7 +7651,7 @@
         overlay.setProps({ layers: [
           makeNetworkLayer(),
           makeLinkEditLayer(),
-          makeSelectedLinkHighlightLayer(),
+          ...makeSelectedLinkHighlightLayers(),
           makeWhatifRcHighlightLayer(),
           makeZoneBoundaryLayer(),
           makeZoneCentroidLayer(),
@@ -9142,7 +9286,7 @@
 
       // Herbouw graph
       linkGeomMap.clear(); linkSpeedMap.clear(); linkCapacityMap.clear();
-      nodeCoords.clear();  nodeLinkMap.clear();  adj.clear();
+      nodeCoords.clear();  nodeLinkMap.clear();  adj.clear();  adjReverse.clear();
       for (const f of newGeojson.features) {
         const p = f.properties, c = f.geometry.coordinates;
         if (!p.fromNode || !p.toNode || !c?.length) continue;
@@ -9155,6 +9299,16 @@
         if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
         adj.get(p.fromNode).push({
           toNode:   p.toNode,
+          linkId:   p.linkId,
+          length:   p.length || 1,
+          coords:   c,
+          speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+          linkMode: p.mode ? p.mode.toUpperCase() : null,
+        });
+        if (!adjReverse.has(p.toNode)) adjReverse.set(p.toNode, []);
+        adjReverse.get(p.toNode).push({
+          toNode:   p.fromNode,
+          linkId:   p.linkId,
           length:   p.length || 1,
           coords:   c,
           speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
