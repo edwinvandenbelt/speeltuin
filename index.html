@@ -486,7 +486,7 @@
       position: absolute;
       bottom: 24px; right: 340px;
       z-index: 20;
-      width: 280px;
+      width: 360px;
       background: rgba(13,17,23,0.93);
       border: 1px solid rgba(78,154,241,0.25);
       border-radius: 12px;
@@ -517,7 +517,7 @@
     }
     .pcl-item {
       display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: #c9d6e8; white-space: nowrap;
+      font-size: 11px; color: #c9d6e8;
     }
     .pcl-dot {
       width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
@@ -7007,13 +7007,50 @@
 
     /** Rendert het taartdiagram + legenda in #purposeChartPanel.
      *  Verbergt het paneel als er geen motifRatio-data beschikbaar is. */
+    /**
+     * Berekent de motiefverdeling op basis van attractiezones.
+     * Voor elke zone in flowByToZone: zoek alle routes in routeList met die
+     * toZoneId, verdeel de zone-flow naar motief via route.motifRatio × route.weight.
+     * Geeft een Map<motifKey, flow> terug, of null als er niets te berekenen valt.
+     */
+    function _purposeFlowFromAttractionZones(flowByToZone) {
+      if (!flowByToZone || !flowByToZone.size) return null;
+
+      // Bouw lookup toZoneId → routes (eenmalig over flowByToZone-zones)
+      const zoneIds = new Set(flowByToZone.keys());
+      const routesByZone = new Map();
+      for (const route of routeList) {
+        if (!zoneIds.has(route.toZoneId)) continue;
+        if (!route.motifRatio) continue;
+        const arr = routesByZone.get(route.toZoneId) ?? [];
+        arr.push(route);
+        routesByZone.set(route.toZoneId, arr);
+      }
+
+      const purposeFlow = new Map();
+
+      for (const [zoneId, zoneFlow] of flowByToZone) {
+        const routes = routesByZone.get(zoneId);
+        if (!routes || !routes.length) continue;
+
+        // Normaliseer over het totale gewicht van routes naar deze zone
+        const totalWeight = routes.reduce((s, r) => s + (r.weight ?? 0), 0);
+        if (totalWeight <= 0) continue;
+
+        for (const route of routes) {
+          const share = (route.weight ?? 0) / totalWeight;
+          for (const [m, ratio] of Object.entries(route.motifRatio)) {
+            if (m === 'house') continue;
+            purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + zoneFlow * share * ratio);
+          }
+        }
+      }
+
+      return purposeFlow.size > 0 ? purposeFlow : null;
+    }
+
     function updatePurposeChart() {
       const panel   = document.getElementById('purposeChartPanel');
-      // tijdelijk verborgen — later verder mee
-      panel.style.display = 'none';
-      return;
-
-      /* eslint-disable no-unreachable */
       const svg     = document.getElementById('purposeChartSvg');
       const legend  = document.getElementById('purposeChartLegend');
       const estTag  = document.getElementById('purposeChartEstTag');
@@ -7021,49 +7058,68 @@
       const body    = document.getElementById('purposeChartBody');
 
       if (!selectedLinkId) {
+        panel.style.display = 'none';
         return;
       }
 
-      const { purposeFlow } = computeLinkRouteData();
-
-      // ── Fallback: flowsPerMotive van de link zelf ─────────────────────────
-      let entries = [...purposeFlow.entries()]
-        .filter(([k, v]) => v > 0 && k !== 'house')
-        .sort(([, a], [, b]) => b - a);
-
+      // ── Stap 1: haal flowByToZone op ─────────────────────────────────────
+      // Links met echte routes: gebruik linkRouteMap-data
+      // Links zonder routes:    gebruik Dijkstra-schatting
+      const numLinkId  = Number(selectedLinkId);
+      const hasRoutes  = (linkRouteMap.get(numLinkId) ?? linkRouteMap.get(selectedLinkId) ?? []).length > 0;
+      let flowByToZone;
       let estimated = false;
 
-      if (!entries.length) {
-        // Geen route-data: probeer flowsPerMotive van het geselecteerde wegvak
-        const feat = geojson.features.find(
-          f => f.properties?.linkId === selectedLinkId
-            || f.properties?.linkId === Number(selectedLinkId)
+      if (hasRoutes) {
+        ({ flowByToZone } = computeLinkRouteData());
+      } else {
+        const est = _estimatedRouteCache.get(numLinkId) ?? _estimatedRouteCache.get(selectedLinkId);
+        flowByToZone = est ? est.flowByToZone : null;
+        estimated = true;
+      }
+
+      // ── Stap 2: bereken motiefverdeling via attractiezones ────────────────
+      let entries = [];
+      const pf = _purposeFlowFromAttractionZones(flowByToZone);
+      if (pf) {
+        entries = [...pf.entries()]
+          .filter(([k, v]) => v > 0)
+          .sort(([, a], [, b]) => b - a);
+      }
+
+      // ── Stap 3 (alleen zonder routes): motieven van de link zelf 2× meegewogen ──
+      if (!hasRoutes) {
+        const linkFeat = geojson.features.find(
+          f => f.properties?.linkId === numLinkId
+            || f.properties?.linkId === selectedLinkId
         );
-        const fpm = feat?.properties?.flowsPerMotive;
+        const fpm = linkFeat?.properties?.flowsPerMotive;
         if (fpm) {
-          const d = typeof fpm === 'string' ? JSON.parse(fpm) : fpm;
-          entries = Object.entries(d)
+          const raw = typeof fpm === 'string' ? JSON.parse(fpm) : fpm;
+          const linkSum = Object.entries(raw)
             .filter(([k]) => k !== 'house')
-            .sort(([, a], [, b]) => b - a);
-          const sum = entries.reduce((s, [, v]) => s + v, 0);
-          if (sum === 0) entries = [];
+            .reduce((s, [, v]) => s + v, 0);
+          if (linkSum > 0) {
+            // Normaliseer zone-flows en link-flows elk naar 1.0, combineer 1:2
+            const zoneSum = entries.reduce((s, [, v]) => s + v, 0);
+            const zoneScale = zoneSum > 0 ? 1 / zoneSum : 0;
+            const linkScale = 2 / linkSum;   // link weegt 2× zo zwaar
+            const combined = new Map(entries.map(([k, v]) => [k, v * zoneScale]));
+            for (const [k, v] of Object.entries(raw)) {
+              if (k === 'house') continue;
+              combined.set(k, (combined.get(k) ?? 0) + v * linkScale);
+            }
+            entries = [...combined.entries()]
+              .filter(([, v]) => v > 0)
+              .sort(([, a], [, b]) => b - a);
+          }
         }
       }
 
-      // ── Schatting via nabijgelegen zones als nog steeds geen bruikbare data ──
-      if (!entries.length) {
-        const estFlow = estimatePurposeFlowForLink(selectedLinkId);
-        if (estFlow) {
-          entries = [...estFlow.entries()]
-            .filter(([k, v]) => v > 0 && k !== 'house')
-            .sort(([, a], [, b]) => b - a);
-          if (entries.length) estimated = true;
-        }
-      }
-
-      // ── Laatste fallback: toon "100% onbekend" als er werkelijk geen data is ──
+      // ── Laatste fallback: toon "100% onbekend" ────────────────────────────
       if (!entries.length) {
         entries = [['unknown', 1]];
+        estimated = false;
       }
 
       estTag.style.display  = estimated ? 'inline' : 'none';
