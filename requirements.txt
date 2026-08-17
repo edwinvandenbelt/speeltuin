@@ -25,3 +25,7 @@ tzdata>=2024.1
 # GeoParquet-ondersteuning (optioneel — vereist voor het lezen van .geoparquet/.parquet invoerbestanden)
 geopandas>=0.14
 pyarrow>=14
+
+# Wegenscan – veiligheids-KPI pipeline
+./wegenscan-2.1.0-py3-none-any.whl
+databricks-sql-connector>=3.0.0

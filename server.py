@@ -145,6 +145,15 @@ except ImportError as _e:
     _WHATIF_AVAILABLE = False
     print(f"[server] WAARSCHUWING: what_if_quick_scan niet beschikbaar — {_e}")
 
+try:
+    from wegenscan_pipeline import run_pipeline as _ws_run_pipeline
+
+    _WEGENSCAN_AVAILABLE = True
+except ImportError as _e:
+    _ws_run_pipeline = None  # type: ignore[assignment]
+    _WEGENSCAN_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: wegenscan niet beschikbaar — {_e}")
+
 from buildings_fetcher.core.buildings_fetcher_core import (  # noqa: E402
     BUILDINGS_QUERY_VER as _BUILDINGS_QUERY_VER,
     fetch_buildings_overpass as _fetch_buildings_overpass,
@@ -480,6 +489,10 @@ _COLLECTIONS = {
         "title": "Wijzigingen",
         "description": "Gecumuleerde wijzigingen in de scenario-keten voor een gebied.",
     },
+    "wegenscan": {
+        "title": "Wegenscan (veiligheidsscores)",
+        "description": "21 veiligheids-KPI's + generic_safety per wegvak, berekend door de wegenscan.",
+    },
 }
 
 # Mapping van collection-id naar bestandstype-suffix
@@ -489,6 +502,7 @@ _COLLECTION_FILE_TYPE = {
     "zones": "ZONE",
     "feedlinks": "FEEDLINK",
     "comparison": "COMPARE",
+    "wegenscan": "WEGENSCAN",
 }
 
 _PROCESS_DESCRIPTIONS = {
@@ -649,6 +663,35 @@ _PROCESS_DESCRIPTIONS = {
         },
         "outputs": {
             "new_area_id": {"title": "Nieuw gebied-ID", "schema": {"type": "string"}},
+            "collection": {"title": "Collectie-URL", "schema": {"type": "string"}},
+        },
+    },
+    "wegenscan": {
+        "id": "wegenscan",
+        "title": "Wegenscan – veiligheids-KPI's",
+        "description": (
+            "Verrijkt een bestaand netwerk met NWB-attributen via Databricks en "
+            "berekent 21 veiligheids-KPI's per wegvak (GOED/REDELIJK/MATIG/SLECHT)."
+        ),
+        "version": "2.1.0",
+        "jobControlOptions": ["async-execute"],
+        "outputTransmission": ["value"],
+        "inputs": {
+            "area_id": {
+                "title": "Gebied-ID",
+                "schema": {"type": "string"},
+                "minOccurs": 1,
+            },
+            "mode": {
+                "title": "Modus",
+                "schema": {
+                    "type": "string",
+                    "enum": ["CAR", "BIKE", "PEDESTRIAN", "MIXED"],
+                },
+                "minOccurs": 1,
+            },
+        },
+        "outputs": {
             "collection": {"title": "Collectie-URL", "schema": {"type": "string"}},
         },
     },
@@ -1221,6 +1264,8 @@ def _get_available_processes() -> set:
         avail.add("adjust")
     if _WHATIF_AVAILABLE:
         avail.add("whatif-road-closure")
+    if _WEGENSCAN_AVAILABLE:
+        avail.add("wegenscan")
     return avail
 
 
@@ -1743,6 +1788,49 @@ def _run_whatif_road_closure_job(
 # ---------------------------------------------------------------------------
 
 
+def _run_wegenscan_job(job_id: str, area_id: str, mode: str):
+    """Voer wegenscan-pipeline (enrichment + KPI-berekening) uit in achtergrondthread."""
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+    stream = _LogStream(_jobs[job_id]["log"], _jobs_lock)
+    try:
+        with (
+            _pipeline_stdout_lock,
+            contextlib.redirect_stdout(stream),
+            contextlib.redirect_stderr(stream),
+        ):
+            network_path = _data_path(area_id, mode, "NETWORK")
+            if network_path is None:
+                raise FileNotFoundError(
+                    f"Geen NETWORK-bestand gevonden voor area_id={area_id!r}, mode={mode!r}"
+                )
+            print(f"[wegenscan] Netwerk laden: {network_path.name}")
+            geojson = _read_geodata(network_path)
+            print(f"[wegenscan] {len(geojson.get('features', []))} features geladen")
+            result = _ws_run_pipeline(geojson, id_field="spectrumId")  # type: ignore[misc]
+        stream.flush()
+
+        out_path = _find_area_dir(area_id) / f"{area_id}-WEGENSCAN-{mode}.geojson"
+        out_path.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        print(f"[wegenscan] Resultaat opgeslagen: {out_path.name}")
+
+        with _jobs_lock:
+            _jobs[job_id]["returncode"] = 0
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+            _jobs[job_id]["_results"] = {
+                "collection": f"/collections/wegenscan/items?areaId={area_id}&mode={mode}",
+            }
+    except BaseException as exc:
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]["log"].append(f"[server] Fout: {type(exc).__name__}: {exc}")
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["returncode"] = -1
+            _jobs[job_id]["finished"] = _now_iso()
+
+
 def _execute_prepare(inputs: dict):
     """Start prepare als async job. Geeft (body, 201, headers) terug."""
     if not _PREPARE_AVAILABLE:
@@ -2054,6 +2142,42 @@ def _execute_whatif_road_closure(inputs: dict):
             reduction_factor,
             scenario_name,
         ),
+        daemon=True,
+    ).start()
+    return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}
+
+
+def _execute_wegenscan(inputs: dict):
+    """Start wegenscan als async job. Geeft (body, 201, headers) terug."""
+    if not _WEGENSCAN_AVAILABLE:
+        abort(503, "wegenscan-package niet beschikbaar")
+
+    area_id = str(inputs.get("area_id", "")).strip()
+    mode = str(inputs.get("mode", "CAR")).strip().upper()
+
+    if not _safe(area_id):
+        abort(400, f"Ongeldige of ontbrekende area_id: {area_id!r}")
+    valid_modes = {"CAR", "BIKE", "PEDESTRIAN", "MIXED"}
+    if mode not in valid_modes:
+        abort(
+            400,
+            f"Ongeldige modus: {mode!r}. Toegestaan: {', '.join(sorted(valid_modes))}",
+        )
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "jobID": job_id,
+            "processID": "wegenscan",
+            "status": "accepted",
+            "log": [],
+            "created": _now_iso(),
+            "started": None,
+            "finished": None,
+        }
+    threading.Thread(
+        target=_run_wegenscan_job,
+        args=(job_id, area_id, mode),
         daemon=True,
     ).start()
     return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}
@@ -2804,6 +2928,7 @@ def ogc_process_execute(process_id):
         "prepare": _execute_prepare,
         "adjust": _execute_adjust,
         "whatif-road-closure": _execute_whatif_road_closure,
+        "wegenscan": _execute_wegenscan,
         "delete-area": _execute_delete_area,
         "set-directory": _execute_set_directory,
     }
