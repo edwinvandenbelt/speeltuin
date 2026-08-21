@@ -1276,6 +1276,8 @@
     <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
     <button class="tb-btn" id="splitViewBtn" data-i18n-title="splitViewTitle"
             title="ScenarioVergelijker" style="display:none">⧉</button>
+    <!-- Verschilplot: toont toe-/afnames per wegvak (rood/groen) -->
+    <button class="tb-btn" id="diffPlotBtn" title="Verschilplot (Δ intensiteit)" style="display:none">Δ</button>
 
     <!-- Zone-centroids weergave -->
     <div class="tb-icon-group">
@@ -1550,6 +1552,15 @@
       <span id="legendMinBike">0</span>
       <span id="legendLabelBike">Fiets</span>
       <span id="legendMaxBike">–</span>
+    </div>
+    <!-- Verschilplot-legende — alleen zichtbaar als diffPlotActive -->
+    <div id="legendDiff" style="display:none; margin-top:4px;">
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#ddd;">
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#dc1e1e;"></span>Toename
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#1eb43c;margin-left:6px;"></span>Afname
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#8c8c8c;margin-left:6px;opacity:0.6;"></span>Ongewijzigd
+      </div>
+      <div style="font-size:10px; color:#aaa; margin-top:2px;">Breedte = schaal t.o.v. max. intensiteit</div>
     </div>
     <div id="carCountStrip"></div>
   </div>
@@ -3671,6 +3682,21 @@
       const legendStrip = document.getElementById('legendStrip');
       if (colorMetric === 'none') { legendStrip.style.display = 'none'; return; }
       legendStrip.style.display = '';
+
+      // Verberg normale gradient-legende als de verschilplot actief is
+      const legendLabelsEl  = legendStrip.querySelector('.legend-labels');
+      if (diffPlotActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiff').style.display  = '';
+        return;
+      }
+      // Normaal: zorg dat alles weer zichtbaar is
+      document.getElementById('legendBar').style.display    = '';
+      if (legendLabelsEl) legendLabelsEl.style.display = '';
+      document.getElementById('legendDiff').style.display   = 'none';
       const unit = T('legendUnit');
       // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
       const bp = Math.max(2, Math.round(25 / (globalMaxFlow || 1) * 100));
@@ -6405,6 +6431,9 @@
     // ── ScenarioVergelijker — state (vóór makeCarLayers zodat er geen TDZ-fout optreedt) ──
     let splitViewActive    = false;
     let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
+    var diffPlotActive     = false;  // verschilplot actief
+    var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (uurintensiteit)
+    var diffMaxOrigFlow    = 1;      // max uurflow bron-scenario (schaalreferentie)
     // map2 is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let overlay2           = null;   // deck.gl MapboxOverlay voor rechterkaart
     let origSegments       = [];     // segments-array voor rechterkaart
@@ -6515,7 +6544,7 @@
         data: MODE !== 'MIXED'
           ? geojson.features
           : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
-        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && !selectedZoneId && !selectedLinkId,
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && !selectedZoneId && !selectedLinkId && !diffPlotActive,
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
@@ -6723,6 +6752,105 @@
         updateTriggers: {
           getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size],
           getLineWidth: [daypart, colorMetric, _fspVersion],
+        },
+      });
+    }
+
+    // ── Verschilplot-tooltip render ───────────────────────────────────────────
+    const _diffTipRender = (info) => {
+      const p = info?.object?.properties;
+      if (!p) { _segTip.style.display = 'none'; return; }
+      const linkId  = p.linkId;
+      const diff    = diffByLinkId.get(linkId);
+      const newFlow = dpFlowOf(p);
+      const oldFlow = diff != null ? newFlow - diff : null;
+      const loc     = T('numberLocale');
+      const fmtFlow = v => v != null ? Math.round(v).toLocaleString(loc) : '–';
+      const diffVal = diff != null ? Math.round(diff) : null;
+      const diffStr = diffVal != null
+        ? (diffVal > 0 ? '+' : '') + diffVal.toLocaleString(loc)
+        : '–';
+      const diffColor = diffVal == null || diffVal === 0
+        ? '#aaa'
+        : diffVal > 0 ? '#e85555' : '#3dc45a';
+      _segTip.innerHTML = `
+        <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', Math.abs(linkId))}
+        </div>
+        <div><span style="color:#5a6272">Oud: </span><b>${fmtFlow(oldFlow)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#5a6272">Nieuw: </span><b>${fmtFlow(newFlow)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#5a6272">Verschil: </span><b style="color:${diffColor}">${diffStr} ${T('tooltipFlowUnit')}</b></div>
+        <div style="margin-top:4px;font-size:10px;color:#666">${p.speed} km/h · ${p.lanes} rijstr. · ${p.length?.toFixed(0)} m</div>
+      `;
+      const rect = map.getCanvas().getBoundingClientRect();
+      const x = rect.left + info.x;
+      const y = rect.top  + info.y;
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    // ── Verschilplot-laag: toont toe-/afname per wegvak t.o.v. bronscenario ──────
+    function makeDiffLayer() {
+      if (!diffPlotActive || !diffByLinkId.size) {
+        return new GeoJsonLayer({ id: 'diff-plot', data: [] });
+      }
+      const isBike = MODE === 'BIKE';
+      const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer
+
+      // Schaal t.o.v. het maximum van de bron-intensiteit
+      const ref = diffMaxOrigFlow;
+
+      return new GeoJsonLayer({
+        id: 'diff-plot',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        visible: true,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null || diff === 0) return 1.5;
+          const lanes  = f.properties.lanes || 1;
+          // Logaritmische schaal identiek aan flow_scaled, maar op |diff| t.o.v. globalMaxFlow
+          const t = Math.log1p(Math.abs(diff)) / Math.log1p(ref);
+          return Math.max(1.5, t * lanes * maxW);
+        },
+        getLineColor: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null || diff === 0) return [140, 140, 140, 60];
+          return diff > 0
+            ? [220, 30, 30, 220]   // toename → rood
+            : [30, 180, 60, 220];  // afname  → groen
+        },
+        pickable: true,
+        onHover: info => {
+          if (info.object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _diffTipRender(info);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+              }, 600);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [diffByLinkId.size, daypart],
+          getLineWidth: [diffByLinkId.size, daypart],
         },
       });
     }
@@ -7873,6 +8001,7 @@
       function updateOverlay(withCars = true) {
         overlay.setProps({ layers: [
           makeNetworkLayer(),
+          makeDiffLayer(),
           makeLinkEditLayer(),
           ...makeSelectedLinkHighlightLayers(),
           makeWhatifRcHighlightLayer(),
@@ -9626,7 +9755,9 @@
       // Sla huidig gebied op als bronscenario voor ScenarioVergelijker vóór de update
       splitViewSrcAreaId = AREA_ID;
       if (splitViewActive) deactivateSplitView();
+      if (diffPlotActive) deactivateDiffPlot();
       document.getElementById('splitViewBtn').style.display = '';
+      document.getElementById('diffPlotBtn').style.display  = '';
       AREA_ID = newAreaId;
       _historicalChanges = [];   // invalideer bij scenario-advance
 
@@ -9656,6 +9787,7 @@
         if (area?.srcAreaId) {
           splitViewSrcAreaId = area.srcAreaId;
           document.getElementById('splitViewBtn').style.display = '';
+          document.getElementById('diffPlotBtn').style.display  = '';
         }
       }).catch(() => {});
     }
@@ -9698,6 +9830,8 @@
       opt.style.display = hasCompare ? '' : 'none';
       // splitViewBtn tonen als er een bronscenario bekend is
       document.getElementById('splitViewBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffPlotBtn').style.display =
         splitViewSrcAreaId ? '' : 'none';
       // Als de huidige selectie 'compare' is maar er geen data meer is, reset
       if (!hasCompare && colorMetric === 'compare') {
@@ -9853,6 +9987,65 @@
       document.getElementById('splitViewBtn').classList.remove('active');
     }
 
+    // ── Verschilplot — activeren/deactiveren ────────────────────────────────────
+    async function activateDiffPlot() {
+      if (!splitViewSrcAreaId) return;
+      // Zorg dat split-view niet tegelijk actief is
+      if (splitViewActive) deactivateSplitView();
+
+      const mkUrl2 = type => {
+        const collMap = { NETWORK: 'network' };
+        const coll = collMap[type] || type.toLowerCase();
+        return `/collections/${coll}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      };
+
+      try {
+        const origGeoJson  = await fetch(mkUrl2('NETWORK')).then(r => r.json());
+        const origFeatures = origGeoJson.features.filter(
+          f => f.geometry?.type === 'LineString' && f.properties?.linkId != null
+        );
+
+        // Bouw een map linkId → uurflow bron-scenario
+        const origFlowByLinkId = new Map();
+        let maxOrigFlow = 0;
+        for (const f of origFeatures) {
+          const flow = dpFlowOf(f.properties);
+          origFlowByLinkId.set(f.properties.linkId, flow);
+          if (flow > maxOrigFlow) maxOrigFlow = flow;
+        }
+        diffMaxOrigFlow = maxOrigFlow || 1;
+
+        // Bereken verschil per linkId: berekend − bron
+        diffByLinkId.clear();
+        for (const seg of segments) {
+          const linkId   = seg.props.linkId;
+          const calcFlow = dpFlowOf(seg.props);
+          const origFlow = origFlowByLinkId.get(linkId) ?? 0;
+          diffByLinkId.set(linkId, calcFlow - origFlow);
+        }
+
+        diffPlotActive = true;
+        document.getElementById('diffPlotBtn').classList.add('active');
+        document.getElementById('legendDiff').style.display = '';
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Verschilplot activeren mislukt:', e);
+        diffPlotActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffPlot() {
+      if (!diffPlotActive) return;
+      diffPlotActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffPlotBtn').classList.remove('active');
+      document.getElementById('legendDiff').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
     function _syncMap1ToMap2() {
       if (_mapSyncing || !map2) return;
       _mapSyncing = true;
@@ -9871,7 +10064,12 @@
 
     document.getElementById('splitViewBtn').addEventListener('click', () => {
       if (splitViewActive) deactivateSplitView();
-      else activateSplitView();
+      else { deactivateDiffPlot(); activateSplitView(); }
+    });
+
+    document.getElementById('diffPlotBtn').addEventListener('click', () => {
+      if (diffPlotActive) deactivateDiffPlot();
+      else activateDiffPlot();
     });
 
     // ── Selected Link Analysis — knop ─────────────────────────────────────────
