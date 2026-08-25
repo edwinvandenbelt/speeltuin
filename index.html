@@ -967,7 +967,7 @@
       position: fixed;
       top: 52px;
       z-index: 30;
-      width: 220px;
+      width: 320px;
       background: rgba(13,17,23,0.96);
       border: 1px solid rgba(126,200,227,0.25);
       border-radius: 12px;
@@ -977,6 +977,17 @@
       overflow: hidden;
     }
     #settingsPanel.sp-visible { display: block; }
+    .sp-text {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(126,200,227,0.2);
+      border-radius: 4px;
+      color: #e0e0e0;
+      padding: 2px 5px;
+      font-size: 10px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .sp-text:focus { outline: none; border-color: rgba(126,200,227,0.5); }
 
     /* ── Voertuigteller-paneel ───────────────────────────────────── */
     #counterPanel {
@@ -1269,6 +1280,7 @@
       <option value="speed" data-i18n="metricSpeed">Snelheid</option>
       <option value="capacity" data-i18n="metricCapacity">Capaciteit</option>
       <option value="safety" id="safetyOption">Veiligheid</option>
+      <option value="spectrum">Spectrum</option>
       <option value="none" data-i18n="metricNone">Geen</option>
       <option value="compare" id="compareOption" data-i18n="metricCompare" style="display:none">Vergelijking tonen</option>
     </select>
@@ -1510,6 +1522,23 @@
           <input type="radio" name="spLang" value="FI">
           <span>&#127467;&#127470; FI</span>
         </label>
+      </div>
+      <div class="sp-section" id="spSpectrumSection">
+        <div class="sp-label">Spectrum — externe tiles</div>
+        <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 6px;align-items:center;font-size:11px;margin-top:4px;">
+          <span style="color:#aaa">OS layer</span>
+          <input type="text" id="spSpectrumLayerOS"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
+          <span style="color:#aaa">mapping</span>
+          <input type="text" id="spSpectrumMappingOS" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
+          <span style="color:#aaa">AS layer</span>
+          <input type="text" id="spSpectrumLayerAS"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
+          <span style="color:#aaa">mapping</span>
+          <input type="text" id="spSpectrumMappingAS" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
+          <span style="color:#aaa">RD layer</span>
+          <input type="text" id="spSpectrumLayerRD"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
+          <span style="color:#aaa">mapping</span>
+          <input type="text" id="spSpectrumMappingRD" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
+        </div>
       </div>
       <div class="sp-section">
         <button id="spApply" data-i18n="settingsApplyBtn">Toepassen</button>
@@ -3718,7 +3747,22 @@
           });
           return `linear-gradient(to right, ${stops.join(', ')})`;
         })() },
+        spectrum:         { labelKey: null, unit, gradient: flowGradient },
       };
+      // Spectrum: aparte MapLibre-laag, legenda toont gradient van de laag zelf
+      if (colorMetric === 'spectrum') {
+        const dpLabel = { mrh: 'OS', erh: 'AS', rest: 'RD' }[daypart] || '';
+        document.getElementById('legendBar').style.background = flowGradient;
+        document.getElementById('legendBar').style.display    = '';
+        if (legendLabelsEl) legendLabelsEl.style.display = '';
+        document.getElementById('legendLabel').textContent = `Spectrum (${dpLabel})`;
+        document.getElementById('legendMin').textContent   = '0';
+        document.getElementById('legendMax').textContent   = 'hoog';
+        document.getElementById('legendBarBike').style.display    = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        updateCarCount();
+        return;
+      }
       const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
       document.getElementById('legendBar').style.background = gradient;
 
@@ -6434,6 +6478,93 @@
     var diffPlotActive     = false;  // verschilplot actief
     var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (uurintensiteit)
     var diffMaxOrigFlow    = 1;      // max uurflow bron-scenario (schaalreferentie)
+
+    // ── Spectrum — state ─────────────────────────────────────────────────────
+    var _spectrumLayerDpKey = null;  // dpKey waarvoor de MapLibre-laag momenteel zichtbaar is
+
+    /** Verwijder bestaande Spectrum MapLibre source + layers */
+    function _removeSpectrumLayer() {
+      if (map.getLayer('spectrum-label'))  map.removeLayer('spectrum-label');
+      if (map.getLayer('spectrum-line'))   map.removeLayer('spectrum-line');
+      if (map.getSource('spectrum-tiles')) map.removeSource('spectrum-tiles');
+      _spectrumLayerDpKey = null;
+    }
+
+    /** Voeg Spectrum MVT-laag toe of update hem als het dagdeel wijzigt */
+    function updateSpectrumLayer() {
+      const dpKey  = { mrh: 'OS', erh: 'AS', rest: 'RD' }[daypart] || 'AS';
+      const layerUuid   = localStorage.getItem(`spSpectrumLayer${dpKey}`)   || '';
+      const mappingUuid = localStorage.getItem(`spSpectrumMapping${dpKey}`) || '';
+
+      if (!layerUuid || !mappingUuid) {
+        _removeSpectrumLayer();
+        return;
+      }
+
+      // Als de laag al bestaat voor hetzelfde dagdeel, niets doen
+      if (_spectrumLayerDpKey === dpKey && map.getSource('spectrum-tiles')) return;
+
+      _removeSpectrumLayer();
+
+      map.addSource('spectrum-tiles', {
+        type: 'vector',
+        tiles: [`${window.location.origin}/proxy/mvt/${layerUuid}/{z}/{x}/{y}.mvt?mappingUuid=${encodeURIComponent(mappingUuid)}`],
+        minzoom: 10,
+        maxzoom: 16,
+      });
+
+      map.addLayer({
+        id: 'spectrum-line',
+        type: 'line',
+        source: 'spectrum-tiles',
+        'source-layer': 'geometries',
+        paint: {
+          'line-color': [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'sizeSlice'], 0],
+            0,    '#313695',
+            100,  '#4575b4',
+            500,  '#74add1',
+            1000, '#fee090',
+            3000, '#f46d43',
+            6000, '#d73027',
+            10000,'#a50026',
+          ],
+          'line-width': [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'sizeSlice'], 0],
+            0,    1,
+            500,  3,
+            5000, 8,
+          ],
+          'line-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: 'spectrum-label',
+        type: 'symbol',
+        source: 'spectrum-tiles',
+        'source-layer': 'geometries',
+        minzoom: 14,
+        layout: {
+          'text-field': ['to-string', ['round', ['coalesce', ['get', 'sizeSlice'], 0]]],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-anchor': 'center',
+          'symbol-placement': 'line-center',
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+        },
+        paint: {
+          'text-color': '#111111',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      _spectrumLayerDpKey = dpKey;
+    }
     // map2 is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let overlay2           = null;   // deck.gl MapboxOverlay voor rechterkaart
     let origSegments       = [];     // segments-array voor rechterkaart
@@ -6544,7 +6675,7 @@
         data: MODE !== 'MIXED'
           ? geojson.features
           : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
-        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && !selectedZoneId && !selectedLinkId && !diffPlotActive,
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum' && !selectedZoneId && !selectedLinkId && !diffPlotActive,
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
@@ -6555,15 +6686,15 @@
            const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
            const maxW = isBike ? 1.2 : 12;   // max meter per rijstrook (fiets: 1.2 m, auto: 12 m)
            const baseW = isBike ? 1.2 : 3;   // statische breedte per rijstrook
-          if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
-            let v;
-            if (colorMetric === 'occupancy_scaled') {
-              const flow = dpFlowOf(f.properties);
-              v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
-              // Logaritmische schaal op 0–100
-              const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
-              return Math.max(1.5, t * lanes * maxW);
-            } else {
+           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
+             let v;
+             if (colorMetric === 'occupancy_scaled') {
+               const flow = dpFlowOf(f.properties);
+               v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
+               // Logaritmische schaal op 0–100
+               const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
+               return Math.max(1.5, t * lanes * maxW);
+             } else {
               v = dpFlowOf(f.properties);
               const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
               return Math.max(1.5, t * lanes * maxW);
@@ -6586,7 +6717,8 @@
              const wsProps = wegenscanByLinkId.get(String(f.properties.linkId));
              return safetyToRgba(wsProps?.generic_safety);
            }
-           const v = getMetricValue(f.properties);
+            // Spectrum: aparte MapLibre-laag, netwerk-links normaal inkleuren
+            const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
           // MIXED-modus: fietslinks krijgen eigen kleurschaal (paars→magenta→amber) én eigen normalisatie
           const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
@@ -6927,7 +7059,11 @@
 
     function makeZoneCentroidLayer() {
       // Zones verbergen als: mode=off EN geen zone/link geselecteerd, OF geen data
-      const showForLinkSel  = selectedLinkId !== null && zoneFeaturesRaw.length > 0;
+      const showForLinkSel  = selectedLinkId !== null && zoneFeaturesRaw.length > 0 && (() => {
+        const numKey = Number(selectedLinkId);
+        const feat = geojson.features.find(f => f.properties?.linkId === numKey || f.properties?.linkId === selectedLinkId);
+        return (feat?.properties?.capacity ?? -1) !== 0;
+      })();
       const showForOdEdit   = odEditActive && odEditStep === 'to' && odEditFromZone;
       if ((zoneCentroidMode === 'off' && !selectedZoneId && !showForLinkSel && !showForOdEdit) || !zoneFeaturesRaw.length) {
         return new ScatterplotLayer({ id: 'zone-centroids', data: [] });
@@ -7126,6 +7262,10 @@
 
       // ── Selected Link: toon alle routes die door het geselecteerde wegvak lopen ──
       if (selectedLinkId) {
+        // Links met capaciteit 0 kunnen nooit in routes zitten → geen routes tonen
+        const _numKey0 = Number(selectedLinkId);
+        const _feat0 = geojson.features.find(f => f.properties?.linkId === _numKey0 || f.properties?.linkId === selectedLinkId);
+        if ((_feat0?.properties?.capacity ?? -1) === 0) return new PathLayer({ id: 'zone-routes', data: [] });
         let { pathData, flowByFromZone, flowByToZone } = computeLinkRouteData();
         const numKey = Number(selectedLinkId);
         if (!pathData.length && _estimatedRouteCache.has(numKey)) {
@@ -7356,6 +7496,14 @@
       // Links zonder routes:    gebruik Dijkstra-schatting
       const numLinkId  = Number(selectedLinkId);
       const hasRoutes  = (linkRouteMap.get(numLinkId) ?? linkRouteMap.get(selectedLinkId) ?? []).length > 0;
+
+      // Links met capaciteit 0 kunnen nooit in routes zitten → paneel verbergen
+      const _selFeatPC = geojson.features.find(f => f.properties?.linkId === numLinkId || f.properties?.linkId === selectedLinkId);
+      if ((_selFeatPC?.properties?.capacity ?? -1) === 0 && !hasRoutes) {
+        panel.style.display = 'none';
+        return;
+      }
+
       let flowByToZone;
       let estimated = false;
 
@@ -7924,8 +8072,11 @@
             '| routes voor dit link:', routes.length,
             '| routeList.length:', routeList.length,
             '| zoneFeaturesRaw.length:', zoneFeaturesRaw.length);
+          // Links met capaciteit 0 kunnen nooit in routes zitten → geen OD-schatting
+          const _selFeat = geojson.features.find(f => f.properties?.linkId === numKey || f.properties?.linkId === selectedLinkId);
+          const _selCap0 = (_selFeat?.properties?.capacity ?? -1) === 0;
           // Geen routes in de data → schat async via Dijkstra (20 nearest + extern)
-          if (routes.length === 0 && !_estimatedRouteCache.has(numKey)) {
+          if (routes.length === 0 && !_estimatedRouteCache.has(numKey) && !_selCap0) {
             const calcOverlay    = document.getElementById('calcOverlay');
             const calcOverlayMsg = document.getElementById('calcOverlayMsg');
             calcOverlay.style.display = 'flex';
@@ -9208,8 +9359,8 @@
       change._zoneClass = p.zoneClass;
       pendingChanges.push(change);
 
-      _setChangesPanelReadOnly(false);
-      renderChangesList();
+       _setChangesPanelReadOnly(false);
+       renderChangesList();
       closeNodeDialog();
     };
 
@@ -10704,6 +10855,17 @@
         compareVisible = false;
         setCompareVisibility(false);
       }
+
+      // Spectrum: zet MapLibre-laag aan of bij
+      if (colorMetric === 'spectrum') {
+        updateSpectrumLayer();
+        updateLegend();
+        updateOverlay(true);
+        return;
+      }
+      // Spectrum was actief maar is nu uitgeschakeld: verwijder laag
+      _removeSpectrumLayer();
+
       updateLegend();
       updateOverlay(true);
     });
@@ -10781,6 +10943,10 @@
        if (map.getLayer('buildings-3d'))
          map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
        updateSunLight();
+       // Spectrum: update laag bij dagdeel-wissel
+       if (colorMetric === 'spectrum') {
+         updateSpectrumLayer();
+       }
       });
 
     // ── Modi aan/uit (MIXED-modus) ────────────────────────────────────────
@@ -10847,10 +11013,17 @@
           if (langRadio) langRadio.checked = true;
           const basemapRadio = settingsPanel.querySelector(`input[name="spBasemap"][value="${basemapStyle}"]`);
           if (basemapRadio) basemapRadio.checked = true;
+          // Spectrum UUID-velden vanuit localStorage invullen
+          ['OS','AS','RD'].forEach(dp => {
+            const lEl = document.getElementById(`spSpectrumLayer${dp}`);
+            const mEl = document.getElementById(`spSpectrumMapping${dp}`);
+            if (lEl) lEl.value = localStorage.getItem(`spSpectrumLayer${dp}`)   || '';
+            if (mEl) mEl.value = localStorage.getItem(`spSpectrumMapping${dp}`) || '';
+          });
           // Positioneer paneel onder de gear-knop (links-uitgelijnd, binnen viewport)
           const r = settingsBtn.getBoundingClientRect();
           settingsPanel.style.top  = (r.bottom + 4) + 'px';
-          settingsPanel.style.left = Math.min(r.left, window.innerWidth - 232) + 'px';
+          settingsPanel.style.left = Math.min(r.left, window.innerWidth - 332) + 'px';
           settingsPanel.classList.add('sp-visible');
           settingsBtn.classList.add('active');
         }
@@ -10893,6 +11066,20 @@
           const newBasemap = settingsPanel.querySelector('input[name="spBasemap"]:checked')?.value;
           if (newBasemap && newBasemap !== basemapStyle) {
             _applyBasemapStyle(newBasemap);
+          }
+          // Sla Spectrum UUID-configuratie op in localStorage
+          let spectrumCfgChanged = false;
+          ['OS','AS','RD'].forEach(dp => {
+            const lVal = (document.getElementById(`spSpectrumLayer${dp}`)?.value   || '').trim();
+            const mVal = (document.getElementById(`spSpectrumMapping${dp}`)?.value || '').trim();
+            if (lVal !== (localStorage.getItem(`spSpectrumLayer${dp}`)   || '')) spectrumCfgChanged = true;
+            if (mVal !== (localStorage.getItem(`spSpectrumMapping${dp}`) || '')) spectrumCfgChanged = true;
+            localStorage.setItem(`spSpectrumLayer${dp}`,   lVal);
+            localStorage.setItem(`spSpectrumMapping${dp}`, mVal);
+          });
+          if (spectrumCfgChanged && colorMetric === 'spectrum') {
+            _removeSpectrumLayer();
+            updateSpectrumLayer();
           }
           settingsPanel.classList.remove('sp-visible');
           settingsBtn.classList.remove('active');

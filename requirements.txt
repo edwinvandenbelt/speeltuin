@@ -29,3 +29,6 @@ pyarrow>=14
 # Wegenscan – veiligheids-KPI pipeline
 ./wegenscan-2.1.0-py3-none-any.whl
 databricks-sql-connector>=3.0.0
+
+# MVT (Mapbox Vector Tile) decodering voor Spectrum-proxy
+mapbox-vector-tile>=1.2

@@ -33,6 +33,7 @@ import urllib.request as _urllib_req
 import uuid
 from pathlib import Path
 
+import requests
 from flask import Flask, abort, jsonify, make_response, request, send_from_directory
 from flask_compress import Compress
 
@@ -1890,7 +1891,7 @@ def _execute_prepare(inputs: dict):
         name=name,
         out_dir=out_dir,
         catalog=inputs.get("catalog", "spectrum"),
-        schema=inputs.get("schema", "2023_01"),
+        schema=inputs.get("schema", "2024_01"),
         refresh=bool(inputs.get("refresh")),
         debug=bool(inputs.get("debug", False)),
     )
@@ -2826,6 +2827,29 @@ def ogc_collection_items(collection_id):
     resp.headers["ETag"] = etag
     resp.headers["Last-Modified"] = last_modified
     resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/proxy/mvt/<path:layer_uuid>/<int:z>/<int:x>/<int:y>.mvt")
+def proxy_mvt(layer_uuid, z, x, y):
+    """Pass-through proxy voor Spectrum MVT-tiles.
+    Stuurt de ruwe protobuf-bytes door zodat Mapbox GL ze direct kan renderen."""
+    mapping_uuid = request.args.get("mappingUuid", default="")
+    if not mapping_uuid:
+        abort(400)
+    url = (
+        f"https://analytics.dat.nl/api/v1/vectortiles/layers/"
+        f"{layer_uuid}/{z}/{x}/{y}.mvt?mappingUuid={mapping_uuid}"
+    )
+    try:
+        tile_resp = requests.get(url, timeout=10)
+        tile_resp.raise_for_status()
+    except Exception as exc:
+        app.logger.warning("MVT tile ophalen mislukt: %s", exc)
+        abort(502)
+    resp = make_response(tile_resp.content)
+    resp.headers["Content-Type"] = "application/x-protobuf"
+    resp.headers["Cache-Control"] = "public, max-age=86400"
     return resp
 
 
