@@ -272,6 +272,7 @@
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .spin-svg { animation: spin 1s linear infinite; transform-origin: center; }
     #calcOverlay {
       position: fixed; inset: 0; z-index: 50;
       background: rgba(13, 17, 23, 0.82);
@@ -304,7 +305,7 @@
     }
 
     /* ── Node-dialoog ─────────────────────────────────────────────────── */
-    #nodeDialog, #linkDialog {
+    #nodeDialog, #linkDialog, #linkFlowDialog {
       display: none;
       position: absolute;
       z-index: 50;
@@ -317,20 +318,50 @@
       box-shadow: 0 8px 32px rgba(0,0,0,0.6);
       backdrop-filter: blur(10px);
     }
-    #nodeDialog h3, #linkDialog h3 {
+    #gmtUploadDialog {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10000;
+      background: rgba(13,17,23,0.97);
+      border: 1px solid rgba(126,200,227,0.25);
+      border-radius: 12px;
+      padding: 18px 20px;
+      width: 300px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+    }
+    #gmtUploadDialog h3 {
       font-size: 13px; color: #7ec8e3; margin-bottom: 14px;
       padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
     }
-    #linkDialogOk {
+    #gmtUploadDialogOk {
       background: rgba(126,200,227,0.15); color: #7ec8e3;
       border: 1px solid rgba(126,200,227,0.35);
     }
-    #linkDialogOk:hover { background: rgba(126,200,227,0.25); }
-    #linkDialogCancel {
+    #gmtUploadDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #gmtUploadDialogCancel {
       background: transparent; color: #5a6272;
       border: 1px solid rgba(255,255,255,0.1);
     }
-    #linkDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #gmtUploadDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #nodeDialog h3, #linkDialog h3, #linkFlowDialog h3 {
+      font-size: 13px; color: #7ec8e3; margin-bottom: 14px;
+      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    #linkDialogOk, #linkFlowDialogOk {
+      background: rgba(126,200,227,0.15); color: #7ec8e3;
+      border: 1px solid rgba(126,200,227,0.35);
+    }
+    #linkDialogOk:hover, #linkFlowDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #linkDialogCancel, #linkFlowDialogCancel {
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #linkDialogCancel:hover, #linkFlowDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
      .speed-btn, .link-poly-speed-btn {
        padding: 3px 7px; font-size: 11px; border-radius: 4px; cursor: pointer;
        background: rgba(255,255,255,0.07); color: #c9d6e8;
@@ -1437,6 +1468,16 @@
             <circle cx="21" cy="12" r="2.2" fill="currentColor" stroke="none"/>
           </svg>
         </button>
+        <!-- Flow per wegvak wijzigen -->
+        <button class="tb-btn edit-btn" id="linkFlowEditBtn"
+                data-i18n-title="linkFlowEditTitle"
+                title="Flow per wegvak wijzigen">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <polyline points="16,5 21,9 16,13"/>
+            <line x1="21" y1="15" x2="3" y2="15"/>
+          </svg>
+        </button>
         <!-- OD-paar aanpassen -->
         <button class="tb-btn edit-btn" id="odEditBtn"
                 data-i18n-title="odEditBtnTitle"
@@ -1624,6 +1665,48 @@
     <div class="node-dialog-btns">
       <button id="linkDialogCancel" data-i18n="dialogCancel">Annuleren</button>
       <button id="linkDialogOk" data-i18n="dialogOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ── Link flow-dialoog ──────────────────────────────────────────────────── -->
+  <div id="linkFlowDialog">
+    <h3 id="linkFlowDialogTitle">Wegvak</h3>
+    <div class="node-field">
+      <label>
+        <span data-i18n="linkFlowDialogLabel">Intensiteit (24u)</span>
+        <span class="field-hint" data-i18n="linkFlowDialogUnit">pae/dag</span>
+      </label>
+      <div style="font-size:11px;color:#8a9bb5;margin-bottom:4px;" id="linkFlowCurrentDisplay"></div>
+      <div class="node-field-row">
+        <button id="linkFlowMinus">−</button>
+        <input type="text" id="linkFlowVal"
+               data-i18n-ph="linkFlowDialogPh" placeholder="+500 of 3000"/>
+        <button id="linkFlowPlus">+</button>
+      </div>
+      <div class="field-hint" style="margin-top:4px;" data-i18n="linkFlowDialogHint">+500 = delta&nbsp;|&nbsp;3000 = absoluut</div>
+    </div>
+    <div class="node-dialog-btns">
+      <button id="linkFlowDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="linkFlowDialogOk" data-i18n="dialogOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ── GMT upload dialoog ────────────────────────────────────────────────── -->
+  <div id="gmtUploadDialog" style="display:none">
+    <h3 data-i18n="gmtUploadDialogTitle">Upload naar GMT</h3>
+    <div class="node-field">
+      <div id="gmtUploadMaxFlowDisplay" style="font-size:12px;color:#8a9bb5;margin-bottom:8px;"></div>
+      <label>
+        <span data-i18n="gmtUploadFilterLabel">Max. voor upload (leeg = alles)</span>
+        <span class="field-hint" data-i18n="linkFlowDialogUnit">pae/dag</span>
+      </label>
+      <input type="number" id="gmtUploadMaxFlowInput" min="0" step="100"
+             data-i18n-ph="gmtUploadFilterPh" placeholder=""
+             style="width:100%;margin-top:4px;"/>
+    </div>
+    <div class="node-dialog-btns">
+      <button id="gmtUploadDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="gmtUploadDialogOk" data-i18n="gmtUploadBtn">Uploaden</button>
     </div>
   </div>
 
@@ -1926,6 +2009,7 @@
       pauseTitle:'Pauzeer simulatie',
       nodeEditTitle:'Productie/attractie per knoop wijzigen',
       linkEditTitle:'Capaciteit per wegvak wijzigen',
+      linkFlowEditTitle:'Flow per wegvak wijzigen',
       addWegvakTitle:'Wegvak toevoegen (nog niet beschikbaar)',
       addKnoopTitle:'Knoop toevoegen (nog niet beschikbaar)',
       // Metriek-opties
@@ -1959,6 +2043,19 @@
       linkDialogDefault:'Wegvak', linkDialogName: n => `Wegvak: ${n}`, linkDialogId: id => `Link ${id}`,
       linkDialogCap:'Capaciteit', linkDialogCapUnit:'vtg/u',
       linkDialogSpeed:'Snelheid instellen', linkDialogSpeedHint:'past capaciteit aan',
+      // Link flow-dialoog
+      linkFlowDialogLabel:'Intensiteit (24u)', linkFlowDialogUnit:'pae/dag',
+      linkFlowDialogHint:'+500 = delta\u00a0|\u00a03000 = absoluut (\u22650)',
+      linkFlowDialogPh:'+500 of 3000',
+      linkFlowCurrentLabel: v => `Huidige waarde: ${v}\u00a0pae/dag`,
+      changeFlowLabel: v => `flow: ${v} pae/dag`,
+      // GMT upload-dialoog
+      gmtUploadDialogTitle:'Upload naar GMT',
+      gmtUploadMaxFlowLabel: v => `Max. intensiteit in netwerk: ${v.toLocaleString('nl-NL')}\u00a0pae/dag`,
+      gmtUploadMaxFlowLoading:'Max. intensiteit ophalen\u2026',
+      gmtUploadFilterLabel:'Max. voor upload (leeg\u00a0=\u00a0alles)',
+      gmtUploadFilterPh:'bijv. 5000',
+      gmtUploadBtn:'Uploaden',
       // Node-dialoog
       nodeDialogDefault:'Knoop',
       nodeDialogProd:'Productie', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut (\u22650)',
@@ -2143,6 +2240,7 @@
       pauseTitle:'Pause simulation',
       nodeEditTitle:'Edit production/attraction per node',
       linkEditTitle:'Edit capacity per road link',
+      linkFlowEditTitle:'Edit flow per road link',
       addWegvakTitle:'Add road link (not yet available)',
       addKnoopTitle:'Add node (not yet available)',
       metricFlow:'Intensity', metricFlowScaled:'Intensity (scaled)',
@@ -2171,6 +2269,19 @@
       linkDialogDefault:'Road link', linkDialogName: n => `Road link: ${n}`, linkDialogId: id => `Link ${id}`,
       linkDialogCap:'Capacity', linkDialogCapUnit:'veh/h',
       linkDialogSpeed:'Set speed', linkDialogSpeedHint:'adjusts capacity',
+      // Link flow dialog
+      linkFlowDialogLabel:'Intensity (24h)', linkFlowDialogUnit:'pcu/day',
+      linkFlowDialogHint:'+500 = delta\u00a0|\u00a03000 = absolute (\u22650)',
+      linkFlowDialogPh:'+500 or 3000',
+      linkFlowCurrentLabel: v => `Current value: ${v}\u00a0pcu/day`,
+      changeFlowLabel: v => `flow: ${v} pcu/day`,
+      // GMT upload dialog
+      gmtUploadDialogTitle:'Upload to GMT',
+      gmtUploadMaxFlowLabel: v => `Max. flow in network: ${v.toLocaleString('en-GB')}\u00a0pcu/day`,
+      gmtUploadMaxFlowLoading:'Fetching max. flow\u2026',
+      gmtUploadFilterLabel:'Max. for upload (empty\u00a0=\u00a0all)',
+      gmtUploadFilterPh:'e.g. 5000',
+      gmtUploadBtn:'Upload',
       nodeDialogDefault:'Node',
       nodeDialogProd:'Production', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute (\u22650)',
       nodeDialogProdPh:'+300 or 1200',
@@ -2686,6 +2797,153 @@
 
             row.appendChild(arrowBtn);
             row.appendChild(btn);
+
+            // GMT upload-knop / badge
+            if (area.gmtUploaded) {
+              // Groene badge — al geüpload
+              const gmtBadge = document.createElement('span');
+              gmtBadge.title = 'Beschikbaar in GMT';
+              gmtBadge.style.cssText = `
+                flex-shrink:0;display:flex;align-items:center;gap:4px;
+                color:#4caf50;font-size:11px;font-weight:600;
+                border:1px solid rgba(76,175,80,0.35);border-radius:7px;
+                padding:6px 9px;white-space:nowrap;`;
+              gmtBadge.innerHTML = `
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>GMT`;
+              row.appendChild(gmtBadge);
+            } else {
+              // Upload-knop
+              const gmtBtn = document.createElement('button');
+              gmtBtn.title = 'Uploaden naar GMT';
+              gmtBtn.style.cssText = `
+                flex-shrink:0;background:transparent;color:#5a6272;
+                border:1px solid rgba(255,255,255,0.1);
+                border-radius:7px;padding:8px 10px;font-size:11px;font-weight:600;
+                cursor:pointer;display:flex;align-items:center;gap:4px;
+                transition:background .15s,color .15s,border-color .15s`;
+              gmtBtn.innerHTML = `
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="16 16 12 12 8 16"/>
+                  <line x1="12" y1="12" x2="12" y2="21"/>
+                  <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+                </svg>GMT`;
+              gmtBtn.onmouseenter = () => {
+                gmtBtn.style.background   = 'rgba(126,200,227,0.1)';
+                gmtBtn.style.color        = '#7ec8e3';
+                gmtBtn.style.borderColor  = 'rgba(126,200,227,0.3)';
+              };
+              gmtBtn.onmouseleave = () => {
+                if (!gmtBtn.dataset.loading) {
+                  gmtBtn.style.background  = 'transparent';
+                  gmtBtn.style.color       = '#5a6272';
+                  gmtBtn.style.borderColor = 'rgba(255,255,255,0.1)';
+                }
+              };
+              gmtBtn.onclick = () => {
+                if (gmtBtn.dataset.loading) return;
+                // Open filter-dialoog
+                const dlg = document.getElementById('gmtUploadDialog');
+                const display = document.getElementById('gmtUploadMaxFlowDisplay');
+                const input = document.getElementById('gmtUploadMaxFlowInput');
+                const cancelBtn = document.getElementById('gmtUploadDialogCancel');
+                const okBtn = document.getElementById('gmtUploadDialogOk');
+                input.value = '';
+                display.textContent = T('gmtUploadMaxFlowLoading');
+                dlg.style.display = 'block';
+
+                // Haal max flow op
+                fetch(`/api/areas/${area.areaId}/max-flow?mode=${area.mode}`)
+                  .then(r => r.json())
+                  .then(d => {
+                    display.textContent = T('gmtUploadMaxFlowLabel', d.maxFlow ?? 0);
+                  })
+                  .catch(() => { display.textContent = ''; });
+
+                const cleanup = () => {
+                  dlg.style.display = 'none';
+                  cancelBtn.onclick = null;
+                  okBtn.onclick = null;
+                };
+
+                cancelBtn.onclick = cleanup;
+
+                okBtn.onclick = async () => {
+                  cleanup();
+                  // Toon spinner op knop
+                  gmtBtn.dataset.loading = '1';
+                  gmtBtn.style.background  = 'rgba(126,200,227,0.08)';
+                  gmtBtn.style.color       = '#7ec8e3';
+                  gmtBtn.style.borderColor = 'rgba(126,200,227,0.25)';
+                  gmtBtn.innerHTML = `
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12" class="spin-svg"/>
+                    </svg>GMT`;
+
+                  const maxFlowVal = input.value.trim();
+                  const body = { inputs: { areaId: area.areaId, mode: area.mode } };
+                  if (maxFlowVal !== '') body.inputs.maxFlow = parseFloat(maxFlowVal);
+
+                  try {
+                    const res = await fetch('/processes/upload-to-gmt/execution', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(body),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const { jobID } = await res.json();
+
+                    // Poll totdat job klaar is
+                    let lastLog = 0;
+                    for (;;) {
+                      await new Promise(r => setTimeout(r, 1500));
+                      const jr = await fetch(`/jobs/${jobID}`);
+                      const jd = await jr.json();
+                      if (jd.log?.length > lastLog) {
+                        gmtBtn.title = jd.log[jd.log.length - 1];
+                        lastLog = jd.log.length;
+                      }
+                      if (jd.status === 'successful') {
+                        const badge = document.createElement('span');
+                        badge.title = 'Beschikbaar in GMT';
+                        badge.style.cssText = `
+                          flex-shrink:0;display:flex;align-items:center;gap:4px;
+                          color:#4caf50;font-size:11px;font-weight:600;
+                          border:1px solid rgba(76,175,80,0.35);border-radius:7px;
+                          padding:6px 9px;white-space:nowrap;`;
+                        badge.innerHTML = `
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>GMT`;
+                        gmtBtn.replaceWith(badge);
+                        break;
+                      }
+                      if (jd.status === 'failed') {
+                        const lastErr = jd.log?.[jd.log.length - 1] ?? 'Onbekende fout';
+                        gmtBtn.title = `Mislukt: ${lastErr}`;
+                        gmtBtn.style.color       = '#ff6b6b';
+                        gmtBtn.style.borderColor = 'rgba(255,80,80,0.3)';
+                        gmtBtn.innerHTML = `
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>GMT`;
+                        delete gmtBtn.dataset.loading;
+                        break;
+                      }
+                    }
+                  } catch (err) {
+                    gmtBtn.title = `Fout: ${err.message}`;
+                    gmtBtn.style.color       = '#ff6b6b';
+                    gmtBtn.style.borderColor = 'rgba(255,80,80,0.3)';
+                    gmtBtn.innerHTML = `✕ GMT`;
+                    delete gmtBtn.dataset.loading;
+                  }
+                };
+              };
+              row.appendChild(gmtBtn);
+            }
+
             row.appendChild(delBtn);
             nodeEl.appendChild(row);
 
@@ -2997,33 +3255,13 @@
     /** norm ∈ [0,1] → RGBA groen → geel → rood.
      *  Wortel-gamma: geel verschuift naar norm ≈ 0.25 voor meer kleuronderscheid bij lage intensiteiten. */
     function flowToRgba(norm) {
-      // 4-stop gradient: blauw → groen (bij ~25 vtg/u) → geel → rood
-      // breakG = genormaliseerde waarde waarbij blauw overgaat in groen
-      const breakG = Math.min(0.15, 25 / (globalMaxFlow || 1e6));
-      let r, g, b;
-      if (norm <= breakG) {
-        // Blauw [20, 80, 220] → groen [0, 230, 118]
-        const t = breakG > 0 ? norm / breakG : 1;
-        r = Math.round(20  * (1 - t));
-        g = Math.round(80  + t * 150);
-        b = Math.round(220 - t * 102);
-      } else {
-        const t = (norm - breakG) / (1 - breakG);   // 0→1 voor groen→rood range
-        if (t < 0.5) {
-          // Groen [0, 230, 118] → geel [255, 234, 0]
-          const s = t * 2;
-          r = Math.round(s * 255);
-          g = Math.round(230 + s * 4);
-          b = Math.round(118 * (1 - s));
-        } else {
-          // Geel [255, 234, 0] → rood [255, 23, 68]
-          const s = (t - 0.5) * 2;
-          r = 255;
-          g = Math.round(234 - s * 211);
-          b = Math.round(s * 68);
-        }
-      }
-      return [r, g, b, 210];
+      // Vaste kleurblokken conform Google Maps-legenda: groen → geel → oranje → rood → donkerrood
+      if (norm < 0.04) return [150, 150, 150,  60];  // nauwelijks gebruik: grijs
+      if (norm < 0.20) return [ 99, 214, 104, 220];  // vrij:     groen
+      if (norm < 0.40) return [255, 220,   0, 220];  // matig:    geel
+      if (norm < 0.65) return [230,  90,  20, 220];  // druk:     oranje
+      if (norm < 0.85) return [210,  35,  35, 220];  // erg druk: rood
+                       return [130,   0,   0, 220];  // vast:     donkerrood
     }
 
   /** Fiets-specifieke kleurschaal (multimodaal MIXED): donkerpaars → magenta → amber.
@@ -3045,8 +3283,17 @@
     return [r, Math.min(255, Math.max(0, g)), Math.min(255, Math.max(0, b)), 210];
   }
 
-  // Groen→geel→rood (zelfde als flow, herbruikbaar voor bezettingsgraad)
-  function greenRedRgba(norm) { return flowToRgba(norm); }
+  // Groen→geel→rood (bezettingsgraad): zelfde blokken maar lagere drempels —
+  // 65% bezetting is al erg druk en kleurt rood.
+  function greenRedRgba(norm) {
+    // norm = bezettingsgraad / 100  (0–1)
+    if (norm < 0.04) return [150, 150, 150,  60];  // < 4%:   grijs
+    if (norm < 0.15) return [ 99, 214, 104, 220];  // < 15%:  groen
+    if (norm < 0.30) return [255, 220,   0, 220];  // < 30%:  geel
+    if (norm < 0.50) return [230,  90,  20, 220];  // < 50%:  oranje
+    if (norm < 0.70) return [210,  35,  35, 220];  // < 70%:  rood
+                     return [130,   0,   0, 220];  // ≥ 70%:  donkerrood
+  }
 
   // Blauw (vrij/snel) → rood (langzaam): norm=0 is langzaam, norm=1 is snel
   function speedRgba(norm) {
@@ -4072,6 +4319,7 @@
     }
 
     // Ruimtelijke koppeling gebouwen ↔ zones; wordt uitgevoerd zodra beide datasets gereed zijn
+    let zoneAreaBreakdown = new Map(); // zoneId → { residential, office, industrial, commercial, education, recreation, other } in m²
     function _tryZoneJoin() {
       if (!_buildingsRaw || !_zonesForJoin) return;
 
@@ -5354,7 +5602,6 @@
      let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
      let selectedZoneId   = null;    // zoneId van geselecteerde zone (voor route-highlight)
      let hoveredZoneId    = null;    // zoneId onder de cursor (bijgehouden via onHover)
-     let zoneAreaBreakdown = new Map(); // zoneId → { residential, office, industrial, commercial, education, recreation, other } in m²
     /** Weegfactoren dagdeel → uurintensiteit.
      *  OS=2u, AS=2u, restdag=20u; wegingsbasis 14.4
      *  Formule: (weging/duur) / 14.4  */
@@ -6580,6 +6827,7 @@
 
     let nodeEditActive = false;
     let linkEditActive = false;
+    let linkFlowEditActive = false;
     // ── Selected Link Analysis — state ──────────────────────────────────────
     let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
     let selectedLinkActive = false;   // true als de link-selectie-modus actief is
@@ -6701,16 +6949,18 @@
             }
           }
           if (colorMetric === 'flow') {
-            // Intensiteit-view: vaste breedte, geen schaling
-            if (isBike) return Math.max(1.5, lanes * 1);
-            const speed = f.properties.speed ?? 999;
-            const absId = Math.abs(f.properties.linkId ?? 0);
-            if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
-            return Math.max(1.5, lanes * 3);
-          }
-          return Math.max(1.5, lanes * baseW);
-        },
-         getLineColor: f => {
+             // Intensiteit-view: smal voor wegen met vrijwel geen flow
+             const flowNorm = dpFlowOf(f.properties) / (globalMaxFlow || 1);
+             if (flowNorm < 0.04) return 1;   // nauwelijks gebruik: minimaal lijntje
+             if (isBike) return Math.max(1.5, lanes * 1);
+             const speed = f.properties.speed ?? 999;
+             const absId = Math.abs(f.properties.linkId ?? 0);
+             if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
+             return Math.max(1.5, lanes * 3);
+           }
+           return Math.max(1.5, lanes * baseW);
+         },
+          getLineColor: f => {
            if (f.properties.capacity === 0) return [210, 40, 40, 200];
            // Veiligheidsmodus: kleur op basis van wegenscan generic_safety
            if (colorMetric === 'safety') {
@@ -6741,7 +6991,7 @@
             default:         return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
           }
         },
-        pickable: !linkEditActive,
+        pickable: !linkEditActive && !linkFlowEditActive,
         onHover: info => {
           const { object } = info;
           if (selectedLinkActive || whatifRcActive || _counterPlaceMode || colorMetric === 'safety') {
@@ -6829,16 +7079,18 @@
             }
           }
           if (colorMetric === 'flow') {
-            // Intensiteit-view: vaste breedte, geen schaling
-            if (isBike) return Math.max(1.5, lanes * 1);
-            const speed = f.properties.speed ?? 999;
-            const absId = Math.abs(f.properties.linkId ?? 0);
-            if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
-            return Math.max(1.5, lanes * 3);
-          }
-          return Math.max(1.5, lanes * baseW);
-        },
-        getLineColor: f => {
+             // Intensiteit-view: smal voor wegen met vrijwel geen flow
+             const flowNorm = dpFlowOf(f.properties) / (globalMaxFlow || 1);
+             if (flowNorm < 0.04) return 1;   // nauwelijks gebruik: minimaal lijntje
+             if (isBike) return Math.max(1.5, lanes * 1);
+             const speed = f.properties.speed ?? 999;
+             const absId = Math.abs(f.properties.linkId ?? 0);
+             if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
+             return Math.max(1.5, lanes * 3);
+           }
+           return Math.max(1.5, lanes * baseW);
+         },
+         getLineColor: f => {
           if (f.properties.capacity === 0) return [210, 40, 40, 200];
           const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
@@ -6990,8 +7242,8 @@
     function makeLinkEditLayer() {      return new GeoJsonLayer({
         id: 'link-edit',
         data: geojson,
-        visible: linkEditActive,
-        pickable: linkEditActive,
+        visible: linkEditActive || linkFlowEditActive,
+        pickable: linkEditActive || linkFlowEditActive,
         stroked: true,
         filled: false,
         lineWidthUnits: 'pixels',
@@ -6999,14 +7251,19 @@
         getLineWidth: 14,
         getLineColor: f => {
           const linkId = String(f.properties?.linkId ?? '');
-          const changed = pendingChanges.some(c => c._isLink && String(c.linkId) === linkId);
-          return changed ? [255, 200, 60, 220] : [255, 180, 80, 140];
+          const changedCap  = pendingChanges.some(c => c._isLink     && String(c.linkId) === linkId);
+          const changedFlow = pendingChanges.some(c => c._isLinkFlow && String(c.linkId) === linkId);
+          if (changedFlow) return [80, 200, 120, 220];
+          if (changedCap)  return [255, 200, 60, 220];
+          return [255, 180, 80, 140];
         },
         updateTriggers: { getLineColor: [pendingChanges.length] },
         onHover: info => {
           if (nodeEditActive && nodeSelectMode === 'polygon') return;
           if (linkEditActive && linkSelectMode === 'polygon') return;
-          map.getCanvas().style.cursor = (linkEditActive && info.object) ? 'pointer' : '';
+          // Houd hoveredLinkId bij zodat map.on('click') de flow-dialoog kan openen
+          if (linkFlowEditActive) hoveredLinkId = info.object?.properties?.linkId ?? null;
+          map.getCanvas().style.cursor = ((linkEditActive || linkFlowEditActive) && info.object) ? 'pointer' : '';
         },
       });
     }
@@ -8009,7 +8266,7 @@
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
          if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
-         if ((linkEditActive || selectedLinkActive) && isHovering) return 'pointer';
+         if ((linkEditActive || linkFlowEditActive || selectedLinkActive) && isHovering) return 'pointer';
          return '';
       },
       onClick: (info, event) => {
@@ -8045,11 +8302,22 @@
 
     // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
     // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
-    map.on('click', () => {
+    map.on('click', (e) => {
       // Teller plaatsen: hogere prioriteit dan link-selectie
       if (_counterPlaceMode && hoveredLinkId !== null) {
         _placeCounter(hoveredLinkId);
         updateOverlay(true);
+        return;
+      }
+      // Flow per wegvak wijzigen via hoveredLinkId (deck.gl onClick onbetrouwbaar)
+      if (linkFlowEditActive && hoveredLinkId !== null) {
+        const numKey = Number(hoveredLinkId);
+        const feat = geojson.features.find(f =>
+          f.properties?.linkId === numKey || f.properties?.linkId === hoveredLinkId);
+        if (feat) {
+          const point = e.point ?? { x: 0, y: 0 };
+          openLinkFlowDialog(feat, { x: point.x, y: point.y });
+        }
         return;
       }
       // Veiligheidsmodus: open KPI-paneel voor het aangeklikte wegvak
@@ -9260,6 +9528,42 @@
       activeLinkFeature = null;
     }
 
+    // ── Link flow-dialoog ────────────────────────────────────────────────────
+
+    let activeLinkFlowFeature = null;
+
+    function openLinkFlowDialog(feature, mapPoint) {
+      activeLinkFlowFeature = feature;
+      const p = feature.properties;
+      const linkId = p.linkId ?? p.id ?? '';
+      document.getElementById('linkFlowDialogTitle').textContent =
+        p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId);
+
+      const currentFlow = Math.round(p.flow24hrs ?? p.flow ?? 0);
+      document.getElementById('linkFlowCurrentDisplay').textContent =
+        T('linkFlowCurrentLabel', currentFlow.toLocaleString(T('numberLocale')));
+
+      const existing = pendingChanges.find(c => c._isLinkFlow && String(c.linkId) === String(linkId));
+      const inp = document.getElementById('linkFlowVal');
+      inp.value = existing?.flow ?? '';
+      inp.placeholder = T('linkFlowDialogPh');
+
+      const dlg = document.getElementById('linkFlowDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 240 > window.innerWidth)  x = mapPoint.x + rect.left - 240;
+      if (y + 200 > window.innerHeight) y = window.innerHeight - 220;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeLinkFlowDialog() {
+      document.getElementById('linkFlowDialog').style.display = 'none';
+      activeLinkFlowFeature = null;
+    }
+
     function stepValue(inputId, delta) {
       const inp = document.getElementById(inputId);
       const raw = inp.value.trim();
@@ -9311,6 +9615,31 @@
       const inp = document.getElementById('linkCapVal');
       const step = parseInt(inp.step) || 50;
       inp.value = Math.max(0, (parseInt(inp.value) || 0) + step);
+    };
+
+    document.getElementById('linkFlowMinus').onclick = () => stepValue('linkFlowVal', -500);
+    document.getElementById('linkFlowPlus' ).onclick = () => stepValue('linkFlowVal', +500);
+
+    document.getElementById('linkFlowDialogCancel').onclick = closeLinkFlowDialog;
+
+    document.getElementById('linkFlowDialogOk').onclick = () => {
+      if (!activeLinkFlowFeature) return;
+      const p = activeLinkFlowFeature.properties;
+      const linkId = String(p.linkId ?? p.id ?? '');
+      const raw = document.getElementById('linkFlowVal').value.trim();
+      if (!raw) { closeLinkFlowDialog(); return; }
+      // Valideer: +getal, -getal of absoluut getal
+      if (!/^[+-]?\d+$/.test(raw)) return;
+      pendingChanges = pendingChanges.filter(c => !(c._isLinkFlow && String(c.linkId) === linkId));
+      pendingChanges.push({
+        linkId,
+        flow: raw,
+        _label:       p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+        _isLinkFlow:  true,
+      });
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+      closeLinkFlowDialog();
     };
 
     document.getElementById('linkDialogCancel').onclick = closeLinkDialog;
@@ -9389,7 +9718,7 @@
        let geometry = null;
        let center   = null;
 
-       if (c._isLink) {
+       if (c._isLink || c._isLinkFlow) {
          // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
          const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
          if (coords && coords.length >= 2) {
@@ -9544,6 +9873,10 @@
             parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
             if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
           }
+        } else if (c._isLinkFlow) {
+          const raw = String(c.flow ?? '');
+          const display = raw.startsWith('+') || raw.startsWith('-') ? `Δ${raw}` : `=${raw}`;
+          parts.push(T('changeFlowLabel', display));
         } else if (c._isOd) {
           const loc  = T('numberLocale');
           const prod = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(c.fromZoneId))?.properties?.production ?? 0;
@@ -9601,8 +9934,15 @@
               const trips = (prod * frac).toLocaleString(T('numberLocale'), { maximumFractionDigits: 1 });
               parts.push(T('changeOdTripsLabel', trips));
             } else if (h.linkId != null) {
-              if (h.capacity === 0) parts.push(T('changeClosedLabel'));
-              else parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+              if (h.flow != null) {
+                const raw = String(h.flow);
+                const display = raw.startsWith('+') || raw.startsWith('-') ? `Δ${raw}` : `=${raw}`;
+                parts.push(T('changeFlowLabel', display));
+              } else if (h.capacity === 0) {
+                parts.push(T('changeClosedLabel'));
+              } else {
+                parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+              }
             } else {
               if (h.production != null) parts.push(T('changeProdLabel', fmt(h.production)));
               if (h.attraction != null) parts.push(T('changeAttrLabel', fmt(h.attraction)));
@@ -9651,6 +9991,9 @@
         if (c._isLink) {
           return c.speed != null ? { linkId: c.linkId, speed: c.speed }
                                  : { linkId: c.linkId, capacity: c.capacity };
+        }
+        if (c._isLinkFlow) {
+          return { linkId: c.linkId, flow: c.flow };
         }
         if (c._isOd) {
           const obj = { fromZoneId: c.fromZoneId, toZoneId: c.toZoneId,
@@ -10552,8 +10895,9 @@
     // ── Link-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('linkEditBtn').addEventListener('click', () => {
-      // Zet node-edit en what-if uit als die actief waren
+      // Zet node-edit, flow-edit en what-if uit als die actief waren
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       deactivateWhatifRc();
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
@@ -10584,6 +10928,40 @@
         document.getElementById('linkPolygonDialog').style.display = 'none';
         clearLinkPolygonDraw();
         linkSelectMode = 'click';
+        map.getCanvas().style.cursor = '';
+        paused = false;
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.classList.remove('paused');
+        pauseBtn.innerHTML = '&#9208;';
+        updateOverlay(false);
+        rebuildCars();
+      }
+    });
+
+    // ── Link flow-edit knop ─────────────────────────────────────────────────
+
+    document.getElementById('linkFlowEditBtn').addEventListener('click', () => {
+      if (nodeEditActive)  document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)  document.getElementById('linkEditBtn').click();
+      deactivateWhatifRc();
+      linkFlowEditActive = !linkFlowEditActive;
+      document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
+      document.getElementById('linkFlowEditBtn').innerHTML =
+        linkFlowEditActive ? '✕'
+          : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="9" x2="21" y2="9"/><polyline points="16,5 21,9 16,13"/><line x1="21" y1="15" x2="3" y2="15"/></svg>';
+
+      if (linkFlowEditActive) {
+        paused = true;
+        cars   = [];
+        carData = [];
+        updateOverlay(false);
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.classList.add('paused');
+        pauseBtn.innerHTML = '&#9654;';
+        map.once('idle', addLinkLayer);
+      } else {
+        removeLinkLayer();
+        closeLinkFlowDialog();
         map.getCanvas().style.cursor = '';
         paused = false;
         const pauseBtn = document.getElementById('pauseBtn');

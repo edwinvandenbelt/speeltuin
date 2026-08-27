@@ -218,6 +218,15 @@ _S3_BUCKET: str = os.environ.get("S3_WORK_BUCKET", "").strip()
 _S3_PREFIX: str = os.environ.get("S3_WORK_PREFIX", "work").strip().strip("/") + "/"
 _s3_client_cache = None
 
+# ---------------------------------------------------------------------------
+# GMT (mobilitytwin) upload-configuratie — ingesteld via .env
+# ---------------------------------------------------------------------------
+_GMT_BASE_URL: str = os.environ.get(
+    "GMT_BASE_URL", "https://mobilitytwin.goudappel.nl"
+).rstrip("/")
+_GMT_USERNAME: str = os.environ.get("GMT_USERNAME", "")
+_GMT_PASSWORD: str = os.environ.get("GMT_PASSWORD", "")
+
 
 def _s3_enabled() -> bool:
     return bool(_S3_BUCKET)
@@ -725,6 +734,30 @@ _PROCESS_DESCRIPTIONS = {
             "areas": {"title": "Beschikbare gebieden", "schema": {"type": "array"}},
         },
     },
+    "upload-to-gmt": {
+        "id": "upload-to-gmt",
+        "title": "Uploaden naar GMT",
+        "description": "Converteert het netwerk-parquet naar GeoJSON en uploadt het naar mobilitytwin.goudappel.nl.",
+        "version": "1.0.0",
+        "jobControlOptions": ["async-execute"],
+        "outputTransmission": ["value"],
+        "inputs": {
+            "areaId": {
+                "title": "Gebied-ID",
+                "schema": {"type": "string"},
+                "minOccurs": 1,
+            },
+            "mode": {
+                "title": "Modus",
+                "schema": {"type": "string"},
+                "minOccurs": 1,
+            },
+        },
+        "outputs": {
+            "areaId": {"title": "Geüpload gebied-ID", "schema": {"type": "string"}},
+            "mode": {"title": "Modus", "schema": {"type": "string"}},
+        },
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -971,6 +1004,7 @@ def _discover_areas_uncached() -> list:
                     pass
             has_compare = (subdir / f"{area_id}-COMPARE-{mode}.geojson").exists()
             has_nvp_routes = (subdir / f"{area_id}-NVP-ROUTES-{mode}.parquet").exists()
+            gmt_uploaded = (subdir / f".gmt-uploaded-{mode}").exists()
             areas.append(
                 {
                     "areaId": area_id,
@@ -979,6 +1013,7 @@ def _discover_areas_uncached() -> list:
                     "hasCompare": has_compare,
                     "srcAreaId": src_area_id,
                     "hasNvpRoutes": has_nvp_routes,
+                    "gmtUploaded": gmt_uploaded,
                 }
             )
 
@@ -1258,7 +1293,7 @@ def _patch_geojson_properties(area_id: str, mode: str, name: str):
 
 def _get_available_processes() -> set:
     """Geef de set van processIds die momenteel beschikbaar zijn."""
-    avail = {"delete-area", "set-directory"}
+    avail = {"delete-area", "set-directory", "upload-to-gmt"}
     if _PREPARE_AVAILABLE:
         avail.add("prepare")
     if _ADJUST_AVAILABLE:
@@ -2221,6 +2256,193 @@ def _execute_set_directory(inputs: dict):
 
 
 # ---------------------------------------------------------------------------
+# GMT upload — job runner en execute-functie
+# ---------------------------------------------------------------------------
+
+
+def _run_upload_to_gmt_job(
+    job_id: str,
+    area_id: str,
+    mode: str,
+    area_dir: Path,
+    max_flow: "float | None" = None,
+):
+    """Upload het netwerk-parquet als GeoJSON naar mobilitytwin (achtergrondthread)."""
+
+    def log(msg: str):
+        with _jobs_lock:
+            _jobs[job_id]["log"].append(msg)
+        print(f"[upload-to-gmt] {msg}")
+
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+
+    try:
+        # 1. Zoek het netwerk-bestand (parquet of geojson)
+        net_path = _data_path(area_id, mode, "NETWORK")
+        if net_path is None or not net_path.exists():
+            raise FileNotFoundError(
+                f"Geen NETWORK-bestand gevonden voor {area_id}/{mode}"
+            )
+        log(f"Netwerk-bestand gevonden: {net_path.name}")
+
+        # 2. Lees parquet → GeoJSON dict (gebruikt bestaande _read_geodata)
+        log("Parquet omzetten naar GeoJSON…")
+        geojson_data = _read_geodata(net_path)
+
+        # Optioneel: filter features boven max_flow
+        if max_flow is not None:
+            features_before = len(geojson_data.get("features", []))
+            geojson_data["features"] = [
+                f
+                for f in geojson_data.get("features", [])
+                if float(f.get("properties", {}).get("flow24hrs") or 0) <= max_flow
+            ]
+            features_after = len(geojson_data["features"])
+            log(
+                f"Filter toegepast (≤ {max_flow} pae/dag): "
+                f"{features_before - features_after} features verwijderd, "
+                f"{features_after} resterend"
+            )
+
+        geojson_str = json.dumps(geojson_data, ensure_ascii=False)
+        log(f"GeoJSON gegenereerd ({len(geojson_str) // 1024} KB)")
+
+        # 3. Authenticeer bij GMT
+        log("Authenticeren bij GMT…")
+        if not _GMT_USERNAME or not _GMT_PASSWORD:
+            raise ValueError("GMT_USERNAME of GMT_PASSWORD niet ingesteld in .env")
+        auth_resp = requests.post(
+            f"{_GMT_BASE_URL}/authenticate",
+            json={"username": _GMT_USERNAME, "password": _GMT_PASSWORD},
+            timeout=30,
+        )
+        if not auth_resp.ok:
+            raise RuntimeError(
+                f"Authenticatie mislukt: HTTP {auth_resp.status_code} — {auth_resp.text[:200]}"
+            )
+        token = auth_resp.json().get("token", "")
+        if not token:
+            raise RuntimeError("Authenticatie mislukt: geen token in response")
+        log("Authenticatie geslaagd")
+
+        # 4. Upload naar GMT
+        log("Uploaden naar GMT…")
+        upload_body = {
+            "inputs": {
+                "mode": mode,
+                "type": "network",
+                "areaId": area_id,
+                "geojson": geojson_data,
+            }
+        }
+        upload_resp = requests.post(
+            f"{_GMT_BASE_URL}/processes/upload-geojson/execution",
+            json=upload_body,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=120,
+        )
+        if not upload_resp.ok:
+            raise RuntimeError(
+                f"Upload mislukt: HTTP {upload_resp.status_code} — {upload_resp.text[:200]}"
+            )
+        log(f"Upload geslaagd (HTTP {upload_resp.status_code})")
+
+        # 5. Schrijf marker-bestand zodat de status onthouden wordt
+        marker = area_dir / f".gmt-uploaded-{mode}"
+        marker.write_text(_now_iso(), encoding="utf-8")
+        _areas_cache_invalidate()
+        log("Status opgeslagen")
+
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+            _jobs[job_id]["_results"] = {"areaId": area_id, "mode": mode}
+
+    except Exception as exc:
+        log(f"Fout: {type(exc).__name__}: {exc}")
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["finished"] = _now_iso()
+
+
+def _execute_upload_to_gmt(inputs: dict):
+    """Start een asynchrone GMT-upload job. Geeft (body, 201, headers) terug."""
+    area_id = str(inputs.get("areaId", "")).strip()
+    mode = str(inputs.get("mode", "")).strip().upper()
+    if not area_id or not _safe(area_id):
+        abort(400, f"Ongeldige of ontbrekende areaId: {area_id!r}")
+    if not mode:
+        abort(400, "Parameter 'mode' ontbreekt")
+
+    # Optionele max-flow drempel
+    max_flow_raw = inputs.get("maxFlow")
+    max_flow: "float | None" = None
+    if max_flow_raw is not None and str(max_flow_raw).strip() != "":
+        try:
+            max_flow = float(max_flow_raw)
+        except (TypeError, ValueError):
+            abort(400, f"Ongeldige maxFlow waarde: {max_flow_raw!r}")
+
+    area_dir = _find_area_dir(area_id)
+    if not area_dir.is_dir():
+        abort(404, f"Geen map gevonden voor gebied: {area_id}")
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "jobID": job_id,
+            "processID": "upload-to-gmt",
+            "status": "accepted",
+            "log": [],
+            "created": _now_iso(),
+            "started": None,
+            "finished": None,
+        }
+    threading.Thread(
+        target=_run_upload_to_gmt_job,
+        args=(job_id, area_id, mode, area_dir),
+        kwargs={"max_flow": max_flow},
+        daemon=True,
+    ).start()
+    return (
+        {"jobID": job_id, "status": "accepted"},
+        201,
+        {"Location": f"/jobs/{job_id}"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Area-specifieke hulp-endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/areas/<area_id>/max-flow")
+def api_area_max_flow(area_id: str):
+    """Geeft de maximale flow24hrs-waarde terug voor het netwerk van een gebied."""
+    mode = request.args.get("mode", "CAR").strip().upper()
+    if not _safe(area_id):
+        abort(400, f"Ongeldige areaId: {area_id!r}")
+    net_path = _data_path(area_id, mode, "NETWORK")
+    if net_path is None or not net_path.exists():
+        abort(404, f"Geen NETWORK-bestand gevonden voor {area_id}/{mode}")
+    try:
+        geojson_data = _read_geodata(net_path)
+    except Exception as exc:
+        abort(500, f"Fout bij lezen netwerk: {exc}")
+    max_flow = 0.0
+    for feat in geojson_data.get("features", []):
+        val = feat.get("properties", {}).get("flow24hrs")
+        if val is not None:
+            try:
+                max_flow = max(max_flow, float(val))
+            except (TypeError, ValueError):
+                pass
+    return jsonify({"maxFlow": max_flow})
+
+
+# ---------------------------------------------------------------------------
 # OGC API Routes
 # ---------------------------------------------------------------------------
 
@@ -2955,6 +3177,7 @@ def ogc_process_execute(process_id):
         "wegenscan": _execute_wegenscan,
         "delete-area": _execute_delete_area,
         "set-directory": _execute_set_directory,
+        "upload-to-gmt": _execute_upload_to_gmt,
     }
     body, status, headers = dispatch[process_id](inputs)
     resp = jsonify(body)
