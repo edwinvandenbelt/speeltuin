@@ -83,6 +83,17 @@ except ImportError as _e:
     print(f"[server] WAARSCHUWING: adjust niet beschikbaar — {_e}")
 
 try:
+    from network_link_inserter.core.network_link_inserter_core import (
+        insert_links as _insert_links,
+    )
+
+    _LINK_INSERTER_AVAILABLE = True
+except ImportError as _e:
+    _insert_links = None  # type: ignore[assignment]
+    _LINK_INSERTER_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: network_link_inserter niet beschikbaar — {_e}")
+
+try:
     from prepare.core.prepare_core import run_pipeline as _prepare_run_pipeline
 
     _PREPARE_AVAILABLE = True
@@ -1969,6 +1980,19 @@ def _execute_adjust(inputs: dict):
     if not isinstance(changes, list) or not changes:
         abort(400, 'Parameter "changes" moet een niet-lege array zijn')
 
+    # ── Splits link-inserties (geometry aanwezig, geen linkId) van reguliere wijzigingen
+    link_inserts = [
+        c for c in changes if c.get("geometry") is not None and not c.get("linkId")
+    ]
+    regular_changes = [
+        c
+        for c in changes
+        if not (c.get("geometry") is not None and not c.get("linkId"))
+    ]
+    has_inserts = bool(link_inserts)
+    if has_inserts and not _LINK_INSERTER_AVAILABLE:
+        abort(503, "network_link_inserter-package niet beschikbaar voor link-inserties")
+
     src_dir = _find_area_dir(area_id)
 
     # ── Bepaal routes-bestand(en) ────────────────────────────────────────────
@@ -2009,7 +2033,10 @@ def _execute_adjust(inputs: dict):
         (output_folder / ".area-name").write_text(scenario_name, encoding="utf-8")
 
     changes_file = output_folder / f"{new_area_id}-changes.json"
-    changes_file.write_text(json.dumps(changes, ensure_ascii=False), encoding="utf-8")
+    # Schrijf alleen reguliere wijzigingen (geen link-inserties) naar het changes-bestand
+    changes_file.write_text(
+        json.dumps(regular_changes, ensure_ascii=False), encoding="utf-8"
+    )
 
     (src_dir / ".area-uuid").write_text(area_id, encoding="utf-8")
 
@@ -2071,20 +2098,221 @@ def _execute_adjust(inputs: dict):
             min_link_trips=1.0,
             debug=bool(inputs.get("debug", False)),
         )
-        threading.Thread(
-            target=_run_adjust_job,
-            args=(
-                job_id,
-                kwargs,
-                area_id,
-                new_area_id,
-                mode,
-                scenario_name,
-                all_constituent if is_mixed_source else None,
-            ),
-            daemon=True,
-        ).start()
+        if has_inserts:
+            threading.Thread(
+                target=_run_adjust_with_inserts_job,
+                args=(
+                    job_id,
+                    kwargs,
+                    link_inserts,
+                    src_dir,
+                    area_id,
+                    new_area_id,
+                    mode,
+                    scenario_name,
+                    all_constituent if is_mixed_source else None,
+                ),
+                daemon=True,
+            ).start()
+        else:
+            threading.Thread(
+                target=_run_adjust_job,
+                args=(
+                    job_id,
+                    kwargs,
+                    area_id,
+                    new_area_id,
+                    mode,
+                    scenario_name,
+                    all_constituent if is_mixed_source else None,
+                ),
+                daemon=True,
+            ).start()
     return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}
+
+
+# ---------------------------------------------------------------------------
+# Adjust met link-inserties
+# ---------------------------------------------------------------------------
+
+
+def _run_adjust_with_inserts_job(
+    job_id: str,
+    job_kwargs: dict,
+    link_inserts: "list[dict]",
+    src_dir: Path,
+    area_id: str,
+    new_area_id: str,
+    mode: str,
+    scenario_name: "str | None",
+    all_constituent: "list | None",
+):
+    """
+    Voert eerst network_link_inserter.insert_links() uit op het bronnetwerk,
+    herberekent daarna alle routes via Dijkstra en start vervolgens de normale
+    adjust-pipeline voor eventuele resterende wijzigingen (cap/speed/flow/OD).
+    """
+    from shared.geoparquet import from_geoparquet, to_geoparquet  # type: ignore[import]
+    from route_explorer.core.route_explorer_core import (  # type: ignore[import]
+        recompute_routes_for_pairs,
+    )
+
+    def log(msg: str):
+        with _jobs_lock:
+            _jobs[job_id]["log"].append(msg)
+        print(f"[adjust+insert] {msg}")
+
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+
+    output_folder: Path = job_kwargs["output_folder"]
+
+    try:
+        # ── 1. Laad bronbestanden ────────────────────────────────────────────
+        log("Bronbestanden laden…")
+        net_path = _data_path(area_id, mode, "NETWORK")
+        zone_path = _data_path(area_id, mode, "ZONE")
+        feed_path = _data_path(area_id, mode, "FEEDLINK")
+        routes_path = Path(job_kwargs["routes_path"])
+
+        if not net_path or not net_path.exists():
+            raise FileNotFoundError(f"NETWORK niet gevonden voor {area_id}/{mode}")
+        if not zone_path or not zone_path.exists():
+            raise FileNotFoundError(f"ZONE niet gevonden voor {area_id}/{mode}")
+        if not feed_path or not feed_path.exists():
+            raise FileNotFoundError(f"FEEDLINK niet gevonden voor {area_id}/{mode}")
+
+        network_fc = _read_geodata(net_path)
+        zones_fc = _read_geodata(zone_path)
+        feedlinks_fc = _read_geodata(feed_path)
+        routes_bytes = routes_path.read_bytes()
+        routes_fc = from_geoparquet(routes_bytes)
+        log(
+            f"Netwerk: {len(network_fc.get('features', []))} features | "
+            f"Zones: {len(zones_fc.get('features', []))} | "
+            f"Routes: {len(routes_fc.get('features', []))}"
+        )
+
+        # ── 2. Voeg nieuwe wegvakken in ──────────────────────────────────────
+        log(f"Nieuwe wegvakken invoegen ({len(link_inserts)} stuk(s))…")
+        insert_changes = [
+            {
+                "linkId": None,
+                "geometry": ins["geometry"],
+                "speed": float(ins.get("speed", 50)),
+                "capacity": float(ins.get("capacity", 900)),
+                "lanes": int(ins.get("lanes", 1)),
+                "direction": "forward",
+            }
+            for ins in link_inserts
+        ]
+
+        modified_network_fc, report = _insert_links(network_fc, insert_changes)
+        n_new = len(report.get("inserted_links", []))
+        n_split = len(report.get("split_links", []))
+        log(f"Ingevoegd: {n_new} nieuwe wegvakken, {n_split} bestaande gesplitst")
+
+        # ── 3. Schrijf gewijzigd NETWORK naar outputmap ──────────────────────
+        log("Gewijzigd netwerk opslaan…")
+        net_out = output_folder / f"{new_area_id}-NETWORK-{mode}.parquet"
+        net_out.write_bytes(to_geoparquet(modified_network_fc))
+
+        # ── 4. Kopieer ZONE en FEEDLINK ──────────────────────────────────────
+        import shutil
+
+        zone_out = output_folder / f"{new_area_id}-ZONE-{mode}.parquet"
+        feed_out = output_folder / f"{new_area_id}-FEEDLINK-{mode}.parquet"
+        shutil.copy2(zone_path, zone_out)
+        shutil.copy2(feed_path, feed_out)
+        log("ZONE en FEEDLINK gekopieerd")
+
+        # ── 5. Herbereken alle routes op nieuw netwerk ───────────────────────
+        log("Alle routes herberekenen op gewijzigd netwerk (Dijkstra)…")
+        seen_pairs: set = set()
+        existing_pairs: list = []
+        for feat in routes_fc.get("features", []):
+            p = feat.get("properties", {})
+            from_id = p.get("fromZoneId")
+            to_id = p.get("toZoneId")
+            if from_id is None or to_id is None:
+                continue
+            key = (str(from_id), str(to_id))
+            if key not in seen_pairs:
+                seen_pairs.add(key)
+                existing_pairs.append(
+                    {
+                        "fromId": from_id,
+                        "toId": to_id,
+                        "fromType": p.get("fromType", "zone"),
+                        "toType": p.get("toType", "zone"),
+                        "tripFraction": p.get("tripFraction", 0),
+                    }
+                )
+        log(f"{len(existing_pairs)} OD-paren herberekenen…")
+        new_routes_fc = recompute_routes_for_pairs(
+            modified_network_fc,
+            feedlinks_fc,
+            zones_fc,
+            existing_pairs,
+        )
+        log(f"Routes herberekend: {len(new_routes_fc.get('features', []))} OD-paren")
+
+        routes_out = output_folder / f"{new_area_id}-ROUTES-{mode}.parquet"
+        routes_out.write_bytes(to_geoparquet(new_routes_fc))
+        log("Nieuwe ROUTES opgeslagen")
+
+        # ── 6. Metadata ──────────────────────────────────────────────────────
+        (output_folder / ".src-area-id").write_text(area_id, encoding="utf-8")
+        if scenario_name:
+            (output_folder / ".area-name").write_text(scenario_name, encoding="utf-8")
+
+        # ── 7. Reguliere adjust-pipeline voor resterende wijzigingen ─────────
+        remaining_changes_path = output_folder / f"{new_area_id}-changes.json"
+        remaining_changes = json.loads(
+            remaining_changes_path.read_text(encoding="utf-8")
+        )
+        if remaining_changes:
+            log(
+                f"Reguliere adjust-pipeline starten ({len(remaining_changes)} wijzigingen)…"
+            )
+            _adjust_run_pipeline(
+                folder=str(output_folder),
+                changes=str(remaining_changes_path),
+                output_folder=str(output_folder),
+                routes_path=str(routes_out),
+                new_area_id=new_area_id,
+                min_link_trips=1.0,
+                debug=bool(job_kwargs.get("debug", False)),
+            )
+            log("Adjust-pipeline klaar")
+        else:
+            log("Geen aanvullende wijzigingen — adjust-pipeline overgeslagen")
+
+        # ── 8. Post-processing MIXED ─────────────────────────────────────────
+        if all_constituent:
+            log("Post-processing MIXED…")
+            _post_process_mixed_output(output_folder, new_area_id, all_constituent)
+
+        _areas_cache_invalidate()
+
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+            _jobs[job_id]["_results"] = {
+                "new_area_id": new_area_id,
+                "inserted_links": n_new,
+                "split_links": n_split,
+            }
+        log(f"Klaar — nieuw gebied: {new_area_id}")
+
+    except Exception as exc:
+        import traceback as _tb
+
+        log(f"Fout: {type(exc).__name__}: {exc}\n{_tb.format_exc()}")
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["finished"] = _now_iso()
 
 
 def _execute_whatif_road_closure(inputs: dict):

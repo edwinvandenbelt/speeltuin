@@ -135,8 +135,9 @@
     #pauseBtn:hover { background: rgba(126,200,227,0.22); color: #7ec8e3; }
     #pauseBtn.paused { background: rgba(255,200,80,0.13); color: #ffc850; border-color: rgba(255,200,80,0.35); }
     #pauseBtn.paused:hover { background: rgba(255,200,80,0.22); }
-    .tb-add { border-color: rgba(100,220,150,0.2); color: #3a6050; background: rgba(100,220,150,0.04); cursor: not-allowed; opacity: 0.55; }
-    .tb-add:hover { background: rgba(100,220,150,0.04) !important; color: #3a6050 !important; }
+    .tb-add { border-color: rgba(100,220,150,0.3); color: #4caf80; background: rgba(100,220,150,0.06); }
+    .tb-add:hover { background: rgba(100,220,150,0.14) !important; color: #6de0a0 !important; border-color: rgba(100,220,150,0.5) !important; }
+    .tb-add.active { background: rgba(100,220,150,0.18) !important; color: #6de0a0 !important; border-color: rgba(100,220,150,0.55) !important; }
     .lang-select { min-width: 70px; padding: 0 4px; font-size: 12px; }
 
     /* ── Legend strip ────────────────────────────────────────────────── */
@@ -348,6 +349,38 @@
       border: 1px solid rgba(255,255,255,0.1);
     }
     #gmtUploadDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+
+    /* ── Nieuw wegvak attribuut-dialoog ──────────────────────────────── */
+    #linkAddDialog {
+      display: none;
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10000;
+      background: rgba(13,17,23,0.97);
+      border: 1px solid rgba(109,224,160,0.3);
+      border-radius: 12px;
+      padding: 18px 20px;
+      width: 280px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+    }
+    #linkAddDialog h3 {
+      font-size: 13px; color: #6de0a0; margin-bottom: 10px;
+      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    #linkAddDialogOk {
+      background: rgba(109,224,160,0.15); color: #6de0a0;
+      border: 1px solid rgba(109,224,160,0.4);
+    }
+    #linkAddDialogOk:hover { background: rgba(109,224,160,0.28); }
+    #linkAddDialogCancel {
+      background: transparent; color: #5a6272;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #linkAddDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+
     #nodeDialog h3, #linkDialog h3, #linkFlowDialog h3 {
       font-size: 13px; color: #7ec8e3; margin-bottom: 14px;
       padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
@@ -1462,41 +1495,31 @@
         <button class="tb-btn edit-btn" id="linkEditBtn"
                 data-i18n-title="linkEditTitle"
                 title="Capaciteit per wegvak wijzigen">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <circle cx="3"  cy="12" r="2.2" fill="currentColor" stroke="none"/>
-            <circle cx="21" cy="12" r="2.2" fill="currentColor" stroke="none"/>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="28" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h48l33 10h23"/><path d="M8 48h48l33-10h23"/><path d="M8 32h104" stroke-dasharray="5 5" stroke-width="1.5" opacity=".75"/></svg>
         </button>
         <!-- Flow per wegvak wijzigen -->
         <button class="tb-btn edit-btn" id="linkFlowEditBtn"
                 data-i18n-title="linkFlowEditTitle"
                 title="Flow per wegvak wijzigen">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="9" x2="21" y2="9"/>
-            <polyline points="16,5 21,9 16,13"/>
-            <line x1="21" y1="15" x2="3" y2="15"/>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 28h34M15 36h34"/><path d="M32 8v12M26 14h12M26 50h12"/></svg>
         </button>
         <!-- OD-paar aanpassen -->
         <button class="tb-btn edit-btn" id="odEditBtn"
                 data-i18n-title="odEditBtnTitle"
                 title="OD-paar aanpassen" style="display:none">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="12" x2="19" y2="12"/>
-            <polyline points="14,7 19,12 14,17"/>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="32" r="7"/><circle cx="50" cy="32" r="7"/><path d="M23 32h18M27 27l-5 5 5 5M37 27l5 5-5 5"/><path d="M32 11v12M26 17h12M26 50h12"/></svg>
+        </button>
+        <!-- Nieuw wegvak toevoegen -->
+        <button class="tb-btn tb-add edit-btn" id="linkAddBtn"
+                data-i18n-title="linkAddTitle"
+                title="Nieuw wegvak intekenen">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>
         </button>
         <!-- Wijzigingen bekijken -->
         <button class="tb-btn" id="viewChangesBtn"
                 data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
                 style="position:relative">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <rect x="4" y="2" width="16" height="20" rx="2"/>
-            <line x1="8"  y1="8"  x2="16" y2="8"/>
-            <line x1="8"  y1="12" x2="16" y2="12"/>
-            <line x1="8"  y1="16" x2="13" y2="16"/>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="10" width="38" height="44" rx="4"/><path d="M22 22l3 3 5-6M32 22h10M22 34l3 3 5-6M32 34h10M22 46h20"/></svg>
           <span id="viewChangesBadge" class="tb-badge"></span>
         </button>
       </div>
@@ -1688,6 +1711,77 @@
     <div class="node-dialog-btns">
       <button id="linkFlowDialogCancel" data-i18n="dialogCancel">Annuleren</button>
       <button id="linkFlowDialogOk" data-i18n="dialogOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ── Nieuw wegvak — hint-balk ──────────────────────────────────────────── -->
+  <div id="linkAddHintEl" style="display:none;
+    position:fixed;bottom:52px;left:50%;transform:translateX(-50%);
+    background:rgba(13,17,23,0.88);border:1px solid rgba(109,224,160,0.35);
+    border-radius:8px;padding:7px 16px;font-size:12px;color:#6de0a0;
+    pointer-events:none;z-index:300;white-space:nowrap;">
+    <span data-i18n="linkAddHint">Klik om een punt te plaatsen · dubbelklik of Afronden om te voltooien</span>
+  </div>
+
+  <!-- ── Nieuw wegvak — afronden popup ─────────────────────────────────────── -->
+  <div id="linkAddFinishPopup" style="display:none;
+    position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+    background:rgba(13,17,23,0.95);border:1px solid rgba(109,224,160,0.3);
+    border-radius:10px;padding:10px 14px;z-index:400;
+    display:none;flex-direction:column;gap:6px;min-width:180px">
+    <button id="linkAddFinishBtn" style="
+      background:rgba(109,224,160,0.15);color:#6de0a0;
+      border:1px solid rgba(109,224,160,0.4);border-radius:7px;
+      padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer">
+      &#10003; <span data-i18n="linkAddFinishBtn">Lijn afronden</span>
+    </button>
+    <button id="linkAddClearBtn" style="
+      background:transparent;color:#5a6272;
+      border:1px solid rgba(255,255,255,0.1);border-radius:7px;
+      padding:7px 10px;font-size:12px;cursor:pointer">
+      &#10005; <span data-i18n="linkAddClearBtn">Wis lijn</span>
+    </button>
+  </div>
+
+  <!-- ── Nieuw wegvak — attribuut-dialoog ──────────────────────────────────── -->
+  <div id="linkAddDialog" style="display:none">
+    <h3 data-i18n="linkAddDialogTitle">Nieuw wegvak</h3>
+    <div id="linkAddLengthDisplay" style="font-size:11px;color:#8a9bb5;margin-bottom:10px;"></div>
+    <div class="node-field">
+      <label>
+        <span data-i18n="linkAddCapLabel">Capaciteit</span>
+        <span class="field-hint">pae/uur</span>
+      </label>
+      <div class="node-field-row">
+        <button id="linkAddCapMinus">−</button>
+        <input type="number" id="linkAddCapVal" min="0" step="100" value="900"/>
+        <button id="linkAddCapPlus">+</button>
+      </div>
+    </div>
+    <div class="node-field">
+      <label>
+        <span data-i18n="linkAddSpeedLabel">Snelheid</span>
+        <span class="field-hint">km/h</span>
+      </label>
+      <div class="node-field-row">
+        <button id="linkAddSpeedMinus">−</button>
+        <input type="number" id="linkAddSpeedVal" min="1" step="10" value="50"/>
+        <button id="linkAddSpeedPlus">+</button>
+      </div>
+    </div>
+    <div class="node-field">
+      <label>
+        <span data-i18n="linkAddLanesLabel">Rijstroken</span>
+      </label>
+      <div class="node-field-row">
+        <button id="linkAddLanesMinus">−</button>
+        <input type="number" id="linkAddLanesVal" min="1" step="1" value="1"/>
+        <button id="linkAddLanesPlus">+</button>
+      </div>
+    </div>
+    <div class="node-dialog-btns">
+      <button id="linkAddDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="linkAddDialogOk" data-i18n="linkAddDialogOkBtn">Toevoegen</button>
     </div>
   </div>
 
@@ -2049,6 +2143,19 @@
       linkFlowDialogPh:'+500 of 3000',
       linkFlowCurrentLabel: v => `Huidige waarde: ${v}\u00a0pae/dag`,
       changeFlowLabel: v => `flow: ${v} pae/dag`,
+      // Nieuw wegvak
+      linkAddTitle:'Nieuw wegvak intekenen',
+      linkAddHint:'Klik om een punt te plaatsen \u00b7 dubbelklik of Afronden om te voltooien',
+      linkAddFinishBtn:'Lijn afronden',
+      linkAddClearBtn:'Wis lijn',
+      linkAddDialogTitle:'Nieuw wegvak',
+      linkAddLengthLabel: m => `Lengte: ~${m}\u00a0m`,
+      linkAddCapLabel:'Capaciteit',
+      linkAddSpeedLabel:'Snelheid',
+      linkAddLanesLabel:'Rijstroken',
+      linkAddDialogOkBtn:'Toevoegen',
+      linkAddChangeLabel: m => `+ Nieuw wegvak (~${m}\u00a0m)`,
+      changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pae/u \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0rijstr.`,
       // GMT upload-dialoog
       gmtUploadDialogTitle:'Upload naar GMT',
       gmtUploadMaxFlowLabel: v => `Max. intensiteit in netwerk: ${v.toLocaleString('nl-NL')}\u00a0pae/dag`,
@@ -2275,6 +2382,19 @@
       linkFlowDialogPh:'+500 or 3000',
       linkFlowCurrentLabel: v => `Current value: ${v}\u00a0pcu/day`,
       changeFlowLabel: v => `flow: ${v} pcu/day`,
+      // New link
+      linkAddTitle:'Draw new road link',
+      linkAddHint:'Click to place a point \u00b7 double-click or Finish to complete',
+      linkAddFinishBtn:'Finish line',
+      linkAddClearBtn:'Clear line',
+      linkAddDialogTitle:'New road link',
+      linkAddLengthLabel: m => `Length: ~${m}\u00a0m`,
+      linkAddCapLabel:'Capacity',
+      linkAddSpeedLabel:'Speed',
+      linkAddLanesLabel:'Lanes',
+      linkAddDialogOkBtn:'Add',
+      linkAddChangeLabel: m => `+ New road link (~${m}\u00a0m)`,
+      changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pcu/h \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0lane${lanes !== 1 ? 's' : ''}`,
       // GMT upload dialog
       gmtUploadDialogTitle:'Upload to GMT',
       gmtUploadMaxFlowLabel: v => `Max. flow in network: ${v.toLocaleString('en-GB')}\u00a0pcu/day`,
@@ -6828,6 +6948,9 @@
     let nodeEditActive = false;
     let linkEditActive = false;
     let linkFlowEditActive = false;
+    let linkAddActive  = false;        // Nieuw wegvak intekenen
+    let linkAddVertices = [];          // [[lon,lat], ...] vertices van de lijn in aanbouw
+    let _linkAddMouseCoord = null;     // huidige muispositie (rubberbanding)
     // ── Selected Link Analysis — state ──────────────────────────────────────
     let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
     let selectedLinkActive = false;   // true als de link-selectie-modus actief is
@@ -8266,6 +8389,7 @@
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
          if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
+         if (linkAddActive) return 'crosshair';
          if ((linkEditActive || linkFlowEditActive || selectedLinkActive) && isHovering) return 'pointer';
          return '';
       },
@@ -8303,6 +8427,17 @@
     // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
     // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
     map.on('click', (e) => {
+      // Nieuw wegvak intekenen: voeg vertex toe
+      if (linkAddActive) {
+        const coord = [e.lngLat.lng, e.lngLat.lat];
+        linkAddVertices.push(coord);
+        _linkAddMouseCoord = coord;
+        updateLinkAddPreview();
+        // Toon "Afronden"-popup zodra we >= 2 vertices hebben
+        if (linkAddVertices.length >= 2)
+          document.getElementById('linkAddFinishPopup').style.display = 'block';
+        return;
+      }
       // Teller plaatsen: hogere prioriteit dan link-selectie
       if (_counterPlaceMode && hoveredLinkId !== null) {
         _placeCounter(hoveredLinkId);
@@ -8919,6 +9054,12 @@
     const HL_LINE_LAYER = 'highlight-line';
     const HL_POINT_LAYER= 'highlight-point';
 
+    // Nieuw-wegvak teken-lagen
+    const LINK_ADD_SOURCE    = 'link-add-src';
+    const LINK_ADD_LINE      = 'link-add-line';
+    const LINK_ADD_RUBBER    = 'link-add-rubber';
+    const LINK_ADD_DOTS      = 'link-add-dots';
+
     let highlightedChangeIndex = null;
 
     function addNodeLayer() {
@@ -9097,6 +9238,133 @@
           },
         });
       }
+
+    // ── Nieuw-wegvak teken-functies ───────────────────────────────────────────
+
+    /** Initialiseer MapLibre-lagen voor het intekenen van een nieuw wegvak (idempotent). */
+    function initLinkAddLayers() {
+      if (map.getSource(LINK_ADD_SOURCE)) return;
+      map.addSource(LINK_ADD_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      // Bevestigde lijn (groen)
+      map.addLayer({
+        id: LINK_ADD_LINE, type: 'line', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'line'],
+        paint: { 'line-color': '#6de0a0', 'line-width': 3, 'line-dasharray': [1, 0] },
+      });
+      // Rubberbanding (stippel, iets transparanter)
+      map.addLayer({
+        id: LINK_ADD_RUBBER, type: 'line', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'rubber'],
+        paint: { 'line-color': '#6de0a0', 'line-width': 2, 'line-dasharray': [4, 3], 'line-opacity': 0.6 },
+      });
+      // Vertices (punten)
+      map.addLayer({
+        id: LINK_ADD_DOTS, type: 'circle', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'dot'],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#6de0a0',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+    }
+
+    /** Verwijder teken-lagen en -source. */
+    function removeLinkAddLayers() {
+      [LINK_ADD_DOTS, LINK_ADD_RUBBER, LINK_ADD_LINE].forEach(id => {
+        if (map.getLayer(id)) map.removeLayer(id);
+      });
+      if (map.getSource(LINK_ADD_SOURCE)) map.removeSource(LINK_ADD_SOURCE);
+    }
+
+    /** Herrender de teken-preview op basis van linkAddVertices + _linkAddMouseCoord. */
+    function updateLinkAddPreview() {
+      if (!map.getSource(LINK_ADD_SOURCE)) return;
+      const features = [];
+      const verts = linkAddVertices;
+
+      // Bevestigde lijn
+      if (verts.length >= 2) {
+        features.push({ type: 'Feature', properties: { kind: 'line' },
+          geometry: { type: 'LineString', coordinates: verts } });
+      }
+      // Rubberbanding
+      if (verts.length >= 1 && _linkAddMouseCoord) {
+        features.push({ type: 'Feature', properties: { kind: 'rubber' },
+          geometry: { type: 'LineString', coordinates: [verts[verts.length - 1], _linkAddMouseCoord] } });
+      }
+      // Vertices als punten
+      verts.forEach(c => {
+        features.push({ type: 'Feature', properties: { kind: 'dot' },
+          geometry: { type: 'Point', coordinates: c } });
+      });
+
+      map.getSource(LINK_ADD_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Reset teken-state en clear de preview. */
+    function clearLinkAddDraw() {
+      linkAddVertices   = [];
+      _linkAddMouseCoord = null;
+      if (map.getSource(LINK_ADD_SOURCE))
+        map.getSource(LINK_ADD_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+    }
+
+    /** Haversine-afstand in meters tussen twee [lon,lat]-punten. */
+    function haversineM([lon1, lat1], [lon2, lat2]) {
+      const R = 6371000;
+      const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Totale lengte van linkAddVertices in meters. */
+    function linkAddLengthM() {
+      let len = 0;
+      for (let i = 1; i < linkAddVertices.length; i++)
+        len += haversineM(linkAddVertices[i-1], linkAddVertices[i]);
+      return Math.round(len);
+    }
+
+    /** Sluit de getekende lijn af en open het attribuut-dialoog. */
+    function finishLinkAddDraw() {
+      if (linkAddVertices.length < 2) return;
+      const lenM = linkAddLengthM();
+      document.getElementById('linkAddLengthDisplay').textContent =
+        T('linkAddLengthLabel', lenM.toLocaleString(T('numberLocale')));
+      // Defaults
+      document.getElementById('linkAddCapVal').value    = '900';
+      document.getElementById('linkAddSpeedVal').value  = '50';
+      document.getElementById('linkAddLanesVal').value  = '1';
+      document.getElementById('linkAddDialog').style.display = 'block';
+      // Verberg afrond-popup
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    }
+
+    /**
+     * MapLibre mousemove-handler voor rubberbanding.
+     * Wordt aan- en afgemeld bij activeren/deactiveren van linkAddActive.
+     */
+    function _onLinkAddMouseMove(e) {
+      if (!linkAddActive || linkAddVertices.length === 0) return;
+      _linkAddMouseCoord = [e.lngLat.lng, e.lngLat.lat];
+      updateLinkAddPreview();
+    }
+
+    /**
+     * MapLibre dblclick-handler: rondt de lijn af zonder extra punt.
+     */
+    function _onLinkAddDblClick(e) {
+      if (!linkAddActive) return;
+      e.preventDefault();
+      if (linkAddVertices.length >= 2) finishLinkAddDraw();
+    }
 
     /**
      * Maak een "verboden in te rijden"-bord als HTMLCanvasElement (64×64, pixelRatio 2→ 32 logisch px).
@@ -9620,6 +9888,14 @@
     document.getElementById('linkFlowMinus').onclick = () => stepValue('linkFlowVal', -500);
     document.getElementById('linkFlowPlus' ).onclick = () => stepValue('linkFlowVal', +500);
 
+    // ± knoppen nieuw-wegvak dialoog
+    document.getElementById('linkAddCapMinus').onclick  = () => { const i = document.getElementById('linkAddCapVal');   i.value = Math.max(0, (parseFloat(i.value)||0) - 100); };
+    document.getElementById('linkAddCapPlus' ).onclick  = () => { const i = document.getElementById('linkAddCapVal');   i.value = (parseFloat(i.value)||0) + 100; };
+    document.getElementById('linkAddSpeedMinus').onclick = () => { const i = document.getElementById('linkAddSpeedVal'); i.value = Math.max(1, (parseFloat(i.value)||0) - 10); };
+    document.getElementById('linkAddSpeedPlus' ).onclick = () => { const i = document.getElementById('linkAddSpeedVal'); i.value = (parseFloat(i.value)||0) + 10; };
+    document.getElementById('linkAddLanesMinus').onclick = () => { const i = document.getElementById('linkAddLanesVal'); i.value = Math.max(1, (parseInt(i.value)||1) - 1); };
+    document.getElementById('linkAddLanesPlus' ).onclick = () => { const i = document.getElementById('linkAddLanesVal'); i.value = (parseInt(i.value)||1) + 1; };
+
     document.getElementById('linkFlowDialogCancel').onclick = closeLinkFlowDialog;
 
     document.getElementById('linkFlowDialogOk').onclick = () => {
@@ -9718,16 +9994,23 @@
        let geometry = null;
        let center   = null;
 
-       if (c._isLink || c._isLinkFlow) {
-         // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
-         const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
-         if (coords && coords.length >= 2) {
-           geometry = { type: 'LineString', coordinates: coords };
-           // Vlieg naar het middenpunt van de lijn
-           const mid = Math.floor(coords.length / 2);
-           center = coords[mid];
-         }
-       } else {
+        if (c._isLink || c._isLinkFlow) {
+          // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
+          const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
+          if (coords && coords.length >= 2) {
+            geometry = { type: 'LineString', coordinates: coords };
+            // Vlieg naar het middenpunt van de lijn
+            const mid = Math.floor(coords.length / 2);
+            center = coords[mid];
+          }
+        } else if (c._isLinkAdd) {
+          // Getekende lijn
+          const coords = c.geometry?.coordinates;
+          if (coords && coords.length >= 2) {
+            geometry = { type: 'LineString', coordinates: coords };
+            center = coords[Math.floor(coords.length / 2)];
+          }
+        } else {
          // Knoop: zoek eerst in zoneFeaturesRaw, dan in nodeCoords
          const zoneId = c.zoneId ?? c.nodeId;
          let coord = null;
@@ -9873,6 +10156,8 @@
             parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
             if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
           }
+        } else if (c._isLinkAdd) {
+          parts.push(T('changeNewLinkLabel', c.capacity, c.speed, c.lanes));
         } else if (c._isLinkFlow) {
           const raw = String(c.flow ?? '');
           const display = raw.startsWith('+') || raw.startsWith('-') ? `Δ${raw}` : `=${raw}`;
@@ -9977,6 +10262,7 @@
       // Verberg edit-schermpjes direct bij starten doorvoeren
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
       if (linkEditActive) document.getElementById('linkEditBtn').click();
+      if (linkAddActive)  document.getElementById('linkAddBtn').click();
 
       // Toon wacht-overlay over het netwerk
       const overlay    = document.getElementById('calcOverlay');
@@ -9991,6 +10277,9 @@
         if (c._isLink) {
           return c.speed != null ? { linkId: c.linkId, speed: c.speed }
                                  : { linkId: c.linkId, capacity: c.capacity };
+        }
+        if (c._isLinkAdd) {
+          return { geometry: c.geometry, capacity: c.capacity, speed: c.speed, lanes: c.lanes };
         }
         if (c._isLinkFlow) {
           return { linkId: c.linkId, flow: c.flow };
@@ -10895,14 +11184,15 @@
     // ── Link-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('linkEditBtn').addEventListener('click', () => {
-      // Zet node-edit, flow-edit en what-if uit als die actief waren
+      // Zet node-edit, flow-edit, link-add en what-if uit als die actief waren
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive) document.getElementById('linkAddBtn').click();
       deactivateWhatifRc();
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
       document.getElementById('linkEditBtn').innerHTML =
-        linkEditActive ? '✕' : 'LINK';
+        linkEditActive ? '✕' : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="28" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h48l33 10h23"/><path d="M8 48h48l33-10h23"/><path d="M8 32h104" stroke-dasharray="5 5" stroke-width="1.5" opacity=".75"/></svg>';
 
       if (linkEditActive) {
         paused = true;
@@ -10943,12 +11233,13 @@
     document.getElementById('linkFlowEditBtn').addEventListener('click', () => {
       if (nodeEditActive)  document.getElementById('nodeEditBtn').click();
       if (linkEditActive)  document.getElementById('linkEditBtn').click();
+      if (linkAddActive)   document.getElementById('linkAddBtn').click();
       deactivateWhatifRc();
       linkFlowEditActive = !linkFlowEditActive;
       document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
       document.getElementById('linkFlowEditBtn').innerHTML =
         linkFlowEditActive ? '✕'
-          : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="9" x2="21" y2="9"/><polyline points="16,5 21,9 16,13"/><line x1="21" y1="15" x2="3" y2="15"/></svg>';
+          : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 28h34M15 36h34"/><path d="M32 8v12M26 14h12M26 50h12"/></svg>';
 
       if (linkFlowEditActive) {
         paused = true;
@@ -10970,6 +11261,82 @@
         updateOverlay(false);
         rebuildCars();
       }
+    });
+
+    // ── Nieuw wegvak toevoegen (linkAddBtn) ─────────────────────────────────
+
+    document.getElementById('linkAddBtn').addEventListener('click', () => {
+      if (nodeEditActive)    document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)    document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      deactivateWhatifRc();
+      linkAddActive = !linkAddActive;
+      document.getElementById('linkAddBtn').classList.toggle('active', linkAddActive);
+      document.getElementById('linkAddBtn').innerHTML = linkAddActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>';
+
+      if (linkAddActive) {
+        paused = true; cars = []; carData = [];
+        updateOverlay(false);
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.classList.add('paused');
+        pauseBtn.innerHTML = '&#9654;';
+        map.once('idle', () => {
+          initLinkAddLayers();
+          clearLinkAddDraw();
+        });
+        map.on('mousemove', _onLinkAddMouseMove);
+        map.on('dblclick',  _onLinkAddDblClick);
+        document.getElementById('linkAddFinishPopup').style.display = 'none';
+        document.getElementById('linkAddHintEl').style.display = 'block';
+      } else {
+        map.off('mousemove', _onLinkAddMouseMove);
+        map.off('dblclick',  _onLinkAddDblClick);
+        clearLinkAddDraw();
+        removeLinkAddLayers();
+        document.getElementById('linkAddFinishPopup').style.display = 'none';
+        document.getElementById('linkAddHintEl').style.display      = 'none';
+        document.getElementById('linkAddDialog').style.display      = 'none';
+        paused = false;
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.classList.remove('paused');
+        pauseBtn.innerHTML = '&#9208;';
+        updateOverlay(false);
+        rebuildCars();
+      }
+    });
+
+    document.getElementById('linkAddFinishBtn').addEventListener('click', () => {
+      finishLinkAddDraw();
+    });
+    document.getElementById('linkAddClearBtn').addEventListener('click', () => {
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+    document.getElementById('linkAddDialogCancel').addEventListener('click', () => {
+      document.getElementById('linkAddDialog').style.display = 'none';
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+    document.getElementById('linkAddDialogOk').addEventListener('click', () => {
+      const cap   = parseFloat(document.getElementById('linkAddCapVal').value);
+      const speed = parseFloat(document.getElementById('linkAddSpeedVal').value);
+      const lanes = parseInt(document.getElementById('linkAddLanesVal').value) || 1;
+      if (isNaN(cap) || isNaN(speed) || linkAddVertices.length < 2) return;
+      const coords = [...linkAddVertices];
+      const lenM   = linkAddLengthM();
+      pendingChanges.push({
+        geometry: { type: 'LineString', coordinates: coords },
+        capacity: cap,
+        speed,
+        lanes,
+        _label:      T('linkAddChangeLabel', lenM.toLocaleString(T('numberLocale'))),
+        _isLinkAdd:  true,
+      });
+      renderChangesList();
+      document.getElementById('linkAddDialog').style.display = 'none';
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
     });
 
     // ── Polygon-selectiemodus handlers ──────────────────────────────────────
