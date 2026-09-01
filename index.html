@@ -1234,6 +1234,46 @@
       border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 2px;
     }
     .dbg-head:first-child { margin-top: 0; }
+
+    /* ── hide-panels modus (?hide-panels=true) ───────────────────────────── */
+    body.hide-panels-mode #toolbar,
+    body.hide-panels-mode #legendStrip,
+    body.hide-panels-mode #changesPanel,
+    body.hide-panels-mode #simPanel,
+    body.hide-panels-mode #editPanel,
+    body.hide-panels-mode #flowScalerPanel,
+    body.hide-panels-mode #settingsPanel,
+    body.hide-panels-mode #counterPanel,
+    body.hide-panels-mode #purposeChartPanel,
+    body.hide-panels-mode #whatifRcPanel,
+    body.hide-panels-mode #odEditPanel,
+    body.hide-panels-mode #nodeSelectPopup,
+    body.hide-panels-mode #linkSelectPopup,
+    body.hide-panels-mode #nodeDialog,
+    body.hide-panels-mode #linkDialog,
+    body.hide-panels-mode #linkFlowDialog,
+    body.hide-panels-mode #gmtUploadDialog,
+    body.hide-panels-mode #linkAddDialog,
+     body.hide-panels-mode #polygonDialog,
+     body.hide-panels-mode #linkPolygonDialog,
+     body.hide-panels-mode #debugPanel,
+     body.hide-panels-mode #segmentTooltip,
+     body.hide-panels-mode #buildingTooltip { display: none !important; }
+
+    /* ── block-cursor modus (?block-cursor=true) ─────────────────────────── */
+    body.block-cursor-mode,
+    body.block-cursor-mode * { cursor: none !important; }
+    body.block-cursor-mode::after {
+      content: '';
+      position: fixed;
+      width: 12px; height: 18px;
+      background: #000;
+      pointer-events: none;
+      z-index: 999999;
+      transform: translate(-1px, -1px);
+      left: var(--cur-x, -100px);
+      top:  var(--cur-y, -100px);
+    }
   </style>
 </head>
 
@@ -2797,6 +2837,46 @@
   let AREA_ID = _params.get('areaId');
   const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
 
+  // ── hide-panels: verberg alle UI-panels en tooltips (?hide-panels=true) ──
+  const _HIDE_PANELS = _params.get('hide-panels') === 'true';
+  if (_HIDE_PANELS) document.body.classList.add('hide-panels-mode');
+
+  // ── block-cursor: vervang cursor door zwart blokje (?block-cursor=true) ──
+  if (_params.get('block-cursor') === 'true') {
+    document.body.classList.add('block-cursor-mode');
+    document.addEventListener('mousemove', e => {
+      document.body.style.setProperty('--cur-x', e.clientX + 'px');
+      document.body.style.setProperty('--cur-y', e.clientY + 'px');
+    });
+  }
+
+  // ── RD New (EPSG:28992) → WGS84 (EPSG:4326) ──────────────────────────────
+  // Inverse polynoom — Schreutelkamp & Strang van Hees (2001)
+  function rdToWgs84(x, y) {
+    const dX = (x - 155000) / 100000;
+    const dY = (y - 463000) / 100000;
+    const K = [[1,0,3235.65389],[1,2,-32.58297],[0,1,-0.24750],[2,1,-0.84978],
+               [3,0,-0.06550],[1,4,-0.01709],[0,3,-0.00738],[2,3,0.00530],
+               [0,5,-0.00039],[4,1,0.00033]];
+    const L = [[0,1,5260.52916],[2,1,105.94684],[0,3,2.45656],[2,3,-0.81885],
+               [1,2,0.05594],[4,1,-0.05607],[0,5,0.01199],[2,5,-0.00256],
+               [1,4,0.00128],[2,7,0.00022],[4,3,-0.00022],[1,6,-0.00013]];
+    const lat = 52.15517440 + K.reduce((s,[p,q,c]) => s + c * dY**p * dX**q, 0) / 3600;
+    const lon =  5.38720621 + L.reduce((s,[p,q,c]) => s + c * dY**p * dX**q, 0) / 3600;
+    return [lon, lat];
+  }
+
+  // ── bbox-param: begrenzing bij opstarten (?bbox=minX,minY,maxX,maxY in RD) ─
+  const _bboxParam = (() => {
+    const v = _params.get('bbox');
+    if (!v) return null;
+    const parts = v.split(',').map(Number);
+    if (parts.length !== 4 || parts.some(isNaN)) return null;
+    const [swLon, swLat] = rdToWgs84(parts[0], parts[1]); // minX, minY → SW
+    const [neLon, neLat] = rdToWgs84(parts[2], parts[3]); // maxX, maxY → NE
+    return [[swLon, swLat], [neLon, neLat]];
+  })();
+
   // ── Geen areaId: toon keuzescherm ─────────────────────────────────────────
   if (!AREA_ID) {
     const loader = document.getElementById('loader');
@@ -4013,8 +4093,8 @@
       style:     'https://tiles.openfreemap.org/styles/liberty',
       center:    CENTER,
       zoom:      14.5,
-      pitch:     58,
-      bearing:   -10,
+      pitch:     _bboxParam ? 0 : 58,
+      bearing:   _bboxParam ? 0 : -10,
       antialias: true,
       maxPitch:  85,
     });
@@ -4024,16 +4104,52 @@
     let _areaBoundsSet = false;
 
     function _fitAndSky() {
-      map.fitBounds(
-        [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]],
-        { padding: 60, pitch: 58, bearing: -10, duration: 0 }
-      );
+      const bounds = _bboxParam ?? [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]];
+      const opts   = _bboxParam
+        ? { padding: 20, pitch: 0, bearing: 0, duration: 0 }
+        : { padding: 60, pitch: 58, bearing: -10, duration: 0 };
+      map.fitBounds(bounds, opts);
       updateSunLight();
     }
 
     map.once('load', () => {
       _mapLoadFired = true;
       if (_areaBoundsSet) _fitAndSky();
+
+      // ── bbox-rechthoek tekenen ──────────────────────────────────────────
+      if (_bboxParam) {
+        const [[w, s], [e, n]] = _bboxParam;
+        map.addSource('bbox-rect-src', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[[w,s],[e,s],[e,n],[w,n],[w,s]]]
+            }
+          }
+        });
+        map.addLayer({
+          id: 'bbox-rect-fill',
+          type: 'fill',
+          source: 'bbox-rect-src',
+          paint: {
+            'fill-color': '#7ec8e3',
+            'fill-opacity': 0.08
+          }
+        });
+        map.addLayer({
+          id: 'bbox-rect-line',
+          type: 'line',
+          source: 'bbox-rect-src',
+          paint: {
+            'line-color': '#7ec8e3',
+            'line-width': 2,
+            'line-opacity': 0.75,
+            'line-dasharray': [4, 3]
+          }
+        });
+      }
     });
 
     // ── 1. Netwerkdata laden ────────────────────────────────────────────────
