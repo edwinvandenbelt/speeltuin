@@ -26,6 +26,7 @@ import datetime as _dt
 import io
 import json
 import os
+import queue
 import re
 import shutil
 import threading
@@ -34,7 +35,16 @@ import uuid
 from pathlib import Path
 
 import requests
-from flask import Flask, abort, jsonify, make_response, request, send_from_directory
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    make_response,
+    request,
+    send_from_directory,
+    stream_with_context,
+)
 from flask_compress import Compress
 
 # ---------------------------------------------------------------------------
@@ -809,6 +819,10 @@ _jobs_lock = threading.Lock()
 # overschrijven.  Door de pipeline-uitvoering te serialiseren voorkom je dat.
 _pipeline_stdout_lock = threading.Lock()
 
+# SSE follow-modus: area_id → set van queue.SimpleQueue-objecten voor verbonden browsers
+_sse_listeners: dict = {}
+_sse_listeners_lock = threading.Lock()
+
 # ---------------------------------------------------------------------------
 # NDW-achtergronddownload (verkeersborden NL)
 # ---------------------------------------------------------------------------
@@ -1401,6 +1415,35 @@ def _now_iso() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _sse_notify(src_area_id: str, new_area_id: str, compare_url, mode: str) -> None:
+    """Stuur een SSE 'message' event naar alle browsers die dit gebied volgen."""
+    payload = json.dumps(
+        {
+            "new_area_id": new_area_id,
+            "compare_url": compare_url,
+            "mode": mode,
+        }
+    )
+    _sse_put(src_area_id, "message", payload)
+
+
+def _sse_notify_started(src_area_id: str, mode: str, job_id: str) -> None:
+    """Stuur een SSE 'started' event: berekening is gestart voor dit gebied."""
+    _sse_put(src_area_id, "started", json.dumps({"mode": mode, "job_id": job_id}))
+
+
+def _sse_put(src_area_id: str, event: str, data: str) -> None:
+    """Plaatst een (event, data)-tuple in elke queue die luistert op src_area_id."""
+    with _sse_listeners_lock:
+        listeners = list(_sse_listeners.get(src_area_id, set()))
+    print(f"[SSE] {event} → {src_area_id} ({len(listeners)} listener(s))")
+    for q in listeners:
+        try:
+            q.put_nowait((event, data))
+        except Exception:
+            pass
+
+
 def _run_prepare_job(
     job_id: str, out_dir: Path, kwargs: dict, name: str, mode_label: str
 ):
@@ -1519,6 +1562,7 @@ def _run_adjust_job(
                 "collection": f"/collections/network/items?areaId={new_area_id}&mode={result_mode}",
                 "compare_url": compare_url,
             }
+        _sse_notify(src_area_id, new_area_id, compare_url, result_mode)
     except BaseException as exc:
         stream.flush()
         with _jobs_lock:
@@ -1589,6 +1633,7 @@ def _run_adjust_job_mixed(
                 "collection": f"/collections/network/items?areaId={new_area_id}&mode=MIXED",
                 "compare_url": compare_url,
             }
+        _sse_notify(src_area_id, new_area_id, compare_url, "MIXED")
     except BaseException as exc:
         stream.flush()
         with _jobs_lock:
@@ -2088,6 +2133,7 @@ def _execute_adjust(inputs: dict):
             ),
             daemon=True,
         ).start()
+        _sse_notify_started(area_id, "MIXED", job_id)
     else:
         kwargs = dict(
             folder=src_dir,
@@ -2114,6 +2160,7 @@ def _execute_adjust(inputs: dict):
                 ),
                 daemon=True,
             ).start()
+            _sse_notify_started(area_id, mode, job_id)
         else:
             threading.Thread(
                 target=_run_adjust_job,
@@ -2128,6 +2175,7 @@ def _execute_adjust(inputs: dict):
                 ),
                 daemon=True,
             ).start()
+            _sse_notify_started(area_id, mode, job_id)
     return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}
 
 
@@ -2296,6 +2344,14 @@ def _run_adjust_with_inserts_job(
 
         _areas_cache_invalidate()
 
+        result_mode = "MIXED" if all_constituent else mode
+        _ins_compare_file = _geojson_path(new_area_id, result_mode, "COMPARE")
+        _ins_compare_url = (
+            f"/collections/comparison/items?areaId={new_area_id}&mode={result_mode}"
+            if _ins_compare_file.exists()
+            else None
+        )
+
         with _jobs_lock:
             _jobs[job_id]["status"] = "successful"
             _jobs[job_id]["finished"] = _now_iso()
@@ -2303,7 +2359,9 @@ def _run_adjust_with_inserts_job(
                 "new_area_id": new_area_id,
                 "inserted_links": n_new,
                 "split_links": n_split,
+                "compare_url": _ins_compare_url,
             }
+        _sse_notify(area_id, new_area_id, _ins_compare_url, result_mode)
         log(f"Klaar — nieuw gebied: {new_area_id}")
 
     except Exception as exc:
@@ -3413,6 +3471,47 @@ def ogc_process_execute(process_id):
     for k, v in headers.items():
         resp.headers[k] = v
     return resp
+
+
+@app.route("/events")
+def sse_events():
+    """SSE-stream voor ?follow=true: stuurt een event zodra een adjust klaar is.
+
+    Query-param: areaId — het gebied waarop de client zich abonneert.
+    Event-payload (JSON): { new_area_id, compare_url, mode }
+
+    De verbinding blijft open; elke 25 seconden wordt een keep-alive comment
+    gestuurd zodat proxies de verbinding niet verbreken.
+    """
+    area_id = request.args.get("areaId", "")
+    q: queue.SimpleQueue = queue.SimpleQueue()
+
+    with _sse_listeners_lock:
+        _sse_listeners.setdefault(area_id, set()).add(q)
+
+    def generate():
+        try:
+            # Stuur retry-hint eenmalig
+            yield "retry: 3000\n\n"
+            while True:
+                try:
+                    event, data = q.get(timeout=25)
+                    yield f"event: {event}\ndata: {data}\n\n"
+                except queue.Empty:
+                    # Keep-alive — voorkomt dat proxies/load-balancers de verbinding sluiten
+                    yield ": keepalive\n\n"
+        finally:
+            with _sse_listeners_lock:
+                _sse_listeners.get(area_id, set()).discard(q)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Nginx: schakel buffering uit
+        },
+    )
 
 
 @app.route("/jobs")

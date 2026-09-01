@@ -1235,35 +1235,63 @@
     }
     .dbg-head:first-child { margin-top: 0; }
 
-    /* ── hide-panels modus (?hide-panels=true) ───────────────────────────── */
-    body.hide-panels-mode #toolbar,
-    body.hide-panels-mode #legendStrip,
-    body.hide-panels-mode #changesPanel,
-    body.hide-panels-mode #simPanel,
-    body.hide-panels-mode #editPanel,
-    body.hide-panels-mode #flowScalerPanel,
-    body.hide-panels-mode #settingsPanel,
-    body.hide-panels-mode #counterPanel,
-    body.hide-panels-mode #purposeChartPanel,
-    body.hide-panels-mode #whatifRcPanel,
-    body.hide-panels-mode #odEditPanel,
-    body.hide-panels-mode #nodeSelectPopup,
-    body.hide-panels-mode #linkSelectPopup,
-    body.hide-panels-mode #nodeDialog,
-    body.hide-panels-mode #linkDialog,
-    body.hide-panels-mode #linkFlowDialog,
-    body.hide-panels-mode #gmtUploadDialog,
-    body.hide-panels-mode #linkAddDialog,
-     body.hide-panels-mode #polygonDialog,
-     body.hide-panels-mode #linkPolygonDialog,
-     body.hide-panels-mode #debugPanel,
-     body.hide-panels-mode #segmentTooltip,
-     body.hide-panels-mode #buildingTooltip { display: none !important; }
+    /* ── maquette-modus (?maquette=true) ─────────────────────────────────── */
+    body.maquette-mode #toolbar,
+    body.maquette-mode #legendStrip,
+    body.maquette-mode #changesPanel,
+    body.maquette-mode #simPanel,
+    body.maquette-mode #editPanel,
+    body.maquette-mode #flowScalerPanel,
+    body.maquette-mode #settingsPanel,
+    body.maquette-mode #counterPanel,
+    body.maquette-mode #purposeChartPanel,
+    body.maquette-mode #whatifRcPanel,
+    body.maquette-mode #odEditPanel,
+    body.maquette-mode #nodeSelectPopup,
+    body.maquette-mode #linkSelectPopup,
+    body.maquette-mode #nodeDialog,
+    body.maquette-mode #linkDialog,
+    body.maquette-mode #linkFlowDialog,
+    body.maquette-mode #gmtUploadDialog,
+    body.maquette-mode #linkAddDialog,
+     body.maquette-mode #polygonDialog,
+     body.maquette-mode #linkPolygonDialog,
+     body.maquette-mode #debugPanel,
+     body.maquette-mode #segmentTooltip,
+     body.maquette-mode #buildingTooltip { display: none !important; }
 
-    /* ── block-cursor modus (?block-cursor=true) ─────────────────────────── */
-    body.block-cursor-mode,
-    body.block-cursor-mode * { cursor: none !important; }
-    body.block-cursor-mode::after {
+    body.follow-mode #editPanel,
+    body.follow-mode #nodeDialog,
+    body.follow-mode #linkDialog,
+    body.follow-mode #linkFlowDialog,
+    body.follow-mode #linkAddDialog,
+    body.follow-mode #polygonDialog,
+    body.follow-mode #linkPolygonDialog,
+    body.follow-mode #nodeSelectPopup,
+    body.follow-mode #linkSelectPopup { display: none !important; }
+
+    #followIndicator {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(20,30,48,0.88);
+      border: 1px solid rgba(126,200,227,0.35);
+      border-radius: 20px;
+      padding: 7px 18px;
+      color: #7ec8e3;
+      font-size: 12px;
+      font-family: 'Segoe UI', sans-serif;
+      letter-spacing: .4px;
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+    }
+    body.follow-mode #followIndicator { display: block; }
+
+    body.maquette-mode,
+    body.maquette-mode * { cursor: none !important; }
+    body.maquette-mode::after {
       content: '';
       position: fixed;
       width: 12px; height: 18px;
@@ -1282,6 +1310,7 @@
     <div class="spinner"></div>
     <p id="loaderMsg">GeoJSON laden…</p>
   </div>
+  <div id="followIndicator">Meekijkmodus — aanpassingen worden automatisch geladen</div>
 
   <div id="calcOverlay">
     <div class="spinner"></div>
@@ -2837,45 +2866,124 @@
   let AREA_ID = _params.get('areaId');
   const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
 
-  // ── hide-panels: verberg alle UI-panels en tooltips (?hide-panels=true) ──
-  const _HIDE_PANELS = _params.get('hide-panels') === 'true';
-  if (_HIDE_PANELS) document.body.classList.add('hide-panels-mode');
-
-  // ── block-cursor: vervang cursor door zwart blokje (?block-cursor=true) ──
-  if (_params.get('block-cursor') === 'true') {
-    document.body.classList.add('block-cursor-mode');
+  // ── maquette: combineert hide-panels + blok-cursor + verberg gebouwen (?maquette=true) ──
+  const _MAQUETTE = _params.get('maquette') === 'true';
+  if (_MAQUETTE) {
+    document.body.classList.add('maquette-mode');
     document.addEventListener('mousemove', e => {
       document.body.style.setProperty('--cur-x', e.clientX + 'px');
       document.body.style.setProperty('--cur-y', e.clientY + 'px');
     });
   }
 
-  // ── RD New (EPSG:28992) → WGS84 (EPSG:4326) ──────────────────────────────
-  // Inverse polynoom — Schreutelkamp & Strang van Hees (2001)
-  function rdToWgs84(x, y) {
-    const dX = (x - 155000) / 100000;
-    const dY = (y - 463000) / 100000;
-    const K = [[1,0,3235.65389],[1,2,-32.58297],[0,1,-0.24750],[2,1,-0.84978],
-               [3,0,-0.06550],[1,4,-0.01709],[0,3,-0.00738],[2,3,0.00530],
-               [0,5,-0.00039],[4,1,0.00033]];
-    const L = [[0,1,5260.52916],[2,1,105.94684],[0,3,2.45656],[2,3,-0.81885],
-               [1,2,0.05594],[4,1,-0.05607],[0,5,0.01199],[2,5,-0.00256],
-               [1,4,0.00128],[2,7,0.00022],[4,3,-0.00022],[1,6,-0.00013]];
-    const lat = 52.15517440 + K.reduce((s,[p,q,c]) => s + c * dY**p * dX**q, 0) / 3600;
-    const lon =  5.38720621 + L.reduce((s,[p,q,c]) => s + c * dY**p * dX**q, 0) / 3600;
-    return [lon, lat];
+  // ── follow: herlaad in-place zodra een adjust klaar is (?follow=true) ────
+  const _FOLLOW = _params.get('follow') === 'true';
+  if (_FOLLOW) document.body.classList.add('follow-mode');
+
+  // Late-bound referentie naar loadAdjustedResult (gedefinieerd verderop in een andere scope).
+  // Wordt ingevuld zodra loadAdjustedResult beschikbaar is.
+  let _followLoadFn = null;
+
+  /**
+   * Opent een SSE-verbinding naar /events?areaId=<AREA_ID>.
+   * Bij een 'started' event: poll /jobs/{job_id} tot klaar, laad dan resultaat in-place.
+   */
+  let _followEs = null;
+  function _startFollowMode(overrideAreaId) {
+    const listenId = overrideAreaId || AREA_ID;
+    if (!_FOLLOW || !listenId) return;
+    if (_followEs) { _followEs.close(); _followEs = null; }
+
+    console.log(`[follow] luisteren op areaId=${listenId}`);
+    const es = new EventSource(`/events?areaId=${encodeURIComponent(listenId)}`);
+    _followEs = es;
+
+    es.addEventListener('started', async (evt) => {
+      try {
+        const { job_id } = JSON.parse(evt.data);
+        console.log(`[follow] berekening gestart, job=${job_id}`);
+        const ind = document.getElementById('followIndicator');
+        if (ind) ind.textContent = 'Berekening loopt\u2026';
+
+        // Poll tot job klaar is (zelfde ritme als eigen adjust)
+        const POLL_DELAYS = [5000, 3000, 2000];
+        let step = 0;
+        await new Promise((resolve, reject) => {
+          const next = () => setTimeout(poll, step < POLL_DELAYS.length ? POLL_DELAYS[step++] : 1000);
+          const poll = async () => {
+            try {
+              const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
+              if (sj.status === 'successful') return resolve();
+              if (sj.status === 'failed')     return reject(new Error((sj.log || []).slice(-3).join('\n')));
+              next();
+            } catch (e) { reject(e); }
+          };
+          next();
+        });
+
+        if (ind) ind.textContent = 'Resultaat laden\u2026';
+        const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+        console.log(`[follow] resultaat ophalen: new_area_id=${results.new_area_id}`);
+
+        if (_followLoadFn) {
+          await _followLoadFn(results.new_area_id, results.compare_url || null);
+        }
+        if (ind) ind.textContent = 'Meekijkmodus \u2014 aanpassingen worden automatisch geladen';
+
+        // Herverbind expliciet op het nieuwe areaId (niet via AREA_ID — andere closure)
+        _startFollowMode(results.new_area_id);
+      } catch (e) {
+        console.warn('[follow] fout:', e);
+        const ind = document.getElementById('followIndicator');
+        if (ind) ind.textContent = 'Meekijkmodus \u2014 aanpassingen worden automatisch geladen';
+      }
+    });
+
+    es.onerror = (e) => {
+      console.warn('[follow] SSE verbindingsfout, herverbinden\u2026', e);
+    };
   }
 
-  // ── bbox-param: begrenzing bij opstarten (?bbox=minX,minY,maxX,maxY in RD) ─
+
+  // ── bbox-param: begrenzing bij opstarten (?bbox=minLon,minLat,maxLon,maxLat in WGS84) ─
   const _bboxParam = (() => {
     const v = _params.get('bbox');
     if (!v) return null;
     const parts = v.split(',').map(Number);
     if (parts.length !== 4 || parts.some(isNaN)) return null;
-    const [swLon, swLat] = rdToWgs84(parts[0], parts[1]); // minX, minY → SW
-    const [neLon, neLat] = rdToWgs84(parts[2], parts[3]); // maxX, maxY → NE
-    return [[swLon, swLat], [neLon, neLat]];
+    return [[parts[0], parts[1]], [parts[2], parts[3]]]; // [[swLon, swLat], [neLon, neLat]]
   })();
+
+  // ── polygon-param: pas op een vrij polygoon (?polygon=lon1,lat1,lon2,lat2,...) ─
+  const _polygonParam = (() => {
+    const v = _params.get('polygon');
+    if (!v) return null;
+    const nums = v.split(',').map(Number);
+    if (nums.length < 6 || nums.length % 2 !== 0 || nums.some(isNaN)) return null;
+    const coords = [];
+    for (let i = 0; i < nums.length; i += 2) coords.push([nums[i], nums[i + 1]]);
+    return coords; // [[lon,lat], ...]
+  })();
+
+  // Gecombineerde "fit"-trigger: polygon heeft voorrang op bbox
+  const _fitParam = _polygonParam
+    ? (() => {
+        const lons = _polygonParam.map(c => c[0]);
+        const lats = _polygonParam.map(c => c[1]);
+        return [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]];
+      })()
+    : _bboxParam;
+
+  // ── viewport-grootte (?width=W&height=H) ─────────────────────────────────
+  const _vpWidth  = parseInt(_params.get('width'),  10) || null;
+  const _vpHeight = parseInt(_params.get('height'), 10) || null;
+  if (_vpWidth && _vpHeight) {
+    const mapEl = document.getElementById('map');
+    mapEl.style.width  = _vpWidth  + 'px';
+    mapEl.style.height = _vpHeight + 'px';
+    document.getElementById('mapContainer').style.width  = _vpWidth  + 'px';
+    document.getElementById('mapContainer').style.height = _vpHeight + 'px';
+  }
 
   // ── Geen areaId: toon keuzescherm ─────────────────────────────────────────
   if (!AREA_ID) {
@@ -2883,7 +2991,7 @@
     loader.innerHTML = `
       <div style="font-family:'Segoe UI',sans-serif;color:#c9d6e8;width:500px;max-width:96vw;padding:24px">
         <h2 style="color:#7ec8e3;margin:0 0 8px;font-size:20px;text-align:center">${T('areaTitle')}</h2>
-        <p style="color:#5a6272;font-size:13px;margin:0 0 20px;text-align:center">${T('areaSubtitle')}</p>
+        <p style="color:#5a6272;font-size:13px;margin:0 0 16px;text-align:center">${T('areaSubtitle')}</p>
         <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px"></div>
         <p id="areaError" style="display:none;color:#ff6b6b;font-size:13px;margin-top:16px;text-align:center"></p>
       </div>`;
@@ -2919,6 +3027,11 @@
             : new Set(kidsMap.keys());   // eerste keer: alle takken dicht
           const saveCollapsed = () =>
             localStorage.setItem('areaTreeCollapsed', JSON.stringify([...collapsed]));
+
+          // Sluit alle dropdowns bij klik buiten
+          document.addEventListener('click', () => {
+            document.querySelectorAll('.area-dropdown').forEach(d => d.style.display = 'none');
+          });
 
           // ── Node renderen ───────────────────────────────────────────────────
           function renderNode(area, depth) {
@@ -2961,26 +3074,136 @@
                 `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
             };
 
-            // Verwijder-knop
-            const delBtn = document.createElement('button');
-            delBtn.textContent = '✕';
-            delBtn.title = T('areaDelTitle', area.name);
-            delBtn.style.cssText = `
-              flex-shrink:0;background:transparent;color:#4a5568;
+            // ── '...' menu-knop ────────────────────────────────────────────────
+            const menuBtn = document.createElement('button');
+            menuBtn.textContent = '···';
+            menuBtn.title = 'Opties';
+            menuBtn.style.cssText = `
+              flex-shrink:0;background:transparent;color:#5a6272;
               border:1px solid rgba(255,255,255,0.1);
-              border-radius:7px;padding:9px 12px;font-size:13px;
+              border-radius:7px;padding:9px 12px;font-size:13px;letter-spacing:1px;
               cursor:pointer;transition:background .15s,color .15s`;
-            delBtn.onmouseenter = () => {
-              delBtn.style.background    = 'rgba(255,80,80,0.15)';
-              delBtn.style.color         = '#ff6b6b';
-              delBtn.style.borderColor   = 'rgba(255,80,80,0.3)';
+            menuBtn.onmouseenter = () => {
+              menuBtn.style.background = 'rgba(126,200,227,0.08)';
+              menuBtn.style.color      = '#c9d6e8';
             };
-            delBtn.onmouseleave = () => {
-              delBtn.style.background    = 'transparent';
-              delBtn.style.color         = '#4a5568';
-              delBtn.style.borderColor   = 'rgba(255,255,255,0.1)';
+            menuBtn.onmouseleave = () => {
+              menuBtn.style.background = 'transparent';
+              menuBtn.style.color      = '#5a6272';
             };
-            delBtn.onclick = async () => {
+
+            // Dropdown
+            const dropdown = document.createElement('div');
+            dropdown.style.cssText = `
+              display:none;position:absolute;right:0;top:calc(100% + 4px);
+              background:#1a2233;border:1px solid rgba(126,200,227,0.2);
+              border-radius:8px;min-width:160px;z-index:999;
+              box-shadow:0 4px 16px rgba(0,0,0,0.4);overflow:hidden`;
+
+            const mkItem = (label, icon, disabled, danger) => {
+              const item = document.createElement('button');
+              item.style.cssText = `
+                display:flex;align-items:center;gap:9px;width:100%;
+                background:transparent;border:none;
+                color:${disabled ? '#3a4455' : danger ? '#ff6b6b' : '#c9d6e8'};
+                padding:10px 14px;font-size:13px;font-family:inherit;
+                text-align:left;cursor:${disabled ? 'default' : 'pointer'};
+                transition:background .12s;`;
+              item.innerHTML = `<span style="opacity:${disabled?0.4:1}">${icon}</span><span>${label}</span>`;
+              if (!disabled) {
+                item.onmouseenter = () => item.style.background = danger
+                  ? 'rgba(255,80,80,0.1)' : 'rgba(126,200,227,0.08)';
+                item.onmouseleave = () => item.style.background = 'transparent';
+              }
+              return item;
+            };
+
+            // Item: Meekijken
+            const followItem = mkItem('Meekijken',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+              false, false);
+            followItem.onclick = () => {
+              dropdown.style.display = 'none';
+              window.location.href =
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}&follow=true`;
+            };
+
+            // Item: Upload GMT
+            const gmtUploaded = !!area.gmtUploaded;
+            const gmtItem = mkItem(
+              gmtUploaded ? 'Upload GMT (al geüpload)' : 'Upload GMT',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>',
+              gmtUploaded, false);
+            if (!gmtUploaded) {
+              gmtItem.onclick = () => {
+                dropdown.style.display = 'none';
+                const dlg     = document.getElementById('gmtUploadDialog');
+                const display = document.getElementById('gmtUploadMaxFlowDisplay');
+                const input   = document.getElementById('gmtUploadMaxFlowInput');
+                const cancelBtn = document.getElementById('gmtUploadDialogCancel');
+                const okBtn     = document.getElementById('gmtUploadDialogOk');
+                input.value = '';
+                display.textContent = T('gmtUploadMaxFlowLoading');
+                dlg.style.display = 'block';
+
+                fetch(`/api/areas/${area.areaId}/max-flow?mode=${area.mode}`)
+                  .then(r => r.json())
+                  .then(d => { display.textContent = T('gmtUploadMaxFlowLabel', d.maxFlow ?? 0); })
+                  .catch(() => { display.textContent = ''; });
+
+                const cleanup = () => {
+                  dlg.style.display = 'none';
+                  cancelBtn.onclick = null;
+                  okBtn.onclick = null;
+                };
+                cancelBtn.onclick = cleanup;
+                okBtn.onclick = async () => {
+                  cleanup();
+                  gmtItem.querySelector('span:last-child').textContent = 'Bezig met uploaden…';
+                  const maxFlowVal = input.value.trim();
+                  const body = { inputs: { areaId: area.areaId, mode: area.mode } };
+                  if (maxFlowVal !== '') body.inputs.maxFlow = parseFloat(maxFlowVal);
+                  try {
+                    const res = await fetch('/processes/upload-to-gmt/execution', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(body),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const { jobID } = await res.json();
+                    let lastLog = 0;
+                    for (;;) {
+                      await new Promise(r => setTimeout(r, 1500));
+                      const jd = await fetch(`/jobs/${jobID}`).then(r => r.json());
+                      if (jd.log?.length > lastLog) { lastLog = jd.log.length; }
+                      if (jd.status === 'successful') {
+                        gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (al geüpload)';
+                        gmtItem.style.color = '#3a4455';
+                        gmtItem.style.cursor = 'default';
+                        gmtItem.onmouseenter = null;
+                        gmtItem.onmouseleave = null;
+                        break;
+                      }
+                      if (jd.status === 'failed') {
+                        gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (mislukt)';
+                        gmtItem.style.color = '#ff6b6b';
+                        break;
+                      }
+                    }
+                  } catch (err) {
+                    gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (fout)';
+                    gmtItem.style.color = '#ff6b6b';
+                  }
+                };
+              };
+            }
+
+            // Item: Verwijderen
+            const delItem = mkItem('Verwijderen',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>',
+              false, true);
+            delItem.onclick = async () => {
+              dropdown.style.display = 'none';
               if (!confirm(T('areaDelConfirm', area.name, area.mode))) return;
               const res = await fetch('/processes/delete-area/execution', {
                 method: 'POST',
@@ -2995,156 +3218,28 @@
               }
             };
 
+            dropdown.appendChild(followItem);
+            dropdown.appendChild(gmtItem);
+            dropdown.appendChild(delItem);
+
+            // Wrapper voor positionering dropdown
+            const menuWrap = document.createElement('div');
+            menuWrap.style.cssText = 'position:relative;flex-shrink:0';
+            menuWrap.appendChild(menuBtn);
+            menuWrap.appendChild(dropdown);
+
+            menuBtn.onclick = (e) => {
+              e.stopPropagation();
+              const isOpen = dropdown.style.display === 'block';
+              // Sluit alle andere open menus
+              document.querySelectorAll('.area-dropdown').forEach(d => d.style.display = 'none');
+              dropdown.style.display = isOpen ? 'none' : 'block';
+            };
+            dropdown.classList.add('area-dropdown');
+
             row.appendChild(arrowBtn);
             row.appendChild(btn);
-
-            // GMT upload-knop / badge
-            if (area.gmtUploaded) {
-              // Groene badge — al geüpload
-              const gmtBadge = document.createElement('span');
-              gmtBadge.title = 'Beschikbaar in GMT';
-              gmtBadge.style.cssText = `
-                flex-shrink:0;display:flex;align-items:center;gap:4px;
-                color:#4caf50;font-size:11px;font-weight:600;
-                border:1px solid rgba(76,175,80,0.35);border-radius:7px;
-                padding:6px 9px;white-space:nowrap;`;
-              gmtBadge.innerHTML = `
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>GMT`;
-              row.appendChild(gmtBadge);
-            } else {
-              // Upload-knop
-              const gmtBtn = document.createElement('button');
-              gmtBtn.title = 'Uploaden naar GMT';
-              gmtBtn.style.cssText = `
-                flex-shrink:0;background:transparent;color:#5a6272;
-                border:1px solid rgba(255,255,255,0.1);
-                border-radius:7px;padding:8px 10px;font-size:11px;font-weight:600;
-                cursor:pointer;display:flex;align-items:center;gap:4px;
-                transition:background .15s,color .15s,border-color .15s`;
-              gmtBtn.innerHTML = `
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="16 16 12 12 8 16"/>
-                  <line x1="12" y1="12" x2="12" y2="21"/>
-                  <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
-                </svg>GMT`;
-              gmtBtn.onmouseenter = () => {
-                gmtBtn.style.background   = 'rgba(126,200,227,0.1)';
-                gmtBtn.style.color        = '#7ec8e3';
-                gmtBtn.style.borderColor  = 'rgba(126,200,227,0.3)';
-              };
-              gmtBtn.onmouseleave = () => {
-                if (!gmtBtn.dataset.loading) {
-                  gmtBtn.style.background  = 'transparent';
-                  gmtBtn.style.color       = '#5a6272';
-                  gmtBtn.style.borderColor = 'rgba(255,255,255,0.1)';
-                }
-              };
-              gmtBtn.onclick = () => {
-                if (gmtBtn.dataset.loading) return;
-                // Open filter-dialoog
-                const dlg = document.getElementById('gmtUploadDialog');
-                const display = document.getElementById('gmtUploadMaxFlowDisplay');
-                const input = document.getElementById('gmtUploadMaxFlowInput');
-                const cancelBtn = document.getElementById('gmtUploadDialogCancel');
-                const okBtn = document.getElementById('gmtUploadDialogOk');
-                input.value = '';
-                display.textContent = T('gmtUploadMaxFlowLoading');
-                dlg.style.display = 'block';
-
-                // Haal max flow op
-                fetch(`/api/areas/${area.areaId}/max-flow?mode=${area.mode}`)
-                  .then(r => r.json())
-                  .then(d => {
-                    display.textContent = T('gmtUploadMaxFlowLabel', d.maxFlow ?? 0);
-                  })
-                  .catch(() => { display.textContent = ''; });
-
-                const cleanup = () => {
-                  dlg.style.display = 'none';
-                  cancelBtn.onclick = null;
-                  okBtn.onclick = null;
-                };
-
-                cancelBtn.onclick = cleanup;
-
-                okBtn.onclick = async () => {
-                  cleanup();
-                  // Toon spinner op knop
-                  gmtBtn.dataset.loading = '1';
-                  gmtBtn.style.background  = 'rgba(126,200,227,0.08)';
-                  gmtBtn.style.color       = '#7ec8e3';
-                  gmtBtn.style.borderColor = 'rgba(126,200,227,0.25)';
-                  gmtBtn.innerHTML = `
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12" class="spin-svg"/>
-                    </svg>GMT`;
-
-                  const maxFlowVal = input.value.trim();
-                  const body = { inputs: { areaId: area.areaId, mode: area.mode } };
-                  if (maxFlowVal !== '') body.inputs.maxFlow = parseFloat(maxFlowVal);
-
-                  try {
-                    const res = await fetch('/processes/upload-to-gmt/execution', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(body),
-                    });
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const { jobID } = await res.json();
-
-                    // Poll totdat job klaar is
-                    let lastLog = 0;
-                    for (;;) {
-                      await new Promise(r => setTimeout(r, 1500));
-                      const jr = await fetch(`/jobs/${jobID}`);
-                      const jd = await jr.json();
-                      if (jd.log?.length > lastLog) {
-                        gmtBtn.title = jd.log[jd.log.length - 1];
-                        lastLog = jd.log.length;
-                      }
-                      if (jd.status === 'successful') {
-                        const badge = document.createElement('span');
-                        badge.title = 'Beschikbaar in GMT';
-                        badge.style.cssText = `
-                          flex-shrink:0;display:flex;align-items:center;gap:4px;
-                          color:#4caf50;font-size:11px;font-weight:600;
-                          border:1px solid rgba(76,175,80,0.35);border-radius:7px;
-                          padding:6px 9px;white-space:nowrap;`;
-                        badge.innerHTML = `
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>GMT`;
-                        gmtBtn.replaceWith(badge);
-                        break;
-                      }
-                      if (jd.status === 'failed') {
-                        const lastErr = jd.log?.[jd.log.length - 1] ?? 'Onbekende fout';
-                        gmtBtn.title = `Mislukt: ${lastErr}`;
-                        gmtBtn.style.color       = '#ff6b6b';
-                        gmtBtn.style.borderColor = 'rgba(255,80,80,0.3)';
-                        gmtBtn.innerHTML = `
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                          </svg>GMT`;
-                        delete gmtBtn.dataset.loading;
-                        break;
-                      }
-                    }
-                  } catch (err) {
-                    gmtBtn.title = `Fout: ${err.message}`;
-                    gmtBtn.style.color       = '#ff6b6b';
-                    gmtBtn.style.borderColor = 'rgba(255,80,80,0.3)';
-                    gmtBtn.innerHTML = `✕ GMT`;
-                    delete gmtBtn.dataset.loading;
-                  }
-                };
-              };
-              row.appendChild(gmtBtn);
-            }
-
-            row.appendChild(delBtn);
+            row.appendChild(menuWrap);
             nodeEl.appendChild(row);
 
             // Kinderen-wrapper (gedefinieerd vóór onclick zodat de closure hem kan bereiken)
@@ -4093,8 +4188,8 @@
       style:     'https://tiles.openfreemap.org/styles/liberty',
       center:    CENTER,
       zoom:      14.5,
-      pitch:     _bboxParam ? 0 : 58,
-      bearing:   _bboxParam ? 0 : -10,
+      pitch:     _fitParam ? 0 : 58,
+      bearing:   _fitParam ? 0 : -10,
       antialias: true,
       maxPitch:  85,
     });
@@ -4104,11 +4199,40 @@
     let _areaBoundsSet = false;
 
     function _fitAndSky() {
-      const bounds = _bboxParam ?? [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]];
-      const opts   = _bboxParam
-        ? { padding: 20, pitch: 0, bearing: 0, duration: 0 }
-        : { padding: 60, pitch: 58, bearing: -10, duration: 0 };
-      map.fitBounds(bounds, opts);
+      if (_fitParam) {
+        // Top-left uitlijning: west=links, north=boven, zoom zo ver mogelijk in
+        // tot ofwel oost de rechterrand raakt ofwel zuid de onderrand.
+        const [[west, south], [east, north]] = _fitParam;
+        const W = map.getContainer().offsetWidth;
+        const H = map.getContainer().offsetHeight;
+        if (W && H) {
+          // Mercator-hulpfuncties (MapLibre: 512px tiles → wereldgrootte = 512 * 2^z)
+          const TILE = 512;
+          const mX = (lon) => (lon + 180) / 360;
+          const mY = (lat) => {
+            const s = Math.sin(lat * Math.PI / 180);
+            return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+          };
+          const bboxFracW = mX(east)  - mX(west);
+          const bboxFracH = mY(south) - mY(north); // south > north in Mercator (y-as omlaag)
+          const zoomX = Math.log2(W / (bboxFracW * TILE));
+          const zoomY = Math.log2(H / (bboxFracH * TILE));
+          const zoom  = Math.min(zoomX, zoomY);
+
+          const worldPx = TILE * Math.pow(2, zoom);
+          const nwX = mX(west)  * worldPx;
+          const nwY = mY(north) * worldPx;
+          const cX  = nwX + W / 2;
+          const cY  = nwY + H / 2;
+          const cLon = cX / worldPx * 360 - 180;
+          const cLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * cY / worldPx))) * 180 / Math.PI;
+
+          map.jumpTo({ center: [cLon, cLat], zoom, pitch: 0, bearing: 0 });
+        }
+      } else {
+        const bounds = [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]];
+        map.fitBounds(bounds, { padding: 60, pitch: 58, bearing: -10, duration: 0 });
+      }
       updateSunLight();
     }
 
@@ -4116,38 +4240,42 @@
       _mapLoadFired = true;
       if (_areaBoundsSet) _fitAndSky();
 
-      // ── bbox-rechthoek tekenen ──────────────────────────────────────────
-      if (_bboxParam) {
-        const [[w, s], [e, n]] = _bboxParam;
-        map.addSource('bbox-rect-src', {
+      // ── viewport-bounds meta bijwerken na elke kaartbeweging ───────────────
+      const _updateViewportMeta = () => {
+        const b = map.getBounds();
+        let meta = document.getElementById('map-viewport');
+        if (!meta) {
+          meta = document.createElement('meta');
+          meta.id = 'map-viewport';
+          document.head.appendChild(meta);
+        }
+        meta.dataset.west  = b.getWest().toFixed(8);
+        meta.dataset.south = b.getSouth().toFixed(8);
+        meta.dataset.east  = b.getEast().toFixed(8);
+        meta.dataset.north = b.getNorth().toFixed(8);
+      };
+      map.on('moveend', _updateViewportMeta);
+
+      // ── Polygoon of bbox-rechthoek tekenen ─────────────────────────────────
+      if (_polygonParam || _bboxParam) {
+        const ring = _polygonParam
+          ? [..._polygonParam, _polygonParam[0]]  // sluit de ring
+          : (() => { const [[w,s],[e,n]] = _bboxParam; return [[w,s],[e,s],[e,n],[w,n],[w,s]]; })();
+        map.addSource('fit-shape-src', {
           type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: {
-              type: 'Polygon',
-              coordinates: [[[w,s],[e,s],[e,n],[w,n],[w,s]]]
-            }
-          }
+          data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] } }
         });
         map.addLayer({
-          id: 'bbox-rect-fill',
+          id: 'fit-shape-fill',
           type: 'fill',
-          source: 'bbox-rect-src',
-          paint: {
-            'fill-color': '#7ec8e3',
-            'fill-opacity': 0.08
-          }
+          source: 'fit-shape-src',
+          paint: { 'fill-color': '#7ec8e3', 'fill-opacity': 0.08 }
         });
         map.addLayer({
-          id: 'bbox-rect-line',
+          id: 'fit-shape-line',
           type: 'line',
-          source: 'bbox-rect-src',
-          paint: {
-            'line-color': '#7ec8e3',
-            'line-width': 2,
-            'line-opacity': 0.75,
-            'line-dasharray': [4, 3]
-          }
+          source: 'fit-shape-src',
+          paint: { 'line-color': '#7ec8e3', 'line-width': 2, 'line-opacity': 0.75, 'line-dasharray': [4, 3] }
         });
       }
     });
@@ -4859,6 +4987,15 @@
 
     function _tryAddBuildings() {
       if (!_mapReady || !_buildingsGeoJson) return;
+
+      // Maquette-modus: verberg alle gebouwlagen en stop hier
+      if (_MAQUETTE) {
+        try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('buildings-fill')) map.setLayoutProperty('buildings-fill', 'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('buildings-3d'))   map.setLayoutProperty('buildings-3d',   'visibility', 'none'); } catch (_) {}
+        return;
+      }
 
       // Verberg Liberty 2D building-laag (laag zoom); de 3D-laag blijft voor de vorm
       try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
@@ -9092,6 +9229,19 @@
 
     function _onMapStyleLoad() {
       hideLaadscherm();
+      _startFollowMode();
+      if (_MAQUETTE) {
+        map.getStyle().layers
+          .filter(l => l.id.toLowerCase().includes('building'))
+          .forEach(l => {
+            try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
+          });
+        map.getStyle().layers
+          .filter(l => l.type === 'symbol' && l.layout?.['text-field'])
+          .forEach(l => {
+            try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
+          });
+      }
       if (!_mapReady) {
         animate();
         _mapReady = true;
@@ -10665,6 +10815,8 @@
       url.searchParams.set('areaId', newAreaId);
       window.history.replaceState({}, '', url.toString());
     }
+    // Stel de late-bound referentie in zodat de meekijkmodus deze functie kan aanroepen.
+    _followLoadFn = loadAdjustedResult;
 
     // ── COMPARE laag ────────────────────────────────────────────────────────
 
