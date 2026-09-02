@@ -1105,7 +1105,8 @@
     .cp-counter-rows { padding: 6px 10px 8px; }
     .cp-row { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: rgba(255,255,255,0.82); padding: 1px 0; }
     .cp-dir { color: #7ec8e3; font-weight: 700; min-width: 14px; font-size: 13px; }
-    .cp-total { font-weight: 700; min-width: 30px; }
+    .cp-total { font-weight: 700; min-width: 30px; text-align: right; }
+    .cp-expected { color: rgba(255,255,255,0.5); font-size: 10px; min-width: 34px; }
     .cp-modes { flex: 1; color: rgba(255,255,255,0.42); font-size: 10px; }
     .cp-elapsed { font-size: 10px; color: rgba(255,255,255,0.28); padding-top: 3px; }
     #spHeader {
@@ -6495,6 +6496,7 @@
     // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
     rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan)
+    calibrateRouteProductions();  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
     let widthScale = false;
     let colorMetric = 'flow';
     let cars      = [];
@@ -7010,7 +7012,7 @@
           if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
           const g            = odGroups.get(key);
           const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[daypart] ?? (1 / 14.4));
-          g.totalFlow += productionDp * rp.route.weight;
+          g.totalFlow += productionDp * rp.route.weight * (rp.route.calib ?? 1);
           g.paths.push(rp);
         }
 
@@ -7178,7 +7180,8 @@
           for (const rp of routePaths) {
             const odFlowVehHr = (rp.route.originProduction ?? 0)
                               * (DP_FRACTION[daypart] ?? (1 / 14.4))
-                              * (rp.route.weight ?? 0);
+                              * (rp.route.weight ?? 0)
+                              * (rp.route.calib ?? 1);
             let travelTime = 0;
             for (const lo of rp.allLinkObjs) {
               travelTime += segmentLength(lo.coords) / (lo.speedMs || 10);
@@ -7286,12 +7289,13 @@
 
     // ── Productie-helpers ─────────────────────────────────────────────────────
 
-    /** Kies een route-pad gewogen op route.weight (proportioneel aan de fractie). */
+    /** Kies een route-pad gewogen op route.weight × route.calib (proportioneel aan de gekalibreerde fractie). */
     function pickWeightedRoute(paths) {
-      const totalW = paths.reduce((s, rp) => s + rp.route.weight, 0) || 1;
+      const wOf = rp => rp.route.weight * (rp.route.calib ?? 1);
+      const totalW = paths.reduce((s, rp) => s + wOf(rp), 0) || 1;
       let r = Math.random() * totalW;
       for (const rp of paths) {
-        r -= rp.route.weight;
+        r -= wOf(rp);
         if (r <= 0) return rp;
       }
       return paths[paths.length - 1];
@@ -8519,6 +8523,119 @@
       }
     }
 
+    /**
+     * IPF-kalibratie van route-producties tegen de gemeten link-flows (optie 2b).
+     *
+     * Doel: voor elk gemeten, richting-specifiek niet-voedingswegvak L moet de som van
+     * de effectieve uurproducties van alle routes die door L lopen ≈ de gemeten
+     * uurintensiteit van het actieve dagdeel (linkFlowMap[L] = dpFlowOf) benaderen.
+     * Zo komt de animatie-teller (in simulatietijd) overeen met de segment-popup.
+     *
+     * Effectieve uurproductie per route:
+     *   p_r = originProduction × DP_FRACTION[daypart] × weight × calib
+     * Alleen route.calib wordt bijgesteld; originProduction/weight blijven ongemoeid.
+     *
+     * Iteratief (Iterative Proportional Fitting): per stap krijgt elke route de
+     * geometrisch gemiddelde correctie F_L/M_L over zijn gemeten inner-links.
+     * Voedingslinks (eerste + laatste linkId) worden uitgesloten.
+     */
+    function calibrateRouteProductions() {
+      const DBG = /[?&]debug\b/.test(location.search);
+      if (!routeList.length) return;
+
+      const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+
+      // Init calib
+      for (const route of routeList) {
+        if (typeof route.calib !== 'number' || !isFinite(route.calib)) route.calib = 1;
+      }
+
+      // Inner-link → routes map (voedingslinks uitgesloten via slice(1,-1))
+      const innerLinkRoutes = new Map(); // linkId → route[]
+      for (const route of routeList) {
+        const inner = route.linkIds.slice(1, -1);
+        for (const id of inner) {
+          if (!innerLinkRoutes.has(id)) innerLinkRoutes.set(id, []);
+          innerLinkRoutes.get(id).push(route);
+        }
+      }
+
+      // Doelwaarden F_L per gemeten inner-link (>0). linkFlowMap is richting-specifiek.
+      const targetF = new Map(); // linkId → F_L
+      for (const id of innerLinkRoutes.keys()) {
+        const f = linkFlowMap.get(id) ?? 0;
+        if (f > 0) targetF.set(id, f);
+      }
+      if (!targetF.size) return; // niets te kalibreren
+
+      // Cache: per route zijn gemeten inner-links (met F_L>0)
+      const routeMeasuredLinks = new Map(); // route → linkId[]
+      for (const route of routeList) {
+        const ids = [];
+        for (const id of route.linkIds.slice(1, -1)) {
+          if (targetF.has(id)) ids.push(id);
+        }
+        if (ids.length) routeMeasuredLinks.set(route, ids);
+      }
+
+      const baseProd = route => (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+
+      // Snapshot M_L vóór kalibratie (voor validatie)
+      const mBefore = new Map();
+      if (DBG) {
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let m = 0;
+          for (const r of routes) m += baseProd(r) * (r.calib ?? 1);
+          mBefore.set(id, m);
+        }
+      }
+
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      const K = 10;
+      for (let it = 0; it < K; it++) {
+        // Bereken huidige M_L
+        const M = new Map();
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let m = 0;
+          for (const r of routes) m += baseProd(r) * (r.calib ?? 1);
+          M.set(id, m);
+        }
+        // Per route: geomean(F_L/M_L) over gemeten inner-links, clamp per stap
+        for (const [route, ids] of routeMeasuredLinks) {
+          let logSum = 0, n = 0;
+          for (const id of ids) {
+            const m = M.get(id) ?? 0;
+            const f = targetF.get(id) ?? 0;
+            if (m > 0 && f > 0) { logSum += Math.log(f / m); n++; }
+          }
+          if (n === 0) continue;
+          const mr = clamp(Math.exp(logSum / n), 0.2, 5);
+          route.calib = clamp((route.calib ?? 1) * mr, 0.05, 20);
+        }
+      }
+
+      if (DBG) {
+        const rows = [];
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let mAfter = 0;
+          for (const r of routes) mAfter += baseProd(r) * (r.calib ?? 1);
+          const mB = mBefore.get(id) ?? 0;
+          rows.push({
+            linkId: id,
+            F_L: Math.round(targetF.get(id)),
+            M_L_voor: Math.round(mB),
+            M_L_na: Math.round(mAfter),
+            factor: mB > 0 ? +(mAfter / mB).toFixed(2) : null,
+          });
+        }
+        console.log(`[calibrateRouteProductions] daypart=${daypart}, links=${targetF.size}, routes=${routeMeasuredLinks.size}`);
+        console.table(rows);
+      }
+    }
+
     /** Aggregeer herkomst/bestemmings-flows voor het geselecteerde wegvak.
      *  Geeft { flowByFromZone, flowByToZone, pathData } terug. */
     function computeLinkRouteData() {
@@ -8885,16 +9002,6 @@
       _updateCounterPanel();
     }
 
-    /** Reset de telstanden van teller met het gegeven id. */
-    function _resetCounter(id) {
-      const ct = _counterList.find(c => c.id === id);
-      if (!ct) return;
-      ct.counts.forward  = { total: 0, CAR: 0, BIKE: 0, OTHER: 0 };
-      ct.counts.backward = { total: 0, CAR: 0, BIKE: 0, OTHER: 0 };
-      ct.simElapsed = 0;
-      _updateCounterPanel();
-    }
-
     /** Herrendert het teller-paneel op basis van _counterList. */
     function _updateCounterPanel() {
       const body  = document.getElementById('cpBody');
@@ -8917,6 +9024,17 @@
         return s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
       };
 
+      // Verwacht aantal passages gegeven de gemeten uurintensiteit en verstreken simtijd:
+      //   verwacht = flow[vtg/u] × simElapsed[s] / 3600
+      // Forward = eigen richting-specifieke link, backward = tegenrichting (-linkId).
+      const expected = (ct, dir) => {
+        const numId = Number(ct.linkId);
+        const key   = dir === 'forward' ? numId : -numId;
+        const flow  = linkFlowMap.get(key) ?? linkFlowMap.get(String(key)) ?? 0;
+        const s     = Math.max(0, ct.simElapsed ?? 0);
+        return flow * s / 3600;
+      };
+
       // Verwijder rijen voor tellers die niet meer bestaan
       body.querySelectorAll('.cp-counter').forEach(el => {
         if (!_counterList.find(c => c.id === +el.dataset.id)) el.remove();
@@ -8926,36 +9044,33 @@
         const existing = body.querySelector(`.cp-counter[data-id="${ct.id}"]`);
         const fwd = ct.counts.forward, bwd = ct.counts.backward;
         const fModes = modeStr(fwd), bModes = modeStr(bwd);
+        const expF = expected(ct, 'forward'), expB = expected(ct, 'backward');
         const html = `
           <div class="cp-counter-head">
             <span class="cp-link-label">wegvak ${ct.linkId}</span>
-            <button class="cp-ctrl cp-reset" data-reset="${ct.id}" title="Reset">↺</button>
-            <button class="cp-ctrl cp-remove" data-remove="${ct.id}" title="Verwijder">×</button>
           </div>
           <div class="cp-counter-rows">
             <div class="cp-row">
               <span class="cp-dir">→</span>
               <span class="cp-total">${fwd.total}</span>
+              <span class="cp-expected" title="verwacht o.b.v. gemeten uurintensiteit × verstreken simtijd">/ ~${Math.round(expF)}</span>
               <span class="cp-modes">${fModes}</span>
             </div>
             <div class="cp-row">
               <span class="cp-dir">←</span>
               <span class="cp-total">${bwd.total}</span>
+              <span class="cp-expected" title="verwacht o.b.v. gemeten uurintensiteit × verstreken simtijd">/ ~${Math.round(expB)}</span>
               <span class="cp-modes">${bModes}</span>
             </div>
-            <div class="cp-elapsed">${elapsed(ct)} verstreken (sim)</div>
+            <div class="cp-elapsed">${elapsed(ct)} verstreken (sim) · geteld / verwacht</div>
           </div>`;
         if (existing) {
           existing.innerHTML = html;
-          existing.querySelector('.cp-reset').onclick  = () => _resetCounter(ct.id);
-          existing.querySelector('.cp-remove').onclick = () => { _removeCounter(ct.id); updateOverlay(true); };
         } else {
           const el = document.createElement('div');
           el.className = 'cp-counter';
           el.dataset.id = ct.id;
           el.innerHTML  = html;
-          el.querySelector('.cp-reset').onclick  = () => _resetCounter(ct.id);
-          el.querySelector('.cp-remove').onclick = () => { _removeCounter(ct.id); updateOverlay(true); };
           body.appendChild(el);
         }
       }
@@ -11277,6 +11392,7 @@
         totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
         routeMode = routeList.length > 0;
         buildLinkRouteMap();
+        calibrateRouteProductions();  // herkalibreren tegen vers geladen netwerk/routes
         if (routeMode) {
           document.getElementById('whatifRcBtn').style.display = '';
           document.getElementById('odEditBtn').style.display   = '';
@@ -12478,6 +12594,7 @@
        document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b === btn));
        updateLegend();
        rebuildLinkFlowMap();
+       calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
        // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
        // in segment-modus bepaalt het de flow-drempel per segment.
        rebuildCars();
@@ -12665,6 +12782,8 @@
       counterPanel.classList.remove('cp-visible');
       _counterPlaceMode = false;
       counterBtn.classList.remove('active');
+      // Alle geplaatste tellers verwijderen bij het sluiten van het paneel
+      for (const ct of [..._counterList]) _removeCounter(ct.id);
       updateOverlay(true);
     }
 
