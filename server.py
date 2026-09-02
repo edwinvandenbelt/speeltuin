@@ -29,6 +29,8 @@ import os
 import queue
 import re
 import shutil
+import subprocess
+import sys
 import threading
 import urllib.request as _urllib_req
 import uuid
@@ -824,6 +826,14 @@ _sse_listeners: dict = {}
 _sse_listeners_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
+# Maquette-camera proces
+# ---------------------------------------------------------------------------
+
+_maquette_process: "subprocess.Popen | None" = None
+_maquette_process_lock = threading.Lock()
+_maquette_area_id: str = ""  # area_id waarvoor de camera loopt (voor heartbeat SSE)
+
+# ---------------------------------------------------------------------------
 # NDW-achtergronddownload (verkeersborden NL)
 # ---------------------------------------------------------------------------
 
@@ -1289,7 +1299,43 @@ def _post_process_mixed_output(
         c_src.rename(c_dst)
 
 
-def _find_local_file(filename: str):
+def _get_area_name(area_id: str) -> str:
+    """Geef de weergavenaam van een gebied terug.
+
+    Leest op volgorde: .area-name bestand → GeoJSON/parquet properties.name → area_id.
+    Dezelfde logica als _discover_areas_uncached.
+    """
+    src_dir = _find_area_dir(area_id)
+    area_name_path = src_dir / ".area-name"
+    if area_name_path.exists():
+        try:
+            name = area_name_path.read_text(encoding="utf-8").strip()
+            if name:
+                return name
+        except Exception:
+            pass
+    # Zoek een NETWORK-bestand en lees name uit de properties
+    for f in sorted(src_dir.glob(f"{area_id}-NETWORK-*")):
+        try:
+            if f.suffix.lower() in _GEOPARQUET_EXTS and _GEOPANDAS_AVAILABLE:
+                raw_meta = _pq.read_metadata(f).metadata
+                gmt = raw_meta.get(b"gmt_properties") or raw_meta.get(
+                    b"geojson_properties"
+                )
+                if gmt:
+                    props = json.loads(gmt.decode("utf-8"))
+                    name = props.get("name", "").strip()
+                    if name:
+                        return name
+            else:
+                data = _read_geodata(f)
+                name = (data.get("properties") or {}).get("name", "").strip()
+                if name:
+                    return name
+        except Exception:
+            continue
+    return area_id
+
     """Zoek bestand in DATA_DIR en STATIC_DIR; geeft None als niet gevonden."""
     for base in (DATA_DIR, STATIC_DIR):
         p = base / filename
@@ -1981,6 +2027,7 @@ def _execute_prepare(inputs: dict):
         mode_label=mode_label,
         name=name,
         out_dir=out_dir,
+        max_routes=5,
         catalog=inputs.get("catalog", "spectrum"),
         schema=inputs.get("schema", "2024_01"),
         refresh=bool(inputs.get("refresh")),
@@ -2024,6 +2071,16 @@ def _execute_adjust(inputs: dict):
         abort(400, 'Parameter "area_id" ontbreekt')
     if not isinstance(changes, list) or not changes:
         abort(400, 'Parameter "changes" moet een niet-lege array zijn')
+
+    # ── Voeg datum/tijd toe aan de scenarionaam ──────────────────────────────
+    # Haal de naam van het bronscenario op via de helper (zelfde logica als
+    # _discover_areas: .area-name → GeoJSON properties → area_id als fallback).
+    _src_base_name = _get_area_name(area_id)
+    # Knip een eventuele vorige tijdstempel af (patroon " — HH:MM") zodat bij
+    # geketende scenario's de naam niet steeds langer wordt.
+    _src_base_name = re.sub(r"\s*—\s*\d{2}:\d{2}$", "", _src_base_name)
+    _ts = _dt.datetime.now().strftime("%H:%M")
+    scenario_name = f"{scenario_name or _src_base_name} — {_ts}"
 
     # ── Splits link-inserties (geometry aanwezig, geen linkId) van reguliere wijzigingen
     link_inserts = [
@@ -2076,6 +2133,19 @@ def _execute_adjust(inputs: dict):
     (output_folder / ".src-area-id").write_text(area_id, encoding="utf-8")
     if scenario_name:
         (output_folder / ".area-name").write_text(scenario_name, encoding="utf-8")
+
+    # Neem de maquette-calibratie mee naar het nieuwe scenario. De fysieke
+    # opstelling (camera/beamer + kaartweergave) verandert niet door een
+    # afsluiting, dus de calibratie blijft geldig. Zonder deze kopie zou de
+    # camera bij het opnieuw aanzetten opnieuw willen calibreren omdat er in de
+    # nieuwe area-directory geen <new_area_id>-CALIBRATION.json staat.
+    try:
+        src_calib = _calibration_path(area_id)
+        if src_calib.is_file():
+            dst_calib = output_folder / f"{new_area_id}-CALIBRATION.json"
+            shutil.copyfile(src_calib, dst_calib)
+    except Exception as _e:
+        print(f"[maquette] calibratie kopiëren naar nieuw scenario mislukt: {_e}")
 
     changes_file = output_folder / f"{new_area_id}-changes.json"
     # Schrijf alleen reguliere wijzigingen (geen link-inserties) naar het changes-bestand
@@ -3511,6 +3581,248 @@ def sse_events():
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",  # Nginx: schakel buffering uit
         },
+    )
+
+
+@app.route("/maquette/preview", methods=["POST"])
+def maquette_preview():
+    """Ontvang een preview-melding van maquette_camera.py en stuur een SSE-event
+    naar alle actieve browsers zodat het wegvak kan oplichten vóór de berekening.
+
+    Body (JSON): { "area_id": "...", "link_ids": [123, -123] }
+    """
+    body = request.get_json(silent=True) or {}
+    link_ids = body.get("link_ids", [])
+    payload = json.dumps({"link_ids": link_ids})
+    with _sse_listeners_lock:
+        all_ids = list(_sse_listeners.keys())
+    for aid in all_ids:
+        _sse_put(aid, "link_preview", payload)
+    return jsonify({"ok": True})
+
+
+@app.route("/maquette/heartbeat", methods=["POST"])
+def maquette_heartbeat():
+    """Ontvang een heartbeat van maquette_camera.py en stuur het als SSE-event
+    naar alle actieve SSE-listeners, ongeacht area_id.
+
+    Camera-status is globaal (één camera per server), dus er is geen reden om
+    dit te beperken tot één area_id — zeker niet als de browser via een adjust
+    ondertussen een nieuw area_id heeft gekregen.
+
+    Body (JSON): { "area_id": "...", "active": true/false }
+    """
+    body = request.get_json(silent=True) or {}
+    area_id = body.get("area_id", "")
+    active = bool(body.get("active", True))
+    if not area_id:
+        return jsonify({"error": "area_id vereist"}), 400
+    payload = json.dumps({"active": active})
+    with _sse_listeners_lock:
+        all_ids = list(_sse_listeners.keys())
+    for aid in all_ids:
+        _sse_put(aid, "camera_status", payload)
+    return jsonify({"ok": True})
+
+
+def _calibration_path(area_id: str) -> Path:
+    """Pad naar het calibratiebestand voor een basis-area."""
+    return _find_area_dir(area_id) / f"{area_id}-CALIBRATION.json"
+
+
+@app.route("/maquette/calibration", methods=["GET"])
+def maquette_get_calibration():
+    """Geef de opgeslagen calibratie voor een area terug.
+
+    Query: ?area_id=...&mode=CAR
+    Antwoord: { "exists": bool, "calibration": {...} | null }
+    """
+    area_id = str(request.args.get("area_id", "")).strip()
+    if not area_id:
+        return jsonify({"error": "area_id vereist"}), 400
+    path = _calibration_path(area_id)
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return jsonify({"exists": True, "calibration": data})
+        except Exception as exc:
+            return jsonify({"exists": False, "calibration": None, "error": str(exc)})
+    return jsonify({"exists": False, "calibration": None})
+
+
+@app.route("/maquette/calibration", methods=["POST"])
+def maquette_post_calibration():
+    """Sla een calibratie op voor een area.
+
+    Body (JSON): { "area_id": "...", "calibration": {...} }
+    """
+    body = request.get_json(silent=True) or {}
+    area_id = str(body.get("area_id", "")).strip()
+    calibration = body.get("calibration")
+    if not area_id or not isinstance(calibration, dict):
+        return jsonify({"error": "area_id en calibration vereist"}), 400
+    path = _calibration_path(area_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(calibration, indent=2), encoding="utf-8")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True})
+
+
+@app.route("/maquette/calibration-progress", methods=["POST"])
+def maquette_calibration_progress():
+    """Relais calibratie-voortgang van maquette_camera.py naar de browsers via SSE.
+
+    Body (JSON): { "area_id": "...", "corner": "bl"|"tr", "state": "...", "seconds": 1.2 }
+    """
+    body = request.get_json(silent=True) or {}
+    payload = json.dumps(
+        {
+            "corner": body.get("corner", ""),
+            "state": body.get("state", ""),
+            "seconds": body.get("seconds", 0),
+        }
+    )
+    with _sse_listeners_lock:
+        all_ids = list(_sse_listeners.keys())
+    for aid in all_ids:
+        _sse_put(aid, "calibration_progress", payload)
+    return jsonify({"ok": True})
+
+
+def _stop_maquette_process() -> None:
+    """Beëindig het lopende maquette-camera proces (thread-safe)."""
+    global _maquette_process, _maquette_area_id
+    with _maquette_process_lock:
+        proc = _maquette_process
+        aid = _maquette_area_id
+        _maquette_process = None
+        _maquette_area_id = ""
+    if proc is not None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    if aid:
+        _sse_put(aid, "camera_status", json.dumps({"active": False}))
+
+
+@app.route("/maquette/start", methods=["POST"])
+def maquette_start():
+    """Start maquette_camera.py als subprocess met de viewport van de browser.
+
+    Body (JSON):
+    {
+      "area_id":   "...",
+      "mode":      "CAR",
+      "camera_id": -1,
+      "viewport": {
+        "west": 6.12, "north": 52.26, "east": 6.21, "south": 52.21,
+        "width": 1280, "height": 720
+      }
+    }
+    """
+    global _maquette_process, _maquette_area_id
+
+    body = request.get_json(silent=True) or {}
+    area_id = str(body.get("area_id", "")).strip()
+    mode = str(body.get("mode", "CAR")).upper()
+    camera_id = int(body.get("camera_id", -1))
+    vp = body.get("viewport") or {}
+    calibrate = bool(body.get("calibrate", False))
+    corners = body.get("corners") or {}
+
+    if not area_id:
+        return jsonify({"error": "area_id vereist"}), 400
+
+    required = ("west", "north", "east", "south", "width", "height")
+    if not all(k in vp for k in required):
+        return jsonify({"error": f"viewport vereist: {required}"}), 400
+
+    # Bij calibratie zijn de vier scherm-uitgelijnde geo-hoeken vereist; de
+    # camera koppelt de twee opgemeten pixelhoeken hieraan (bilineair). De
+    # --viewport-* grenzen dienen alleen als fallback/logging.
+    if calibrate:
+        if not all(k in corners for k in ("bl", "br", "tr", "tl")):
+            return jsonify(
+                {"error": "corners vereist bij calibratie: bl, br, tr, tl"}
+            ), 400
+
+    vp_geo = {
+        "west": vp["west"],
+        "north": vp["north"],
+        "east": vp["east"],
+        "south": vp["south"],
+    }
+
+    # Stop eventueel lopend proces
+    _stop_maquette_process()
+
+    script = Path(__file__).parent / "maquette_camera.py"
+    cmd = [
+        sys.executable,
+        str(script),
+        "--server",
+        f"http://localhost:{request.host.split(':')[-1]}",
+        "--area-id",
+        area_id,
+        "--mode",
+        mode,
+        "--camera-id",
+        str(camera_id),
+        "--viewport-west",
+        str(vp_geo["west"]),
+        "--viewport-north",
+        str(vp_geo["north"]),
+        "--viewport-east",
+        str(vp_geo["east"]),
+        "--viewport-south",
+        str(vp_geo["south"]),
+        "--width",
+        str(int(vp["width"])),
+        "--height",
+        str(int(vp["height"])),
+    ]
+
+    if calibrate:
+        cmd.append("--calibrate")
+        view = body.get("view")
+        if isinstance(view, dict):
+            cmd += ["--view-json", json.dumps(view)]
+        corners = body.get("corners")
+        if isinstance(corners, dict):
+            cmd += ["--corners-json", json.dumps(corners)]
+        pixels = body.get("pixels")
+        if isinstance(pixels, dict):
+            cmd += ["--pixels-json", json.dumps(pixels)]
+
+    print(f"[maquette] starten: {' '.join(cmd)}")
+    proc = subprocess.Popen(cmd, cwd=str(Path(__file__).parent))
+
+    with _maquette_process_lock:
+        _maquette_process = proc
+        _maquette_area_id = area_id
+
+    return jsonify({"ok": True, "pid": proc.pid})
+
+
+@app.route("/maquette/stop", methods=["POST"])
+def maquette_stop():
+    """Stop het lopende maquette-camera proces."""
+    _stop_maquette_process()
+    return jsonify({"ok": True})
+
+
+@app.route("/maquette/status")
+def maquette_status():
+    """Geeft de status van het maquette-camera proces terug."""
+    with _maquette_process_lock:
+        proc = _maquette_process
+        aid = _maquette_area_id
+    running = proc is not None and proc.poll() is None
+    return jsonify(
+        {"running": running, "area_id": aid, "pid": proc.pid if running else None}
     )
 
 

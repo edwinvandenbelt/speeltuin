@@ -1289,6 +1289,61 @@
     }
     body.follow-mode #followIndicator { display: block; }
 
+    #cameraIndicator {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      display: none;
+      align-items: center;
+      gap: 7px;
+      background: rgba(20,30,48,0.88);
+      border: 1px solid rgba(126,200,227,0.25);
+      border-radius: 20px;
+      padding: 5px 13px 5px 10px;
+      color: #7ec8e3;
+      font-size: 12px;
+      font-family: 'Segoe UI', sans-serif;
+      letter-spacing: .4px;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    /* #cameraIndicator wordt niet meer getoond — de toggle-knop vervangt dit */
+    #cameraIndicator .cam-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+      transition: background .4s;
+    }
+    #cameraIndicator.cam-active .cam-dot   { background: #4caf50; }
+    #cameraIndicator.cam-inactive .cam-dot { background: #e53935; }
+    #cameraToggleBtn {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      display: none;
+      align-items: center;
+      gap: 7px;
+      background: rgba(20,30,48,0.88);
+      border: 1px solid rgba(126,200,227,0.35);
+      border-radius: 20px;
+      padding: 5px 14px 5px 11px;
+      color: #7ec8e3;
+      font-size: 12px;
+      font-family: 'Segoe UI', sans-serif;
+      letter-spacing: .4px;
+      cursor: pointer;
+      z-index: 9999;
+      user-select: none;
+      transition: background .2s, border-color .2s;
+    }
+    #cameraToggleBtn:hover { background: rgba(40,60,90,0.92); border-color: rgba(126,200,227,.7); }
+    body.maquette-mode #cameraToggleBtn { display: flex; }
+    #cameraToggleBtn .cam-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #e53935; flex-shrink: 0; transition: background .4s;
+    }
+    #cameraToggleBtn.cam-on .cam-dot { background: #4caf50; }
+
     body.maquette-mode,
     body.maquette-mode * { cursor: none !important; }
     body.maquette-mode::after {
@@ -1311,6 +1366,14 @@
     <p id="loaderMsg">GeoJSON laden…</p>
   </div>
   <div id="followIndicator">Meekijkmodus — aanpassingen worden automatisch geladen</div>
+  <div id="cameraIndicator" class="cam-inactive">
+    <span class="cam-dot"></span>
+    <span id="cameraIndicatorLabel">Wachten op camera…</span>
+  </div>
+  <button id="cameraToggleBtn" title="Camera aan/uit zetten">
+    <span class="cam-dot"></span>
+    <span id="cameraToggleLabel">Camera aan</span>
+  </button>
 
   <div id="calcOverlay">
     <div class="spinner"></div>
@@ -2865,6 +2928,7 @@
   const _params = new URLSearchParams(window.location.search);
   let AREA_ID = _params.get('areaId');
   const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
+  let _networkFeatures = []; // gevuld zodra netwerk geladen is; gebruikt door maquette highlight
 
   // ── maquette: combineert hide-panels + blok-cursor + verberg gebouwen (?maquette=true) ──
   const _MAQUETTE = _params.get('maquette') === 'true';
@@ -2879,6 +2943,19 @@
   // ── follow: herlaad in-place zodra een adjust klaar is (?follow=true) ────
   const _FOLLOW = _params.get('follow') === 'true';
   if (_FOLLOW) document.body.classList.add('follow-mode');
+
+  // Gedeelde calibratie-controller (ingevuld door de camera-toggle IIFE,
+  // aangeroepen door de calibration_progress SSE-handler in _startFollowMode).
+  let _calibController = null;
+
+  // Referentie naar de echte MapLibre-instantie (toegewezen zodra de kaart is
+  // aangemaakt). Nodig omdat `map` in deze buitenste scope naar het DOM-element
+  // <div id="map"> verwijst i.p.v. de kaart.
+  let _maquetteMap = null;
+
+  // Hook waarmee het map-load blok de opgeslagen calibratie (kaartweergave +
+  // getekend vierkant) kan herstellen. Toegewezen binnen de camera-toggle IIFE.
+  let _maquetteRestore = null;
 
   // Late-bound referentie naar loadAdjustedResult (gedefinieerd verderop in een andere scope).
   // Wordt ingevuld zodra loadAdjustedResult beschikbaar is.
@@ -2902,6 +2979,8 @@
       try {
         const { job_id } = JSON.parse(evt.data);
         console.log(`[follow] berekening gestart, job=${job_id}`);
+        // Highlight wissen zodra de berekening daadwerkelijk begint
+        try { _maquetteMap?.getSource('maquette-highlight')?.setData({ type: 'FeatureCollection', features: [] }); } catch (_) {}
         const ind = document.getElementById('followIndicator');
         if (ind) ind.textContent = 'Berekening loopt\u2026';
 
@@ -2942,7 +3021,366 @@
     es.onerror = (e) => {
       console.warn('[follow] SSE verbindingsfout, herverbinden\u2026', e);
     };
+
+    // ── camera_status: heartbeat van maquette_camera.py ─────────────────────
+    let _cameraHeartbeatTimer = null;
+    const _camInd = document.getElementById('cameraIndicator');
+    const _camLbl = document.getElementById('cameraIndicatorLabel');
+    const _CAMERA_TIMEOUT_MS = 12000; // 2× heartbeat-interval
+
+    function _setCameraActive(active) {
+      if (!_camInd) return;
+      _camInd.classList.toggle('cam-active',   active);
+      _camInd.classList.toggle('cam-inactive', !active);
+      if (_camLbl) _camLbl.textContent = active ? 'Camera actief' : 'Camera inactief';
+    }
+
+    function _resetCameraTimeout() {
+      clearTimeout(_cameraHeartbeatTimer);
+      _cameraHeartbeatTimer = setTimeout(() => _setCameraActive(false), _CAMERA_TIMEOUT_MS);
+    }
+
+    es.addEventListener('camera_status', (evt) => {
+      try {
+        const { active } = JSON.parse(evt.data);
+        _setCameraActive(active);
+        if (active) _resetCameraTimeout();
+        else {
+          clearTimeout(_cameraHeartbeatTimer);
+          // Camera is (zichzelf) gestopt → knopstatus terugzetten naar "uit".
+          document.dispatchEvent(new Event('camera_inactive_event'));
+        }
+      } catch (e) {
+        console.warn('[follow] camera_status parse fout:', e);
+      }
+    });
+
+    // ── calibration_progress: voortgang tijdens hoek-opmeting ────────────────
+    es.addEventListener('calibration_progress', (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (_calibController) _calibController.onProgress(data);
+      } catch (e) {
+        console.warn('[follow] calibration_progress parse fout:', e);
+      }
+    });
+
+    // ── link_preview: licht het gedetecteerde wegvak op vóór de berekening ───
+    es.addEventListener('link_preview', (evt) => {
+      try {
+        const { link_ids } = JSON.parse(evt.data);
+        const src = _maquetteMap?.getSource('maquette-highlight');
+        if (!src) return;
+        if (!link_ids || link_ids.length === 0) {
+          src.setData({ type: 'FeatureCollection', features: [] });
+          return;
+        }
+        const absIds = new Set(link_ids.map(id => Math.abs(id)));
+        const matched = _networkFeatures.filter(
+          f => absIds.has(Math.abs(f.properties?.linkId ?? NaN))
+        );
+        src.setData({ type: 'FeatureCollection', features: matched });
+      } catch (e) {
+        console.warn('[follow] link_preview parse fout:', e);
+      }
+    });
   }
+
+  // ── Camera toggle (alleen in ?maquette=true, niet in follow-modus) ────────
+  (function () {
+    if (!_MAQUETTE) return;
+
+    const btn   = document.getElementById('cameraToggleBtn');
+    const label = document.getElementById('cameraToggleLabel');
+    if (!btn) return;
+
+    let _cameraOn = false;
+    const _cameraId = parseInt(_params.get('cameraId') ?? '-1', 10);
+
+    function _getViewport() {
+      const meta = document.getElementById('map-viewport');
+      if (!meta) return null;
+      const west   = parseFloat(meta.dataset.west);
+      const north  = parseFloat(meta.dataset.north);
+      const east   = parseFloat(meta.dataset.east);
+      const south  = parseFloat(meta.dataset.south);
+      if ([west, north, east, south].some(isNaN)) return null;
+      return { west, north, east, south,
+               width:  window.innerWidth,
+               height: window.innerHeight };
+    }
+
+    async function _startCamera() {
+      const vp = _getViewport();
+      if (!vp) { alert('Viewport nog niet beschikbaar — wacht tot de kaart geladen is.'); return; }
+      if (!AREA_ID)  { alert('Geen area_id bekend — laad eerst een scenario.'); return; }
+
+      // Her-calibratie afdwingen via ?recalibrate=true
+      const _forceRecalib = _params.get('recalibrate') === 'true';
+
+      label.textContent = 'Controleren…';
+      btn.disabled = true;
+
+      let hasCalib = false;
+      if (!_forceRecalib) {
+        try {
+          const r = await fetch(`/maquette/calibration?area_id=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`);
+          const d = await r.json();
+          hasCalib = !!d.exists;
+          if (hasCalib) _lastCalib = d.calibration || null;
+        } catch (e) {
+          console.warn('[maquette] calibratie-check mislukt:', e);
+        }
+      }
+
+      btn.disabled = false;
+      if (hasCalib) {
+        _applyCalibration(_lastCalib);
+        _launchCamera(false, null, vp);
+      } else {
+        _beginCalibration(vp);
+      }
+    }
+
+    // ── Calibratie-tekenmodus: twee klikken → rechthoek → bounds ─────────────
+    let _calibDrawing = false;
+    let _calibCorner1 = null;
+    let _calibViewport = null;
+    let _calibView = null;   // vastgelegde kaartweergave op moment van intekenen
+    let _calibPixels = null; // scherm-pixelhoeken (bl,tr) van het getekende vierkant
+    let _lastCalib = null;   // laatst opgehaalde/toegepaste calibratie
+
+    // Leg de huidige kaartweergave vast (inclusief rotatie). Het scherm-
+    // uitgelijnde vierkant is een geroteerde vierhoek in geo-ruimte en oogt
+    // alleen rechtop bij exact deze bearing/pitch — daarom slaan we die op.
+    function _captureView() {
+      const c = _maquetteMap.getCenter();
+      return {
+        center: [c.lng, c.lat],
+        zoom: _maquetteMap.getZoom(),
+        bearing: _maquetteMap.getBearing(),
+        pitch: _maquetteMap.getPitch(),
+      };
+    }
+
+    // Bouw uit twee scherm-pixelhoeken een scherm-uitgelijnde rechthoek en
+    // unproject de 4 hoeken naar geo. Levert geo-hoeken {bl,br,tr,tl} +
+    // een polygon-feature (die dankzij de scherm-uitlijning rechtop oogt).
+    function _cornersFromScreen(p1, p2) {
+      const xmin = Math.min(p1[0], p2[0]), xmax = Math.max(p1[0], p2[0]);
+      const ymin = Math.min(p1[1], p2[1]), ymax = Math.max(p1[1], p2[1]);
+      const un = (x, y) => { const ll = _maquetteMap.unproject([x, y]); return [ll.lng, ll.lat]; };
+      const bl = un(xmin, ymax);   // linksonder (scherm)
+      const br = un(xmax, ymax);   // rechtsonder
+      const tr = un(xmax, ymin);   // rechtsboven
+      const tl = un(xmin, ymin);   // linksboven
+      return {
+        corners: { bl, br, tr, tl },
+        // Scherm-pixelposities van de twee opgemeten hoeken (container-relatief).
+        // In virtuele cursor-modus == cursorpixel-ruimte, dus direct bruikbaar.
+        pixels: { bl: [xmin, ymax], tr: [xmax, ymin] },
+        feature: {
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [[bl, br, tr, tl, bl]] },
+          properties: {},
+        },
+      };
+    }
+
+    // Polygon-feature uit opgeslagen geo-hoeken (voor herstel).
+    function _rectFromCorners(c) {
+      return {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [[c.bl, c.br, c.tr, c.tl, c.bl]] },
+        properties: {},
+      };
+    }
+
+    // Herstel kaart + getekend vierkant exact zoals na de calibratie.
+    function _applyCalibration(calib) {
+      if (!calib) return;
+      const v = calib.view;
+      if (v && Array.isArray(v.center)) {
+        _maquetteMap.jumpTo({
+          center: v.center,
+          zoom: v.zoom,
+          bearing: v.bearing || 0,
+          pitch: v.pitch || 0,
+        });
+      }
+      const c = calib.corners;
+      if (c && c.bl && c.br && c.tr && c.tl) {
+        _setRectData([_rectFromCorners(c)]);
+      }
+    }
+
+    // Haal opgeslagen calibratie op en herstel kaart + vierkant (bij page-load).
+    _maquetteRestore = async function () {
+      if (!AREA_ID) return;
+      if (_params.get('recalibrate') === 'true') return;
+      try {
+        const r = await fetch(`/maquette/calibration?area_id=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`);
+        const d = await r.json();
+        if (d.exists && d.calibration) {
+          _lastCalib = d.calibration;
+          _applyCalibration(_lastCalib);
+        }
+      } catch (e) {
+        console.warn('[maquette] calibratie-herstel mislukt:', e);
+      }
+    };
+
+    function _setRectData(features) {
+      const src = _maquetteMap.getSource('maquette-calib-rect');
+      if (src) src.setData({ type: 'FeatureCollection', features });
+    }
+    function _setDotAt(lon, lat) {
+      const src = _maquetteMap.getSource('maquette-calib-dot');
+      if (src) src.setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} }],
+      });
+    }
+    function _clearDot() {
+      const src = _maquetteMap.getSource('maquette-calib-dot');
+      if (src) src.setData({ type: 'FeatureCollection', features: [] });
+    }
+
+    function _beginCalibration(vp) {
+      _calibViewport = vp;
+      _calibDrawing = true;
+      _calibCorner1 = null;
+      _setRectData([]);
+      _clearDot();
+      // De kaartrotatie van de gebruiker blijft behouden; het vierkant wordt
+      // scherm-uitgelijnd getekend (rechtop t.o.v. de browser).
+      _maquetteMap.getCanvas().style.cursor = 'crosshair';
+      label.textContent = 'Calibreren — teken vierkant (2 klikken)';
+    }
+
+    // Capture-fase klik: hoekpunten van het calibratie-vierkant (scherm-pixels).
+    document.addEventListener('click', e => {
+      if (!_calibDrawing) return;
+      if (e.target !== _maquetteMap.getCanvas()) return;
+      const rect = _maquetteMap.getContainer().getBoundingClientRect();
+      const px = [e.clientX - rect.left, e.clientY - rect.top];
+      if (!_calibCorner1) {
+        _calibCorner1 = px;
+        label.textContent = 'Calibreren — klik tegenoverliggende hoek';
+      } else {
+        const { corners, pixels, feature } = _cornersFromScreen(_calibCorner1, px);
+        _setRectData([feature]);
+        _calibDrawing = false;
+        _calibView = _captureView();
+        _calibPixels = pixels;
+        _maquetteMap.getCanvas().style.cursor = '';
+        _launchCamera(true, corners, _calibViewport);
+      }
+      e.stopImmediatePropagation();
+    }, true);
+
+    async function _launchCamera(calibrate, corners, vp) {
+      label.textContent = 'Bezig…';
+      btn.disabled = true;
+
+      // Zowel fysieke camera (>=0) als virtuele cursor-modus (-1) meten twee
+      // hoeken op met het blokje/cursor; de bilineaire mapping is dan
+      // self-consistent met de runtime cursor-uitlezing.
+
+      // Calibratie-controller registreren zodat SSE-voortgang de stip verplaatst
+      // (twee-stippen meetflow, beide modi).
+      if (calibrate && corners) {
+        _calibController = {
+          corners,
+          onProgress({ corner, state, seconds }) {
+            if (corner === 'bl') {
+              _setDotAt(corners.bl[0], corners.bl[1]);
+              if (state === 'counting') label.textContent = `Leg blokje linksonder — ${Math.ceil(3 - (seconds || 0))}s`;
+              else if (state === 'waiting') label.textContent = 'Leg blokje linksonder (3s stil)';
+              else if (state === 'recorded') label.textContent = 'Linksonder vastgelegd — beweeg naar rechtsboven';
+            } else if (corner === 'tr') {
+              _setDotAt(corners.tr[0], corners.tr[1]);
+              if (state === 'counting') label.textContent = `Leg blokje rechtsboven — ${Math.ceil(3 - (seconds || 0))}s`;
+              else if (state === 'waiting') label.textContent = 'Leg blokje rechtsboven (3s stil)';
+              else if (state === 'done' || state === 'recorded') {
+                _clearDot();
+                label.textContent = 'Camera uit';
+                _calibController = null;
+              }
+            }
+          },
+        };
+      }
+
+      try {
+        const body = {
+          area_id:   AREA_ID,
+          mode:      MODE,
+          camera_id: _cameraId,
+          viewport:  vp,
+        };
+        if (calibrate && corners) { body.calibrate = true; body.corners = corners; body.view = _calibView; body.pixels = _calibPixels; }
+
+        const resp = await fetch('/maquette/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || resp.statusText);
+        _cameraOn = true;
+        btn.classList.add('cam-on');
+        if (calibrate && corners) {
+          _setDotAt(corners.bl[0], corners.bl[1]);
+          label.textContent = 'Leg blokje linksonder (3s stil)';
+        } else {
+          label.textContent = 'Camera uit';
+        }
+        console.log('[maquette] camera gestart, pid=', data.pid);
+      } catch (e) {
+        console.error('[maquette] start mislukt:', e);
+        _calibController = null;
+        _clearDot();
+        _setRectData([]);
+        label.textContent = 'Camera aan';
+        alert('Camera starten mislukt: ' + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function _stopCamera() {
+      label.textContent = 'Bezig…';
+      btn.disabled = true;
+      _calibDrawing = false;
+      _calibController = null;
+      _maquetteMap.getCanvas().style.cursor = '';
+      _clearDot();
+      _setRectData([]);
+      try {
+        await fetch('/maquette/stop', { method: 'POST' });
+      } catch (e) {
+        console.warn('[maquette] stop fout:', e);
+      }
+      _cameraOn = false;
+      btn.classList.remove('cam-on');
+      label.textContent = 'Camera aan';
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', () => {
+      if (_cameraOn) _stopCamera(); else _startCamera();
+    });
+
+    // Herstel knopstatus als SSE meldt dat camera gestopt is
+    document.addEventListener('camera_inactive_event', () => {
+      if (_cameraOn) {
+        _cameraOn = false;
+        btn.classList.remove('cam-on');
+        label.textContent = 'Camera aan';
+      }
+    });
+  })();
 
 
   // ── bbox-param: begrenzing bij opstarten (?bbox=minLon,minLat,maxLon,maxLat in WGS84) ─
@@ -3128,6 +3566,17 @@
                 `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}&follow=true`;
             };
 
+            // Item: Maquette (opent kaart in maquette-modus met camera-koppeling)
+            const maquetteItem = mkItem('Maquette',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/><circle cx="12" cy="14" r="2.5"/></svg>',
+              false, false);
+            maquetteItem.onclick = () => {
+              dropdown.style.display = 'none';
+              window.location.href =
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}` +
+                `&maquette=true&follow=true&cameraId=-1`;
+            };
+
             // Item: Upload GMT
             const gmtUploaded = !!area.gmtUploaded;
             const gmtItem = mkItem(
@@ -3219,6 +3668,7 @@
             };
 
             dropdown.appendChild(followItem);
+            dropdown.appendChild(maquetteItem);
             dropdown.appendChild(gmtItem);
             dropdown.appendChild(delItem);
 
@@ -4188,11 +4638,17 @@
       style:     'https://tiles.openfreemap.org/styles/liberty',
       center:    CENTER,
       zoom:      14.5,
-      pitch:     _fitParam ? 0 : 58,
-      bearing:   _fitParam ? 0 : -10,
+      pitch:     (_fitParam || _MAQUETTE) ? 0 : 58,
+      bearing:   (_fitParam || _MAQUETTE) ? 0 : -10,
       antialias: true,
       maxPitch:  85,
     });
+
+    // Deel de MapLibre-instantie met de closures in de buitenste scope
+    // (_startFollowMode, camera-toggle IIFE). Zonder dit verwijst `map` daar
+    // naar het <div id="map">-element (globale named-access), dat geen
+    // getSource/unproject heeft.
+    _maquetteMap = map;
 
     // fitBounds en lucht worden ingesteld zodra zowel kaart als areaBounds gereed zijn
     let _mapLoadFired  = false;
@@ -4231,7 +4687,7 @@
         }
       } else {
         const bounds = [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]];
-        map.fitBounds(bounds, { padding: 60, pitch: 58, bearing: -10, duration: 0 });
+        map.fitBounds(bounds, { padding: 60, pitch: _MAQUETTE ? 0 : 58, bearing: _MAQUETTE ? 0 : -10, duration: 0 });
       }
       updateSunLight();
     }
@@ -4239,6 +4695,59 @@
     map.once('load', () => {
       _mapLoadFired = true;
       if (_areaBoundsSet) _fitAndSky();
+
+      // ── Maquette highlight-laag (oplichten bij link_preview SSE) ───────────
+      if (_MAQUETTE) {
+        map.addSource('maquette-highlight', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'maquette-highlight-line',
+          type: 'line',
+          source: 'maquette-highlight',
+          paint: {
+            'line-color': '#ff6600',
+            'line-width': 8,
+            'line-opacity': 0.9,
+          },
+        });
+
+        // ── Calibratie: getekende rechthoek + rode hoek-stip ─────────────────
+        map.addSource('maquette-calib-rect', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'maquette-calib-rect-fill',
+          type: 'fill',
+          source: 'maquette-calib-rect',
+          paint: { 'fill-color': '#00e0ff', 'fill-opacity': 0.15 },
+        });
+        map.addLayer({
+          id: 'maquette-calib-rect-line',
+          type: 'line',
+          source: 'maquette-calib-rect',
+          paint: { 'line-color': '#00e0ff', 'line-width': 2 },
+        });
+        map.addSource('maquette-calib-dot', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'maquette-calib-dot',
+          type: 'circle',
+          source: 'maquette-calib-dot',
+          paint: {
+            'circle-radius': 16,
+            'circle-color': '#ff2020',
+            'circle-stroke-width': 4,
+            'circle-stroke-color': '#ffffff',
+          },
+        });
+        // Herstel opgeslagen calibratie (kaartweergave + getekend vierkant).
+        if (typeof _maquetteRestore === 'function') _maquetteRestore();
+      }
 
       // ── viewport-bounds meta bijwerken na elke kaartbeweging ───────────────
       const _updateViewportMeta = () => {
@@ -4255,6 +4764,9 @@
         meta.dataset.north = b.getNorth().toFixed(8);
       };
       map.on('moveend', _updateViewportMeta);
+      // Direct één keer vullen zodat de viewport ook zonder kaartbeweging
+      // beschikbaar is (bijv. voor de maquette-camera).
+      _updateViewportMeta();
 
       // ── Polygoon of bbox-rechthoek tekenen ─────────────────────────────────
       if (_polygonParam || _bboxParam) {
@@ -4286,9 +4798,10 @@
     if (!Array.isArray(geojson?.features))
       throw new Error(`Ongeldig netwerkbestand — geen GeoJSON FeatureCollection ontvangen.`);
 
-    const features = geojson.features.filter(
-      f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
-    );
+     const features = geojson.features.filter(
+       f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+     );
+     _networkFeatures = features; // beschikbaar stellen voor maquette highlight
 
     const flowValues = features.map(f => f.properties.flow);
     const minFlow    = Math.min(...flowValues);
@@ -10670,6 +11183,7 @@
       const newFeatures = newGeojson.features.filter(
         f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
       );
+      _networkFeatures = newFeatures; // highlight-lookup bijwerken
 
       // Vervang segmenten in-place
       const newFlows   = newFeatures.map(f => f.properties.flow);
@@ -10810,13 +11324,33 @@
       AREA_ID = newAreaId;
       _historicalChanges = [];   // invalideer bij scenario-advance
 
-      // URL bijwerken zonder pagina-reload (voor bookmarken / delen)
+      // URL bijwerken met pushState zodat de browser-history gevuld wordt
+      // en de gebruiker met Backspace (of de Terug-knop) terug kan navigeren.
       const url = new URL(window.location.href);
       url.searchParams.set('areaId', newAreaId);
-      window.history.replaceState({}, '', url.toString());
+      window.history.pushState({ areaId: newAreaId }, '', url.toString());
     }
     // Stel de late-bound referentie in zodat de meekijkmodus deze functie kan aanroepen.
     _followLoadFn = loadAdjustedResult;
+
+    // ── Browser-history: popstate (Terug-knop / Backspace) ──────────────────
+    window.addEventListener('popstate', async (evt) => {
+      const prevId = evt.state?.areaId || new URLSearchParams(window.location.search).get('areaId');
+      if (prevId && prevId !== AREA_ID) {
+        AREA_ID = prevId;
+        _historicalChanges = [];
+        await loadAdjustedResult(prevId, null);
+      }
+    });
+
+    // Backspace → history.back(), maar niet als focus in een tekstveld zit
+    window.addEventListener('keydown', (evt) => {
+      if (evt.key !== 'Backspace') return;
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
+      evt.preventDefault();
+      history.back();
+    });
 
     // ── COMPARE laag ────────────────────────────────────────────────────────
 
