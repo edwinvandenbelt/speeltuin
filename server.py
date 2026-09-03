@@ -518,6 +518,10 @@ _COLLECTIONS = {
         "title": "Verkeersborden",
         "description": "Verkeersborden in het studiegebied (NDW voor NL, OSM Overpass voor buitenland, gecached).",
     },
+    "traffic_assets": {
+        "title": "Verkeersobjecten",
+        "description": "Verkeersobjecten (borden, verkeerslichten, e.a.) uit het geprepareerde TRAFFIC-ASSETS bestand; ondersteunt bbox-filtering.",
+    },
     "changes": {
         "title": "Wijzigingen",
         "description": "Gecumuleerde wijzigingen in de scenario-keten voor een gebied.",
@@ -3237,6 +3241,51 @@ def ogc_collection_items(collection_id):
             pass
 
         return _ogc_items_response("buildings", data, self_url)
+
+    # ── traffic_assets: verkeersobjecten uit geprepareerd TRAFFIC-ASSETS bestand ──
+    if collection_id == "traffic_assets":
+        area_id = request.args.get("areaId", "").strip()
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, "Ongeldige parameter: areaId")
+
+        area_dir = _find_area_dir(area_id)
+        path = _find_data_file(area_dir, f"{area_id}-TRAFFIC-ASSETS")
+        if path is None:
+            abort(404, "Geen TRAFFIC-ASSETS bestand voor dit gebied")
+
+        # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
+        bbox = None
+        bbox_arg = request.args.get("bbox", "").strip()
+        if bbox_arg:
+            parts = bbox_arg.split(",")
+            if len(parts) != 4:
+                abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
+            try:
+                bbox = [float(p) for p in parts]
+            except ValueError:
+                abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
+
+        try:
+            data = _read_geodata(path)
+        except Exception as exc:
+            abort(500, f"Fout bij lezen TRAFFIC-ASSETS: {exc}")
+
+        if bbox is not None:
+            min_lon, min_lat, max_lon, max_lat = bbox
+            feats = []
+            for feat in data.get("features", []):
+                geom = feat.get("geometry") or {}
+                coords = geom.get("coordinates")
+                if not coords or len(coords) < 2:
+                    continue
+                lon, lat = coords[0], coords[1]
+                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+                    feats.append(feat)
+            data = {**data, "features": feats}
+
+        return _ogc_items_response("traffic_assets", data, self_url)
 
     # ── traffic_signs: verkeersborden, gecached per gebied ────────────────
     if collection_id == "traffic_signs":

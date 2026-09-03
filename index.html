@@ -1686,8 +1686,8 @@
           <span data-i18n="settingsDebugLabel">Debug-uitvoer</span>
         </label>
         <label class="sp-row">
-          <input type="checkbox" id="spTrafficSigns" checked>
-          <span data-i18n="settingsTrafficSignsLabel">Verkeersborden</span>
+          <input type="checkbox" id="spTrafficAssets" checked>
+          <span data-i18n="settingsTrafficAssetsLabel">Verkeersobjecten</span>
         </label>
       </div>
       <div class="sp-section">
@@ -2229,7 +2229,7 @@
       fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
       settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
       settingsBasemapLabel:'Ondergrond', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Geen',
-      settingsTrafficSignsLabel:'Verkeersborden',
+      settingsTrafficAssetsLabel:'Verkeersobjecten',
       spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
       timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
@@ -2473,7 +2473,7 @@
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
       settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
       settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'None',
-      settingsTrafficSignsLabel:'Traffic signs',
+      settingsTrafficAssetsLabel:'Traffic assets',
       spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
       metricTitle:'Color metric',
       timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
@@ -2706,7 +2706,7 @@
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
       settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
       settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Ei mitään',
-      settingsTrafficSignsLabel:'Liikennemerkit',
+      settingsTrafficAssetsLabel:'Liikenneobjektit',
       spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
       timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
@@ -4131,7 +4131,7 @@
 
   // ── Applicatielogica ──────────────────────────────────────────────────────
 
-  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer, ScatterplotLayer, PathLayer } = deck;
+  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer, ScatterplotLayer, PathLayer, IconLayer } = deck;
 
   // ── Mesh-hulpfuncties ────────────────────────────────────────────────────────
 
@@ -4966,8 +4966,11 @@
     let _buildingsGeoJson = null;
     let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
     let _trafficSignsGeoJson = null;
-    let _trafficSignsVisible = localStorage.getItem('trafficSignsVisible') !== 'false';
-    let _trafficSignsReady   = false;  // laag is eenmalig opgezet
+    let _trafficAssetsVisible = localStorage.getItem('trafficAssetsVisible') !== 'false';
+    let _trafficSignsReady   = false;  // fallback-laag (NDW/Overpass) is eenmalig opgezet
+    let _trafficAssetsNoFile = false;  // TRAFFIC-ASSETS bestand ontbreekt → val terug op NDW
+    let _signsFallbackFetching = false;
+    let _lastAssetBbox       = null;   // laatst geladen bbox [w,s,e,n] (voorkomt overbodige requests)
     let _zonesForJoin     = null;   // zone-features beschikbaar voor ruimtelijke koppeling
     let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
     let _currentPurpose   = 'all';  // actief geselecteerd motief
@@ -5698,27 +5701,62 @@
       }
     }
 
-    // ─── Verkeersborden-ondersteuning ─────────────────────────────────────────
+    // ─── Verkeersobjecten-ondersteuning (deck.gl) ─────────────────────────────
+    //
+    // Renderprincipe: elk object wordt als één deck.gl-IconLayer-billboard getoond
+    // (net als de auto's), zodat het VOLLEDIG perspectivisch meeschaalt met de
+    // 3D-scène. MapLibre-symboollagen klemmen de perspectief-ratio af bij de
+    // horizon → knik/verspringing t.o.v. de auto's; deck.gl doet dat niet.
+    //
+    // Elk billboard is een COMPOSIET-sprite (paal + plaat/behuizing in één canvas):
+    //   • bord    → paal + bordplaat (voorkant) of grijs silhouet (achterkant);
+    //   • licht   → paal + lampenkast;
+    //   • schuin  → alleen de paal.
+    // `sizeUnits:'meters'` + `getSize` = totale objecthoogte in meters, anchor
+    // onderaan → de voet staat op de grond en de hoogte is 1:1 in wereldmeters.
 
-    // Teken een metalen paal in de canvas-context, startend op y=signH.
-    function _drawSignPole(ctx, signH, poleH, canvasW) {
-      const cx = Math.round(canvasW / 2);
-      const pw = Math.max(3, Math.round(canvasW * 0.09));
-      ctx.fillStyle = '#9e9e9e';
-      ctx.fillRect(cx - Math.round(pw / 2), signH, pw, poleH);
-      ctx.fillStyle = '#bdbdbd';
-      ctx.fillRect(cx - Math.round(pw / 2), signH, Math.max(1, Math.round(pw / 4)), poleH);
+    const _TA_PPM        = 40;    // sprite-pixels per meter (logisch, native)
+    const _TA_RS         = 2;     // render-supersampling voor scherpte
+    const _TA_POLE_H_M   = 1.8;   // paalhoogte (m)
+    const _TA_POLE_W_M   = 0.12;  // paaldikte (m)
+    const _TA_SIGN_M     = 0.75;  // bordplaat-diameter (m)
+    const _TA_SIGNAL_H_M = 0.90;  // lampenkast-hoogte (m)
+    const _TA_SIGNAL_W_M = 0.32;  // lampenkast-breedte (m)
+    const _TA_MINZOOM    = 16;
+    const _TA_SIGN_TOTAL_M   = _TA_POLE_H_M + _TA_SIGN_M;     // bord: paal+plaat
+    const _TA_SIGNAL_TOTAL_M = _TA_POLE_H_M + _TA_SIGNAL_H_M; // licht: paal+kast
+
+    // ── Canvas-tekenaars (leveren een <canvas>, niet ImageData) ───────────────
+
+    // Rechtopstaande metalen paal (alléén de paal).
+    function _taPoleCanvas() {
+      const w = Math.round(Math.max(_TA_POLE_W_M * _TA_PPM + 1, 6)) * _TA_RS;
+      const h = Math.round(_TA_POLE_H_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d');
+      _taDrawPole(ctx, w, 0, h);
+      return cv;
     }
 
-    // Canvas-gebaseerd fallback-icoon per RVV-categorie (48×84 px: 48 bord + 36 paal)
-    function _makeSignFallbackIcon(rvvCode) {
-      const S = 48, POLE_H = 36;
+    // Teken een paal in `ctx`, gecentreerd op breedte `w`, van y=`top` tot y=`bottom`.
+    function _taDrawPole(ctx, w, top, bottom) {
+      const pw = Math.max(3, Math.round(_TA_POLE_W_M * _TA_PPM * _TA_RS));
+      const cx = Math.round(w / 2);
+      ctx.fillStyle = '#9e9e9e';
+      ctx.fillRect(cx - Math.round(pw / 2), top, pw, bottom - top);
+      ctx.fillStyle = '#bdbdbd';   // hooglicht-strook
+      ctx.fillRect(cx - Math.round(pw / 2), top, Math.max(1, Math.round(pw / 4)), bottom - top);
+    }
+
+    // Canvas-gebaseerd fallback-bordplaat (alléén de plaat, vierkant S×S).
+    function _taSignPlateCanvas(rvvCode) {
+      const S = Math.round(_TA_SIGN_M * _TA_PPM) * _TA_RS;
       const cv = document.createElement('canvas');
-      cv.width = S; cv.height = S + POLE_H;
+      cv.width = S; cv.height = S;
       const ctx = cv.getContext('2d');
       const cat = (rvvCode || '?').charAt(0).toUpperCase();
-      ctx.clearRect(0, 0, S, S + POLE_H);
-      // Hulpfunctie afgeronde rechthoek
+      const lw = Math.max(2, Math.round(S * 0.07));
       function rr(x, y, w, h, r) {
         ctx.beginPath();
         ctx.moveTo(x + r, y);
@@ -5728,173 +5766,414 @@
         ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
         ctx.closePath();
       }
-      const M = 4;
+      const M = Math.round(S * 0.08);
       if (cat === 'A' || cat === 'J') {
-        // Gevaarswaarschuwing: rode driehoek, witte vulling
         ctx.beginPath(); ctx.moveTo(S/2, M); ctx.lineTo(S-M, S-M); ctx.lineTo(M, S-M); ctx.closePath();
         ctx.fillStyle = '#fff'; ctx.fill();
-        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 3.5; ctx.stroke();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw; ctx.stroke();
       } else if (cat === 'B') {
-        // Voorrang/verlenen: omgekeerde driehoek
         ctx.beginPath(); ctx.moveTo(S/2, S-M); ctx.lineTo(S-M, M); ctx.lineTo(M, M); ctx.closePath();
         ctx.fillStyle = '#fff'; ctx.fill();
-        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 3.5; ctx.stroke();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw; ctx.stroke();
       } else if (cat === 'C') {
-        // Verbodsbord: rode cirkel, witte horizontale balk
         ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
         ctx.fillStyle = '#fff'; ctx.fill();
-        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 3.5; ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(M+4, S/2); ctx.lineTo(S-M-4, S/2);
-        ctx.strokeStyle = '#e30613'; ctx.lineWidth = 8; ctx.stroke();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(M+lw, S/2); ctx.lineTo(S-M-lw, S/2);
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw * 2; ctx.stroke();
       } else if (cat === 'D') {
-        // Gebodsbord: blauwe cirkel
         ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
         ctx.fillStyle = '#1a73e8'; ctx.fill();
       } else if (cat === 'E' || cat === 'F' || cat === 'G') {
-        // Informatie/richtingsbord: blauw rechthoek
-        rr(M, M+3, S-2*M, S-2*M-6, 4);
+        rr(M, M, S-2*M, S-2*M, Math.round(S*0.08));
         ctx.fillStyle = '#1a73e8'; ctx.fill();
       } else if (cat === 'H') {
-        // Infrastructuur: lichtgrijs rechthoek
-        rr(M, M+3, S-2*M, S-2*M-6, 4);
+        rr(M, M, S-2*M, S-2*M, Math.round(S*0.08));
         ctx.fillStyle = '#f0f0f0'; ctx.fill();
-        ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = '#888'; ctx.lineWidth = lw; ctx.stroke();
       } else if (cat === 'L') {
-        // Onderbord: wit rechthoek met dunne rand
-        rr(M, S/2-9, S-2*M, 20, 3);
+        rr(M, S*0.32, S-2*M, S*0.36, Math.round(S*0.05));
         ctx.fillStyle = '#fff'; ctx.fill();
-        ctx.strokeStyle = '#555'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = '#555'; ctx.lineWidth = lw; ctx.stroke();
       } else {
-        // Onbekend: grijs
         ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
         ctx.fillStyle = '#9b9b9b'; ctx.fill();
       }
-      _drawSignPole(ctx, S, POLE_H, S);
-      return ctx.getImageData(0, 0, S, S + POLE_H);
+      return cv;
     }
 
-    // Laad en toon verkeersborden; async vanwege afbeelding-laad
-    async function _tryAddTrafficSigns() {
-      if (!_mapReady || !_trafficSignsGeoJson) return;
-
-      // Laag al opgezet → alleen databron bijwerken
-      if (_trafficSignsReady) {
-        map.getSource('traffic-signs')?.setData(_trafficSignsGeoJson);
-        return;
+    // Grijs achterkant-silhouet per bordvorm ('tri' | 'tri-inv' | 'circle' | 'rect').
+    function _taSignBackCanvas(shape) {
+      const S = Math.round(_TA_SIGN_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = S; cv.height = S;
+      const ctx = cv.getContext('2d');
+      const M = Math.round(S * 0.08);
+      const lw = Math.max(2, Math.round(S * 0.06));
+      ctx.fillStyle   = '#b4b4b4';   // grijze achterplaat
+      ctx.strokeStyle = '#7d7d7d';
+      ctx.lineWidth   = lw;
+      function rr(x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+        ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+        ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
       }
-      _trafficSignsReady = true;
+      if (shape === 'tri') {
+        ctx.beginPath(); ctx.moveTo(S/2, M); ctx.lineTo(S-M, S-M); ctx.lineTo(M, S-M); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      } else if (shape === 'tri-inv') {
+        ctx.beginPath(); ctx.moveTo(S/2, S-M); ctx.lineTo(S-M, M); ctx.lineTo(M, M); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      } else if (shape === 'rect') {
+        rr(M, M, S-2*M, S-2*M, Math.round(S*0.08));
+        ctx.fill(); ctx.stroke();
+      } else { // 'circle'
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fill(); ctx.stroke();
+      }
+      // Verticale montagebeugel over het midden (donkerder grijs)
+      ctx.fillStyle = '#8f8f8f';
+      ctx.fillRect(Math.round(S/2 - S*0.05), Math.round(S*0.18), Math.round(S*0.10), Math.round(S*0.64));
+      return cv;
+    }
 
-      // Verzamel unieke icoon-codes: composite (rvvCode-blackCode) én basis (rvvCode)
+    // Verkeerslicht-behuizing (rood/geel/groen, zonder paal).
+    function _taSignalCanvas() {
+      const W = Math.round(_TA_SIGNAL_W_M * _TA_PPM) * _TA_RS;
+      const H = Math.round(_TA_SIGNAL_H_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      const pad = Math.round(W * 0.12), r = Math.round(W * 0.18);
+      const x = pad, y = pad, w = W - 2*pad, h = H - 2*pad;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+      ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+      ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+      ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+      ctx.closePath();
+      ctx.fillStyle = '#212121'; ctx.fill();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(1, W * 0.04); ctx.stroke();
+      const cx = W / 2, rad = w / 2 - Math.round(W * 0.08);
+      const cols = ['#e53935', '#fdd835', '#43a047'];
+      for (let i = 0; i < 3; i++) {
+        const cyl = y + h * (i + 1) / 4;
+        ctx.beginPath(); ctx.arc(cx, cyl, rad, 0, Math.PI * 2);
+        ctx.fillStyle = cols[i]; ctx.fill();
+      }
+      return cv;
+    }
+
+    // Composiet: paal onderaan + `contentCanvas` (plaat/kast) bovenop, gecentreerd.
+    function _taCompositeWithPole(contentCanvas) {
+      const poleH = Math.round(_TA_POLE_H_M * _TA_PPM) * _TA_RS;
+      const cW = contentCanvas.width, cH = contentCanvas.height;
+      const poleMinW = Math.round(Math.max(_TA_POLE_W_M * _TA_PPM + 1, 6)) * _TA_RS;
+      const W = Math.max(cW, poleMinW);
+      const H = poleH + cH;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      _taDrawPole(ctx, W, cH, H);                       // paal onder de inhoud
+      ctx.drawImage(contentCanvas, Math.round((W - cW) / 2), 0);  // inhoud bovenaan
+      return cv;
+    }
+
+    // ── Icon-descriptor-cache (deck.gl getIcon → {url,width,height,anchor}) ────
+    // Descriptors zijn stabiele objecten (data-URL), zodat deck.gl ze cachet op
+    // `url` en de atlas niet elke frame herbouwt.
+    const _taIcons = {};        // key → {url,width,height,anchorX,anchorY,mask}
+    let   _taIconVersion = 0;   // bumpt zodra async plaat-iconen erbij komen
+
+    function _taDesc(cv) {
+      return { url: cv.toDataURL(), width: cv.width, height: cv.height,
+               anchorX: cv.width / 2, anchorY: cv.height, mask: false };
+    }
+
+    function _taPoleIcon() {
+      if (!_taIcons['pole']) _taIcons['pole'] = _taDesc(_taPoleCanvas());
+      return _taIcons['pole'];
+    }
+    function _taSignalIcon() {
+      if (!_taIcons['signal'])
+        _taIcons['signal'] = _taDesc(_taCompositeWithPole(_taSignalCanvas()));
+      return _taIcons['signal'];
+    }
+    function _taBackShape(rvv) {
+      const c = (rvv || '?').charAt(0).toUpperCase();
+      if (c === 'A' || c === 'J') return 'tri';
+      if (c === 'B') return 'tri-inv';
+      if (c === 'C' || c === 'D') return 'circle';
+      if (c === 'E' || c === 'F' || c === 'G' || c === 'H' || c === 'L') return 'rect';
+      return 'circle';
+    }
+    function _taBackIcon(rvv) {
+      const key = 'back:' + _taBackShape(rvv);
+      if (!_taIcons[key])
+        _taIcons[key] = _taDesc(_taCompositeWithPole(_taSignBackCanvas(_taBackShape(rvv))));
+      return _taIcons[key];
+    }
+    // Voorkant-composiet voor een bord; null als het (nog) niet gebouwd is.
+    function _taFrontIcon(p) {
+      const rvv = p.rvvCode || '';
+      const black = (p.blackCode || '').trim();
+      const full = black ? `${rvv}-${black}` : rvv;
+      return _taIcons['front:' + full] || _taIcons['front:' + rvv] || null;
+    }
+
+    // Bouw een voorkant-composiet uit een geladen plaat-<img>.
+    function _taBuildFront(code, imgEl) {
+      const S = Math.round(_TA_SIGN_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = S; cv.height = S;
+      cv.getContext('2d').drawImage(imgEl, 0, 0, S, S);
+      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(cv));
+    }
+    function _taBuildFrontFallback(code) {
+      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(_taSignPlateCanvas(code)));
+    }
+
+    // Laad ontbrekende voorkant-plaaticonen (NDW-PNG per code, canvas-fallback bij
+    // 404) en bouw de composieten. Bumpt _taIconVersion + hertekent zodra klaar.
+    async function _taEnsurePlates(features) {
       const codes = new Set();
-      for (const f of _trafficSignsGeoJson.features) {
+      for (const f of (features || [])) {
         const p = f.properties || {};
         const rvv = p.rvvCode;
         if (!rvv) continue;
         const black = (p.blackCode || '').trim();
-        if (black) codes.add(`${rvv}-${black}`); // bijv. "A1-30", "D2-RO"
-        codes.add(rvv);                           // altijd basis-code als fallback
+        if (black) codes.add(`${rvv}-${black}`);
+        codes.add(rvv);
       }
-
-      // Laad afbeeldingen parallel: NDW PNG-iconen per code, canvas-fallback bij 404
-      const SIGN_PX = 64, POLE_PX = 48;
-      await Promise.allSettled([...codes].map(async (code) => {
-        const imgId = 'ts-' + code;
-        if (map.hasImage(imgId)) return;
-        try {
-          const imgData = await new Promise((res, rej) => {
-            const el = new Image(SIGN_PX, SIGN_PX);
-            el.onload = () => {
-              const cv = document.createElement('canvas');
-              cv.width = SIGN_PX; cv.height = SIGN_PX + POLE_PX;
-              const ctx2 = cv.getContext('2d');
-              ctx2.drawImage(el, 0, 0, SIGN_PX, SIGN_PX);
-              _drawSignPole(ctx2, SIGN_PX, POLE_PX, SIGN_PX);
-              res(ctx2.getImageData(0, 0, SIGN_PX, SIGN_PX + POLE_PX));
-            };
-            el.onerror = rej;
-            el.src = `/traffic-sign-icon/${encodeURIComponent(code)}?v=2`;
-          });
-          if (!map.hasImage(imgId)) map.addImage(imgId, imgData);
-        } catch {
-          // PNG niet beschikbaar → canvas-fallback per categorie
-          if (!map.hasImage(imgId)) map.addImage(imgId, _makeSignFallbackIcon(code));
-        }
-      }));
-
-      // Generiek fallback-icoon voor ontbrekende codes
-      if (!map.hasImage('ts-fallback')) {
-        map.addImage('ts-fallback', _makeSignFallbackIcon('?'));
-      }
-
-      // GeoJSON-bron toevoegen
-      if (!map.getSource('traffic-signs')) {
-        map.addSource('traffic-signs', { type: 'geojson', data: _trafficSignsGeoJson });
-      }
-
-      // Symboollaag toevoegen
-      if (!map.getLayer('traffic-signs-symbol')) {
-        map.addLayer({
-          id:      'traffic-signs-symbol',
-          type:    'symbol',
-          source:  'traffic-signs',
-          minzoom: 17,
-          layout: {
-            'icon-image': [
-              'coalesce',
-              // Eerste keuze: composite rvvCode-blackCode (bijv. "ts-A1-30", "ts-D2-RO")
-              ['image', ['concat', 'ts-',
-                ['coalesce', ['get', 'rvvCode'], ''],
-                ['case',
-                  ['all',
-                    ['has', 'blackCode'],
-                    ['!', ['==', ['coalesce', ['get', 'blackCode'], ''], '']]
-                  ],
-                  ['concat', '-', ['get', 'blackCode']],
-                  ''
-                ]
-              ]],
-              // Tweede keuze: alleen rvvCode (bijv. "ts-A1", "ts-D2")
-              ['image', ['concat', 'ts-', ['coalesce', ['get', 'rvvCode'], '']]],
-              ['image', 'ts-fallback'],
-            ],
-            // Vaste fysieke diameter 0.5 m: icon_size = 0.5 × 2^z / (96374 × 64)
-            // Exponentieel basis 2 → exacte verdubbeling per zoomlevel = constante grondafmeting
-            'icon-size': ['interpolate', ['exponential', 2], ['zoom'],
-              17, 0.0106,
-              22, 0.340,
-            ],
-            'icon-allow-overlap':    true,
-            'icon-ignore-placement': true,
-            'icon-anchor':           'bottom',
-            'visibility': _trafficSignsVisible ? 'visible' : 'none',
-          },
-        });
-
-        // Klik-popup: toon bord-foto + RVV-code + straatnaam
-        map.on('click', 'traffic-signs-symbol', e => {
-          const f = e.features?.[0];
-          if (!f) return;
-          const p      = f.properties || {};
-          const black  = (p.blackCode || '').trim();
-          const rvv    = p.rvvCode ? (black ? `${p.rvvCode}-${black}` : p.rvvCode) : '—';
-          const road   = p.roadName || p.road_name || '';
-          const imgUrl = p.imageUrl || '';
-          let html = '<div style="text-align:center;min-width:90px">';
-          if (imgUrl) {
-            html += `<img src="${imgUrl}" style="display:block;max-width:130px;max-height:90px;margin:0 auto 6px;border-radius:4px" onerror="this.style.display='none'">`;
-          }
-          html += `<strong>${rvv}</strong>`;
-          if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
-          html += '</div>';
-          new maplibregl.Popup({ closeButton: false, offset: 10 })
-            .setLngLat(e.lngLat)
-            .setHTML(html)
-            .addTo(map);
-        });
-        map.on('mouseenter', 'traffic-signs-symbol', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'traffic-signs-symbol', () => { map.getCanvas().style.cursor = ''; });
-      }
+      let changed = false;
+      await Promise.allSettled([...codes].map(code => new Promise(res => {
+        if (_taIcons['front:' + code]) { res(); return; }
+        const el = new Image();
+        el.onload  = () => { try { _taBuildFront(code, el); } catch (_) { _taBuildFrontFallback(code); } changed = true; res(); };
+        el.onerror = () => { _taBuildFrontFallback(code); changed = true; res(); };
+        el.src = `/traffic-sign-icon/${encodeURIComponent(code)}?v=2`;
+      })));
+      if (changed) { _taIconVersion++; updateOverlay(true); }
     }
+
+    // ── Bearing-logica voor borden ────────────────────────────────────────────
+    // VOORKANT: `bearing` binnen ±TOL van de kijkrichting (map.getBearing()).
+    // ACHTERKANT: `bearing` binnen ±TOL van de tegenovergestelde richting (mb+180).
+    // Daartussen (schuin) → alleen de paal. Borden zonder bearing tonen de voorkant.
+    const _SIGN_BEARING_TOL = 70;   // ± graden speling
+
+    function _angDiff(a, b) {
+      let d = Math.abs(((a - b) % 360 + 360) % 360);
+      return d > 180 ? 360 - d : d;
+    }
+    function _signFrontVisible(fb) {
+      if (fb == null || isNaN(fb)) return true;   // geen richting bekend → voorkant tonen
+      const mb = ((map.getBearing() % 360) + 360) % 360;
+      return _angDiff(((fb % 360) + 360) % 360, mb) <= _SIGN_BEARING_TOL;
+    }
+    function _signBackVisible(fb) {
+      if (fb == null || isNaN(fb)) return false;  // geen richting → geen achterkant
+      const mb = ((map.getBearing() % 360) + 360) % 360;
+      return _angDiff(((fb % 360) + 360) % 360, (mb + 180) % 360) <= _SIGN_BEARING_TOL;
+    }
+    // Gekwantiseerde kijkrichting → updateTrigger, zodat deck.gl getIcon/getSize
+    // alleen herberekent wanneer de kaart merkbaar draait (i.p.v. elke frame).
+    function _taBearingBucket() {
+      return Math.round((((map.getBearing() % 360) + 360) % 360) / 4);
+    }
+
+    // ── Data-store voor deck.gl-lagen ─────────────────────────────────────────
+    let _taSignFeatures   = [];   // trafficSign-features (voor de IconLayer)
+    let _taSignalFeatures = [];   // trafficSignal-features
+    let _taHover          = null; // {props,lngLat} van het object onder de cursor
+
+    function _taPosition(f) {
+      const c = (f.geometry && f.geometry.coordinates) || [0, 0];
+      return [c[0], c[1], 0];   // vlak maaiveld (auto's gebruiken ook z≈0)
+    }
+
+    // Bouw de deck.gl-lagen voor verkeersobjecten (aangeroepen in updateOverlay).
+    function makeTrafficAssetLayers() {
+      if (!_trafficAssetsVisible) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      const bucket = _taBearingBucket();
+      const layers = [];
+
+      if (_taSignFeatures.length) {
+        layers.push(new IconLayer({
+          id:          'ta-signs-deck',
+          data:        _taSignFeatures,
+          billboard:   true,
+          sizeUnits:   'meters',
+          sizeScale:   1,
+          getPosition: _taPosition,
+          getIcon: f => {
+            const p = f.properties || {};
+            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) || _taPoleIcon();
+            if (_signBackVisible(p.bearing))  return _taBackIcon(p.rvvCode);
+            return _taPoleIcon();
+          },
+          getSize: f => {
+            const p = f.properties || {};
+            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) ? _TA_SIGN_TOTAL_M : _TA_POLE_H_M;
+            if (_signBackVisible(p.bearing))  return _TA_SIGN_TOTAL_M;
+            return _TA_POLE_H_M;
+          },
+          pickable: true,
+          onHover:  info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+          updateTriggers: {
+            getIcon: [bucket, _taIconVersion],
+            getSize: [bucket, _taIconVersion],
+          },
+        }));
+      }
+
+      if (_taSignalFeatures.length) {
+        layers.push(new IconLayer({
+          id:          'ta-signals-deck',
+          data:        _taSignalFeatures,
+          billboard:   true,
+          sizeUnits:   'meters',
+          sizeScale:   1,
+          getPosition: _taPosition,
+          getIcon:     () => _taSignalIcon(),
+          getSize:     () => _TA_SIGNAL_TOTAL_M,
+          pickable:    true,
+          onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate, signal: true } : null; },
+        }));
+      }
+
+      return layers;
+    }
+
+    // Klik-popup voor verkeersobjecten (deck.gl onClick is onbetrouwbaar in
+    // interleaved-modus → onHover houdt _taHover bij, map-klik toont de popup).
+    map.on('click', () => {
+      if (!_trafficAssetsVisible || !_taHover) return;
+      const p = _taHover.props || {};
+      let html;
+      if (_taHover.signal) {
+        const road = p.roadName || '';
+        html = '<div style="text-align:center;min-width:90px"><strong>Verkeerslicht</strong>';
+        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        html += '</div>';
+      } else {
+        const black  = (p.blackCode || '').trim();
+        const rvv    = p.rvvCode ? (black ? `${p.rvvCode}-${black}` : p.rvvCode) : '—';
+        const road   = p.roadName || p.road_name || '';
+        const imgUrl = p.imageUrl || '';
+        html = '<div style="text-align:center;min-width:90px">';
+        if (imgUrl) html += `<img src="${imgUrl}" style="display:block;max-width:130px;max-height:90px;margin:0 auto 6px;border-radius:4px" onerror="this.style.display='none'">`;
+        html += `<strong>${rvv}</strong>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        html += '</div>';
+      }
+      new maplibregl.Popup({ closeButton: false, offset: 10 })
+        .setLngLat(_taHover.lngLat).setHTML(html).addTo(map);
+    });
+
+    // Bij draaien van de kaart de billboards opnieuw evalueren (voor/achter/paal),
+    // ook als de animatielus gepauzeerd is.
+    let _taRotRaf = null;
+    map.on('rotate', () => {
+      if (!_trafficAssetsVisible || _taRotRaf) return;
+      _taRotRaf = requestAnimationFrame(() => { _taRotRaf = null; updateOverlay(true); });
+    });
+
+    // Fallback: bestaande NDW/Overpass-borden (volledige area, geen bbox).
+    async function _tryAddTrafficSigns() {
+      if (!_mapReady || !_trafficSignsGeoJson) return;
+      _trafficSignsReady  = true;
+      _taSignFeatures     = _trafficSignsGeoJson.features || [];
+      _taEnsurePlates(_taSignFeatures);   // async: bumpt + hertekent zodra klaar
+      updateOverlay(true);                // toon direct (palen), platen volgen
+    }
+
+    function _loadTrafficSignsFallback() {
+      if (_trafficSignsGeoJson) { _tryAddTrafficSigns(); return; }
+      if (_signsFallbackFetching) return;
+      _signsFallbackFetching = true;
+      fetch(`/collections/traffic_signs/items?areaId=${AREA_ID}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          _signsFallbackFetching = false;
+          if (!data || !Array.isArray(data.features)) return;
+          for (const f of data.features) {
+            if (f.properties?.blackCode) {
+              f.properties.blackCode = f.properties.blackCode.trim().replace(/,/g, '.');
+            }
+          }
+          _trafficSignsGeoJson = data;
+          _tryAddTrafficSigns();
+        })
+        .catch(() => { _signsFallbackFetching = false; });
+    }
+
+    const _TRAFFIC_ASSET_MINZOOM = _TA_MINZOOM;
+    function _bboxContains(outer, inner) {
+      return !!outer && !!inner &&
+        outer[0] <= inner[0] && outer[1] <= inner[1] &&
+        outer[2] >= inner[2] && outer[3] >= inner[3];
+    }
+
+    // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
+    async function loadTrafficAssetsInView() {
+      if (!_mapReady || !_trafficAssetsVisible) return;
+      if (_trafficAssetsNoFile) { _loadTrafficSignsFallback(); return; }
+      if (map.getZoom() < _TRAFFIC_ASSET_MINZOOM) return;
+
+      const b  = map.getBounds();
+      const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      if (_bboxContains(_lastAssetBbox, vw)) return;  // al gedekt → geen request
+
+      const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
+      const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
+
+      let data;
+      try {
+        const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`);
+        if (r.status === 404) { _trafficAssetsNoFile = true; _loadTrafficSignsFallback(); return; }
+        if (!r.ok) return;
+        data = await r.json();
+      } catch { return; }
+      if (!data || !Array.isArray(data.features)) return;
+
+      _lastAssetBbox = bbox;
+      const byType = {};
+      for (const f of data.features) {
+        const p = f.properties || {};
+        if (p.blackCode) p.blackCode = p.blackCode.trim().replace(/,/g, '.');
+        const t = p.assetType;
+        if (!t) continue;
+        (byType[t] || (byType[t] = [])).push(f);
+      }
+      // Data-stores voor de deck.gl-lagen bijwerken.
+      _taSignFeatures   = byType.trafficSign   || [];
+      _taSignalFeatures = byType.trafficSignal || [];
+      // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
+      // ondertussen tonen borden alvast hun paal.
+      _taEnsurePlates(_taSignFeatures);
+      updateOverlay(true);
+    }
+
+    function _setTrafficAssetsVisibility(vis) {
+      _trafficAssetsVisible = vis;
+      updateOverlay(true);
+      if (vis) loadTrafficAssetsInView();
+    }
+
+    // Herlaad bij kaartbeweging (gedebounced), maar alleen als de laag actief is.
+    let _assetMoveTimer = null;
+    function _scheduleAssetLoad() {
+      if (_assetMoveTimer) clearTimeout(_assetMoveTimer);
+      _assetMoveTimer = setTimeout(() => { _assetMoveTimer = null; loadTrafficAssetsInView(); }, 300);
+    }
+    map.on('moveend', _scheduleAssetLoad);
 
     // Laad gebouwen asynchroon; verrijking vindt plaats zodra ook zones beschikbaar zijn
     fetch(`/collections/buildings/items?areaId=${AREA_ID}`)
@@ -5958,21 +6237,8 @@
       })
       .catch(() => {});  // gebouwen zijn optioneel; stil negeren bij fout
 
-    // Laad verkeersborden asynchroon
-    fetch(`/collections/traffic_signs/items?areaId=${AREA_ID}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data || !Array.isArray(data.features)) return;
-        // Normaliseer blackCode: komma → punt (bijv. "4,1" → "4.1" voor decimale waarden)
-        for (const f of data.features) {
-          if (f.properties?.blackCode) {
-            f.properties.blackCode = f.properties.blackCode.trim().replace(/,/g, '.');
-          }
-        }
-        _trafficSignsGeoJson = data;
-        _tryAddTrafficSigns();
-      })
-      .catch(() => {});  // verkeersborden zijn optioneel; stil negeren bij fout
+    // Verkeersobjecten worden lazy geladen op basis van het zichtbare kaartdeel
+    // (zie loadTrafficAssetsInView / moveend-hook) zodra de kaart klaar is.
 
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments    = features.map(f => ({
@@ -9445,6 +9711,7 @@
           makeZoneRoutesLayer(),
           makeCounterLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
+          ...makeTrafficAssetLayers(),
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
         if (splitViewActive && overlay2) {
@@ -9875,7 +10142,11 @@
         _mapReady = true;
       }
       _tryAddBuildings();
-      _tryAddTrafficSigns();
+      // Verkeersobjecten (borden/lichten): bij (re)styling zijn bronnen/iconen weg → reset
+      // caches zodat de laag opnieuw wordt opgebouwd voor het huidige kaartbeeld.
+      _lastAssetBbox     = null;
+      _trafficSignsReady = false;
+      loadTrafficAssetsInView();
 
       // ── Satelliet-ondergrond ────────────────────────────────────────────────
       // Verzamel Liberty fill/background layer IDs die we in satellietmodus verbergen.
@@ -12671,7 +12942,7 @@
           const radio = settingsPanel.querySelector(`input[name="spFill"][value="${initFillMethod}"]`);
           if (radio) radio.checked = true;
           document.getElementById('spDebug').checked = !!window._debugMode;
-          document.getElementById('spTrafficSigns').checked = _trafficSignsVisible;
+          document.getElementById('spTrafficAssets').checked = _trafficAssetsVisible;
           const curLang = document.getElementById('langSelect').value;
           const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
           if (langRadio) langRadio.checked = true;
@@ -12712,14 +12983,12 @@
             if (adj) adj.checked = window._debugMode;
             if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
           }
-          // Lees verkeersborden-instelling en pas zichtbaarheid toe
-          const newTrafficSigns = document.getElementById('spTrafficSigns').checked;
-          if (newTrafficSigns !== _trafficSignsVisible) {
-            _trafficSignsVisible = newTrafficSigns;
-            localStorage.setItem('trafficSignsVisible', _trafficSignsVisible ? 'true' : 'false');
-            if (map.getLayer('traffic-signs-symbol')) {
-              map.setLayoutProperty('traffic-signs-symbol', 'visibility', _trafficSignsVisible ? 'visible' : 'none');
-            }
+          // Lees verkeersobjecten-instelling en pas zichtbaarheid toe
+          const newTrafficAssets = document.getElementById('spTrafficAssets').checked;
+          if (newTrafficAssets !== _trafficAssetsVisible) {
+            _trafficAssetsVisible = newTrafficAssets;
+            localStorage.setItem('trafficAssetsVisible', _trafficAssetsVisible ? 'true' : 'false');
+            _setTrafficAssetsVisibility(_trafficAssetsVisible);
           }
           // Lees nieuwe taal en pas toe als gewijzigd
           const newLang = settingsPanel.querySelector('input[name="spLang"]:checked')?.value;
