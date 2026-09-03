@@ -3278,9 +3278,14 @@ def ogc_collection_items(collection_id):
             for feat in data.get("features", []):
                 geom = feat.get("geometry") or {}
                 coords = geom.get("coordinates")
-                if not coords or len(coords) < 2:
+                # Neem het eerste vertex als representatief punt; werkt voor
+                # Point/LineString/Polygon/Multi* (speedBump = Polygon).
+                pt = coords
+                while isinstance(pt, list) and pt and isinstance(pt[0], list):
+                    pt = pt[0]
+                if not pt or len(pt) < 2:
                     continue
-                lon, lat = coords[0], coords[1]
+                lon, lat = pt[0], pt[1]
                 if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
                     feats.append(feat)
             data = {**data, "features": feats}

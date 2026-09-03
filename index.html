@@ -5988,9 +5988,186 @@
     }
 
     // ── Data-store voor deck.gl-lagen ─────────────────────────────────────────
-    let _taSignFeatures   = [];   // trafficSign-features (voor de IconLayer)
-    let _taSignalFeatures = [];   // trafficSignal-features
-    let _taHover          = null; // {props,lngLat} van het object onder de cursor
+    let _taSignFeatures      = [];   // trafficSign-features (voor de IconLayer)
+    let _taSignalFeatures    = [];   // trafficSignal-features
+    let _taSpeedBumpFeatures = [];   // speedBump-polygonen (lage 3D-drempel)
+    let _taMarkFeatures      = [];   // platte wegdekmarkeringen (voetganger/stop/voorrang)
+    let _taHover             = null; // {props,lngLat} van het object onder de cursor
+
+    // ── Platte wegdekmarkeringen (top-down canvas-iconen, center-anchor) ───────
+    // Deze liggen plat op het wegdek (IconLayer billboard:false) en schalen dus
+    // volledig perspectivisch mee. Geen bearing beschikbaar → noord-uitgelijnd.
+    const _TA_ZEBRA_M = 4.0;   // voetgangersoversteek (zebravlak)
+    const _TA_SHARK_M = 2.4;   // haaientanden (voorrang, B6)
+    const _TA_STOP_M  = 3.0;   // stopstreep + "STOP"
+
+    // Descriptor met center-anchor (voor platte grondmarkeringen).
+    function _taDescFlat(cv) {
+      return { url: cv.toDataURL(), width: cv.width, height: cv.height,
+               anchorX: cv.width / 2, anchorY: cv.height / 2, mask: false };
+    }
+
+    // Zebravlak: witte strepen op transparant (top-down).
+    function _taZebraCanvas() {
+      const W = Math.round(_TA_ZEBRA_M * _TA_PPM) * _TA_RS;   // langs de weg
+      const H = Math.round(_TA_ZEBRA_M * 0.75 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#f5f5f5';
+      const n = 6, gap = W / (n * 2 - 1);
+      for (let i = 0; i < n; i++) ctx.fillRect(Math.round(i * 2 * gap), 0, Math.ceil(gap), H);
+      return cv;
+    }
+
+    // Haaientanden (B6): rij witte driehoeken die naar de kijker wijzen.
+    function _taSharkTeethCanvas() {
+      const W = Math.round(_TA_SHARK_M * _TA_PPM) * _TA_RS;
+      const H = Math.round(_TA_SHARK_M * 0.45 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#f5f5f5';
+      const n = 5, tw = W / n;
+      for (let i = 0; i < n; i++) {
+        const x = i * tw;
+        ctx.beginPath();
+        ctx.moveTo(x, 0); ctx.lineTo(x + tw, 0); ctx.lineTo(x + tw / 2, H);
+        ctx.closePath(); ctx.fill();
+      }
+      return cv;
+    }
+
+    // Stopmarkering (B7): brede witte stopstreep + "STOP".
+    function _taStopMarkCanvas() {
+      const W = Math.round(_TA_STOP_M * _TA_PPM) * _TA_RS;
+      const H = Math.round(_TA_STOP_M * 0.7 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#f5f5f5';
+      const bar = Math.round(H * 0.22);
+      ctx.fillRect(0, 0, W, bar);                 // stopstreep
+      ctx.font = `bold ${Math.round(H * 0.5)}px Arial`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('STOP', W / 2, bar + (H - bar) / 2 + Math.round(H * 0.04));
+      return cv;
+    }
+
+    function _taMarkIcon(assetType) {
+      const key = 'mark:' + assetType;
+      if (!_taIcons[key]) {
+        const cv = assetType === 'giveWay'   ? _taSharkTeethCanvas()
+                 : assetType === 'stopSign'  ? _taStopMarkCanvas()
+                 : _taZebraCanvas();  // pedestrianCrossing (default)
+        _taIcons[key] = _taDescFlat(cv);
+      }
+      return _taIcons[key];
+    }
+    // getSize = icoonHOOGTE in meters (= lengte langs de weg). De breedte volgt
+    // uit de canvas-verhouding en spant de weg over (zie _taMarkAngle).
+    function _taMarkSize(assetType) {
+      return assetType === 'giveWay'  ? _TA_SHARK_M * 0.45
+           : assetType === 'stopSign' ? _TA_STOP_M  * 0.70
+           : _TA_ZEBRA_M * 0.75;
+    }
+
+    // Wegrichting bij (lng,lat): hoek (° CCW t.o.v. oost) van het dichtstbijzijnde
+    // netwerksegment, of null als er geen netwerk is. Gebruikt voor het dwars
+    // over de weg leggen van markeringen.
+    function _taRoadBearingAt(lng, lat) {
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      let best = Infinity, bestAng = null;
+      for (const coords of linkGeomMap.values()) {
+        if (!coords || coords.length < 2) continue;
+        for (let i = 0; i < coords.length - 1; i++) {
+          const a = coords[i], b = coords[i + 1];
+          const ax = (a[0] - lng) * mLng, ay = (a[1] - lat) * mLat;
+          const bx = (b[0] - lng) * mLng, by = (b[1] - lat) * mLat;
+          const vx = bx - ax, vy = by - ay;
+          const len2 = vx * vx + vy * vy;
+          if (len2 === 0) continue;
+          let t = -(ax * vx + ay * vy) / len2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const px = ax + t * vx, py = ay + t * vy;
+          const d = px * px + py * py;
+          if (d < best) { best = d; bestAng = Math.atan2(vy, vx) * 180 / Math.PI; }
+        }
+      }
+      return bestAng;
+    }
+
+    // Zet per markering de rotatie zodat de breedte-as dwars over de weg loopt.
+    // (icoon-breedte → wegloodrecht = wegrichting + 90°). Geen weg gevonden → 0.
+    function _taApplyMarkAngles(feats) {
+      for (const f of (feats || [])) {
+        const p = f.properties || (f.properties = {});
+        const c = (f.geometry && f.geometry.coordinates) || null;
+        if (!c) { p._taAngle = 0; continue; }
+        const phi = _taRoadBearingAt(c[0], c[1]);
+        // Haaientanden (giveWay) hebben een 90° andere canvas-oriëntatie.
+        const extra = p.assetType === 'giveWay' ? -90 : 0;
+        p._taAngle = phi == null ? 0 : phi + 90 + extra;
+      }
+    }
+
+    // ── Witte blokjes bovenop de verkeersdrempels ─────────────────────────────
+    // Per drempel-polygon: zwaartepunt + hoofdas (PCA) bepalen en een rij witte
+    // blokjes over de breedte plaatsen (platte IconLayer, net boven de drempeltop).
+    const _TA_BUMP_BLOCK_M = 0.45;   // blokgrootte (m)
+    let   _taBumpBlocks    = [];     // [{position:[lng,lat,z], angleDeg}]
+
+    function _taBumpBlockIcon() {
+      if (!_taIcons['bumpblock']) {
+        const S = Math.round(_TA_BUMP_BLOCK_M * _TA_PPM) * _TA_RS;
+        const cv = document.createElement('canvas');
+        cv.width = S; cv.height = S;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fillRect(0, 0, S, S);
+        _taIcons['bumpblock'] = _taDescFlat(cv);
+      }
+      return _taIcons['bumpblock'];
+    }
+
+    function _taComputeBumpBlocks(feats) {
+      const out = [];
+      for (const f of (feats || [])) {
+        const g = f.geometry; if (!g) continue;
+        const ring = g.type === 'Polygon'      ? g.coordinates[0]
+                   : g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0]
+                   : null;
+        if (!ring || ring.length < 3) continue;
+        // Zwaartepunt
+        let cx = 0, cy = 0;
+        for (const pt of ring) { cx += pt[0]; cy += pt[1]; }
+        cx /= ring.length; cy /= ring.length;
+        // Lokale meter-schaal
+        const mLng = 111320 * Math.cos(cy * Math.PI / 180) || 1, mLat = 110540;
+        // PCA → hoofdas-hoek
+        let sxx = 0, syy = 0, sxy = 0;
+        for (const pt of ring) {
+          const dx = (pt[0] - cx) * mLng, dy = (pt[1] - cy) * mLat;
+          sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+        }
+        const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+        const ca = Math.cos(angle), sa = Math.sin(angle);
+        // Uitgestrektheid langs de hoofdas
+        let minU = 1e9, maxU = -1e9;
+        for (const pt of ring) {
+          const dx = (pt[0] - cx) * mLng, dy = (pt[1] - cy) * mLat;
+          const u = dx * ca + dy * sa;
+          if (u < minU) minU = u; if (u > maxU) maxU = u;
+        }
+        const angleDeg = -angle * 180 / Math.PI;
+        const inset = 0.3, step = 0.7;
+        for (let u = minU + inset; u <= maxU - inset + 1e-6; u += step) {
+          const dx = u * ca, dy = u * sa;   // punt op de middenlijn (v=0)
+          out.push({ position: [cx + dx / mLng, cy + dy / mLat, 0.13], angleDeg });
+        }
+      }
+      return out;
+    }
 
     function _taPosition(f) {
       const c = (f.geometry && f.geometry.coordinates) || [0, 0];
@@ -5998,6 +6175,27 @@
     }
 
     // Bouw de deck.gl-lagen voor verkeersobjecten (aangeroepen in updateOverlay).
+    // Platte drempel-vlakken (speedBump-polygonen), plat op het wegdek.
+    // Aparte laag zodat ze ONDER de intensiteits-laag (network) getekend worden.
+    function makeSpeedBumpLayer() {
+      if (!_trafficAssetsVisible) return null;
+      if (map.getZoom() < _TA_MINZOOM) return null;
+      if (!_taSpeedBumpFeatures.length) return null;
+      return new GeoJsonLayer({
+        id:            'ta-speedbumps-deck',
+        data:          { type: 'FeatureCollection', features: _taSpeedBumpFeatures },
+        extruded:      false,
+        filled:        true,
+        stroked:       true,
+        getFillColor:  [150, 150, 155, 170],
+        getLineColor:  [230, 230, 230, 255],
+        getLineWidth:  0.05,
+        lineWidthUnits: 'meters',
+        pickable:      true,
+        onHover:       info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+      });
+    }
+
     function makeTrafficAssetLayers() {
       if (!_trafficAssetsVisible) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
@@ -6048,6 +6246,23 @@
         }));
       }
 
+      // Platte wegdekmarkeringen (voetganger/stop/voorrang) — liggen op het asfalt.
+      if (_taMarkFeatures.length) {
+        layers.push(new IconLayer({
+          id:          'ta-marks-deck',
+          data:        _taMarkFeatures,
+          billboard:   false,   // plat op het wegdek, schaalt perspectivisch mee
+          sizeUnits:   'meters',
+          sizeScale:   1,
+          getPosition: _taPosition,
+          getIcon:     f => _taMarkIcon((f.properties || {}).assetType),
+          getSize:     f => _taMarkSize((f.properties || {}).assetType),
+          getAngle:    f => (f.properties || {})._taAngle || 0,   // dwars over de weg
+          pickable:    true,
+          onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
       return layers;
     }
 
@@ -6057,9 +6272,17 @@
       if (!_trafficAssetsVisible || !_taHover) return;
       const p = _taHover.props || {};
       let html;
+      const at = p.assetType;
       if (_taHover.signal) {
         const road = p.roadName || '';
         html = '<div style="text-align:center;min-width:90px"><strong>Verkeerslicht</strong>';
+        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        html += '</div>';
+      } else if (at === 'speedBump' || at === 'pedestrianCrossing' || at === 'stopSign' || at === 'giveWay') {
+        const label = { speedBump: 'Verkeersdrempel', pedestrianCrossing: 'Voetgangersoversteek',
+                        stopSign: 'Stopbord (B7)', giveWay: 'Voorrang verlenen (B6)' }[at];
+        const road = p.roadName || p.road_name || '';
+        html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
         if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
         html += '</div>';
       } else {
@@ -6153,8 +6376,15 @@
         (byType[t] || (byType[t] = [])).push(f);
       }
       // Data-stores voor de deck.gl-lagen bijwerken.
-      _taSignFeatures   = byType.trafficSign   || [];
-      _taSignalFeatures = byType.trafficSignal || [];
+      _taSignFeatures      = byType.trafficSign   || [];
+      _taSignalFeatures    = byType.trafficSignal || [];
+      _taSpeedBumpFeatures = byType.speedBump     || [];
+      _taMarkFeatures      = [
+        ...(byType.pedestrianCrossing || []),
+        ...(byType.stopSign || []),
+        ...(byType.giveWay || []),
+      ];
+      _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
       // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
       // ondertussen tonen borden alvast hun paal.
       _taEnsurePlates(_taSignFeatures);
@@ -9701,6 +9931,7 @@
 
       function updateOverlay(withCars = true) {
         overlay.setProps({ layers: [
+          makeSpeedBumpLayer(),
           makeNetworkLayer(),
           makeDiffLayer(),
           makeLinkEditLayer(),
