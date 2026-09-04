@@ -6094,8 +6094,13 @@
     let _taSignalFeatures    = [];   // trafficSignal-features
     let _taSpeedBumpFeatures = [];   // speedBump-polygonen (lage 3D-drempel)
     let _taMarkFeatures      = [];   // platte wegdekmarkeringen (voetganger/stop/voorrang)
-    let _taViaductFeatures   = [];   // CIMLK viaduct/brug-wegvakken (verhoogde ribbon)
+    let _taViaductFeatures   = [];   // CIMLK viaduct-wegvakken (verhoogde ribbon)
     let _taScreenQuads       = [];   // CIMLK geluidsschermen → geëxtrudeerde muur-quads
+    let _taBridgeFeatures    = [];   // CIMLK brug-wegvakken (verhoogd brugdek)
+    let _taTunnelFeatures    = [];   // CIMLK tunnel-wegvakken (dekband + doorschijnend dak)
+    let _taRetWallQuads      = [];   // CIMLK keermuren → geëxtrudeerde muur-quads
+    let _taCulvertFeatures   = [];   // CIMLK duikers (lage donkere kruising)
+    let _taUnderpassFeatures = [];   // CIMLK overspanningen boven verdiepte weg (belowGround)
     let _taBusStopFeatures   = [];   // busStop-features (billboard-sprite met halte-bordje)
     let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
     let _taHover             = null; // {props,lngLat} van het object onder de cursor
@@ -6387,21 +6392,35 @@
 
       return layers;
     }
-    //  Komen mee in het TRAFFIC-ASSETS-bestand (assetType 'viaduct'/'screen').
-    //  Blijven 2.5D: viaduct = verhoogde grijze ribbon op z=heightM; scherm =
-    //  geëxtrudeerde dunne muur. below_ground-features worden niet getekend.
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  CIMLK HOOGTE-/CONSTRUCTIE-OBJECTEN — viaducten, bruggen, tunnels,
+    //  keermuren, duikers en geluidsschermen.
+    //  Komen mee in het TRAFFIC-ASSETS-bestand via het `assetType`-veld.
+    //  Blijven 2.5D: verhoogde ribbons op z=heightM (viaduct/bridge/underpass),
+    //  geëxtrudeerde dunne muren (screen/retainingWall), dekband + doorschijnend
+    //  dak (tunnel) en een lage donkere kruising (culvert).
+    //  Features met belowGround=true worden apart als 'underpass' getekend.
     // ═══════════════════════════════════════════════════════════════════════
     const _TA_VIADUCT_WIDTH_M = 7.5;   // breedte van de verhoogde wegdek-ribbon
     const _TA_SCREEN_HALF_M   = 0.15;  // halve dikte van een scherm-muur (m)
     const _TA_SCREEN_DEF_H    = 3;     // fallback schermhoogte als heightM ontbreekt (m)
+    const _TA_BRIDGE_WIDTH_M  = 7.5;   // breedte van het brugdek (m)
+    const _TA_TUNNEL_WIDTH_M  = 8.0;   // breedte van de tunnelbuis-band (m)
+    const _TA_TUNNEL_DEF_H    = 4.5;   // fallback tunneldak-hoogte als heightM ontbreekt (m)
+    const _TA_RETWALL_HALF_M  = 0.30;  // halve dikte van een keermuur (m)
+    const _TA_RETWALL_DEF_H   = 2;     // fallback keermuurhoogte (m)
+    const _TA_CULVERT_WIDTH_M = 2.5;   // breedte van de duiker-kruising (m)
+    const _TA_UNDERPASS_H_M   = 4.0;   // hoogte waarop de overspanning boven de verdiepte weg zweeft (m)
 
     // Zet een lijn-feature om naar per-segment quads (dunne footprint) voor de
     // geëxtrudeerde PolygonLayer. Perpendiculaire offset in meters → graden.
-    function _screenQuadsFromFeature(f) {
+    // halfW  = halve muurdikte (m); defH = fallback-hoogte als heightM ontbreekt.
+    function _screenQuadsFromFeature(f, halfW = _TA_SCREEN_HALF_M, defH = _TA_SCREEN_DEF_H) {
       const g = f.geometry || {};
       const props = f.properties || {};
       let h = parseFloat(props.heightM);
-      if (isNaN(h) || h <= 0) h = _TA_SCREEN_DEF_H;
+      if (isNaN(h) || h <= 0) h = defH;
       // Ondersteun LineString en MultiLineString.
       const lines = g.type === 'MultiLineString' ? (g.coordinates || [])
                   : g.type === 'LineString'      ? [g.coordinates || []]
@@ -6419,8 +6438,8 @@
           const len = Math.hypot(dxm, dym) || 1;
           // Loodrechte eenheidsvector (in meters), 90° gedraaid.
           const px = -dym / len, py = dxm / len;
-          const ox = (px * _TA_SCREEN_HALF_M) / (111320 * cosLat);
-          const oy = (py * _TA_SCREEN_HALF_M) / 110540;
+          const ox = (px * halfW) / (111320 * cosLat);
+          const oy = (py * halfW) / 110540;
           out.push({
             polygon: [
               [a[0] + ox, a[1] + oy],
@@ -6443,12 +6462,31 @@
       _taScreenQuads = quads;
     }
 
+    // Bouw de keermuur-quads store opnieuw op (dikkere muur dan een scherm).
+    function _taRebuildRetWallQuads(features) {
+      const quads = [];
+      for (const f of features) {
+        quads.push(..._screenQuadsFromFeature(f, _TA_RETWALL_HALF_M, _TA_RETWALL_DEF_H));
+      }
+      _taRetWallQuads = quads;
+    }
+
     function makeHeightAssetLayers() {
       if (!_trafficAssetsVisible) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       const layers = [];
 
-      // Viaducten/bruggen: verhoogde grijze ribbon op z = heightM.
+      // Verhoogd pad op vaste hoogte h (m) uit een lijn-feature.
+      const elevatedPath = (f, h) => {
+        const g = f.geometry || {};
+        const line = g.type === 'MultiLineString'
+          ? (g.coordinates && g.coordinates[0]) || []
+          : g.coordinates || [];
+        return line.map(c => [c[0], c[1], h]);
+      };
+      const hoverPath = info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; };
+
+      // Viaducten: verhoogde grijze ribbon op z = heightM.
       if (_taViaductFeatures.length) {
         layers.push(new PathLayer({
           id:            'ta-viaducts-deck',
@@ -6458,16 +6496,88 @@
           getColor:      [110, 110, 118, 235],
           capRounded:    true,
           jointRounded:  true,
-          getPath: f => {
-            const g = f.geometry || {};
-            const line = g.type === 'MultiLineString'
-              ? (g.coordinates && g.coordinates[0]) || []
-              : g.coordinates || [];
-            const h = Math.max(0.5, parseFloat((f.properties || {}).heightM) || 1);
-            return line.map(c => [c[0], c[1], h]);
-          },
-          pickable: true,
-          onHover:  info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+          getPath:       f => elevatedPath(f, Math.max(0.5, parseFloat((f.properties || {}).heightM) || 1)),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Bruggen: lichter betongrijs brugdek op z = heightM (apart van viaduct
+      // zodat styling kan divergeren, bv. leuningen in de toekomst).
+      if (_taBridgeFeatures.length) {
+        layers.push(new PathLayer({
+          id:            'ta-bridges-deck',
+          data:          _taBridgeFeatures,
+          widthUnits:    'meters',
+          getWidth:      _TA_BRIDGE_WIDTH_M,
+          getColor:      [150, 148, 140, 240],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, Math.max(0.5, parseFloat((f.properties || {}).heightM) || 1.5)),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Tunnels: donkere dekband op wegniveau + doorschijnend tunneldak op
+      // z = heightM (fallback _TA_TUNNEL_DEF_H) → suggestie van overdekking.
+      if (_taTunnelFeatures.length) {
+        const tunnelH = f => Math.max(2, parseFloat((f.properties || {}).heightM) || _TA_TUNNEL_DEF_H);
+        layers.push(new PathLayer({
+          id:            'ta-tunnels-floor',
+          data:          _taTunnelFeatures,
+          widthUnits:    'meters',
+          getWidth:      _TA_TUNNEL_WIDTH_M,
+          getColor:      [45, 47, 52, 230],
+          capRounded:    false,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.05),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+        layers.push(new PathLayer({
+          id:            'ta-tunnels-roof',
+          data:          _taTunnelFeatures,
+          widthUnits:    'meters',
+          getWidth:      _TA_TUNNEL_WIDTH_M,
+          getColor:      [120, 124, 132, 140],
+          capRounded:    false,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, tunnelH(f)),
+          pickable:      false,
+        }));
+      }
+
+      // Duikers: lage smalle donkere kruising op wegniveau.
+      if (_taCulvertFeatures.length) {
+        layers.push(new PathLayer({
+          id:            'ta-culverts-deck',
+          data:          _taCulvertFeatures,
+          widthUnits:    'meters',
+          getWidth:      _TA_CULVERT_WIDTH_M,
+          getColor:      [70, 72, 78, 220],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.05),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Onderdoorgangen: overspanning die boven de verdiepte weg zweeft
+      // (belowGround-features). Doorschijnende grijze band op vaste hoogte.
+      if (_taUnderpassFeatures.length) {
+        layers.push(new PathLayer({
+          id:            'ta-underpass-deck',
+          data:          _taUnderpassFeatures,
+          widthUnits:    'meters',
+          getWidth:      _TA_VIADUCT_WIDTH_M,
+          getColor:      [110, 110, 118, 160],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, Math.max(2, parseFloat((f.properties || {}).heightM) || _TA_UNDERPASS_H_M)),
+          pickable:      true,
+          onHover:       hoverPath,
         }));
       }
 
@@ -6482,6 +6592,22 @@
           getElevation:   d => d.height,
           getFillColor:   [180, 185, 190, 235],
           material:       { ambient: 0.55, diffuse: 0.7, shininess: 16 },
+          pickable:       true,
+          onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
+      // Keermuren: dikkere geëxtrudeerde betonmuur (bruin-grijs).
+      if (_taRetWallQuads.length) {
+        layers.push(new PolygonLayer({
+          id:             'ta-retwalls-deck',
+          data:           _taRetWallQuads,
+          extruded:       true,
+          wireframe:      false,
+          getPolygon:     d => d.polygon,
+          getElevation:   d => d.height,
+          getFillColor:   [150, 140, 125, 240],
+          material:       { ambient: 0.55, diffuse: 0.7, shininess: 8 },
           pickable:       true,
           onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
         }));
@@ -6980,9 +7106,20 @@
         ...(byType.giveWay || []),
       ];
       _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
-      // CIMLK hoogte-/constructie-objecten (below_ground niet tonen).
-      _taViaductFeatures = (byType.viaduct || []).filter(f => !(f.properties || {}).belowGround);
-      _taRebuildScreenQuads((byType.screen || []).filter(f => !(f.properties || {}).belowGround));
+      // CIMLK hoogte-/constructie-objecten. belowGround-viaducten/bruggen worden
+      // als 'underpass' (zwevende overspanning) getekend i.p.v. weggelaten.
+      const _below = f => !!(f.properties || {}).belowGround;
+      _taViaductFeatures = (byType.viaduct || []).filter(f => !_below(f));
+      _taBridgeFeatures  = (byType.bridge  || []).filter(f => !_below(f));
+      _taTunnelFeatures  = byType.tunnel || [];
+      _taCulvertFeatures = byType.culvert || [];
+      _taUnderpassFeatures = [
+        ...(byType.underpass || []),
+        ...(byType.viaduct || []).filter(_below),
+        ...(byType.bridge  || []).filter(_below),
+      ];
+      _taRebuildScreenQuads((byType.screen || []).filter(f => !_below(f)));
+      _taRebuildRetWallQuads(byType.retainingWall || []);
       // Bushalte-billboard + straatmeubilair (procedurele meshes, per-type oriëntatie).
       _taBusStopFeatures = byType.busStop || [];
       _taFurniture = {
