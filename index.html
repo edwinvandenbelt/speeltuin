@@ -2153,6 +2153,7 @@
   <div id="purposeChartPanel" style="display:none">
     <div id="purposeChartHeader">
       <span data-i18n="purposeChartTitle">Motiefverdeling</span>
+      <span id="purposeChartSubtitle" style="display:none;font-size:10px;opacity:.7;margin-left:4px"></span>
       <span id="purposeChartEstTag" style="display:none;font-size:10px;opacity:.65;margin-left:4px"
             data-i18n="purposeChartEstimated">(geschat)</span>
       <button id="purposeChartClose" title="Sluiten">&#10005;</button>
@@ -9625,8 +9626,13 @@
                           : [ 30, 120, 255, Math.min(d.alpha + 40, 255)]),
         getLineWidth:   d => d.isSelected ? 2.5 : 1.5,
         onHover: ({ object }) => {
-          hoveredZoneId = object?.zoneId ?? null;
+          const newId = object?.zoneId ?? null;
+          const changed = newId !== hoveredZoneId;
+          hoveredZoneId = newId;
           map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
+          // Bij hover over een zone-bol de bestemmings-motieven tonen (of terug
+          // naar de link-chart als de cursor de bol verlaat).
+          if (changed) updatePurposeChart();
         },
         updateTriggers: {
           getFillColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
@@ -9999,6 +10005,56 @@
       return purposeFlow.size > 0 ? purposeFlow : null;
     }
 
+    /**
+     * Bestemmings-motieven van een zone, rechtstreeks afgeleid uit de socio-
+     * economische ZONE-kolommen (altijd aanwezig, i.t.t. de gebouw-breakdown):
+     *   wonen        → huishoudens (of inwoners)
+     *   werk         → arbeidsplaatsen (gedetailleerd indien beschikbaar)
+     *   onderwijs    → leerlingplaatsen_*
+     *   winkelen/rec → detail-arbeidsplaatsen indien aanwezig
+     * Geeft Map<motifKey, waarde> terug, of null.
+     */
+    function _purposeFlowFromZone(zoneId) {
+      const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === zoneId);
+      const zp = zFeat?.properties;
+      if (!zp) return null;
+      const n = v => { const x = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(x) && x > 0 ? x : 0; };
+
+      const eduSeats = n(zp.leerlingplaatsen_basisonderwijs)
+                     + n(zp.leerlingplaatsen_middelbaaronderwijs)
+                     + n(zp.leerlingplaatsen_middelbaarberoepsonderwijs)
+                     + n(zp.leerlingplaatsen_hogeronderwijs);
+      const house = n(zp.huishoudens) || n(zp.inwoners);
+
+      // Gedetailleerde baan-uitsplitsing (alleen aanwezig in rijkere datasets)
+      const shopping = n(zp.arbeidsplaatsen_overige_winkelfunctie)
+                     + n(zp.arbeidsplaatsen_overige_voedselwinkelfunctie)
+                     + n(zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie);
+      const recreational = n(zp.arbeidsplaatsen_sportfunctie) + n(zp.arbeidsplaatsen_bijeenkomstfunctie);
+      const kantoor  = n(zp.arbeidsplaatsen_kantoorfunctie);
+      const industrie = n(zp.arbeidsplaatsen_industriefunctie);
+      const eduJobs  = n(zp.arbeidsplaatsen_onderwijsfunctie);
+      const overige  = n(zp.arbeidsplaatsen_overige_gebruiksfunctie);
+      const detailedJobs = shopping + recreational + kantoor + industrie + eduJobs + overige;
+
+      const m = new Map();
+      if (house > 0)     m.set('house', house);
+      if (eduSeats > 0)  m.set('education', eduSeats);
+
+      if (detailedJobs > 0) {
+        if (kantoor + industrie > 0) m.set('work', kantoor + industrie);
+        if (shopping > 0)            m.set('shopping', shopping);
+        if (recreational > 0)        m.set('recreational', recreational);
+        if (overige > 0)             m.set('other', overige);
+        if (!eduSeats && eduJobs > 0) m.set('education', eduJobs);
+      } else {
+        // Alleen totalen beschikbaar: alle arbeidsplaatsen → werk
+        const jobs = n(zp.arbeidsplaatsen);
+        if (jobs > 0) m.set('work', jobs);
+      }
+      return m.size > 0 ? m : null;
+    }
+
     function updatePurposeChart() {
       const panel   = document.getElementById('purposeChartPanel');
       const svg     = document.getElementById('purposeChartSvg');
@@ -10006,6 +10062,25 @@
       const estTag  = document.getElementById('purposeChartEstTag');
       const noData  = document.getElementById('purposeChartNoData');
       const body    = document.getElementById('purposeChartBody');
+      const subtitle= document.getElementById('purposeChartSubtitle');
+
+      // ── Bron A: hover over een zone-bol → bestemmings-motieven van die zone ──
+      // Heeft voorrang boven de link-chart zolang de cursor op een bol staat.
+      const _zonesVisible = zoneCentroidMode !== 'off' || selectedLinkId != null || selectedZoneId != null;
+      if (hoveredZoneId != null && _zonesVisible) {
+        const zpf = _purposeFlowFromZone(hoveredZoneId);
+        if (zpf) {
+          const entries = [...zpf.entries()]
+            .filter(([, v]) => v > 0)
+            .sort(([, a], [, b]) => b - a);
+          const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === hoveredZoneId);
+          const zName = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(hoveredZoneId);
+          if (subtitle) { subtitle.textContent = '· ' + zName; subtitle.style.display = 'inline'; }
+          _renderPurposeChart(entries, true);   // building-schatting → estimated-badge
+          return;
+        }
+      }
+      if (subtitle) { subtitle.style.display = 'none'; subtitle.textContent = ''; }
 
       if (!selectedLinkId) {
         panel.style.display = 'none';
@@ -10064,6 +10139,23 @@
 
       // ── Laatste fallback: toon "100% onbekend" ────────────────────────────
       if (!entries.length) {
+        entries = [['unknown', 1]];
+        estimated = false;
+      }
+
+      _renderPurposeChart(entries, estimated);
+    }
+
+    /** Gedeelde weergave van taart + legenda in #purposeChartPanel. */
+    function _renderPurposeChart(entries, estimated) {
+      const panel   = document.getElementById('purposeChartPanel');
+      const svg     = document.getElementById('purposeChartSvg');
+      const legend  = document.getElementById('purposeChartLegend');
+      const estTag  = document.getElementById('purposeChartEstTag');
+      const noData  = document.getElementById('purposeChartNoData');
+      const body    = document.getElementById('purposeChartBody');
+
+      if (!entries || !entries.length) {
         entries = [['unknown', 1]];
         estimated = false;
       }
