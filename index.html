@@ -4202,7 +4202,7 @@
 
   // ── Applicatielogica ──────────────────────────────────────────────────────
 
-  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer, ScatterplotLayer, PathLayer, IconLayer } = deck;
+  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer, ScatterplotLayer, PathLayer, IconLayer, PolygonLayer } = deck;
 
   // ── Mesh-hulpfuncties ────────────────────────────────────────────────────────
 
@@ -5975,6 +5975,36 @@
         _taIcons['signal'] = _taDesc(_taCompositeWithPole(_taSignalCanvas()));
       return _taIcons['signal'];
     }
+
+    // Bushalte-bordje: blauw/wit paneel met bus-pictogram (zonder paal).
+    function _taBusStopCanvas() {
+      const W = Math.round(0.45 * _TA_PPM) * _TA_RS;
+      const H = Math.round(0.60 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      // Paneel
+      ctx.fillStyle = '#1565c0';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.round(W * 0.08), Math.round(H * 0.08), Math.round(W * 0.84), Math.round(H * 0.84));
+      // Bus-pictogram (blauw op wit)
+      ctx.fillStyle = '#1565c0';
+      const bx = Math.round(W * 0.20), by = Math.round(H * 0.22), bw = Math.round(W * 0.60), bh = Math.round(H * 0.42);
+      ctx.fillRect(bx, by, bw, bh);                                  // bus-body
+      ctx.fillStyle = '#bbdefb';                                     // ramen
+      ctx.fillRect(bx + Math.round(bw*0.10), by + Math.round(bh*0.15), Math.round(bw*0.80), Math.round(bh*0.35));
+      ctx.fillStyle = '#0d3c73';                                     // wielen
+      const wr = Math.round(bw * 0.10);
+      ctx.beginPath(); ctx.arc(bx + Math.round(bw*0.25), by + bh, wr, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(bx + Math.round(bw*0.75), by + bh, wr, 0, Math.PI*2); ctx.fill();
+      return cv;
+    }
+    function _taBusStopIcon() {
+      if (!_taIcons['busstop'])
+        _taIcons['busstop'] = _taDesc(_taCompositeWithPole(_taBusStopCanvas()));
+      return _taIcons['busstop'];
+    }
     function _taBackShape(rvv) {
       const c = (rvv || '?').charAt(0).toUpperCase();
       if (c === 'A' || c === 'J') return 'tri';
@@ -6064,6 +6094,10 @@
     let _taSignalFeatures    = [];   // trafficSignal-features
     let _taSpeedBumpFeatures = [];   // speedBump-polygonen (lage 3D-drempel)
     let _taMarkFeatures      = [];   // platte wegdekmarkeringen (voetganger/stop/voorrang)
+    let _taViaductFeatures   = [];   // CIMLK viaduct/brug-wegvakken (verhoogde ribbon)
+    let _taScreenQuads       = [];   // CIMLK geluidsschermen → geëxtrudeerde muur-quads
+    let _taBusStopFeatures   = [];   // busStop-features (billboard-sprite met halte-bordje)
+    let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
     let _taHover             = null; // {props,lngLat} van het object onder de cursor
 
     // ── Platte wegdekmarkeringen (top-down canvas-iconen, center-anchor) ───────
@@ -6335,13 +6369,285 @@
         }));
       }
 
+      // Bushaltes (haltepaal + bordje) — billboard-composietsprite, camera-gericht.
+      if (_taBusStopFeatures.length) {
+        layers.push(new IconLayer({
+          id:          'ta-busstops-deck',
+          data:        _taBusStopFeatures,
+          billboard:   true,
+          sizeUnits:   'meters',
+          sizeScale:   1,
+          getPosition: _taPosition,
+          getIcon:     () => _taBusStopIcon(),
+          getSize:     () => _TA_POLE_H_M + 0.6,
+          pickable:    true,
+          onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
+      return layers;
+    }
+    //  Komen mee in het TRAFFIC-ASSETS-bestand (assetType 'viaduct'/'screen').
+    //  Blijven 2.5D: viaduct = verhoogde grijze ribbon op z=heightM; scherm =
+    //  geëxtrudeerde dunne muur. below_ground-features worden niet getekend.
+    // ═══════════════════════════════════════════════════════════════════════
+    const _TA_VIADUCT_WIDTH_M = 7.5;   // breedte van de verhoogde wegdek-ribbon
+    const _TA_SCREEN_HALF_M   = 0.15;  // halve dikte van een scherm-muur (m)
+    const _TA_SCREEN_DEF_H    = 3;     // fallback schermhoogte als heightM ontbreekt (m)
+
+    // Zet een lijn-feature om naar per-segment quads (dunne footprint) voor de
+    // geëxtrudeerde PolygonLayer. Perpendiculaire offset in meters → graden.
+    function _screenQuadsFromFeature(f) {
+      const g = f.geometry || {};
+      const props = f.properties || {};
+      let h = parseFloat(props.heightM);
+      if (isNaN(h) || h <= 0) h = _TA_SCREEN_DEF_H;
+      // Ondersteun LineString en MultiLineString.
+      const lines = g.type === 'MultiLineString' ? (g.coordinates || [])
+                  : g.type === 'LineString'      ? [g.coordinates || []]
+                  : [];
+      const out = [];
+      for (const line of lines) {
+        for (let i = 0; i + 1 < line.length; i++) {
+          const a = line[i], b = line[i + 1];
+          if (!a || !b || a.length < 2 || b.length < 2) continue;
+          const latMid = (a[1] + b[1]) * 0.5;
+          const cosLat = Math.max(0.1, Math.cos(latMid * Math.PI / 180));
+          let dx = b[0] - a[0], dy = b[1] - a[1];
+          // Perpendiculair in meters normaliseren.
+          const dxm = dx * 111320 * cosLat, dym = dy * 110540;
+          const len = Math.hypot(dxm, dym) || 1;
+          // Loodrechte eenheidsvector (in meters), 90° gedraaid.
+          const px = -dym / len, py = dxm / len;
+          const ox = (px * _TA_SCREEN_HALF_M) / (111320 * cosLat);
+          const oy = (py * _TA_SCREEN_HALF_M) / 110540;
+          out.push({
+            polygon: [
+              [a[0] + ox, a[1] + oy],
+              [b[0] + ox, b[1] + oy],
+              [b[0] - ox, b[1] - oy],
+              [a[0] - ox, a[1] - oy],
+            ],
+            height: h,
+            props,
+          });
+        }
+      }
+      return out;
+    }
+
+    // Bouw de scherm-quads store opnieuw op (aangeroepen als data verandert).
+    function _taRebuildScreenQuads(features) {
+      const quads = [];
+      for (const f of features) quads.push(..._screenQuadsFromFeature(f));
+      _taScreenQuads = quads;
+    }
+
+    function makeHeightAssetLayers() {
+      if (!_trafficAssetsVisible) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      const layers = [];
+
+      // Viaducten/bruggen: verhoogde grijze ribbon op z = heightM.
+      if (_taViaductFeatures.length) {
+        layers.push(new PathLayer({
+          id:            'ta-viaducts-deck',
+          data:          _taViaductFeatures,
+          widthUnits:    'meters',
+          getWidth:      _TA_VIADUCT_WIDTH_M,
+          getColor:      [110, 110, 118, 235],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath: f => {
+            const g = f.geometry || {};
+            const line = g.type === 'MultiLineString'
+              ? (g.coordinates && g.coordinates[0]) || []
+              : g.coordinates || [];
+            const h = Math.max(0.5, parseFloat((f.properties || {}).heightM) || 1);
+            return line.map(c => [c[0], c[1], h]);
+          },
+          pickable: true,
+          onHover:  info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
+      // Geluidsschermen: geëxtrudeerde dunne muur.
+      if (_taScreenQuads.length) {
+        layers.push(new PolygonLayer({
+          id:             'ta-screens-deck',
+          data:           _taScreenQuads,
+          extruded:       true,
+          wireframe:      false,
+          getPolygon:     d => d.polygon,
+          getElevation:   d => d.height,
+          getFillColor:   [180, 185, 190, 235],
+          material:       { ambient: 0.55, diffuse: 0.7, shininess: 16 },
+          pickable:       true,
+          onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
       return layers;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  Vegetatie (bomen/struiken/bos) — OpenStreetMap, geprepareerd VEGETATION
-    //  parquet, gerenderd als procedurele SimpleMeshLayer-bomen. Niet-essentieel:
-    //  lichte gating (zoom), gedeelde mesh, gecapt aantal.
+    //  STRAATMEUBILAIR — procedurele SimpleMeshLayer-objecten
+    //  Volumetrische assets (brievenbus, bushokje, mast, fietssluis, infobord,
+    //  prullenbak) worden als kleine 3D-meshes getekend. Elke mesh bestaat uit
+    //  één of meer kleurgroepen; per kleurgroep één SimpleMeshLayer die dezelfde
+    //  instantie-array (positie + yaw) deelt. Oriëntatie per type:
+    //    'along'  → langs de rijrichting   (bushokje, infobord, brievenbus)
+    //    'across' → dwars op het pad       (fietssluis)
+    //    'none'   → rotatie-onafhankelijk  (mast, prullenbak)
+    // ═══════════════════════════════════════════════════════════════════════
+    let _taFurnMeshes = null;   // lazy cache: { type: [{mesh, color, material}] }
+
+    // Yaw (° rond Z) voor een feature. `bearing` is kompas (CW t.o.v. noord);
+    // math-hoek θ = 90 - bearing. Zonder bearing valt terug op de wegrichting.
+    function _taYawFor(f, mode) {
+      if (mode === 'none') return 0;
+      const p = f.properties || {};
+      const c = (f.geometry && f.geometry.coordinates) || null;
+      let theta;
+      if (p.bearing != null && !isNaN(p.bearing)) {
+        theta = 90 - Number(p.bearing);
+      } else if (c) {
+        const b = _taRoadBearingAt(c[0], c[1]);
+        theta = b == null ? 0 : b;
+      } else {
+        theta = 0;
+      }
+      return mode === 'across' ? theta + 90 : theta;   // 'along' = theta
+    }
+
+    // Bouw instantie-array [{position:[lng,lat,0], yaw}] uit Point-features.
+    function _taMkInstances(feats, mode) {
+      const out = [];
+      for (const f of (feats || [])) {
+        const g = f.geometry || {};
+        if (g.type !== 'Point') continue;
+        const c = g.coordinates || [];
+        if (c.length < 2) continue;
+        out.push({ position: [c[0], c[1], 0], yaw: _taYawFor(f, mode) });
+      }
+      return out;
+    }
+
+    // Materiaal-preset voor de meubilair-meshes (mat, licht glanzend).
+    const _TA_FURN_MAT = { ambient: 0.6, diffuse: 0.75, shininess: 12, specularColor: [25, 25, 25] };
+
+    // Lazy: bouw de gedeelde meshes per type. Elke groep = {mesh, color, material}.
+    function _taEnsureFurnMeshes() {
+      if (_taFurnMeshes) return;
+      const M = _TA_FURN_MAT;
+      _taFurnMeshes = {};
+
+      // Brievenbus: oranje body op twee dunne poten (~0,6 m).
+      _taFurnMeshes.mailbox = [{
+        mesh: mergeMeshes([
+          makeBoxGeom(0.50, 0.35, 0.45, 0, 0, 0.475),   // body
+          makeBoxGeom(0.05, 0.05, 0.25, -0.15, 0, 0.125),
+          makeBoxGeom(0.05, 0.05, 0.25,  0.15, 0, 0.125),
+        ]),
+        color: [255, 102, 0, 255], material: M,
+      }];
+
+      // Bushokje: grijs frame + dak, lichtblauw transparant achterpaneel (~2,2 m).
+      _taFurnMeshes.busShelter = [
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.08, 0.08, 2.20, -1.6, -0.6, 1.10),
+            makeBoxGeom(0.08, 0.08, 2.20,  1.6, -0.6, 1.10),
+            makeBoxGeom(0.08, 0.08, 2.20, -1.6,  0.6, 1.10),
+            makeBoxGeom(0.08, 0.08, 2.20,  1.6,  0.6, 1.10),
+            makeBoxGeom(3.60, 1.40, 0.12,  0.0,  0.0, 2.26),   // dak
+          ]),
+          color: [120, 124, 128, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(3.40, 0.05, 1.60, 0.0, -0.62, 1.00),   // glas achterpaneel
+          ]),
+          color: [150, 200, 230, 120], material: M },
+      ];
+
+      // Mast: metaalgrijze schacht + arm + lamp-kopje (~7,5 m).
+      _taFurnMeshes.mast = [{
+        mesh: mergeMeshes([
+          _vegCylZ(0.09, 7.5, 0),
+          makeBoxGeom(0.90, 0.10, 0.08, 0.45, 0, 7.40),   // arm
+          makeBoxGeom(0.35, 0.20, 0.15, 0.90, 0, 7.35),   // lamp
+        ]),
+        color: [150, 150, 155, 255], material: M,
+      }];
+
+      // Fietssluis: twee verspringende rode bars + witte palen (dwars op pad).
+      _taFurnMeshes.bikeGate = [
+        { mesh: mergeMeshes([
+            makeBoxGeom(1.30, 0.08, 0.10, -0.35,  0.25, 0.90),
+            makeBoxGeom(1.30, 0.08, 0.10,  0.35, -0.25, 0.90),
+          ]),
+          color: [227, 6, 19, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.07, 0.07, 1.00, -1.00,  0.25, 0.50),
+            makeBoxGeom(0.07, 0.07, 1.00,  1.00, -0.25, 0.50),
+            makeBoxGeom(0.07, 0.07, 1.00,  0.30,  0.25, 0.50),
+            makeBoxGeom(0.07, 0.07, 1.00, -0.30, -0.25, 0.50),
+          ]),
+          color: [240, 240, 240, 255], material: M },
+      ];
+
+      // Infobord: blauw dubbelzijdig paneel op twee grijze palen (langs de weg).
+      // Paneelvlak in X-Z → faces wijzen ±Y, leesbaar vanaf de weg bij 'along'.
+      _taFurnMeshes.infoBoard = [
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.06, 0.06, 1.60, -0.50, 0, 0.80),
+            makeBoxGeom(0.06, 0.06, 1.60,  0.50, 0, 0.80),
+          ]),
+          color: [150, 150, 155, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(1.20, 0.06, 0.90, 0, 0, 1.65),   // paneel
+          ]),
+          color: [26, 115, 232, 255], material: M },
+      ];
+
+      // Prullenbak: donkergroene cilinder met iets bredere rand (~0,9 m).
+      _taFurnMeshes.trashBin = [{
+        mesh: mergeMeshes([
+          _vegCylZ(0.18, 0.75, 0.10, 12),
+          _vegCylZ(0.20, 0.06, 0.79, 12),   // rand
+        ]),
+        color: [60, 80, 64, 255], material: M,
+      }];
+    }
+
+    function makeFurnitureLayers() {
+      if (!_trafficAssetsVisible) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      _taEnsureFurnMeshes();
+      const layers = [];
+      for (const type of Object.keys(_taFurniture)) {
+        const insts = _taFurniture[type];
+        const groups = _taFurnMeshes[type];
+        if (!insts || !insts.length || !groups) continue;
+        groups.forEach((grp, gi) => {
+          layers.push(new SimpleMeshLayer({
+            id:             `ta-furn-${type}-${gi}`,
+            data:           insts,
+            mesh:           grp.mesh,
+            getPosition:    d => d.position,
+            getOrientation: d => [0, d.yaw, 0],
+            getColor:       grp.color,
+            material:       grp.material,
+            sizeScale:      1,
+            pickable:       false,
+          }));
+        });
+      }
+      return layers;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  VEGETATIE — bomen (Point/tree_row) uit het VEGETATION-parquet, gerenderd
+    //  als procedurele SimpleMeshLayer-bomen. Niet-essentieel: lichte gating
+    //  (zoom), gedeelde mesh, gecapt aantal.
     // ═══════════════════════════════════════════════════════════════════════
     const _VEG_MINZOOM   = _TA_MINZOOM;  // gelijk aan verkeersborden: pas tonen bij ver inzoomen
     const _VEG_REF_H     = 6;       // referentiehoogte van de basis-boommesh (m)
@@ -6674,6 +6980,19 @@
         ...(byType.giveWay || []),
       ];
       _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
+      // CIMLK hoogte-/constructie-objecten (below_ground niet tonen).
+      _taViaductFeatures = (byType.viaduct || []).filter(f => !(f.properties || {}).belowGround);
+      _taRebuildScreenQuads((byType.screen || []).filter(f => !(f.properties || {}).belowGround));
+      // Bushalte-billboard + straatmeubilair (procedurele meshes, per-type oriëntatie).
+      _taBusStopFeatures = byType.busStop || [];
+      _taFurniture = {
+        mailbox:    _taMkInstances(byType.mailbox,    'along'),
+        busShelter: _taMkInstances(byType.busShelter, 'along'),
+        mast:       _taMkInstances(byType.mast,       'none'),
+        bikeGate:   _taMkInstances(byType.bikeGate,   'across'),
+        infoBoard:  _taMkInstances(byType.infoBoard,  'along'),
+        trashBin:   _taMkInstances(byType.trashBin,   'none'),
+      };
       // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
       // ondertussen tonen borden alvast hun paal.
       _taEnsurePlates(_taSignFeatures);
@@ -10233,6 +10552,8 @@
           makeCounterLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
           ...makeTrafficAssetLayers(),
+          ...makeHeightAssetLayers(),
+          ...makeFurnitureLayers(),
           ...makeVegetationTreeLayers(),
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is

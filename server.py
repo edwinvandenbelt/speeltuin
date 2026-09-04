@@ -531,6 +531,10 @@ _COLLECTIONS = {
         "title": "Vegetatie",
         "description": "Bomen, struiken en bos/bosschage uit het geprepareerde VEGETATION bestand (OpenStreetMap); ondersteunt bbox-filtering.",
     },
+    "heights": {
+        "title": "Hoogte- en constructie-objecten",
+        "description": "Wegvakken met hoogte-informatie (viaducten/bruggen, tunnels) en geluidsschermen uit het geprepareerde HEIGHTS bestand (CIMLK); ondersteunt bbox-filtering.",
+    },
     "changes": {
         "title": "Wijzigingen",
         "description": "Gecumuleerde wijzigingen in de scenario-keten voor een gebied.",
@@ -3333,6 +3337,53 @@ def ogc_collection_items(collection_id):
         area_dir = _find_area_dir(area_id)
         cache_path = area_dir / f"{area_id}-BUILDINGS.geojson"
 
+        # 0) Autoritatief: geprepareerd BUILDINGS-parquet uit de gmt-library.
+        #    Bevat vooraf verrijkte gebouwen (met OSM-tags onder 'tag_'-prefix en
+        #    afgeleide velden zoals buildingType/parkingCapacity). Als dit bestaat
+        #    winnen we het altijd van de Overpass-cache: geen live query, geen
+        #    '-BUILDINGS-tiles'-map. De motief-kleuring gebeurt client-side.
+        prep_path = None
+        if _GEOPANDAS_AVAILABLE:
+            for _ext in _GEOPARQUET_EXTS:
+                _pp = area_dir / f"{area_id}-BUILDINGS{_ext}"
+                if _pp.exists():
+                    prep_path = _pp
+                    break
+        if prep_path is None and _s3_enabled():
+            # S3 read-through: haal parquet op als het daar staat.
+            for _ext in _GEOPARQUET_EXTS:
+                _key = _s3_key(area_id, f"{area_id}-BUILDINGS{_ext}")
+                if _s3_exists(_key):
+                    try:
+                        _local = area_dir / f"{area_id}-BUILDINGS{_ext}"
+                        area_dir.mkdir(parents=True, exist_ok=True)
+                        _local.write_bytes(_s3_read_bytes(_key))
+                        prep_path = _local
+                        break
+                    except Exception as _e:
+                        print(f"[s3] BUILDINGS-parquet download mislukt ({_key}): {_e}")
+        if prep_path is not None:
+            try:
+                data = _read_geodata(prep_path)
+            except Exception as exc:
+                abort(500, f"Fout bij lezen BUILDINGS-parquet: {exc}")
+            # Properties normaliseren zodat het parquet een drop-in vervanger is
+            # voor de Overpass-GeoJSON: strip de 'tag_'-prefix (→ kale OSM-keys
+            # die de viewer verwacht: building/amenity/building:levels/…) en laat
+            # lege (NaN/None) waarden weg. Afgeleide velden blijven behouden.
+            for feat in data.get("features", []):
+                props = feat.get("properties") or {}
+                newp = {}
+                for k, v in props.items():
+                    if v is None:
+                        continue
+                    # NaN-detectie (float('nan') != zichzelf) zonder harde import.
+                    if isinstance(v, float) and v != v:
+                        continue
+                    newp[k[4:] if k.startswith("tag_") else k] = v
+                feat["properties"] = newp
+            return _ogc_items_response("buildings", data, self_url)
+
         # 1) Gebruik cache als aanwezig én actueel (versienummer klopt)
         if cache_path.exists():
             with open(cache_path, encoding="utf-8") as fh:
@@ -3495,6 +3546,56 @@ def ogc_collection_items(collection_id):
             data = {**data, "features": feats}
 
         return _ogc_items_response("traffic_assets", data, self_url)
+
+    # ── heights: hoogte-/constructie-objecten uit geprepareerd HEIGHTS bestand ──
+    if collection_id == "heights":
+        area_id = request.args.get("areaId", "").strip()
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, "Ongeldige parameter: areaId")
+
+        area_dir = _find_area_dir(area_id)
+        path = _find_data_file(area_dir, f"{area_id}-HEIGHTS")
+        if path is None:
+            abort(404, "Geen HEIGHTS bestand voor dit gebied")
+
+        # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
+        bbox = None
+        bbox_arg = request.args.get("bbox", "").strip()
+        if bbox_arg:
+            parts = bbox_arg.split(",")
+            if len(parts) != 4:
+                abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
+            try:
+                bbox = [float(p) for p in parts]
+            except ValueError:
+                abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
+
+        try:
+            data = _read_geodata(path)
+        except Exception as exc:
+            abort(500, f"Fout bij lezen HEIGHTS: {exc}")
+
+        if bbox is not None:
+            min_lon, min_lat, max_lon, max_lat = bbox
+            feats = []
+            for feat in data.get("features", []):
+                geom = feat.get("geometry") or {}
+                coords = geom.get("coordinates")
+                # Neem het eerste vertex als representatief punt; werkt voor
+                # Point/LineString/Polygon/Multi*.
+                pt = coords
+                while isinstance(pt, list) and pt and isinstance(pt[0], list):
+                    pt = pt[0]
+                if not pt or len(pt) < 2:
+                    continue
+                lon, lat = pt[0], pt[1]
+                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+                    feats.append(feat)
+            data = {**data, "features": feats}
+
+        return _ogc_items_response("heights", data, self_url)
 
     # ── vegetation: bomen/struiken/bos uit geprepareerd VEGETATION bestand ──
     if collection_id == "vegetation":
