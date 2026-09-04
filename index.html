@@ -2413,7 +2413,7 @@
       purposeChartTitle:'Motiefverdeling',
       purposeChartEstimated:'(geschat)', purposeChartNoData:'Onvoldoende data',
       motifLabel_house:'Thuis', motifLabel_work:'Werk', motifLabel_shopping:'Winkelen',
-      motifLabel_school:'Onderwijs', motifLabel_recreational:'Recreatie',
+      motifLabel_school:'Onderwijs', motifLabel_education:'Onderwijs', motifLabel_recreational:'Recreatie',
       motifLabel_hospital:'Ziekenhuis', motifLabel_parking:'Parkeren',
       motifLabel_other:'Overig', motifLabel_unclassified:'Niet geclassificeerd',
       motifLabel_unknown:'Onbekend',
@@ -2647,7 +2647,7 @@
       purposeChartTitle:'Trip purposes',
       purposeChartEstimated:'(estimated)', purposeChartNoData:'Insufficient data',
       motifLabel_house:'Home', motifLabel_work:'Work', motifLabel_shopping:'Shopping',
-      motifLabel_school:'Education', motifLabel_recreational:'Recreation',
+      motifLabel_school:'Education', motifLabel_education:'Education', motifLabel_recreational:'Recreation',
       motifLabel_hospital:'Hospital', motifLabel_parking:'Parking',
       motifLabel_other:'Other', motifLabel_unclassified:'Unclassified',
       motifLabel_unknown:'Unknown',
@@ -9921,6 +9921,7 @@
       shopping:      '#e05c5c',
       recreational:  '#5cb85c',
       school:        '#a29bfe',
+      education:     '#a29bfe',
       hospital:      '#fd79a8',
       parking:       '#636e72',
       other:         '#b2bec3',
@@ -10009,55 +10010,40 @@
         return;
       }
 
-      let flowByToZone;
+      // ── Stap 1: primaire bron = flowsPerMotive op de link zelf ────────────
+      // Dit is de werkelijke motiefverdeling van het wegvak. De route-motifRatio
+      // is in de huidige data nietszeggend ({"unclassified": 1.0}); daarom is de
+      // link-eigen verdeling leidend, óók als de link op een route ligt.
+      let entries = [];
       let estimated = false;
 
-      if (hasRoutes) {
-        ({ flowByToZone } = computeLinkRouteData());
-      } else {
-        const est = _estimatedRouteCache.get(numLinkId) ?? _estimatedRouteCache.get(selectedLinkId);
-        flowByToZone = est ? est.flowByToZone : null;
-        estimated = true;
-      }
-
-      // ── Stap 2: bereken motiefverdeling via attractiezones ────────────────
-      let entries = [];
-      const pf = _purposeFlowFromAttractionZones(flowByToZone);
-      if (pf) {
-        entries = [...pf.entries()]
-          .filter(([k, v]) => v > 0)
+      const linkFeat = _selFeatPC ?? geojson.features.find(
+        f => f.properties?.linkId === numLinkId || f.properties?.linkId === selectedLinkId
+      );
+      const fpm = linkFeat?.properties?.flowsPerMotive;
+      if (fpm) {
+        const raw = typeof fpm === 'string' ? JSON.parse(fpm) : fpm;
+        entries = Object.entries(raw)
+          .filter(([k, v]) => k !== 'house' && v > 0)
           .sort(([, a], [, b]) => b - a);
       }
 
-      // ── Stap 3: motieven van de link zelf meewegen ───────────────────────
-      // Zonder routes: altijd (link-flows 2× zo zwaar t.o.v. zone-schatting).
-      // Mét routes: alleen als de attractiezone-berekening niets opleverde —
-      // anders zouden de motieven die wél op de link staan ontbreken.
-      if (!hasRoutes || entries.length === 0) {
-        const linkFeat = geojson.features.find(
-          f => f.properties?.linkId === numLinkId
-            || f.properties?.linkId === selectedLinkId
-        );
-        const fpm = linkFeat?.properties?.flowsPerMotive;
-        if (fpm) {
-          const raw = typeof fpm === 'string' ? JSON.parse(fpm) : fpm;
-          const linkSum = Object.entries(raw)
-            .filter(([k]) => k !== 'house')
-            .reduce((s, [, v]) => s + v, 0);
-          if (linkSum > 0) {
-            // Normaliseer zone-flows en link-flows elk naar 1.0, combineer 1:2
-            const zoneSum = entries.reduce((s, [, v]) => s + v, 0);
-            const zoneScale = zoneSum > 0 ? 1 / zoneSum : 0;
-            const linkScale = 2 / linkSum;   // link weegt 2× zo zwaar
-            const combined = new Map(entries.map(([k, v]) => [k, v * zoneScale]));
-            for (const [k, v] of Object.entries(raw)) {
-              if (k === 'house') continue;
-              combined.set(k, (combined.get(k) ?? 0) + v * linkScale);
-            }
-            entries = [...combined.entries()]
-              .filter(([, v]) => v > 0)
-              .sort(([, a], [, b]) => b - a);
-          }
+      // ── Stap 2 (fallback): schat de verdeling via attractiezones als de link
+      //    zelf geen bruikbare flowsPerMotive heeft ──────────────────────────
+      if (!entries.length) {
+        let flowByToZone;
+        if (hasRoutes) {
+          ({ flowByToZone } = computeLinkRouteData());
+        } else {
+          const est = _estimatedRouteCache.get(numLinkId) ?? _estimatedRouteCache.get(selectedLinkId);
+          flowByToZone = est ? est.flowByToZone : null;
+          estimated = true;
+        }
+        const pf = _purposeFlowFromAttractionZones(flowByToZone);
+        if (pf) {
+          entries = [...pf.entries()]
+            .filter(([, v]) => v > 0)
+            .sort(([, a], [, b]) => b - a);
         }
       }
 
@@ -10101,7 +10087,8 @@
       // ── Legenda ───────────────────────────────────────────────────────────
       legend.innerHTML = entries.map(([key, val]) => {
         const pct   = ((val / total) * 100).toFixed(1);
-        const label = T(`motifLabel_${key}`) ?? key;
+        const _lk   = T(`motifLabel_${key}`);
+        const label = _lk === `motifLabel_${key}` ? key : _lk;   // val terug op de ruwe key i.p.v. de i18n-sleutel
         const color = _motifColor(key);
         return `<div class="pcl-item">
           <span class="pcl-dot" style="background:${color}"></span>
