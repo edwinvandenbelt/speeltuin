@@ -986,6 +986,49 @@ def _data_path(area_id: str, mode: str, file_type: str) -> "Path | None":
     return _find_data_file(_find_area_dir(area_id), f"{area_id}-{file_type}-{mode}")
 
 
+def _area_parent_id(area_id: str) -> "str | None":
+    """Geef de baseAreaId van een gebied terug via de NETWORK-properties, of None.
+
+    Scenario's verwijzen via ``baseAreaId`` naar hun bronscenario; het basis-
+    scenario zelf heeft geen ouder.
+    """
+    cur_dir = _find_area_dir(area_id)
+    nw_list = list(cur_dir.glob(f"{area_id}-NETWORK-*.geojson"))
+    if not nw_list and _GEOPANDAS_AVAILABLE:
+        for ext in _GEOPARQUET_EXTS:
+            nw_list = list(cur_dir.glob(f"{area_id}-NETWORK-*{ext}"))
+            if nw_list:
+                break
+    if not nw_list:
+        return None
+    try:
+        props = _read_geodata(nw_list[0]).get("properties", {})
+    except Exception:
+        return None
+    return props.get("baseAreaId") or None
+
+
+def _find_prepared_with_base_fallback(area_id: str, file_type: str) -> "Path | None":
+    """Zoek een geprepareerd bestand ``{areaId}-{file_type}`` in het gebied zelf
+    en, als het ontbreekt, in de baseAreaId-keten.
+
+    Scenario's kopiëren statische data (VEGETATION, TRAFFIC-ASSETS, HEIGHTS) niet
+    altijd door; die mag van het basisscenario geleend worden.
+    """
+    visited = {area_id}
+    cur_id = area_id
+    for _ in range(8):
+        path = _find_data_file(_find_area_dir(cur_id), f"{cur_id}-{file_type}")
+        if path is not None:
+            return path
+        parent_id = _area_parent_id(cur_id)
+        if not parent_id or parent_id in visited:
+            break
+        visited.add(parent_id)
+        cur_id = parent_id
+    return None
+
+
 def _discover_areas() -> list:
     """Geef de lijst van beschikbare gebieden terug, met cache.
 
@@ -3506,7 +3549,9 @@ def ogc_collection_items(collection_id):
             abort(400, "Ongeldige parameter: areaId")
 
         area_dir = _find_area_dir(area_id)
-        path = _find_data_file(area_dir, f"{area_id}-TRAFFIC-ASSETS")
+        # Scenario's erven TRAFFIC-ASSETS van hun basisscenario als ze het zelf
+        # niet hebben (wordt bij het aanmaken niet altijd doorgekopieerd).
+        path = _find_prepared_with_base_fallback(area_id, "TRAFFIC-ASSETS")
         if path is None:
             abort(404, "Geen TRAFFIC-ASSETS bestand voor dit gebied")
 
@@ -3556,7 +3601,8 @@ def ogc_collection_items(collection_id):
             abort(400, "Ongeldige parameter: areaId")
 
         area_dir = _find_area_dir(area_id)
-        path = _find_data_file(area_dir, f"{area_id}-HEIGHTS")
+        # Scenario's erven HEIGHTS van hun basisscenario als ze het zelf niet hebben.
+        path = _find_prepared_with_base_fallback(area_id, "HEIGHTS")
         if path is None:
             abort(404, "Geen HEIGHTS bestand voor dit gebied")
 
@@ -3624,7 +3670,8 @@ def ogc_collection_items(collection_id):
         # 1) Autoritatief: geprepareerd VEGETATION-bestand (parquet/geojson uit de
         #    gmt-library). Aparte stam dan de Overpass-cache (-VEGETATION-OSM),
         #    zodat een later toegevoegd parquet niet overschaduwd wordt.
-        prep_path = _find_data_file(area_dir, f"{area_id}-VEGETATION")
+        #    Scenario's erven dit van hun basisscenario als ze het zelf niet hebben.
+        prep_path = _find_prepared_with_base_fallback(area_id, "VEGETATION")
         if prep_path is not None:
             try:
                 data = _read_geodata(prep_path)
