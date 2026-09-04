@@ -1424,6 +1424,11 @@
         Debug-uitvoer activeren
       </label>
 
+      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa;cursor:pointer" title="Verrijk het gebied met OSM-data (gebouwen, verkeersobjecten, signalering). Duurt langer.">
+        <input type="checkbox" id="newFullTwin" style="accent-color:#7ec8e3;width:14px;height:14px;flex-shrink:0"/>
+        Full digital twin (OSM-verrijking)
+      </label>
+
       <!-- Voortgang -->
       <div id="newProgress">
         <div id="newProgressBar"><div id="newProgressFill"></div></div>
@@ -3648,6 +3653,70 @@
               };
             }
 
+            // Item: Maak Full digital twin (OSM-verrijking van bestaand gebied)
+            const isFullTwin = !!area.isFullTwin;
+            const twinItem = mkItem(
+              isFullTwin ? 'Full digital twin (klaar)' : 'Maak Full digital twin',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+              isFullTwin, false);
+            if (!isFullTwin) {
+              twinItem.onclick = async () => {
+                dropdown.style.display = 'none';
+                if (!confirm('OSM-verrijking (Full digital twin) starten voor "' + area.name + '"? Dit kan enkele minuten duren.')) return;
+                // UI blokkeren: open-knop uitschakelen tijdens de job
+                const prevBtnText = btn.textContent;
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'default';
+                btn.onclick = null;
+                btn.textContent = `${area.name}  —  ${area.mode}  (OSM-verrijking bezig…)`;
+                twinItem.querySelector('span:last-child').textContent = 'Bezig met verrijken…';
+                const restore = () => {
+                  btn.disabled = false;
+                  btn.style.opacity = '';
+                  btn.style.cursor = 'pointer';
+                  btn.textContent = prevBtnText;
+                  btn.onclick = () => {
+                    window.location.href =
+                      `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
+                  };
+                };
+                try {
+                  const res = await fetch('/processes/fetch_osm/execution', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ area_id: area.areaId }),
+                  });
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const { jobID } = await res.json();
+                  for (;;) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    const jd = await fetch(`/jobs/${jobID}`).then(r => r.json());
+                    if (jd.status === 'successful') {
+                      twinItem.querySelector('span:last-child').textContent = 'Full digital twin (klaar)';
+                      twinItem.style.color = '#3a4455';
+                      twinItem.style.cursor = 'default';
+                      twinItem.onclick = null;
+                      twinItem.onmouseenter = null;
+                      twinItem.onmouseleave = null;
+                      restore();
+                      break;
+                    }
+                    if (jd.status === 'failed') {
+                      twinItem.querySelector('span:last-child').textContent = 'Full digital twin (mislukt)';
+                      twinItem.style.color = '#ff6b6b';
+                      restore();
+                      break;
+                    }
+                  }
+                } catch (err) {
+                  twinItem.querySelector('span:last-child').textContent = 'Full digital twin (fout)';
+                  twinItem.style.color = '#ff6b6b';
+                  restore();
+                }
+              };
+            }
+
             // Item: Verwijderen
             const delItem = mkItem('Verwijderen',
               '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>',
@@ -3671,6 +3740,7 @@
             dropdown.appendChild(followItem);
             dropdown.appendChild(maquetteItem);
             dropdown.appendChild(gmtItem);
+            dropdown.appendChild(twinItem);
             dropdown.appendChild(delItem);
 
             // Wrapper voor positionering dropdown
@@ -3870,6 +3940,7 @@
         min_lon: bbox.minLon, min_lat: bbox.minLat,
         max_lon: bbox.maxLon, max_lat: bbox.maxLat,
         debug: !!window._debugMode,
+        full_digital_twin: !!document.getElementById('newFullTwin').checked,
       };
       const res  = await fetch('/processes/prepare/execution', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -5965,7 +6036,8 @@
     // VOORKANT: `bearing` binnen ±TOL van de kijkrichting (map.getBearing()).
     // ACHTERKANT: `bearing` binnen ±TOL van de tegenovergestelde richting (mb+180).
     // Daartussen (schuin) → alleen de paal. Borden zonder bearing tonen de voorkant.
-    const _SIGN_BEARING_TOL = 70;   // ± graden speling
+    const _SIGN_BEARING_TOL       = 70;   // ± graden speling (achterkant)
+    const _SIGN_FRONT_BEARING_TOL = 40;   // ± graden speling (voorkant, smaller)
 
     function _angDiff(a, b) {
       let d = Math.abs(((a - b) % 360 + 360) % 360);
@@ -5974,7 +6046,7 @@
     function _signFrontVisible(fb) {
       if (fb == null || isNaN(fb)) return true;   // geen richting bekend → voorkant tonen
       const mb = ((map.getBearing() % 360) + 360) % 360;
-      return _angDiff(((fb % 360) + 360) % 360, mb) <= _SIGN_BEARING_TOL;
+      return _angDiff(((fb % 360) + 360) % 360, mb) <= _SIGN_FRONT_BEARING_TOL;
     }
     function _signBackVisible(fb) {
       if (fb == null || isNaN(fb)) return false;  // geen richting → geen achterkant
@@ -6266,6 +6338,223 @@
       return layers;
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Vegetatie (bomen/struiken/bos) — OpenStreetMap, geprepareerd VEGETATION
+    //  parquet, gerenderd als procedurele SimpleMeshLayer-bomen. Niet-essentieel:
+    //  lichte gating (zoom), gedeelde mesh, gecapt aantal.
+    // ═══════════════════════════════════════════════════════════════════════
+    const _VEG_MINZOOM   = 15;      // niet tekenen als te ver uitgezoomd
+    const _VEG_REF_H     = 6;       // referentiehoogte van de basis-boommesh (m)
+    const _VEG_DEF_H     = 6;       // aangenomen hoogte als OSM 'height' ontbreekt
+    const _VEG_MIN_H     = 3;       // ondergrens hoogte (m)
+    const _VEG_MAX_H     = 22;      // bovengrens hoogte (m)
+    const _VEG_ROW_STEP  = 8;       // sample-afstand langs tree_row (m)
+    const _VEG_MAX_TREES = 4000;    // harde cap op getekende boom-instanties
+
+    let _vegTreeFeatures = [];      // Point/LineString-features → boom-instanties
+    let _vegTrees        = null;    // afgeleide instanties [{position, yaw, scale, needle}]
+    let _lastVegBbox     = null;
+    let _vegNoFile       = false;   // true na 404 → geen VEGETATION bestand, niet blijven pollen
+
+    // ── Procedurele mesh-onderdelen (Z = omhoog, basis op z=0) ──────────────
+    function _vegCylZ(radius, h, z0, seg = 8) {
+      const pos = [], nor = [], uv = [], idx = [];
+      const step = (2 * Math.PI) / seg;
+      for (let i = 0; i < seg; i++) {
+        const a0 = i * step, a1 = ((i + 1) % seg) * step;
+        const x0 = Math.cos(a0) * radius, y0 = Math.sin(a0) * radius;
+        const x1 = Math.cos(a1) * radius, y1 = Math.sin(a1) * radius;
+        const b = pos.length / 3;
+        pos.push(x0, y0, z0,  x0, y0, z0 + h,  x1, y1, z0 + h,  x1, y1, z0);
+        nor.push(x0, y0, 0,  x0, y0, 0,  x1, y1, 0,  x1, y1, 0);
+        uv.push(0, 0, 0, 1, 1, 1, 1, 0);
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      }
+      const vc = pos.length / 3;
+      return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+               uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
+    }
+    function _vegConeZ(radius, h, z0, seg = 10) {
+      const pos = [], nor = [], uv = [], idx = [];
+      const step = (2 * Math.PI) / seg;
+      const apex = z0 + h;
+      for (let i = 0; i < seg; i++) {
+        const a0 = i * step, a1 = ((i + 1) % seg) * step;
+        const x0 = Math.cos(a0) * radius, y0 = Math.sin(a0) * radius;
+        const x1 = Math.cos(a1) * radius, y1 = Math.sin(a1) * radius;
+        const b = pos.length / 3;
+        pos.push(x0, y0, z0,  x1, y1, z0,  0, 0, apex);
+        nor.push(x0, y0, radius / h,  x1, y1, radius / h,  0, 0, 1);
+        uv.push(0, 0, 1, 0, 0.5, 1);
+        idx.push(b, b + 1, b + 2);
+      }
+      const vc = pos.length / 3;
+      return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+               uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
+    }
+    function _vegSphereZ(radius, cz, seg = 8) {
+      const pos = [], nor = [], uv = [], idx = [];
+      const rings = Math.max(4, seg >> 1);
+      for (let r = 0; r <= rings; r++) {
+        const phi = Math.PI * (r / rings - 0.5);   // -90..90
+        const zr = Math.sin(phi), rr = Math.cos(phi);
+        for (let s = 0; s <= seg; s++) {
+          const th = 2 * Math.PI * (s / seg);
+          const x = Math.cos(th) * rr, y = Math.sin(th) * rr;
+          pos.push(x * radius, y * radius, cz + zr * radius);
+          nor.push(x, y, zr);
+          uv.push(s / seg, r / rings);
+        }
+      }
+      const cols = seg + 1;
+      for (let r = 0; r < rings; r++) {
+        for (let s = 0; s < seg; s++) {
+          const a = r * cols + s, b = a + 1, c = a + cols, d = c + 1;
+          idx.push(a, c, b, b, c, d);
+        }
+      }
+      const vc = pos.length / 3;
+      return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+               uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
+    }
+
+    // Gedeelde meshes (lazy, één keer gebouwd op referentiehoogte _VEG_REF_H).
+    let _vegTrunkMesh = null, _vegBroadMesh = null, _vegNeedleMesh = null;
+    function _vegEnsureMeshes() {
+      if (_vegTrunkMesh) return;
+      const trunkH = _VEG_REF_H * 0.4;
+      _vegTrunkMesh  = mergeMeshes([_vegCylZ(0.16, trunkH, 0)]);
+      // Loofboom: bolvormige kroon bovenop de stam.
+      _vegBroadMesh  = mergeMeshes([_vegSphereZ(1.7, trunkH + 1.5)]);
+      // Naaldboom: kegelvormige kroon.
+      _vegNeedleMesh = mergeMeshes([_vegConeZ(1.5, _VEG_REF_H - trunkH, trunkH)]);
+    }
+
+    // Deterministische pseudo-random uit een string (osmId) → [0,1).
+    function _vegHash(s) {
+      let h = 2166136261;
+      s = String(s || '');
+      for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return ((h >>> 0) % 100000) / 100000;
+    }
+
+    function _vegClampH(h) {
+      const v = Number(h);
+      if (!isFinite(v) || v <= 0) return _VEG_DEF_H;
+      return Math.min(_VEG_MAX_H, Math.max(_VEG_MIN_H, v));
+    }
+
+    // Bouw de boom-instanties uit punt-/lijnfeatures (gecapt op _VEG_MAX_TREES).
+    function _vegBuildTrees() {
+      const out = [];
+      const push = (lng, lat, props, seed) => {
+        if (out.length >= _VEG_MAX_TREES) return;
+        const h = _vegClampH(props.height);
+        const needle = props.leafType === 'needleleaved';
+        const r = _vegHash(seed);
+        out.push({
+          position: [lng, lat, 0],
+          yaw:      r * 360,
+          scale:    (h / _VEG_REF_H) * (0.85 + r * 0.3),   // hoogte + jitter
+          needle,
+        });
+      };
+      for (const f of _vegTreeFeatures) {
+        const g = f.geometry || {}, p = f.properties || {};
+        if (g.type === 'Point') {
+          const c = g.coordinates || [];
+          if (c.length >= 2) push(c[0], c[1], p, p.osmId || `${c[0]},${c[1]}`);
+        } else if (g.type === 'LineString') {
+          // Sample bomen om de ~_VEG_ROW_STEP meter langs de rij.
+          const cs = g.coordinates || [];
+          const mLng = 111320 * Math.cos((cs[0]?.[1] || 0) * Math.PI / 180) || 1, mLat = 110540;
+          let carry = 0;
+          for (let i = 0; i < cs.length - 1; i++) {
+            const a = cs[i], b = cs[i + 1];
+            const dx = (b[0] - a[0]) * mLng, dy = (b[1] - a[1]) * mLat;
+            const segLen = Math.hypot(dx, dy);
+            if (segLen === 0) continue;
+            let d = carry;
+            while (d <= segLen) {
+              const t = d / segLen;
+              push(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, p,
+                   `${p.osmId || 'row'}:${i}:${Math.round(d)}`);
+              d += _VEG_ROW_STEP;
+            }
+            carry = d - segLen;
+          }
+        }
+        if (out.length >= _VEG_MAX_TREES) break;
+      }
+      return out;
+    }
+
+    function makeVegetationTreeLayers() {
+      if (!_trafficAssetsVisible) return [];
+      if (map.getZoom() < _VEG_MINZOOM) return [];
+      if (_vegTrees === null) _vegTrees = _vegBuildTrees();
+      if (!_vegTrees.length) return [];
+      _vegEnsureMeshes();
+      const broad  = _vegTrees.filter(t => !t.needle);
+      const needle = _vegTrees.filter(t => t.needle);
+      const layers = [];
+      const shared = (id, data) => ({
+        id, data,
+        getPosition:    d => d.position,
+        getOrientation: d => [0, d.yaw, 0],
+        getScale:       d => [d.scale, d.scale, d.scale],
+        sizeScale:      1,
+        pickable:       false,
+      });
+      // Stammen (bruin) voor alle bomen.
+      layers.push(new SimpleMeshLayer({
+        ...shared('veg-trunks', _vegTrees),
+        mesh:     _vegTrunkMesh,
+        getColor: [96, 70, 44, 255],
+        material: { ambient: 0.6, diffuse: 0.7, shininess: 10, specularColor: [20, 20, 20] },
+      }));
+      if (broad.length) layers.push(new SimpleMeshLayer({
+        ...shared('veg-canopy-broad', broad),
+        mesh:     _vegBroadMesh,
+        getColor: [64, 118, 52, 255],
+        material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
+      }));
+      if (needle.length) layers.push(new SimpleMeshLayer({
+        ...shared('veg-canopy-needle', needle),
+        mesh:     _vegNeedleMesh,
+        getColor: [44, 92, 58, 255],
+        material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
+      }));
+      return layers;
+    }
+
+    async function loadVegetationInView() {
+      if (!_mapReady || !_trafficAssetsVisible || _vegNoFile) return;
+      if (map.getZoom() < _VEG_MINZOOM) return;
+      const b  = map.getBounds();
+      const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      if (_bboxContains(_lastVegBbox, vw)) return;
+      const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
+      const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
+      let data;
+      try {
+        const r = await fetch(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`);
+        if (r.status === 404) { _vegNoFile = true; return; }   // geen bbox/bestand → stop met pollen
+        if (!r.ok) return;
+        data = await r.json();
+      } catch { return; }
+      if (!data || !Array.isArray(data.features)) return;
+      _lastVegBbox = bbox;
+      const trees = [];
+      for (const f of data.features) {
+        const t = (f.geometry || {}).type;
+        if (t === 'Point' || t === 'LineString' || t === 'MultiLineString') trees.push(f);
+      }
+      _vegTreeFeatures = trees;
+      _vegTrees = null;   // opnieuw afleiden bij volgende render
+      updateOverlay(true);
+    }
+
     // Klik-popup voor verkeersobjecten (deck.gl onClick is onbetrouwbaar in
     // interleaved-modus → onHover houdt _taHover bij, map-klik toont de popup).
     map.on('click', () => {
@@ -6395,13 +6684,14 @@
       _trafficAssetsVisible = vis;
       updateOverlay(true);
       if (vis) loadTrafficAssetsInView();
+      if (vis) loadVegetationInView();
     }
 
     // Herlaad bij kaartbeweging (gedebounced), maar alleen als de laag actief is.
     let _assetMoveTimer = null;
     function _scheduleAssetLoad() {
       if (_assetMoveTimer) clearTimeout(_assetMoveTimer);
-      _assetMoveTimer = setTimeout(() => { _assetMoveTimer = null; loadTrafficAssetsInView(); }, 300);
+      _assetMoveTimer = setTimeout(() => { _assetMoveTimer = null; loadTrafficAssetsInView(); loadVegetationInView(); }, 300);
     }
     map.on('moveend', _scheduleAssetLoad);
 
@@ -9943,6 +10233,7 @@
           makeCounterLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
           ...makeTrafficAssetLayers(),
+          ...makeVegetationTreeLayers(),
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
         if (splitViewActive && overlay2) {
@@ -10378,6 +10669,19 @@
       _lastAssetBbox     = null;
       _trafficSignsReady = false;
       loadTrafficAssetsInView();
+      _lastVegBbox       = null;
+      loadVegetationInView();
+
+      // Wegnummer-schildjes (N346 e.d.) worden standaard erg vaak langs de weg
+      // herhaald. Vergroot symbol-spacing op de shield-symboollagen zodat ze
+      // veel minder vaak verschijnen.
+      try {
+        for (const l of map.getStyle().layers) {
+          if (l.type !== 'symbol') continue;
+          if (!/shield/i.test(l.id)) continue;
+          map.setLayoutProperty(l.id, 'symbol-spacing', 1200);
+        }
+      } catch (_) {}
 
       // ── Satelliet-ondergrond ────────────────────────────────────────────────
       // Verzamel Liberty fill/background layer IDs die we in satellietmodus verbergen.

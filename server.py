@@ -183,6 +183,11 @@ from buildings_fetcher.core.buildings_fetcher_core import (  # noqa: E402
     fetch_buildings_overpass as _fetch_buildings_overpass,
 )
 
+from vegetation_fetcher.core.vegetation_fetcher_core import (  # noqa: E402
+    VEGETATION_QUERY_VER as _VEGETATION_QUERY_VER,
+    fetch_vegetation_overpass as _fetch_vegetation_overpass,
+)
+
 from traffic_signs_fetcher.core.traffic_signs_fetcher_core import (  # noqa: E402
     TRAFFIC_SIGNS_QUERY_VER as _TRAFFIC_SIGNS_QUERY_VER,
     is_netherlands as _is_netherlands,
@@ -522,6 +527,10 @@ _COLLECTIONS = {
         "title": "Verkeersobjecten",
         "description": "Verkeersobjecten (borden, verkeerslichten, e.a.) uit het geprepareerde TRAFFIC-ASSETS bestand; ondersteunt bbox-filtering.",
     },
+    "vegetation": {
+        "title": "Vegetatie",
+        "description": "Bomen, struiken en bos/bosschage uit het geprepareerde VEGETATION bestand (OpenStreetMap); ondersteunt bbox-filtering.",
+    },
     "changes": {
         "title": "Wijzigingen",
         "description": "Gecumuleerde wijzigingen in de scenario-keten voor een gebied.",
@@ -825,6 +834,37 @@ _jobs_lock = threading.Lock()
 # overschrijven.  Door de pipeline-uitvoering te serialiseren voorkom je dat.
 _pipeline_stdout_lock = threading.Lock()
 
+# Circuit breaker voor Overpass-queries: na _OVERPASS_FAIL_THRESHOLD opeenvolgende
+# mislukkingen (per collection) stoppen we tot server-herstart. Reset bij succes.
+_OVERPASS_FAIL_THRESHOLD = 5
+_overpass_fail_counts: dict = {}
+_overpass_breaker_lock = threading.Lock()
+
+
+def _overpass_breaker_check(collection: str) -> None:
+    """Abort met 503 als de circuit breaker voor deze collection open staat."""
+    with _overpass_breaker_lock:
+        count = _overpass_fail_counts.get(collection, 0)
+    if count >= _OVERPASS_FAIL_THRESHOLD:
+        abort(
+            503,
+            f"Overpass tijdelijk uitgeschakeld voor {collection} na "
+            f"{count} opeenvolgende mislukkingen. Herstart de server om opnieuw te proberen.",
+        )
+
+
+def _overpass_breaker_failure(collection: str) -> None:
+    """Registreer een mislukte Overpass-poging voor deze collection."""
+    with _overpass_breaker_lock:
+        _overpass_fail_counts[collection] = _overpass_fail_counts.get(collection, 0) + 1
+
+
+def _overpass_breaker_success(collection: str) -> None:
+    """Reset de teller na een geslaagde Overpass-poging."""
+    with _overpass_breaker_lock:
+        _overpass_fail_counts.pop(collection, None)
+
+
 # SSE follow-modus: area_id → set van queue.SimpleQueue-objecten voor verbonden browsers
 _sse_listeners: dict = {}
 _sse_listeners_lock = threading.Lock()
@@ -1044,6 +1084,10 @@ def _discover_areas_uncached() -> list:
             has_compare = (subdir / f"{area_id}-COMPARE-{mode}.geojson").exists()
             has_nvp_routes = (subdir / f"{area_id}-NVP-ROUTES-{mode}.parquet").exists()
             gmt_uploaded = (subdir / f".gmt-uploaded-{mode}").exists()
+            # Full digital twin = TRAFFIC-ASSETS aanwezig (area-niveau, geen mode-suffix)
+            is_full_twin = (
+                _find_data_file(subdir, f"{area_id}-TRAFFIC-ASSETS") is not None
+            )
             areas.append(
                 {
                     "areaId": area_id,
@@ -1053,6 +1097,7 @@ def _discover_areas_uncached() -> list:
                     "srcAreaId": src_area_id,
                     "hasNvpRoutes": has_nvp_routes,
                     "gmtUploaded": gmt_uploaded,
+                    "isFullTwin": is_full_twin,
                 }
             )
 
@@ -1100,6 +1145,10 @@ def _discover_areas_uncached() -> list:
             has_nvp_routes = _s3_exists(
                 _s3_key(area_id, f"{area_id}-NVP-ROUTES-{mode}.parquet")
             )
+            is_full_twin = any(
+                _s3_exists(_s3_key(area_id, f"{area_id}-TRAFFIC-ASSETS{ext}"))
+                for ext in (".geojson", *_GEOPARQUET_EXTS)
+            )
             areas.append(
                 {
                     "areaId": area_id,
@@ -1108,6 +1157,7 @@ def _discover_areas_uncached() -> list:
                     "hasCompare": has_compare,
                     "srcAreaId": src_area_id,
                     "hasNvpRoutes": has_nvp_routes,
+                    "isFullTwin": is_full_twin,
                 }
             )
 
@@ -1371,6 +1421,7 @@ def _get_available_processes() -> set:
     avail = {"delete-area", "set-directory", "upload-to-gmt"}
     if _PREPARE_AVAILABLE:
         avail.add("prepare")
+        avail.add("fetch_osm")
     if _ADJUST_AVAILABLE:
         avail.add("adjust")
     if _WHATIF_AVAILABLE:
@@ -1973,6 +2024,151 @@ def _run_wegenscan_job(job_id: str, area_id: str, mode: str):
             _jobs[job_id]["finished"] = _now_iso()
 
 
+def _network_bbox(net_path: Path) -> "list | None":
+    """Bepaal de bbox [min_lon, min_lat, max_lon, max_lat] uit een NETWORK-bestand."""
+    try:
+        ndata = _read_geodata(net_path)
+    except Exception:
+        return None
+    bbox = ndata.get("properties", {}).get("bbox")
+    if bbox and len(bbox) >= 4:
+        return list(bbox[:4])
+    lons, lats = [], []
+    for feat in ndata.get("features", []):
+        coords = feat.get("geometry", {}).get("coordinates", [])
+        # Ondersteun zowel LineString als (Multi)Polygon door plat te maken
+        stack = [coords]
+        while stack:
+            cur = stack.pop()
+            if (
+                isinstance(cur, (list, tuple))
+                and len(cur) >= 2
+                and isinstance(cur[0], (int, float))
+                and isinstance(cur[1], (int, float))
+            ):
+                lons.append(cur[0])
+                lats.append(cur[1])
+            elif isinstance(cur, (list, tuple)):
+                stack.extend(cur)
+    if lons:
+        return [min(lons), min(lats), max(lons), max(lats)]
+    return None
+
+
+def _run_fetch_osm_job(job_id: str, area_id: str):
+    """Verrijk een bestaand gebied met OSM-data (Full digital twin).
+
+    Draait prepare's stage-5 opnieuw met only_osm=True voor elk mode_label van
+    het gebied. Herschrijft NETWORK (trafficSignal), TRAFFIC-ASSETS en BUILDINGS.
+    """
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+    stream = _LogStream(_jobs[job_id]["log"], _jobs_lock)
+    try:
+        area_dir = _find_area_dir(area_id)
+        if not area_dir.is_dir():
+            raise FileNotFoundError(f"Geen map gevonden voor gebied: {area_id}")
+
+        # Bepaal alle mode_labels via de NETWORK-bestanden van dit gebied
+        net_files: dict = {}
+        for ext in (".geojson", *_GEOPARQUET_EXTS):
+            for p in area_dir.glob(f"{area_id}-NETWORK-*{ext}"):
+                m = re.match(
+                    rf"^{re.escape(area_id)}-NETWORK-(.+){re.escape(ext)}$", p.name
+                )
+                if m:
+                    label = m.group(1).upper()
+                    net_files.setdefault(label, p)
+        if not net_files:
+            raise FileNotFoundError(
+                f"Geen NETWORK-bestand gevonden voor area_id={area_id!r}"
+            )
+
+        name = area_dir.name
+        with (
+            _pipeline_stdout_lock,
+            contextlib.redirect_stdout(stream),
+            contextlib.redirect_stderr(stream),
+        ):
+            for mode_label, net_path in sorted(net_files.items()):
+                bbox = _network_bbox(net_path)
+                if not bbox:
+                    raise RuntimeError(
+                        f"Geen bbox beschikbaar voor NETWORK {net_path.name}"
+                    )
+                if mode_label == "MIXED":
+                    modes = ["CAR", "BIKE"]
+                else:
+                    modes = [mode_label]
+                print(f"[fetch_osm] OSM-verrijking voor mode_label={mode_label}")
+                _prepare_run_pipeline(
+                    min_lon=bbox[0],
+                    min_lat=bbox[1],
+                    max_lon=bbox[2],
+                    max_lat=bbox[3],
+                    modes=modes,
+                    mode_label=mode_label,
+                    name=name,
+                    out_dir=area_dir,
+                    area_id=area_id,
+                    catalog="spectrum",
+                    schema="2024_01",
+                    only_osm=True,
+                )
+        stream.flush()
+
+        if _s3_enabled():
+            try:
+                _s3_sync_to(area_dir, name)
+            except Exception as _e:
+                print(f"[s3] sync na fetch_osm mislukt: {_e}")
+
+        _areas_cache_invalidate()
+        with _jobs_lock:
+            _jobs[job_id]["returncode"] = 0
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+            _jobs[job_id]["_results"] = {"areaId": area_id}
+    except BaseException as exc:
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]["log"].append(f"[server] Fout: {type(exc).__name__}: {exc}")
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["returncode"] = -1
+            _jobs[job_id]["finished"] = _now_iso()
+
+
+def _execute_fetch_osm(inputs: dict):
+    """Start OSM-verrijking (Full digital twin) als async job."""
+    if not _PREPARE_AVAILABLE:
+        abort(503, "prepare-package niet beschikbaar")
+
+    area_id = str(inputs.get("area_id", "")).strip()
+    if not _safe(area_id):
+        abort(400, f"Ongeldige of ontbrekende area_id: {area_id!r}")
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "jobID": job_id,
+            "processID": "fetch_osm",
+            "status": "accepted",
+            "log": [],
+            "returncode": None,
+            "created": _now_iso(),
+            "started": None,
+            "finished": None,
+            "_results": {},
+        }
+    threading.Thread(
+        target=_run_fetch_osm_job,
+        args=(job_id, area_id),
+        daemon=True,
+    ).start()
+    return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}
+
+
 def _execute_prepare(inputs: dict):
     """Start prepare als async job. Geeft (body, 201, headers) terug."""
     if not _PREPARE_AVAILABLE:
@@ -2022,6 +2218,10 @@ def _execute_prepare(inputs: dict):
         except Exception as _e:
             print(f"[s3] .area-uuid schrijven mislukt: {_e}")
 
+    # Full digital twin: alleen wanneer expliciet aangevinkt draaien we de
+    # (trage) OSM/Overpass-verrijking mee. Default = snelle prepare zonder OSM.
+    full_digital_twin = bool(inputs.get("full_digital_twin", False))
+
     kwargs = dict(
         min_lon=min_lon,
         min_lat=min_lat,
@@ -2036,6 +2236,7 @@ def _execute_prepare(inputs: dict):
         schema=inputs.get("schema", "2024_01"),
         refresh=bool(inputs.get("refresh")),
         debug=bool(inputs.get("debug", False)),
+        no_osm=(not full_digital_twin),
     )
 
     job_id = str(uuid.uuid4())
@@ -3214,12 +3415,15 @@ def ogc_collection_items(collection_id):
 
         try:
             tile_cache_dir = area_dir / f"{area_id}-BUILDINGS-tiles"
+            _overpass_breaker_check("buildings")
             data = _fetch_buildings_overpass(
                 bbox,
                 tile_cache_dir=tile_cache_dir,
                 fallback_tile_cache_dir=base_tile_cache_dir,
             )
+            _overpass_breaker_success("buildings")
         except Exception as exc:
+            _overpass_breaker_failure("buildings")
             abort(502, f"Overpass-query mislukt: {exc}")
 
         # Cache opslaan — alleen als alle tegels succesvol waren
@@ -3291,6 +3495,184 @@ def ogc_collection_items(collection_id):
             data = {**data, "features": feats}
 
         return _ogc_items_response("traffic_assets", data, self_url)
+
+    # ── vegetation: bomen/struiken/bos uit geprepareerd VEGETATION bestand ──
+    if collection_id == "vegetation":
+        area_id = request.args.get("areaId", "").strip()
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, "Ongeldige parameter: areaId")
+
+        area_dir = _find_area_dir(area_id)
+
+        # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
+        bbox = None
+        bbox_arg = request.args.get("bbox", "").strip()
+        if bbox_arg:
+            parts = bbox_arg.split(",")
+            if len(parts) != 4:
+                abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
+            try:
+                bbox = [float(p) for p in parts]
+            except ValueError:
+                abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
+
+        data = None
+
+        # 1) Autoritatief: geprepareerd VEGETATION-bestand (parquet/geojson uit de
+        #    gmt-library). Aparte stam dan de Overpass-cache (-VEGETATION-OSM),
+        #    zodat een later toegevoegd parquet niet overschaduwd wordt.
+        prep_path = _find_data_file(area_dir, f"{area_id}-VEGETATION")
+        if prep_path is not None:
+            try:
+                data = _read_geodata(prep_path)
+            except Exception as exc:
+                abort(500, f"Fout bij lezen VEGETATION: {exc}")
+
+        # 2) Live-Overpass fallback met cache-hiërarchie (analoog aan buildings).
+        if data is None:
+            cache_path = area_dir / f"{area_id}-VEGETATION-OSM.geojson"
+
+            # 2a) Eigen aggregaat-cache
+            if cache_path.exists():
+                try:
+                    with open(cache_path, encoding="utf-8") as fh:
+                        cached = json.load(fh)
+                    if cached.get("properties", {}).get("_qv") == _VEGETATION_QUERY_VER:
+                        data = cached
+                    else:
+                        cache_path.unlink()  # verouderde cache verwijderen
+                except Exception:
+                    pass
+
+            # 2b) Zoek aggregaat-/tegel-cache in ouder-gebieden (baseAreaId-keten)
+            base_tile_cache_dir = None
+            if data is None:
+                visited = {area_id}
+                cur_id = area_id
+                for _ in range(6):
+                    try:
+                        cur_dir = _find_area_dir(cur_id)
+                        _nw_list = list(cur_dir.glob(f"{cur_id}-NETWORK-*.geojson"))
+                        if not _nw_list and _GEOPANDAS_AVAILABLE:
+                            for _ext in _GEOPARQUET_EXTS:
+                                _nw_list = list(
+                                    cur_dir.glob(f"{cur_id}-NETWORK-*{_ext}")
+                                )
+                                if _nw_list:
+                                    break
+                        if not _nw_list:
+                            break
+                        props = _read_geodata(_nw_list[0]).get("properties", {})
+                        parent_id = props.get("baseAreaId") or None
+                    except Exception:
+                        break
+                    if not parent_id or parent_id in visited:
+                        break
+                    visited.add(parent_id)
+                    cur_id = parent_id
+                    parent_dir = _find_area_dir(parent_id)
+                    parent_cache = parent_dir / f"{parent_id}-VEGETATION-OSM.geojson"
+                    if parent_cache.exists():
+                        try:
+                            with open(parent_cache, encoding="utf-8") as fh:
+                                pdata = json.load(fh)
+                            if (
+                                pdata.get("properties", {}).get("_qv")
+                                == _VEGETATION_QUERY_VER
+                            ):
+                                data = pdata
+                                break
+                        except Exception:
+                            pass
+                    ptcd = parent_dir / f"{parent_id}-VEGETATION-OSM-tiles"
+                    if ptcd.exists() and base_tile_cache_dir is None:
+                        base_tile_cache_dir = ptcd
+
+            # 2c) Bepaal NETWORK-bbox en query Overpass (volledige gebied)
+            if data is None:
+                area_bbox = None
+                try:
+                    _nw_list2 = list(area_dir.glob(f"{area_id}-NETWORK-*.geojson"))
+                    if not _nw_list2 and _GEOPANDAS_AVAILABLE:
+                        for _ext in _GEOPARQUET_EXTS:
+                            _nw_list2 = list(
+                                area_dir.glob(f"{area_id}-NETWORK-*{_ext}")
+                            )
+                            if _nw_list2:
+                                break
+                    if _nw_list2:
+                        ndata = _read_geodata(_nw_list2[0])
+                        nprops = ndata.get("properties", {})
+                        area_bbox = nprops.get("bbox")
+                        if not area_bbox or len(area_bbox) < 4:
+                            lons, lats = [], []
+                            for feat in ndata.get("features", []):
+                                for coord in feat.get("geometry", {}).get(
+                                    "coordinates", []
+                                ):
+                                    lons.append(coord[0])
+                                    lats.append(coord[1])
+                            if lons:
+                                area_bbox = [min(lons), min(lats), max(lons), max(lats)]
+                except Exception as exc:
+                    abort(500, f"Fout bij lezen netwerk voor bbox: {exc}")
+
+                if not area_bbox:
+                    abort(404, "Geen bbox beschikbaar voor vegetatie-query")
+
+                try:
+                    tile_cache_dir = area_dir / f"{area_id}-VEGETATION-OSM-tiles"
+                    _overpass_breaker_check("vegetation")
+                    data = _fetch_vegetation_overpass(
+                        area_bbox,
+                        tile_cache_dir=tile_cache_dir,
+                        fallback_tile_cache_dir=base_tile_cache_dir,
+                    )
+                    _overpass_breaker_success("vegetation")
+                except Exception as exc:
+                    _overpass_breaker_failure("vegetation")
+                    abort(502, f"Overpass-query mislukt: {exc}")
+
+                # Aggregaat cachen — alleen als alle tegels succesvol waren
+                try:
+                    if not data.get("properties", {}).get("_partial"):
+                        area_dir.mkdir(parents=True, exist_ok=True)
+                        with open(cache_path, "w", encoding="utf-8") as fh:
+                            json.dump(data, fh, ensure_ascii=False)
+                        if _s3_enabled():
+                            try:
+                                _s3_write_bytes(
+                                    _s3_key(area_id, cache_path.name),
+                                    json.dumps(data, ensure_ascii=False).encode(
+                                        "utf-8"
+                                    ),
+                                    "application/json",
+                                )
+                            except Exception as _e:
+                                print(f"[s3] vegetatie-cache uploaden mislukt: {_e}")
+                except Exception:
+                    pass
+
+        # bbox-filter op de response (Point/LineString → eerste vertex).
+        if bbox is not None:
+            min_lon, min_lat, max_lon, max_lat = bbox
+            feats = []
+            for feat in data.get("features", []):
+                geom = feat.get("geometry") or {}
+                coords = geom.get("coordinates")
+                pt = coords
+                while isinstance(pt, list) and pt and isinstance(pt[0], list):
+                    pt = pt[0]
+                if not pt or len(pt) < 2:
+                    continue
+                lon, lat = pt[0], pt[1]
+                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+                    feats.append(feat)
+            data = {**data, "features": feats}
+
+        return _ogc_items_response("vegetation", data, self_url)
 
     # ── traffic_signs: verkeersborden, gecached per gebied ────────────────
     if collection_id == "traffic_signs":
@@ -3386,12 +3768,15 @@ def ogc_collection_items(collection_id):
 
             try:
                 tile_cache_dir = area_dir / f"{area_id}-TRAFFIC-SIGNS-tiles"
+                _overpass_breaker_check("traffic-signs")
                 data = _fetch_traffic_signs_overpass(
                     bbox,
                     tile_cache_dir=tile_cache_dir,
                     fallback_tile_cache_dir=base_tile_cache_dir,
                 )
+                _overpass_breaker_success("traffic-signs")
             except Exception as exc:
+                _overpass_breaker_failure("traffic-signs")
                 abort(502, f"Overpass-query mislukt: {exc}")
 
         # Cache opslaan — alleen als volledig
@@ -3585,6 +3970,7 @@ def ogc_process_execute(process_id):
         "adjust": _execute_adjust,
         "whatif-road-closure": _execute_whatif_road_closure,
         "wegenscan": _execute_wegenscan,
+        "fetch_osm": _execute_fetch_osm,
         "delete-area": _execute_delete_area,
         "set-directory": _execute_set_directory,
         "upload-to-gmt": _execute_upload_to_gmt,

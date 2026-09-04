@@ -28,21 +28,27 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
+# Overpass-endpoint uit .env (server.py laadt .env bij import); default = publiek.
+OVERPASS_URL: str = os.environ.get(
+    "OVERPASS_URL", "https://overpass-api.de/api/interpreter"
+)
+
 # ---------------------------------------------------------------------------
 # Constanten
 # ---------------------------------------------------------------------------
 
 TRAFFIC_SIGNS_QUERY_VER: int = 1
-OVERPASS_GRID: int = 3          # N×N tegels per gebied
+OVERPASS_GRID: int = 3  # N×N tegels per gebied
 
 NDW_API_URL: str = (
-    'https://data.ndw.nu/api/rest/static-road-data/traffic-signs/v4/current-state'
+    "https://data.ndw.nu/api/rest/static-road-data/traffic-signs/v4/current-state"
 )
 
 # Bounding box van Nederland [minLon, minLat, maxLon, maxLat]
@@ -52,14 +58,12 @@ _NL_BBOX: list = [3.3, 50.7, 7.3, 53.6]
 # Hulpfuncties
 # ---------------------------------------------------------------------------
 
+
 def is_netherlands(bbox: list) -> bool:
     """Geeft True als het zwaartepunt van de bbox in Nederland ligt."""
     cx = (bbox[0] + bbox[2]) / 2.0
     cy = (bbox[1] + bbox[3]) / 2.0
-    return (
-        _NL_BBOX[0] <= cx <= _NL_BBOX[2]
-        and _NL_BBOX[1] <= cy <= _NL_BBOX[3]
-    )
+    return _NL_BBOX[0] <= cx <= _NL_BBOX[2] and _NL_BBOX[1] <= cy <= _NL_BBOX[3]
 
 
 def download_ndw_dataset(output_path: Path) -> bool:
@@ -71,8 +75,8 @@ def download_ndw_dataset(output_path: Path) -> bool:
     req = urllib.request.Request(
         NDW_API_URL,
         headers={
-            'Accept':     'application/geo+json, application/json',
-            'User-Agent': 'GMP-speeltuin/1.0',
+            "Accept": "application/geo+json, application/json",
+            "User-Agent": "GMP-speeltuin/1.0",
         },
     )
     try:
@@ -80,8 +84,8 @@ def download_ndw_dataset(output_path: Path) -> bool:
         with urllib.request.urlopen(req, timeout=120) as resp:
             raw = resp.read()
         # Basisvalidatie: moet een FeatureCollection zijn
-        parsed = json.loads(raw.decode('utf-8'))
-        if parsed.get('type') != 'FeatureCollection':
+        parsed = json.loads(raw.decode("utf-8"))
+        if parsed.get("type") != "FeatureCollection":
             return False
         output_path.write_bytes(raw)
         return True
@@ -97,37 +101,31 @@ def filter_ndw_by_bbox(data: dict, bbox: list) -> dict:
     """
     min_lon, min_lat, max_lon, max_lat = bbox
     filtered: list = []
-    for feat in data.get('features', []):
-        geom = feat.get('geometry') or {}
-        if geom.get('type') != 'Point':
+    for feat in data.get("features", []):
+        geom = feat.get("geometry") or {}
+        if geom.get("type") != "Point":
             continue
-        coords = geom.get('coordinates', [])
+        coords = geom.get("coordinates", [])
         if len(coords) < 2:
             continue
         lon, lat = coords[0], coords[1]
         if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
             filtered.append(feat)
     return {
-        'type':       'FeatureCollection',
-        'features':   filtered,
-        'properties': {'_qv': TRAFFIC_SIGNS_QUERY_VER},
+        "type": "FeatureCollection",
+        "features": filtered,
+        "properties": {"_qv": TRAFFIC_SIGNS_QUERY_VER},
     }
 
 
 def overpass_query_for_bbox(b: str) -> str:
-    return (
-        f'[out:json][timeout:40];'
-        f'('
-        f'  node["traffic_sign"]({b});'
-        f');'
-        f'out body;'
-    )
+    return f'[out:json][timeout:40];(  node["traffic_sign"]({b}););out body;'
 
 
 def fetch_one_tile(b: str) -> tuple[list, bool]:
     query = overpass_query_for_bbox(b)
-    url   = 'https://overpass-api.de/api/interpreter?' + urllib.parse.urlencode({'data': query})
-    req   = urllib.request.Request(url, headers={'User-Agent': 'GMP-speeltuin/1.0'})
+    url = OVERPASS_URL + "?" + urllib.parse.urlencode({"data": query})
+    req = urllib.request.Request(url, headers={"User-Agent": "GMP-speeltuin/1.0"})
     raw: bytes | None = None
     for attempt in range(2):
         try:
@@ -145,7 +143,7 @@ def fetch_one_tile(b: str) -> tuple[list, bool]:
     if raw is None:
         return [], False
     try:
-        return json.loads(raw.decode('utf-8')).get('elements', []), True
+        return json.loads(raw.decode("utf-8")).get("elements", []), True
     except (json.JSONDecodeError, UnicodeDecodeError):
         return [], False
 
@@ -159,23 +157,25 @@ def elements_to_sign_features(elements: list) -> list:
     """
     features: list = []
     for elem in elements:
-        if elem.get('type') != 'node':
+        if elem.get("type") != "node":
             continue
-        lat = elem.get('lat')
-        lon = elem.get('lon')
+        lat = elem.get("lat")
+        lon = elem.get("lon")
         if lat is None or lon is None:
             continue
-        tags = elem.get('tags', {})
-        raw_sign = tags.get('traffic_sign', '')
+        tags = elem.get("tags", {})
+        raw_sign = tags.get("traffic_sign", "")
         # Normaliseer: strip landprefix, bijv. "NL:A01" → "A01"
-        if ':' in raw_sign:
-            raw_sign = raw_sign.split(':', 1)[1]
-        props: dict = {**tags, 'osm_id': elem['id'], 'rvvCode': raw_sign}
-        features.append({
-            'type':       'Feature',
-            'geometry':   {'type': 'Point', 'coordinates': [lon, lat]},
-            'properties': props,
-        })
+        if ":" in raw_sign:
+            raw_sign = raw_sign.split(":", 1)[1]
+        props: dict = {**tags, "osm_id": elem["id"], "rvvCode": raw_sign}
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": props,
+            }
+        )
     return features
 
 
@@ -183,13 +183,14 @@ def elements_to_sign_features(elements: list) -> list:
 # Hoofd-API
 # ---------------------------------------------------------------------------
 
+
 def fetch_traffic_signs_ndw(data_path: Path, bbox: list) -> dict:
     """Laad het lokale NDW-bestand en filter op bounding box.
 
     *data_path* is het pad naar het NDW GeoJSON-bestand.
     *bbox* = [minLon, minLat, maxLon, maxLat].
     """
-    with open(data_path, encoding='utf-8') as fh:
+    with open(data_path, encoding="utf-8") as fh:
         data = json.load(fh)
     return filter_ndw_by_bbox(data, bbox)
 
@@ -206,44 +207,52 @@ def fetch_traffic_signs_overpass(
     daarna een live Overpass-verzoek.
     """
     min_lon, min_lat, max_lon, max_lat = bbox
-    n    = OVERPASS_GRID
+    n = OVERPASS_GRID
     d_lon = (max_lon - min_lon) / n
     d_lat = (max_lat - min_lat) / n
 
-    seen_ids:    set  = set()
+    seen_ids: set = set()
     all_features: list = []
     complete = True
 
     for col in range(n):
         for row in range(n):
-            w  = min_lon + col       * d_lon
-            e  = min_lon + (col + 1) * d_lon
-            s  = min_lat + row       * d_lat
+            w = min_lon + col * d_lon
+            e = min_lon + (col + 1) * d_lon
+            s = min_lat + row * d_lat
             nt = min_lat + (row + 1) * d_lat
-            b  = f'{s},{w},{nt},{e}'
+            b = f"{s},{w},{nt},{e}"
 
-            tile_path     = (tile_cache_dir / f'tile-{col}x{row}.geojson') if tile_cache_dir else None
+            tile_path = (
+                (tile_cache_dir / f"tile-{col}x{row}.geojson")
+                if tile_cache_dir
+                else None
+            )
             tile_features = None
 
             # 1) Eigen tegel-cache
             if tile_path and tile_path.exists():
                 try:
-                    fc = json.loads(tile_path.read_text(encoding='utf-8'))
-                    if (fc.get('type') == 'FeatureCollection'
-                            and fc.get('_qv') == TRAFFIC_SIGNS_QUERY_VER):
-                        tile_features = fc.get('features', [])
+                    fc = json.loads(tile_path.read_text(encoding="utf-8"))
+                    if (
+                        fc.get("type") == "FeatureCollection"
+                        and fc.get("_qv") == TRAFFIC_SIGNS_QUERY_VER
+                    ):
+                        tile_features = fc.get("features", [])
                 except Exception:
                     pass
 
             # 2) Fallback tegel-cache (base-scenario)
             if tile_features is None and fallback_tile_cache_dir:
-                fb_path = fallback_tile_cache_dir / f'tile-{col}x{row}.geojson'
+                fb_path = fallback_tile_cache_dir / f"tile-{col}x{row}.geojson"
                 if fb_path.exists():
                     try:
-                        fc = json.loads(fb_path.read_text(encoding='utf-8'))
-                        if (fc.get('type') == 'FeatureCollection'
-                                and fc.get('_qv') == TRAFFIC_SIGNS_QUERY_VER):
-                            tile_features = fc.get('features', [])
+                        fc = json.loads(fb_path.read_text(encoding="utf-8"))
+                        if (
+                            fc.get("type") == "FeatureCollection"
+                            and fc.get("_qv") == TRAFFIC_SIGNS_QUERY_VER
+                        ):
+                            tile_features = fc.get("features", [])
                     except Exception:
                         pass
 
@@ -258,12 +267,15 @@ def fetch_traffic_signs_overpass(
                         try:
                             tile_cache_dir.mkdir(parents=True, exist_ok=True)
                             tile_path.write_text(
-                                json.dumps({
-                                    'type':     'FeatureCollection',
-                                    '_qv':      TRAFFIC_SIGNS_QUERY_VER,
-                                    'features': tile_features,
-                                }, ensure_ascii=False),
-                                encoding='utf-8',
+                                json.dumps(
+                                    {
+                                        "type": "FeatureCollection",
+                                        "_qv": TRAFFIC_SIGNS_QUERY_VER,
+                                        "features": tile_features,
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                                encoding="utf-8",
                             )
                         except Exception:
                             pass
@@ -273,18 +285,18 @@ def fetch_traffic_signs_overpass(
 
             # Deduplicatie op osm_id
             for feat in tile_features:
-                osm_id = feat.get('properties', {}).get('osm_id')
+                osm_id = feat.get("properties", {}).get("osm_id")
                 if osm_id is not None and osm_id in seen_ids:
                     continue
                 if osm_id is not None:
                     seen_ids.add(osm_id)
                 all_features.append(feat)
 
-    meta: dict = {'_qv': TRAFFIC_SIGNS_QUERY_VER}
+    meta: dict = {"_qv": TRAFFIC_SIGNS_QUERY_VER}
     if not complete:
-        meta['_partial'] = True
+        meta["_partial"] = True
     return {
-        'type':       'FeatureCollection',
-        'features':   all_features,
-        'properties': meta,
+        "type": "FeatureCollection",
+        "features": all_features,
+        "properties": meta,
     }
