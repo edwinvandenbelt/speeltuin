@@ -9461,6 +9461,15 @@
         return new ScatterplotLayer({ id: 'zone-centroids', data: [] });
       }
 
+      // Radius-schaling: bolgrootte relatief aan productie/attractie (of flow).
+      // sqrt-schaling zodat het OPPERVLAK ~ waarde (perceptueel eerlijke vergelijking).
+      // Minimum-radius zodat kleine zones zichtbaar blijven.
+      const ZONE_RADIUS_MIN = 6;    // px
+      const ZONE_RADIUS_MAX = 26;   // px
+      const normRadius = norm =>
+        ZONE_RADIUS_MIN + (ZONE_RADIUS_MAX - ZONE_RADIUS_MIN) *
+          Math.sqrt(Math.max(0, Math.min(1, norm)));
+
       // In OD-edit stap 'to': toon bestemmingszones die routes hebben vanuit de herkomst
       if (showForOdEdit) {
         const fromId = String(odEditFromZone.zoneId);
@@ -9500,6 +9509,7 @@
             attraction: p.attraction ?? 0,
             flow: trips,
             isSelected: false,
+            sizeNorm: trips / maxTrips,
             alpha: normAlpha(trips / maxTrips),
           });
         }
@@ -9509,12 +9519,13 @@
           stroked: true, filled: true,
           radiusUnits: 'pixels', lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
           getPosition:    d => [d.lon, d.lat],
-          getRadius:      10,
+          getRadius:      d => normRadius(d.sizeNorm),
           getFillColor:   d => [30, 120, 255, d.alpha],
           getLineColor:   d => [30,  80, 200, Math.min(d.alpha + 40, 255)],
           getLineWidth:   1.5,
           updateTriggers: { getFillColor: [odEditFromZone?.zoneId, daypart],
-                            getLineColor: [odEditFromZone?.zoneId, daypart] },
+                            getLineColor: [odEditFromZone?.zoneId, daypart],
+                            getRadius:    [odEditFromZone?.zoneId, daypart] },
         });
       }
 
@@ -9567,22 +9578,25 @@
         if (lon == null || lat == null) continue;
 
         const isSelected = p.zoneId === selectedZoneId;
-        let alpha, flow = 0;
+        let alpha, flow = 0, sizeNorm = 0;
+        const ownVal = isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
 
         if (isSelected) {
           alpha = 220;                                          // geselecteerde zone: vaste hoge alpha
+          sizeNorm = globalMax > 0 ? ownVal / globalMax : 0;    // grootte blijft magnitude tonen
         } else if (flowByZone) {
           flow = flowByZone.get(p.zoneId) ?? 0;
           if (flow <= 0) continue;                             // tegenpool zonder flow: overslaan
-          alpha = normAlpha(flow / maxCounterpartFlow);
+          sizeNorm = flow / maxCounterpartFlow;
+          alpha = normAlpha(sizeNorm);
         } else {
-          const val = isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
-          if (val <= 0) continue;
-          alpha = normAlpha(val / globalMax);
+          if (ownVal <= 0) continue;
+          sizeNorm = ownVal / globalMax;
+          alpha = normAlpha(sizeNorm);
         }
 
         pts.push({
-          lon, lat, alpha, zoneId: p.zoneId ?? null, isSelected,
+          lon, lat, alpha, sizeNorm, zoneId: p.zoneId ?? null, isSelected,
           zoneName:   p.zoneName || String(p.zoneId ?? ''),
           zoneClass:  p.zoneClass || '',
           production: p.production ?? 0,
@@ -9601,7 +9615,7 @@
         lineWidthUnits: 'pixels',
         lineWidthMinPixels: 1,
         getPosition:    d => [d.lon, d.lat],
-        getRadius:      10,
+        getRadius:      d => normRadius(d.sizeNorm),
         getFillColor:   d => d.isSelected
           ? (isProduction ? [255, 140,  0, 220] : [30, 120, 255, 220])
           : (isProduction ? [255, 140,  0, d.alpha] : [30, 120, 255, d.alpha]),
@@ -9618,6 +9632,7 @@
           getFillColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
           getLineColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
           getLineWidth: [selectedZoneId, selectedLinkId],
+          getRadius:    [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
         },
       });
     }
