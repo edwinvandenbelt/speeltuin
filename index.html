@@ -10029,8 +10029,11 @@
           .sort(([, a], [, b]) => b - a);
       }
 
-      // ── Stap 3 (alleen zonder routes): motieven van de link zelf 2× meegewogen ──
-      if (!hasRoutes) {
+      // ── Stap 3: motieven van de link zelf meewegen ───────────────────────
+      // Zonder routes: altijd (link-flows 2× zo zwaar t.o.v. zone-schatting).
+      // Mét routes: alleen als de attractiezone-berekening niets opleverde —
+      // anders zouden de motieven die wél op de link staan ontbreken.
+      if (!hasRoutes || entries.length === 0) {
         const linkFeat = geojson.features.find(
           f => f.properties?.linkId === numLinkId
             || f.properties?.linkId === selectedLinkId
