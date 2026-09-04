@@ -6343,7 +6343,7 @@
     //  parquet, gerenderd als procedurele SimpleMeshLayer-bomen. Niet-essentieel:
     //  lichte gating (zoom), gedeelde mesh, gecapt aantal.
     // ═══════════════════════════════════════════════════════════════════════
-    const _VEG_MINZOOM   = 15;      // niet tekenen als te ver uitgezoomd
+    const _VEG_MINZOOM   = _TA_MINZOOM;  // gelijk aan verkeersborden: pas tonen bij ver inzoomen
     const _VEG_REF_H     = 6;       // referentiehoogte van de basis-boommesh (m)
     const _VEG_DEF_H     = 6;       // aangenomen hoogte als OSM 'height' ontbreekt
     const _VEG_MIN_H     = 3;       // ondergrens hoogte (m)
