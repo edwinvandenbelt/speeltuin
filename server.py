@@ -2265,9 +2265,11 @@ def _execute_prepare(inputs: dict):
         except Exception as _e:
             print(f"[s3] .area-uuid schrijven mislukt: {_e}")
 
-    # Full digital twin: alleen wanneer expliciet aangevinkt draaien we de
-    # (trage) OSM/Overpass-verrijking mee. Default = snelle prepare zonder OSM.
-    full_digital_twin = bool(inputs.get("full_digital_twin", False))
+    # Full digital twin: verrijk het gebied met OSM/BGT-data (buildings,
+    # traffic-assets, vegetation). Standaard AAN zodat een nieuw gebied deze
+    # onderdelen altijd bevat; expliciet false meesturen schakelt de (tragere)
+    # OSM/Overpass-verrijking uit voor een snelle netwerk-only prepare.
+    full_digital_twin = bool(inputs.get("full_digital_twin", True))
 
     kwargs = dict(
         min_lon=min_lon,
