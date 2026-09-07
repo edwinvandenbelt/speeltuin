@@ -1029,6 +1029,37 @@ def _find_prepared_with_base_fallback(area_id: str, file_type: str) -> "Path | N
     return None
 
 
+def _collect_descendant_area_ids(area_id: str) -> list:
+    """Geef alle afstammelingen (sub-scenario's) van *area_id* terug, diep.
+
+    Scenario's verwijzen via ``srcAreaId`` (afgeleid uit ``.src-area-id`` of de
+    ``baseAreaId``-property) naar hun directe bronscenario.  Deze functie loopt de
+    volledige boom af en geeft de area-ids van álle nakomelingen terug (exclusief
+    *area_id* zelf).  De volgorde is deterministisch en breadth-first.
+    """
+    # Bouw parent -> set(children) uit de (per-modus) gebiedenlijst; ontdubbel
+    # meteen op area-id zodat meerdere modi niet tot dubbele takken leiden.
+    children: dict = {}
+    for a in _discover_areas():
+        src = a.get("srcAreaId")
+        aid = a.get("areaId")
+        if src and aid:
+            children.setdefault(src, set()).add(aid)
+
+    descendants: list = []
+    seen: set = {area_id}
+    queue: list = [area_id]
+    while queue:
+        current = queue.pop(0)
+        for child in sorted(children.get(current, ())):
+            if child in seen:
+                continue  # bescherming tegen (theoretische) cykels
+            seen.add(child)
+            descendants.append(child)
+            queue.append(child)
+    return descendants
+
+
 def _discover_areas() -> list:
     """Geef de lijst van beschikbare gebieden terug, met cache.
 
@@ -1131,10 +1162,10 @@ def _discover_areas_uncached() -> list:
             has_compare = (subdir / f"{area_id}-COMPARE-{mode}.geojson").exists()
             has_nvp_routes = (subdir / f"{area_id}-NVP-ROUTES-{mode}.parquet").exists()
             gmt_uploaded = (subdir / f".gmt-uploaded-{mode}").exists()
-            # Full digital twin = TRAFFIC-ASSETS aanwezig (area-niveau, geen mode-suffix)
-            is_full_twin = (
-                _find_data_file(subdir, f"{area_id}-TRAFFIC-ASSETS") is not None
-            )
+            # Full digital twin = expliciete marker (echte OSM/BGT-verrijking gedraaid).
+            # Niet afleiden uit TRAFFIC-ASSETS: dat bestand wordt ook geschreven bij
+            # een prepare zonder OSM-verrijking (no_osm=True).
+            is_full_twin = (subdir / ".full-twin").exists()
             areas.append(
                 {
                     "areaId": area_id,
@@ -1192,10 +1223,7 @@ def _discover_areas_uncached() -> list:
             has_nvp_routes = _s3_exists(
                 _s3_key(area_id, f"{area_id}-NVP-ROUTES-{mode}.parquet")
             )
-            is_full_twin = any(
-                _s3_exists(_s3_key(area_id, f"{area_id}-TRAFFIC-ASSETS{ext}"))
-                for ext in (".geojson", *_GEOPARQUET_EXTS)
-            )
+            is_full_twin = _s3_exists(_s3_key(area_id, ".full-twin"))
             areas.append(
                 {
                     "areaId": area_id,
@@ -1592,6 +1620,54 @@ def _sse_put(src_area_id: str, event: str, data: str) -> None:
             pass
 
 
+def _osm_source_summary() -> str:
+    """Beschrijf de effectieve OSM-databron voor de prepare-pipeline.
+
+    ``osm_path``/``osm_workers`` worden niet via de server-kwargs meegegeven maar
+    binnen de pipeline uit de omgeving (``OSM_PBF_PATH`` / ``OSM_PBF_WORKERS``,
+    geladen uit ``.env``) geresolved.  Zonder deze regel zou de gelogde aanroep
+    ten onrechte suggereren dat de (geheugenlichtere) Overpass HTTP-API gebruikt
+    wordt, terwijl lokaal juist de volledige PBF wordt ingelezen — de meest
+    waarschijnlijke bron van OOM.
+    """
+    pbf = os.environ.get("OSM_PBF_PATH", "").strip()
+    if not pbf:
+        return "OSM-bron: Overpass HTTP-API (geen OSM_PBF_PATH ingesteld)"
+    raw_workers = os.environ.get("OSM_PBF_WORKERS", "").strip()
+    cpu = os.cpu_count() or 1
+    try:
+        from shared._osm_pbf_scan import resolve_workers  # noqa: PLC0415
+
+        n_workers = resolve_workers(raw_workers or None, cpu)
+    except Exception:
+        # Repliceer de fallback: expliciete env-waarde wint (begrensd door CPU),
+        # anders min(cpu, 8).
+        try:
+            req = int(raw_workers) if raw_workers else 0
+        except ValueError:
+            req = 0
+        n_workers = max(1, min(req, cpu)) if req > 0 else max(1, min(cpu, 8))
+    exists = "aanwezig" if Path(pbf).is_file() else "ONTBREEKT"
+    return (
+        f"OSM-bron: lokale PBF {pbf!r} ({exists}); "
+        f"osm_workers={n_workers} (OSM_PBF_WORKERS={raw_workers or 'onset'}, cpu={cpu})"
+    )
+
+
+def _format_pipeline_call(func_name: str, kwargs: dict) -> str:
+    """Formatteer een pipeline-aanroep als leesbare, reproduceerbare Python-call.
+
+    Wordt vóór elke prepare-run in de job-log geschreven zodat de exacte aanroep
+    (inclusief bbox, modes en OSM-vlaggen) achteraf te herleiden is — handig bij
+    het diagnosticeren van bv. OOM-situaties tijdens de OSM/Overpass-fetch.
+    """
+    parts = []
+    for k, v in kwargs.items():
+        # Path-objecten en overige waarden compact en eenduidig weergeven.
+        parts.append(f"{k}={v!r}" if not isinstance(v, Path) else f"{k}={str(v)!r}")
+    return f"{func_name}(\n    " + ",\n    ".join(parts) + ",\n)"
+
+
 def _run_prepare_job(
     job_id: str, out_dir: Path, kwargs: dict, name: str, mode_label: str
 ):
@@ -1610,8 +1686,19 @@ def _run_prepare_job(
             contextlib.redirect_stdout(stream),
             contextlib.redirect_stderr(stream),
         ):
+            print("[server] prepare-pipeline aanroep:")
+            print(_format_pipeline_call("run_pipeline", kwargs))
+            print(f"[server] {_osm_source_summary()}")
             _prepare_run_pipeline(**kwargs)
         stream.flush()
+
+        # Schrijf .full-twin marker als de OSM/BGT-verrijking gedraaid heeft, zodat
+        # het menu-item "Full digital twin" terecht als "klaar" wordt getoond.
+        if not kwargs.get("no_osm"):
+            try:
+                (out_dir / ".full-twin").write_text(_now_iso(), encoding="utf-8")
+            except Exception as _e:
+                print(f"[full-twin] marker schrijven mislukt: {_e}")
 
         # Sync naar S3 als geconfigureerd
         if _s3_enabled():
@@ -2149,7 +2236,7 @@ def _run_fetch_osm_job(job_id: str, area_id: str):
                 else:
                     modes = [mode_label]
                 print(f"[fetch_osm] OSM-verrijking voor mode_label={mode_label}")
-                _prepare_run_pipeline(
+                _osm_kwargs = dict(
                     min_lon=bbox[0],
                     min_lat=bbox[1],
                     max_lon=bbox[2],
@@ -2163,7 +2250,17 @@ def _run_fetch_osm_job(job_id: str, area_id: str):
                     schema="2024_01",
                     only_osm=True,
                 )
+                print("[server] prepare-pipeline aanroep (only_osm):")
+                print(_format_pipeline_call("run_pipeline", _osm_kwargs))
+                print(f"[server] {_osm_source_summary()}")
+                _prepare_run_pipeline(**_osm_kwargs)
         stream.flush()
+
+        # Schrijf .full-twin marker: dit gebied heeft nu echte OSM/BGT-verrijking.
+        try:
+            (area_dir / ".full-twin").write_text(_now_iso(), encoding="utf-8")
+        except Exception as _e:
+            print(f"[full-twin] marker schrijven mislukt: {_e}")
 
         if _s3_enabled():
             try:
@@ -2830,24 +2927,51 @@ def _execute_wegenscan(inputs: dict):
 
 
 def _execute_delete_area(inputs: dict):
-    """Verwijder gebied synchroon. Geeft (body, 200, {}) terug."""
+    """Verwijder gebied én al zijn sub-scenario's (de hele boom). Synchroon.
+
+    Bij het verwijderen van een scenario worden alle afgeleide scenario's
+    (kinderen, kleinkinderen, …) meeverwijderd zodat er geen verweesde
+    sub-scenario's achterblijven.  Geeft (body, 200, {}) terug.
+    """
     area_id = str(inputs.get("id", "")).strip()
     if not _safe(area_id):
         abort(400, f"Ongeldige of ontbrekende area_id: {area_id!r}")
     area_dir = _find_area_dir(area_id)
     if not area_dir.is_dir():
         abort(404, f"Geen map gevonden voor gebied: {area_id}")
-    try:
-        shutil.rmtree(str(area_dir))
-    except Exception as exc:
-        abort(500, str(exc))
-    _areas_cache_invalidate()
-    if _s3_enabled():
+
+    # Verzamel de volledige subboom (nakomelingen) vóór verwijdering; het te
+    # verwijderen gebied zelf als laatste, zodat afgeleide scenario's altijd eerst
+    # opgeruimd worden.
+    descendants = _collect_descendant_area_ids(area_id)
+    to_delete = descendants + [area_id]
+
+    deleted: list = []
+    errors: list = []
+    for aid in to_delete:
+        if not _safe(aid):
+            errors.append({"id": aid, "error": "onveilige area_id"})
+            continue
         try:
-            _s3_delete_prefix(_s3_area_prefix(area_id))
-        except Exception as _e:
-            print(f"[s3] delete-area S3 mislukt: {_e}")
-    return {"deleted": area_id}, 200, {}
+            d = _find_area_dir(aid)
+            if d.is_dir():
+                shutil.rmtree(str(d))
+            deleted.append(aid)
+        except Exception as exc:
+            errors.append({"id": aid, "error": str(exc)})
+        if _s3_enabled():
+            try:
+                _s3_delete_prefix(_s3_area_prefix(aid))
+            except Exception as _e:
+                print(f"[s3] delete-area S3 mislukt voor {aid}: {_e}")
+
+    _areas_cache_invalidate()
+
+    if errors and area_id not in deleted:
+        # Het hoofdgebied kon niet verwijderd worden → als fout rapporteren.
+        abort(500, "; ".join(f"{e['id']}: {e['error']}" for e in errors))
+
+    return {"deleted": area_id, "deletedTree": deleted, "errors": errors}, 200, {}
 
 
 def _execute_set_directory(inputs: dict):
