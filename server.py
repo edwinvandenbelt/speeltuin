@@ -255,6 +255,14 @@ _GMT_BASE_URL: str = os.environ.get(
 _GMT_USERNAME: str = os.environ.get("GMT_USERNAME", "")
 _GMT_PASSWORD: str = os.environ.get("GMT_PASSWORD", "")
 
+# OSM/ODbL-attributie. De geprepareerde/geüploade data is deels afgeleid van
+# OpenStreetMap (o.a. trafficSignal-annotatie, verkeersobjecten, gebouwen,
+# groen). De ODbL vereist bronvermelding zodra deze data publiek gedeeld of
+# gedistribueerd wordt; daarom reizen deze velden mee met de GMT-upload.
+_OSM_ATTRIBUTION_TEXT: str = "© OpenStreetMap contributors"
+_OSM_LICENSE: str = "ODbL-1.0"
+_OSM_LICENSE_URL: str = "https://www.openstreetmap.org/copyright"
+
 
 def _s3_enabled() -> bool:
     return bool(_S3_BUCKET)
@@ -442,7 +450,14 @@ def _read_geodata(path: Path) -> dict:
     Voor GeoParquet worden top-level properties (name, area_id, bbox, …) opgeslagen in de
     Parquet-bestandsmetadata onder de sleutel ``geojson_properties``.  Als die metadata
     ontbreekt, wordt een lege properties-dict gebruikt.
+
+    Resultaten worden in-memory gecached (mtime-gekeyed) zodat herhaalde aanvragen
+    (bijv. traffic_assets/heights bij elke map-beweging) het bestand niet telkens
+    opnieuw hoeven te parsen.
     """
+    cached = _geodata_cache_get(path)
+    if cached is not None:
+        return cached
     if path.suffix.lower() in _GEOPARQUET_EXTS:
         if not _GEOPANDAS_AVAILABLE:
             raise ImportError(
@@ -476,10 +491,13 @@ def _read_geodata(path: Path) -> dict:
                 fc["properties"] = json.loads(raw.decode("utf-8"))
         except Exception:
             pass
+        _geodata_cache_set(path, fc)
         return fc
     # GeoJSON / JSON
     with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+        data = json.load(fh)
+    _geodata_cache_set(path, data)
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -1583,7 +1601,7 @@ def _ogc_items_response(collection_id: str, data, self_url: str):
 
 
 def _now_iso() -> str:
-    return _dt.datetime.utcnow().isoformat() + "Z"
+    return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None).isoformat() + "Z"
 
 
 # ---------------------------------------------------------------------------
@@ -3043,6 +3061,14 @@ def _run_upload_to_gmt_job(
         geojson_str = json.dumps(geojson_data, ensure_ascii=False)
         log(f"GeoJSON gegenereerd ({len(geojson_str) // 1024} KB)")
 
+        # Voeg OSM/ODbL-attributie toe als foreign members op de FeatureCollection
+        # (RFC 7946 staat aanvullende leden toe). Zo blijft de bronvermelding bij
+        # de data zelf, ook los van de GMT-inputs-metadata hieronder.
+        if isinstance(geojson_data, dict):
+            geojson_data.setdefault("attribution", _OSM_ATTRIBUTION_TEXT)
+            geojson_data.setdefault("license", _OSM_LICENSE)
+            geojson_data.setdefault("licenseUrl", _OSM_LICENSE_URL)
+
         # 3. Authenticeer bij GMT
         log("Authenticeren bij GMT…")
         if not _GMT_USERNAME or not _GMT_PASSWORD:
@@ -3069,6 +3095,9 @@ def _run_upload_to_gmt_job(
                 "type": "network",
                 "areaId": area_id,
                 "geojson": geojson_data,
+                "attribution": _OSM_ATTRIBUTION_TEXT,
+                "license": _OSM_LICENSE,
+                "licenseUrl": _OSM_LICENSE_URL,
             }
         }
         upload_resp = requests.post(
@@ -4146,17 +4175,50 @@ def proxy_mvt(layer_uuid, z, x, y):
 
 @app.route("/traffic-sign-icon/<string:code>")
 def traffic_sign_icon(code):
-    """Serveer een NDW PNG-icoon voor een RVV-bordcode; 404 als niet beschikbaar."""
+    """Serveer een NDW PNG-icoon voor een RVV-bordcode; 404 als niet beschikbaar.
+
+    Naast een exacte match worden enkele naamvarianten geprobeerd, omdat de
+    NDW-brondata codes gebruikt die iets afwijken van de iconbestandsnamen:
+      * voorloopnullen in het eerste segment (``A01`` → ``A1``, ``C08`` → ``C8``);
+      * een zone-suffix (``-ZB`` = Zone Begin, ``-ZE`` = Zone Eind, e.d.) die
+        het onderliggende bord niet verandert en dus wordt weggelaten.
+    """
     safe = re.sub(
         r"[^A-Za-z0-9.\-]", "", code
     )  # koppelteken en decimaalpunt toegestaan
     icon_dir = Path(__file__).parent / "traffic_sign_icons"
-    png_path = icon_dir / f"{safe}.png"
-    if not png_path.exists():
+
+    def _norm_zeros(name: str) -> str:
+        parts = name.split("-")
+        m = re.match(r"^([A-Za-z]+)0*([0-9].*)$", parts[0])
+        if m:
+            parts[0] = m.group(1) + m.group(2)
+        return "-".join(parts)
+
+    # Bouw kandidaat-namen in volgorde van voorkeur (eerste die bestaat wint).
+    candidates: list[str] = []
+
+    def _add(name: str) -> None:
+        if name and name not in candidates:
+            candidates.append(name)
+
+    _add(safe)
+    # Zone-suffix (-ZB/-ZE/-ZP/…) van het einde strippen.
+    _base = re.sub(r"-Z[A-Za-z]$", "", safe)
+    _add(_base)
+    # Voorloopnullen normaliseren (met en zonder zone-suffix).
+    _add(_norm_zeros(safe))
+    _add(_norm_zeros(_base))
+    # Alias voor bekende niet-RVV codes (bv. bebouwde kom → H1).
+    _ICON_ALIASES = {"citylimit": "H1"}
+    _add(_ICON_ALIASES.get(_base.lower()))
+
+    match = next((c for c in candidates if (icon_dir / f"{c}.png").exists()), None)
+    if match is None:
         from flask import abort
 
         abort(404)
-    resp = send_from_directory(str(icon_dir), f"{safe}.png", mimetype="image/png")
+    resp = send_from_directory(str(icon_dir), f"{match}.png", mimetype="image/png")
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 

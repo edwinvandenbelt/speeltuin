@@ -178,7 +178,7 @@
     }
     #newScreen.visible { display: flex; }
     #newPanel {
-      width: 300px; min-width: 260px;
+      width: 360px; min-width: 320px;
       background: #151d2e;
       border-right: 1px solid rgba(126,200,227,0.15);
       display: flex; flex-direction: column;
@@ -261,6 +261,8 @@
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       gap: 16px;
+      overflow-y: auto;
+      padding: 24px 0;
       transition: opacity 0.6s;
     }
     #loader.fade { opacity: 0; pointer-events: none; }
@@ -1477,8 +1479,10 @@
     <select id="colorMetric" class="tb-select" data-i18n-title="metricTitle" title="Kleur-metriek">
       <option value="flow" data-i18n="metricFlow">Intensiteit</option>
       <option value="flow_scaled" data-i18n="metricFlowScaled">Intensiteit (geschaald)</option>
-      <option value="occupancy" data-i18n="metricOccupancy">Bezettingsgraad</option>
-      <option value="occupancy_scaled" data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</option>
+      <option value="occupancy" data-i18n="metricIC">I/C</option>
+      <option value="occupancy_scaled" data-i18n="metricICScaled">I/C (geschaald)</option>
+      <option value="coverage" data-i18n="metricOccupancy">Bezettingsgraad</option>
+      <option value="coverage_scaled" data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</option>
       <option value="speed" data-i18n="metricSpeed">Snelheid</option>
       <option value="capacity" data-i18n="metricCapacity">Capaciteit</option>
       <option value="safety" id="safetyOption">Veiligheid</option>
@@ -2248,6 +2252,7 @@
       // Metriek-opties
       metricFlow:'Intensiteit', metricFlowScaled:'Intensiteit (geschaald)',
       metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
+      metricIC:'I/C', metricICScaled:'I/C (geschaald)',
       metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricNone:'Geen', metricCompare:'Vergelijking tonen',
       // Laadscherm
       loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
@@ -2369,7 +2374,7 @@
       odEditCurrentTrips:'Huidig:',
       odEditNoRoutes:'Geen routes gevonden voor dit OD-paar.',
       // Legenda
-      legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad',
+      legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad', legendIC:'I/C',
       legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
       legendUnit:'vtg/u',
       carCountFmt: n => `~${n.toLocaleString('nl-NL')} voertuigen op de wegen`,
@@ -2396,7 +2401,7 @@
       tooltipDaypart:'Dagdeel', tooltipFlow:'Flow (dagdeel)', tooltipFlowTotal:'Flow (totaal/24u)',
       tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg/24u',
       tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
-      tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'Bezettingsgraad', tooltipLength:'Lengte',
+      tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte',
       tooltipZoneClass:'Zoneklasse',
       tooltipZoneClassStudy:'Studiegebied', tooltipZoneClassInfluence:'Invloedszone',
       tooltipZoneClassBoundary:'Grenszone', tooltipZoneClassCbs:'CBS-zone',
@@ -2491,6 +2496,7 @@
       addKnoopTitle:'Add node (not yet available)',
       metricFlow:'Intensity', metricFlowScaled:'Intensity (scaled)',
       metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
+      metricIC:'V/C', metricICScaled:'V/C (scaled)',
       metricSpeed:'Speed', metricCapacity:'Capacity', metricNone:'None', metricCompare:'Show comparison',
       loaderInit:'Loading GeoJSON\u2026', loaderNetwork:'Loading network data\u2026',
       loaderZones:'Loading zones\u2026', loaderRoutes:'Loading routes\u2026', loaderMap:'Loading map\u2026',
@@ -2604,7 +2610,7 @@
       odEditFoundRoutes: n => `${n} route(s) found`,
       odEditCurrentTrips:'Current:',
       odEditNoRoutes:'No routes found for this OD pair.',
-      legendFlow:'Intensity', legendOccupancy:'Occupancy',
+      legendFlow:'Intensity', legendOccupancy:'Occupancy', legendIC:'V/C',
       legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
       legendUnit:'veh/h',
       carCountFmt: n => `~${n.toLocaleString('en-GB')} vehicles on the road`,
@@ -2630,7 +2636,7 @@
       tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
       tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh/24h',
       tooltipSpeed:'Speed', tooltipLanes:'Lanes',
-      tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'Occupancy', tooltipLength:'Length',
+      tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length',
       tooltipZoneClass:'Zone class',
       tooltipZoneClassStudy:'Study area', tooltipZoneClassInfluence:'Influence zone',
       tooltipZoneClassBoundary:'Boundary zone', tooltipZoneClassCbs:'CBS zone',
@@ -2723,6 +2729,7 @@
       addKnoopTitle:'Lis\xe4\xe4 solmupiste (ei viel\xe4 saatavilla)',
       metricFlow:'Intensiteetti', metricFlowScaled:'Intensiteetti (skaalattu)',
       metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
+      metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
       metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
       loaderInit:'Ladataan GeoJSON\u2026', loaderNetwork:'Ladataan verkkodata\u2026',
       loaderZones:'Ladataan alueita\u2026', loaderRoutes:'Ladataan reittej\xe4\u2026', loaderMap:'Ladataan karttaa\u2026',
@@ -2795,7 +2802,7 @@
       linkPolygonNoLinks:'Tiejaksoja ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
       linkCloseBtnTitle:'Sulje tie (kapasiteetti = 0)',
       changeClosedLabel:'suljettu (kap = 0)',
-      legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste',
+      legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste', legendIC:'V/C',
       legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
       legendUnit:'ajon/h',
       carCountFmt: n => `~${n.toLocaleString('fi-FI')} ajoneuvoa tiellä`,
@@ -2821,7 +2828,7 @@
       tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
       tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon/24h',
       tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
-      tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'Kuormitusaste', tooltipLength:'Pituus',
+      tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus',
       tooltipZoneClass:'Alueluokka',
       tooltipZoneClassStudy:'Tutkimusalue', tooltipZoneClassInfluence:'Vaikutusalue',
       tooltipZoneClassBoundary:'Rajav\u00f6hyke', tooltipZoneClassCbs:'CBS-alue',
@@ -2915,7 +2922,8 @@
     const metric = document.getElementById('colorMetric')?.value;
     const legendKeyMap = {
       flow:'legendFlow', flow_scaled:'legendFlow',
-      occupancy:'legendOccupancy', occupancy_scaled:'legendOccupancy',
+      occupancy:'legendIC', occupancy_scaled:'legendIC',
+      coverage:'legendOccupancy', coverage_scaled:'legendOccupancy',
       speed:'legendSpeed', capacity:'legendCapacity', compare:'legendCompare',
     };
     const legEl = document.getElementById('legendLabel');
@@ -4374,6 +4382,7 @@
         makeCylinderGeom(0.33, 0.22, -1.55,  1.0, 0.33),
       ]),
       weight: 55,
+      length: 4.5,   // fysieke lengte (m) voor bezettingsgraad-berekening
     };
 
     // 2 ── Kleine stadsauto (city car — kort, hoge daklijn)
@@ -4399,6 +4408,7 @@
         makeCylinderGeom(0.28, 0.20, -1.1,  0.85, 0.28),
       ]),
       weight: 15,
+      length: 3.2,
     };
 
     // 3 ── SUV / MPV (hoger, breder, grotere wielen)
@@ -4424,6 +4434,7 @@
         makeCylinderGeom(0.40, 0.26, -1.65,  1.05, 0.40),
       ]),
       weight: 15,
+      length: 4.8,
     };
 
     // 4 ── Bestelwagen (rechthoekige laadruimte, hoge dakrand)
@@ -4447,6 +4458,7 @@
         makeCylinderGeom(0.36, 0.24, -1.9,  1.1, 0.36),
       ]),
       weight: 10,
+      length: 5.5,
     };
 
     // 5 ── Vrachtauto (cabine voor + laadbak achter, 6 wielen)
@@ -4478,6 +4490,7 @@
         makeCylinderGeom(0.48, 0.28, -3.0,  1.35, 0.48),
       ]),
       weight: 5,
+      length: 10.0,
     };
 
     return [personenauto, stadsauto, suv, bestelwagen, vrachtauto];
@@ -4522,6 +4535,7 @@
       windows: mergeMeshes([torso, hoofd]),   // kledingkleur via clothingColor
       wheels:  mergeMeshes([wheelF, wheelR]),
       weight:  1,
+      length:  1.85,
     }];
   })();
 
@@ -4537,6 +4551,21 @@
     const r = Math.random() * _vtTotal;
     const i = _vtCumul.findIndex(v => v > r);
     return i < 0 ? VEHICLE_TYPES.length - 1 : i;
+  }
+
+  // ── Gewogen gemiddelde voertuiglengte (voor de bezettingsgraad-metric) ──────
+  // Fysieke lengte per type, gewogen naar de type-verdeling (weight).
+  const AVG_CAR_LEN = (() => {
+    const wl = VEHICLE_TYPES.reduce((s, v) => s + (v.length ?? 4.5) * v.weight, 0);
+    return _vtTotal > 0 ? wl / _vtTotal : 4.7;
+  })();
+  const AVG_BIKE_LEN = (() => {
+    const tot = BIKE_VEHICLE_TYPES.reduce((s, v) => s + v.weight, 0);
+    const wl  = BIKE_VEHICLE_TYPES.reduce((s, v) => s + (v.length ?? 1.85) * v.weight, 0);
+    return tot > 0 ? wl / tot : 1.85;
+  })();
+  function avgVehicleLengthForMode(mode) {
+    return String(mode || MODE).toUpperCase() === 'BIKE' ? AVG_BIKE_LEN : AVG_CAR_LEN;
   }
 
   // ── Debounce helper ───────────────────────────────────────────────────────
@@ -4706,6 +4735,13 @@
     }
 
     // ── 3. MapLibre kaart — start parallel met laden van data ─────────────
+    // OSM-afgeleide data (gebouwen, groen, verkeersobjecten) valt onder de
+    // OpenStreetMap ODbL-licentie; deze attributie is daarom verplicht zodra de
+    // data getoond wordt. Gebruikt in de attributionControl van alle kaarten.
+    const OSM_ATTRIBUTION =
+      'OSM-verrijking (gebouwen, groen, verkeersobjecten) ' +
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> ' +
+      'contributors (ODbL)';
     const map = new maplibregl.Map({
       container: 'map',
       style:     'https://tiles.openfreemap.org/styles/liberty',
@@ -4715,6 +4751,10 @@
       bearing:   (_fitParam || _MAQUETTE) ? 0 : -10,
       antialias: true,
       maxPitch:  85,
+      // OSM/ODbL-attributie voor de OSM-afgeleide lagen (gebouwen, groen,
+      // verkeersobjecten). Deze worden deels via deck.gl gerenderd en zouden
+      // anders niet in de standaard-attributie verschijnen.
+      attributionControl: { customAttribution: OSM_ATTRIBUTION },
     });
 
     // Deel de MapLibre-instantie met de closures in de buitenste scope
@@ -4930,8 +4970,10 @@
       const metricMeta = {
         flow:             { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
         flow_scaled:      { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
-        occupancy:        { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
-        occupancy_scaled: { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        occupancy:        { labelKey: 'legendIC', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        occupancy_scaled: { labelKey: 'legendIC', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        coverage:         { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        coverage_scaled:  { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
         speed:            { labelKey: 'legendSpeed',     unit: 'km/h', gradient: 'linear-gradient(to right, #ff1744, #ffea00, #2196f3)' },
         safety:           { labelKey: 'legendSafety',    unit: '',     gradient: 'linear-gradient(to right, #c62828, #e65100, #fbc02d, #388e3c)' },
         capacity:         { labelKey: 'legendCapacity',  unit,         gradient: (() => {
@@ -5599,7 +5641,7 @@
 
       // OGC GeoJSON-source (kleuren)
       if (!map.getSource('buildings')) {
-        map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson });
+        map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson, attribution: OSM_ATTRIBUTION });
       } else {
         map.getSource('buildings').setData(_buildingsGeoJson);
       }
@@ -6477,21 +6519,36 @@
       if (map.getZoom() < _TA_MINZOOM) return [];
       const layers = [];
 
-      // Verhoogd pad op vaste hoogte h (m) uit een lijn-feature.
-      const elevatedPath = (f, h) => {
+      // Verhoogd pad op vaste hoogte h (m) uit een lijn-feature. Opeenvolgende
+      // identieke punten worden verwijderd, zodat er geen zero-length segmenten
+      // ontstaan (die bij capRounded/jointRounded tot NaN → luma.gl-assertion
+      // leiden).
+      const lineOf = f => {
         const g = f.geometry || {};
-        const line = g.type === 'MultiLineString'
+        const raw = g.type === 'MultiLineString'
           ? (g.coordinates && g.coordinates[0]) || []
           : g.coordinates || [];
-        return line.map(c => [c[0], c[1], h]);
+        const out = [];
+        for (const c of raw) {
+          if (!Array.isArray(c) || !isFinite(c[0]) || !isFinite(c[1])) continue;
+          const prev = out[out.length - 1];
+          if (prev && prev[0] === c[0] && prev[1] === c[1]) continue;
+          out.push(c);
+        }
+        return out;
       };
+      // PathLayer vereist ≥ 2 verschillende punten per pad; degenererende
+      // (lege/enkel-punt/zero-length) features filteren voorkomt de assertion.
+      const okLine = f => lineOf(f).length >= 2;
+      const elevatedPath = (f, h) => lineOf(f).map(c => [c[0], c[1], h]);
       const hoverPath = info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; };
 
       // Viaducten: verhoogde grijze ribbon op z = heightM.
-      if (_taViaductFeatures.length) {
+      const _viaductFeats = _taViaductFeatures.filter(okLine);
+      if (_viaductFeats.length) {
         layers.push(new PathLayer({
           id:            'ta-viaducts-deck',
-          data:          _taViaductFeatures,
+          data:          _viaductFeats,
           widthUnits:    'meters',
           getWidth:      _TA_VIADUCT_WIDTH_M,
           getColor:      [110, 110, 118, 235],
@@ -6505,10 +6562,11 @@
 
       // Bruggen: lichter betongrijs brugdek op z = heightM (apart van viaduct
       // zodat styling kan divergeren, bv. leuningen in de toekomst).
-      if (_taBridgeFeatures.length) {
+      const _bridgeFeats = _taBridgeFeatures.filter(okLine);
+      if (_bridgeFeats.length) {
         layers.push(new PathLayer({
           id:            'ta-bridges-deck',
-          data:          _taBridgeFeatures,
+          data:          _bridgeFeats,
           widthUnits:    'meters',
           getWidth:      _TA_BRIDGE_WIDTH_M,
           getColor:      [150, 148, 140, 240],
@@ -6522,11 +6580,12 @@
 
       // Tunnels: donkere dekband op wegniveau + doorschijnend tunneldak op
       // z = heightM (fallback _TA_TUNNEL_DEF_H) → suggestie van overdekking.
-      if (_taTunnelFeatures.length) {
+      const _tunnelFeats = _taTunnelFeatures.filter(okLine);
+      if (_tunnelFeats.length) {
         const tunnelH = f => Math.max(2, parseFloat((f.properties || {}).heightM) || _TA_TUNNEL_DEF_H);
         layers.push(new PathLayer({
           id:            'ta-tunnels-floor',
-          data:          _taTunnelFeatures,
+          data:          _tunnelFeats,
           widthUnits:    'meters',
           getWidth:      _TA_TUNNEL_WIDTH_M,
           getColor:      [45, 47, 52, 230],
@@ -6538,7 +6597,7 @@
         }));
         layers.push(new PathLayer({
           id:            'ta-tunnels-roof',
-          data:          _taTunnelFeatures,
+          data:          _tunnelFeats,
           widthUnits:    'meters',
           getWidth:      _TA_TUNNEL_WIDTH_M,
           getColor:      [120, 124, 132, 140],
@@ -6550,10 +6609,11 @@
       }
 
       // Duikers: lage smalle donkere kruising op wegniveau.
-      if (_taCulvertFeatures.length) {
+      const _culvertFeats = _taCulvertFeatures.filter(okLine);
+      if (_culvertFeats.length) {
         layers.push(new PathLayer({
           id:            'ta-culverts-deck',
-          data:          _taCulvertFeatures,
+          data:          _culvertFeats,
           widthUnits:    'meters',
           getWidth:      _TA_CULVERT_WIDTH_M,
           getColor:      [70, 72, 78, 220],
@@ -6567,10 +6627,11 @@
 
       // Onderdoorgangen: overspanning die boven de verdiepte weg zweeft
       // (belowGround-features). Doorschijnende grijze band op vaste hoogte.
-      if (_taUnderpassFeatures.length) {
+      const _underpassFeats = _taUnderpassFeatures.filter(okLine);
+      if (_underpassFeats.length) {
         layers.push(new PathLayer({
           id:            'ta-underpass-deck',
-          data:          _taUnderpassFeatures,
+          data:          _underpassFeats,
           widthUnits:    'meters',
           getWidth:      _TA_VIADUCT_WIDTH_M,
           getColor:      [110, 110, 118, 160],
@@ -8002,6 +8063,21 @@
           const v = dpFlowOf(p);
           return p.capacity > 0 ? (v / p.capacity) * 100 : null;
         }
+        case 'coverage':
+        case 'coverage_scaled': {
+          // Fysieke bezettingsgraad: aandeel wegdek bedekt door voertuig-
+          // footprints + veilige remweg (2-secondenregel), volle rijstrook-
+          // breedte geblokkeerd. Weglengte en strookbreedte vallen weg:
+          //   dekking% = 0.1 × q × (L_voertuig + v/1.8) / (v × rijstroken)
+          // met q=flow (vtg/u), v=snelheid (km/h). Mag > 100% (oververzadiging).
+          const q     = dpFlowOf(p);
+          const vKmh  = p.speed;
+          const lanes = p.lanes || 1;
+          if (!(q > 0) || !(vKmh > 0) || !(lanes > 0)) return null;
+          const Lveh   = avgVehicleLengthForMode(p.mode);
+          const occLen = Lveh + vKmh / 1.8;   // eigen lengte + remweg (v_ms × 2)
+          return 0.1 * q * occLen / (vKmh * lanes);
+        }
         case 'speed':    return p.speed ?? null;
         case 'capacity': return p.capacity ?? null;
         default:         return p.flow;
@@ -8998,6 +9074,13 @@
       const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
       const dpFlow = dpFlowOf(p);
       const occ = p.capacity > 0 ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
+      // Fysieke bezettingsgraad (zelfde model als de 'coverage'-metric)
+      const _cov = (() => {
+        const lanes = p.lanes || 1;
+        if (!(dpFlow > 0) || !(p.speed > 0) || !(lanes > 0)) return '–';
+        const occLen = avgVehicleLengthForMode(p.mode) + p.speed / 1.8;
+        return (0.1 * dpFlow * occLen / (p.speed * lanes)).toFixed(0) + '%';
+      })();
       const loc = T('numberLocale');
       const contextLabel = _fspActiveLabel ?? dpLabels[daypart];
       const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
@@ -9012,6 +9095,7 @@
         <div><span style="color:#5a6272">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
         <div><span style="color:#5a6272">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
         <div><span style="color:#5a6272">${T('tooltipOccup')}: </span><b>${occ}</b></div>
+        <div><span style="color:#5a6272">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
         <div><span style="color:#5a6272">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
         ${(() => {
           const wsProps = wegenscanByLinkId.get(String(p.linkId));
@@ -9070,13 +9154,12 @@
            const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
            const maxW = isBike ? 1.2 : 12;   // max meter per rijstrook (fiets: 1.2 m, auto: 12 m)
            const baseW = isBike ? 1.2 : 3;   // statische breedte per rijstrook
-           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
+           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
              let v;
-             if (colorMetric === 'occupancy_scaled') {
-               const flow = dpFlowOf(f.properties);
-               v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
-               // Logaritmische schaal op 0–100
-               const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
+             if (colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+               v = getMetricValue(f.properties) ?? 0;
+               // Logaritmische schaal op 0–100 (waarden > 100% worden geklemd voor breedte)
+               const t = Math.log1p(Math.max(0, Math.min(100, v))) / Math.log1p(100);
                return Math.max(1.5, t * lanes * maxW);
              } else {
               v = dpFlowOf(f.properties);
@@ -9109,7 +9192,8 @@
           // MIXED-modus: fietslinks krijgen eigen kleurschaal (paars→magenta→amber) én eigen normalisatie
           const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
           let norm;
-          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
+          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+              colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
             norm = Math.max(0, Math.min(1, v / 100));
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
             // Statische schaal t.o.v. modus-specifiek maximum
@@ -9124,6 +9208,7 @@
             case 'speed':    return speedRgba(norm);
             case 'capacity': return capacityRgba(norm);
             case 'occupancy': return greenRedRgba(norm);
+            case 'coverage':  return greenRedRgba(norm);
             default:         return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
           }
         },
@@ -9201,12 +9286,11 @@
           const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
           const maxW = isBike ? 1.2 : 12;   // max meter per rijstrook (fiets: 1.2 m, auto: 12 m)
           const baseW = isBike ? 1.2 : 3;   // statische breedte per rijstrook
-          if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled') {
+          if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
             let v;
-            if (colorMetric === 'occupancy_scaled') {
-              const flow = dpFlowOf(f.properties);
-              v = f.properties.capacity > 0 ? (flow / f.properties.capacity) * 100 : 0;
-              const t = Math.log1p(Math.max(0, v)) / Math.log1p(100);
+            if (colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+              v = getMetricValue(f.properties) ?? 0;
+              const t = Math.log1p(Math.max(0, Math.min(100, v))) / Math.log1p(100);
               return Math.max(1.5, t * lanes * maxW);
             } else {
               v = dpFlowOf(f.properties);
@@ -9232,7 +9316,8 @@
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
           const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
           let norm;
-          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled') {
+          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+              colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
             norm = Math.max(0, Math.min(1, v / 100));
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
             norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
@@ -9246,6 +9331,7 @@
             case 'speed':     return speedRgba(norm);
             case 'capacity':  return capacityRgba(norm);
             case 'occupancy': return greenRedRgba(norm);
+            case 'coverage':  return greenRedRgba(norm);
             default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
           }
         },
@@ -12957,6 +13043,7 @@
           bearing:   map.getBearing(),
           antialias: true,
           maxPitch:  85,
+          attributionControl: { customAttribution: OSM_ATTRIBUTION },
         });
 
         map2.once('load', () => {
