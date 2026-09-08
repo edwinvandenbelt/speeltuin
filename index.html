@@ -6856,6 +6856,23 @@
         color: [150, 150, 155, 255], material: M,
       }];
 
+      // Lantaarnpaal (streetLight): slanke antracietkleurige mast met uitkragende
+      // arm en een cobra-head-lamp met warme, licht-oplichtende lens (~8 m).
+      // Bewust afwijkend van 'mast' (donkerder + hoger + warme lampkop).
+      const LAMP = { ambient: 0.95, diffuse: 0.55, shininess: 24, specularColor: [70, 60, 35] };
+      _taFurnMeshes.streetLight = [
+        { mesh: mergeMeshes([
+            _vegCylZ(0.19, 0.45, 0),                          // voetstuk
+            _vegCylZ(0.085, 8.0, 0),                          // schacht
+            makeBoxGeom(1.25, 0.09, 0.09, 0.58, 0, 7.94),     // uitkragende arm
+          ]),
+          color: [64, 68, 76, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.60, 0.26, 0.16, 1.22, 0, 7.84),     // cobra-head lampkop
+          ]),
+          color: [255, 214, 130, 255], material: LAMP },
+      ];
+
       // Fietssluis: twee verspringende rode bars + witte palen (dwars op pad).
       _taFurnMeshes.bikeGate = [
         { mesh: mergeMeshes([
@@ -7278,6 +7295,7 @@
         mailbox:    _taMkInstances(byType.mailbox,    'along'),
         busShelter: _taMkInstances(byType.busShelter, 'along'),
         mast:       _taMkInstances(byType.mast,       'none'),
+        streetLight: _taMkInstances(byType.streetLight, 'none'),
         bikeGate:   _taMkInstances(byType.bikeGate,   'across'),
         infoBoard:  _taMkInstances(byType.infoBoard,  'along'),
         trashBin:   _taMkInstances(byType.trashBin,   'none'),
