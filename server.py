@@ -196,6 +196,31 @@ from traffic_signs_fetcher.core.traffic_signs_fetcher_core import (  # noqa: E40
     fetch_traffic_signs_overpass as _fetch_traffic_signs_overpass,
 )
 
+# ── Optionele rekenmodules uit gmt_calculation_lib (geluid & emissie) ──────
+# Puur fc -> fc; worden on-the-fly op de network-FC toegepast. Ontbreken ze,
+# dan draait de server gewoon door zonder deze kaartlagen.
+try:
+    from noise_estimator.core.noise_estimator_core import (  # noqa: E402
+        estimate_noise_emission as _estimate_noise_emission,
+    )
+
+    _NOISE_AVAILABLE = True
+except ImportError as _e:  # pragma: no cover
+    _estimate_noise_emission = None  # type: ignore[assignment]
+    _NOISE_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: noise_estimator niet beschikbaar - {_e}")
+
+try:
+    from emission_estimator.core.emission_estimator_core import (  # noqa: E402
+        estimate_emissions as _estimate_emissions,
+    )
+
+    _EMISSION_AVAILABLE = True
+except ImportError as _e:  # pragma: no cover
+    _estimate_emissions = None  # type: ignore[assignment]
+    _EMISSION_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: emission_estimator niet beschikbaar - {_e}")
+
 # ---------------------------------------------------------------------------
 # Configuratie
 # ---------------------------------------------------------------------------
@@ -444,6 +469,72 @@ def _geodata_cache_set(path: Path, data: dict):
         del _GEODATA_CACHE[k]
 
 
+_NETWORK_DERIVED_CACHE: dict = {}  # (path_str, mtime_ms, kind) → volledige verrijkte FC
+# Versietag voor de afgeleide lagen (geluid/emissie); verhoog dit als de
+# output-properties wijzigen zodat client-side HTTP-caches (ETag) ongeldig worden.
+_DERIVED_VER = "d1"
+
+# Welke properties elke afgeleide laag teruggeeft (naast altijd linkId).
+_NOISE_PROPS = (
+    "noiseDay",
+    "noiseEvening",
+    "noiseNight",
+    "noiseLden",
+    "noiseLnight",
+    "noiseSourceType",
+)
+_EMISSION_PROPS = ("co2Kg", "noxKg", "pm10Kg", "pm25Kg", "vehicleKm", "length")
+
+
+def _network_derived_fc(path: Path, kind: str) -> dict:
+    """Bereken de geluid- (``kind='noise'``) of emissie- (``kind='emission'``)
+    verrijking voor een NETWORK-bestand en geef de volledige FC terug.
+
+    De pure ``fc -> fc`` kernen uit ``gmt_calculation_lib`` worden aangeroepen op
+    de (gecachede) netwerk-FC. Het resultaat wordt per (bestand, soort) mtime-
+    gekeyed gecached zodat de kernen niet bij elke aanvraag opnieuw rekenen.
+    """
+    mtime_ms = int(path.stat().st_mtime * 1000)
+    key = (str(path), mtime_ms, kind)
+    cached = _NETWORK_DERIVED_CACHE.get(key)
+    if cached is not None:
+        return cached
+    data = _read_geodata(path)
+    if kind == "noise":
+        fc = _estimate_noise_emission(data)  # type: ignore[misc]
+    else:
+        fc = _estimate_emissions(data)  # type: ignore[misc]
+    _NETWORK_DERIVED_CACHE[key] = fc
+    for k in [
+        k
+        for k in _NETWORK_DERIVED_CACHE
+        if k[0] == str(path) and k[2] == kind and k != key
+    ]:
+        del _NETWORK_DERIVED_CACHE[k]
+    return fc
+
+
+def _slim_derived_fc(fc: dict, prop_names, include_geometry: bool) -> dict:
+    """Bouw een slanke FeatureCollection met enkel ``linkId`` + de gevraagde
+    properties. De geometrie wordt alleen meegegeven als ``include_geometry``
+    True is (de viewer heeft de netwerkgeometrie meestal al ingeladen)."""
+    feats = []
+    for feat in fc.get("features", []):
+        src = feat.get("properties") or {}
+        props = {"linkId": src.get("linkId")}
+        for name in prop_names:
+            if name in src:
+                props[name] = src[name]
+        feats.append(
+            {
+                "type": "Feature",
+                "geometry": feat.get("geometry") if include_geometry else None,
+                "properties": props,
+            }
+        )
+    return {"type": "FeatureCollection", "features": feats}
+
+
 def _read_geodata(path: Path) -> dict:
     """Lees een GeoJSON of GeoParquet bestand en geef een GeoJSON FeatureCollection dict terug.
 
@@ -560,6 +651,14 @@ _COLLECTIONS = {
     "wegenscan": {
         "title": "Wegenscan (veiligheidsscores)",
         "description": "21 veiligheids-KPI's + generic_safety per wegvak, berekend door de wegenscan.",
+    },
+    "noise": {
+        "title": "Geluid (afgeleid)",
+        "description": "Geluidsemissie per wegvak (Lden/Lnight, dB(A)), afgeleid uit het NETWORK-bestand. Join op linkId.",
+    },
+    "emission": {
+        "title": "Uitstoot (afgeleid)",
+        "description": "Emissie per wegvak (CO2/NOx/PM10/PM2.5, kg/etmaal + length), afgeleid uit het NETWORK-bestand. Join op linkId.",
     },
 }
 
@@ -4102,6 +4201,72 @@ def ogc_collection_items(collection_id):
 
         return _ogc_items_response("traffic_signs", data, self_url)
 
+    # ── noise / emission: afgeleide lagen berekend uit het NETWORK-bestand ───
+    # Deze endpoints "vervuilen" het network-bestand niet: ze berekenen de
+    # geluid- resp. emissie-properties on-the-fly en geven een slanke FC terug
+    # (linkId + properties, geometrie optioneel via ?geometry=1). De viewer joint
+    # zelf op linkId met de reeds ingeladen netwerkgeometrie.
+    if collection_id in ("noise", "emission"):
+        kind = "noise" if collection_id == "noise" else "emission"
+        available = _NOISE_AVAILABLE if kind == "noise" else _EMISSION_AVAILABLE
+        prop_names = _NOISE_PROPS if kind == "noise" else _EMISSION_PROPS
+
+        area_id = request.args.get("areaId", "").strip()
+        mode = request.args.get("mode", "").upper().strip()
+        if not area_id:
+            abort(400, 'Parameter "areaId" ontbreekt')
+        if not _safe(area_id):
+            abort(400, "Ongeldige parameter: areaId")
+        if not mode:
+            abort(400, 'Parameter "mode" ontbreekt')
+        if not _safe(mode):
+            abort(400, "Ongeldige parameter: mode")
+
+        if not available:
+            abort(
+                503,
+                f"Rekenmodule voor '{kind}' niet beschikbaar (gmt_calculation_lib niet geïnstalleerd).",
+            )
+
+        path = _data_path(area_id, mode, "NETWORK")
+        if path is None or not path.exists():
+            abort(404, f"Bestand niet gevonden: {area_id}-NETWORK-{mode}")
+
+        include_geometry = request.args.get("geometry", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "ja",
+        )
+
+        mtime = path.stat().st_mtime
+        etag = (
+            f'"{int(mtime * 1000):x}-{kind}-{_DERIVED_VER}-'
+            f'{"g" if include_geometry else "n"}"'
+        )
+        last_modified = _dt.datetime.fromtimestamp(mtime, tz=_dt.timezone.utc).strftime(
+            "%a, %d %b %Y %H:%M:%S GMT"
+        )
+        if request.headers.get("If-None-Match") == etag:
+            resp = make_response("", 304)
+            resp.headers["ETag"] = etag
+            resp.headers["Cache-Control"] = "no-cache"
+            return resp
+
+        try:
+            full_fc = _network_derived_fc(path, kind)
+        except ImportError as exc:
+            abort(503, str(exc))
+        except Exception as exc:
+            abort(500, f"Fout bij berekenen van '{kind}': {exc}")
+
+        slim = _slim_derived_fc(full_fc, prop_names, include_geometry)
+        resp = _ogc_items_response(collection_id, slim, self_url)
+        resp.headers["ETag"] = etag
+        resp.headers["Last-Modified"] = last_modified
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     # ── overige collections: lees geodata-bestand (GeoJSON of GeoParquet) ────
     area_id = request.args.get("areaId", "").strip()
     mode = request.args.get("mode", "").upper().strip()
@@ -4121,7 +4286,7 @@ def ogc_collection_items(collection_id):
     if path is None or not path.exists():
         abort(404, f"Bestand niet gevonden: {area_id}-{file_type}-{mode}")
 
-    # HTTP-caching: ETag gebaseerd op bestandswijzigingstijd (milliseconde-nauwkeurig)
+    # HTTP-caching: ETag gebaseerd op bestandswijzigingstijd (milliseconde-nauwkeurig).
     mtime = path.stat().st_mtime
     etag = f'"{int(mtime * 1000):x}"'
     last_modified = _dt.datetime.fromtimestamp(mtime, tz=_dt.timezone.utc).strftime(

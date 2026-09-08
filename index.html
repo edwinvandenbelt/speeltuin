@@ -1485,6 +1485,15 @@
       <option value="coverage_scaled" data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</option>
       <option value="speed" data-i18n="metricSpeed">Snelheid</option>
       <option value="capacity" data-i18n="metricCapacity">Capaciteit</option>
+      <optgroup label="Geluid" data-i18n-label="metricGroupNoise">
+        <option value="noise_lden" data-i18n="metricNoiseLden">Geluid (Lden)</option>
+        <option value="noise_lnight" data-i18n="metricNoiseLnight">Geluid (Lnight)</option>
+      </optgroup>
+      <optgroup label="Uitstoot" data-i18n-label="metricGroupEmis">
+        <option value="emis_co2" data-i18n="metricCo2">CO₂-uitstoot</option>
+        <option value="emis_nox" data-i18n="metricNox">NOₓ-uitstoot</option>
+        <option value="emis_pm10" data-i18n="metricPm10">Fijnstof (PM10)</option>
+      </optgroup>
       <option value="safety" id="safetyOption">Veiligheid</option>
       <option value="spectrum">Spectrum</option>
       <option value="none" data-i18n="metricNone">Geen</option>
@@ -2254,6 +2263,9 @@
       metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
       metricIC:'I/C', metricICScaled:'I/C (geschaald)',
       metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricNone:'Geen', metricCompare:'Vergelijking tonen',
+      metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
+      metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
+      metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
       // Laadscherm
       loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
       loaderZones:'Zones laden\u2026', loaderRoutes:'Routes laden\u2026', loaderMap:'Kaart laden\u2026',
@@ -2375,6 +2387,8 @@
       odEditNoRoutes:'Geen routes gevonden voor dit OD-paar.',
       // Legenda
       legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad', legendIC:'I/C',
+      legendNoiseLden:'Geluid Lden', legendNoiseLnight:'Geluid Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
       legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
       legendUnit:'vtg/u',
       carCountFmt: n => `~${n.toLocaleString('nl-NL')} voertuigen op de wegen`,
@@ -2498,6 +2512,9 @@
       metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
       metricIC:'V/C', metricICScaled:'V/C (scaled)',
       metricSpeed:'Speed', metricCapacity:'Capacity', metricNone:'None', metricCompare:'Show comparison',
+      metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
+      metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
+      metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
       loaderInit:'Loading GeoJSON\u2026', loaderNetwork:'Loading network data\u2026',
       loaderZones:'Loading zones\u2026', loaderRoutes:'Loading routes\u2026', loaderMap:'Loading map\u2026',
       areaTitle:'Traffic network visualisation', areaSubtitle:'Select an area to load:',
@@ -2611,6 +2628,8 @@
       odEditCurrentTrips:'Current:',
       odEditNoRoutes:'No routes found for this OD pair.',
       legendFlow:'Intensity', legendOccupancy:'Occupancy', legendIC:'V/C',
+      legendNoiseLden:'Noise Lden', legendNoiseLnight:'Noise Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
       legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
       legendUnit:'veh/h',
       carCountFmt: n => `~${n.toLocaleString('en-GB')} vehicles on the road`,
@@ -2731,6 +2750,9 @@
       metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
       metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
       metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
+      metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
+      metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
+      metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
       loaderInit:'Ladataan GeoJSON\u2026', loaderNetwork:'Ladataan verkkodata\u2026',
       loaderZones:'Ladataan alueita\u2026', loaderRoutes:'Ladataan reittej\xe4\u2026', loaderMap:'Ladataan karttaa\u2026',
       areaTitle:'Liikenneverkkovisualisointi', areaSubtitle:'Valitse alue ladattavaksi:',
@@ -2803,6 +2825,8 @@
       linkCloseBtnTitle:'Sulje tie (kapasiteetti = 0)',
       changeClosedLabel:'suljettu (kap = 0)',
       legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste', legendIC:'V/C',
+      legendNoiseLden:'Melu Lden', legendNoiseLnight:'Melu Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
       legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
       legendUnit:'ajon/h',
       carCountFmt: n => `~${n.toLocaleString('fi-FI')} ajoneuvoa tiellä`,
@@ -2918,6 +2942,10 @@
     document.querySelectorAll('[data-i18n-ph]').forEach(el =>
       el.placeholder = T(el.dataset.i18nPh));
 
+    // data-i18n-label → optgroup label
+    document.querySelectorAll('[data-i18n-label]').forEach(el =>
+      el.label = T(el.dataset.i18nLabel));
+
     // Legenda-label (afhankelijk van geselecteerde metriek)
     const metric = document.getElementById('colorMetric')?.value;
     const legendKeyMap = {
@@ -2925,6 +2953,8 @@
       occupancy:'legendIC', occupancy_scaled:'legendIC',
       coverage:'legendOccupancy', coverage_scaled:'legendOccupancy',
       speed:'legendSpeed', capacity:'legendCapacity', compare:'legendCompare',
+      noise_lden:'legendNoiseLden', noise_lnight:'legendNoiseLnight',
+      emis_co2:'legendCo2', emis_nox:'legendNox', emis_pm10:'legendPm10',
     };
     const legEl = document.getElementById('legendLabel');
     if (legEl && metric) legEl.textContent = T(legendKeyMap[metric] || 'legendFlow');
@@ -4121,6 +4151,49 @@
                      return [130,   0,   0, 220];  // ≥ 70%:  donkerrood
   }
 
+  /**
+   * Absolute (niet-relatieve) grenswaarden voor de geluid- en emissielagen.
+   * Elke laag krijgt een vaste drempel: onder `std` = toegestaan (groen),
+   * tussen `std` en `max` = grijs gebied / afweegzone (geel→oranje), boven
+   * `max` = overschrijding (rood). Zo blijft de inkleuring vergelijkbaar
+   * tussen scenario's, i.p.v. mee te schalen met de dataspreiding.
+   *
+   * Geluid: wettelijke waarden uit de Omgevingswet (Aanvullingsbesluit geluid,
+   *   wegverkeer gemeente-/provinciale weg): standaardwaarde Lden 53 dB,
+   *   grenswaarde Lden 70 dB. Voor Lnight bestaat geen wettelijke wegnorm;
+   *   hier een indicatieve band (WHO-nachtrichtwaarde 45 dB → 59 dB).
+   *   NB: het model levert bronemissie per link, geen gevelimmissie; de
+   *   waarden zijn als indicatieve klassenindeling toegepast.
+   * Emissie: luchtkwaliteitsnormen zijn concentraties (µg/m³), niet massa per
+   *   weglink, dus er is GEEN wettelijke per-weg-limiet. Onderstaande drempels
+   *   zijn indicatief (kg/km/etmaal) en bedoeld om te tunen.
+   */
+  const METRIC_LIMITS = {
+    noise_lden:   { std: 53,  max: 70,  legal: true  },  // Omgevingswet, Lden dB(A)
+    noise_lnight: { std: 45,  max: 59,  legal: false },  // indicatief, Lnight dB(A)
+    emis_co2:     { std: 500, max: 1000, legal: false }, // indicatief, kg/km/etmaal
+    emis_nox:     { std: 1.5, max: 3.0,  legal: false }, // indicatief, kg/km/etmaal
+    emis_pm10:    { std: 0.15, max: 0.30, legal: false },// indicatief, kg/km/etmaal
+  };
+
+  /** Kleur op basis van absolute drempels: groen (toegestaan) → geel/oranje
+   *  (grijs gebied) → rood (overschrijding). */
+  function limitBandRgba(v, std, max) {
+    if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+    if (v < std) {
+      // Toegestaan: lichtgroen → groen naarmate het de standaardwaarde nadert
+      return [99, 214, 104, 220];
+    }
+    if (v < max) {
+      // Grijs gebied: geel → oranje over de afweegzone
+      const t = (v - std) / (max - std);
+      return [230, Math.round(210 - 120 * t), 20, 225];
+    }
+    // Overschrijding: rood → donkerrood bij forse overschrijding
+    const t = Math.max(0, Math.min(1, (v - max) / max));
+    return [Math.round(205 - 75 * t), Math.round(30 - 30 * t), Math.round(30 - 30 * t), 230];
+  }
+
   // Blauw (vrij/snel) → rood (langzaam): norm=0 is langzaam, norm=1 is snel
   function speedRgba(norm) {
     const n = 1 - norm; // omdraaien: hoge snelheid = koel blauw
@@ -4967,6 +5040,10 @@
       // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
       const bp = Math.max(2, Math.round(25 / (globalMaxFlow || 1) * 100));
       const flowGradient = `linear-gradient(to right, #1450dc, #00e676 ${bp}%, #ffea00 55%, #ff1744)`;
+      // Vaste 3-bands gradient voor grenswaarde-lagen: groen (toegestaan) →
+      // geel/oranje (grijs gebied) → rood (overschrijding). De legenda-uiteinden
+      // tonen de standaard- en grenswaarde, niet de dataspreiding.
+      const _limitGradient = 'linear-gradient(to right, #63d668, #63d668 18%, #ffdc00 40%, #e6551e 60%, #c81e1e 82%, #b00000)';
       const metricMeta = {
         flow:             { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
         flow_scaled:      { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
@@ -4987,6 +5064,11 @@
           return `linear-gradient(to right, ${stops.join(', ')})`;
         })() },
         spectrum:         { labelKey: null, unit, gradient: flowGradient },
+        noise_lden:       { labelKey: 'legendNoiseLden',   unit: 'dB(A)',  gradient: _limitGradient },
+        noise_lnight:     { labelKey: 'legendNoiseLnight', unit: 'dB(A)',  gradient: _limitGradient },
+        emis_co2:         { labelKey: 'legendCo2',  unit: 'kg/km', gradient: _limitGradient },
+        emis_nox:         { labelKey: 'legendNox',  unit: 'kg/km', gradient: _limitGradient },
+        emis_pm10:        { labelKey: 'legendPm10', unit: 'kg/km', gradient: _limitGradient },
       };
       // Spectrum: aparte MapLibre-laag, legenda toont gradient van de laag zelf
       if (colorMetric === 'spectrum') {
@@ -5018,7 +5100,9 @@
 
       const fmt = u === '%'
         ? v => Math.round(v) + ' %'
-        : v => Math.round(v).toLocaleString(T('numberLocale')) + ' ' + u;
+        : v => (Math.abs(v) > 0 && Math.abs(v) < 10
+                  ? Number(v.toFixed(2)).toLocaleString(T('numberLocale'))
+                  : Math.round(v).toLocaleString(T('numberLocale'))) + ' ' + u;
       if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
         // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
         document.getElementById('legendMin').textContent = fmt(0);
@@ -5035,6 +5119,12 @@
         // Veiligheidsscore: vaste tekstlabels
         document.getElementById('legendMin').textContent = 'Slecht';
         document.getElementById('legendMax').textContent = 'Goed';
+      } else if (METRIC_LIMITS[colorMetric]) {
+        // Grenswaarde-lagen: toon de standaardwaarde (links, grens toegestaan) en
+        // de grenswaarde (rechts, overschrijding) i.p.v. de dataspreiding.
+        const lim = METRIC_LIMITS[colorMetric];
+        document.getElementById('legendMin').textContent = fmt(lim.std);
+        document.getElementById('legendMax').textContent = fmt(lim.max);
       } else {
         // Andere metrics: scan segmenten voor het actieve dagdeel
         let vMin = Infinity, vMax = -Infinity;
@@ -7806,6 +7896,41 @@
     let cars      = [];
     let carData   = [];
 
+    // ── Afgeleide lagen (geluid / emissie) ────────────────────────────────────
+    // Deze worden niet in het NETWORK-bestand meegeleverd, maar los opgehaald via
+    // /collections/noise|emission/items en op linkId gejoind met de netwerk-props.
+    /** Map linkId → geluid-props ({noiseLden, noiseLnight, …}); null = nog niet geladen. */
+    let noiseByLinkId = null;
+    /** Map linkId → emissie-props ({co2Kg, noxKg, pm10Kg, length, …}); null = nog niet geladen. */
+    let emisByLinkId = null;
+
+    /** Haal de afgeleide laag ('noise' of 'emission') op en vul de bijbehorende
+     *  linkId-lookup. Idempotent: doet niets als de map al gevuld is. */
+    async function ensureDerivedLayer(kind) {
+      const already = kind === 'noise' ? noiseByLinkId : emisByLinkId;
+      if (already) return already;
+      const url = `/collections/${kind}/items?areaId=${AREA_ID}&mode=${MODE}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${kind} laden mislukt: ${r.status} ${r.statusText}`);
+      const fc = await r.json();
+      const m = new Map();
+      for (const f of (fc.features || [])) {
+        const p = f.properties || {};
+        if (p.linkId != null) m.set(p.linkId, p);
+      }
+      if (kind === 'noise') noiseByLinkId = m; else emisByLinkId = m;
+      return m;
+    }
+
+    /** Metric-ids die een afgeleide laag vereisen → welke laag ('noise'/'emission'). */
+    const DERIVED_METRIC_KIND = {
+      noise_lden:   'noise',
+      noise_lnight: 'noise',
+      emis_co2:     'emission',
+      emis_nox:     'emission',
+      emis_pm10:    'emission',
+    };
+
     // ── Wegenscan state ───────────────────────────────────────────────────────
     /** GeoJSON van het WEGENSCAN-bestand; null als nog niet geladen. */
     let wegenscanData = null;
@@ -8080,6 +8205,28 @@
         }
         case 'speed':    return p.speed ?? null;
         case 'capacity': return p.capacity ?? null;
+        // Geluid (dB(A)) — losse laag, gejoind op linkId
+        case 'noise_lden':
+        case 'noise_lnight': {
+          const d = noiseByLinkId && noiseByLinkId.get(p.linkId);
+          if (!d) return null;
+          const v = colorMetric === 'noise_lden' ? d.noiseLden : d.noiseLnight;
+          return (v != null) ? v : null;
+        }
+        // Emissie per km — kg/etmaal gedeeld door linklengte (lengte-onafhankelijk)
+        case 'emis_co2':
+        case 'emis_nox':
+        case 'emis_pm10': {
+          const d = emisByLinkId && emisByLinkId.get(p.linkId);
+          if (!d) return null;
+          const kg = colorMetric === 'emis_co2' ? d.co2Kg
+                   : colorMetric === 'emis_nox' ? d.noxKg
+                   : d.pm10Kg;
+          if (kg == null) return null;
+          const len = (d.length != null) ? d.length : p.length;
+          const lenKm = (len > 0) ? len / 1000 : null;
+          return lenKm ? kg / lenKm : null;
+        }
         default:         return p.flow;
       }
     }
@@ -9098,6 +9245,26 @@
         <div><span style="color:#5a6272">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
         <div><span style="color:#5a6272">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
         ${(() => {
+          const nd = noiseByLinkId && noiseByLinkId.get(p.linkId);
+          if (!nd) return '';
+          let h = '';
+          if (nd.noiseLden != null)   h += `<div><span style="color:#5a6272">${T('legendNoiseLden')}: </span><b>${nd.noiseLden.toFixed(1)} dB(A)</b></div>`;
+          if (nd.noiseLnight != null) h += `<div><span style="color:#5a6272">${T('legendNoiseLnight')}: </span><b>${nd.noiseLnight.toFixed(1)} dB(A)</b></div>`;
+          return h;
+        })()}
+        ${(() => {
+          const ed = emisByLinkId && emisByLinkId.get(p.linkId);
+          if (!ed) return '';
+          const len = (ed.length != null) ? ed.length : p.length;
+          if (!(len > 0)) return '';
+          const km = len / 1000;
+          let h = '';
+          if (ed.co2Kg  != null) h += `<div><span style="color:#5a6272">CO\u2082: </span><b>${(ed.co2Kg/km).toFixed(1)} kg/km</b></div>`;
+          if (ed.noxKg  != null) h += `<div><span style="color:#5a6272">NO\u2093: </span><b>${(ed.noxKg/km).toFixed(2)} kg/km</b></div>`;
+          if (ed.pm10Kg != null) h += `<div><span style="color:#5a6272">PM10: </span><b>${(ed.pm10Kg/km).toFixed(2)} kg/km</b></div>`;
+          return h;
+        })()}
+        ${(() => {
           const wsProps = wegenscanByLinkId.get(String(p.linkId));
           if (!wsProps?.generic_safety) return '';
           return `<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px">
@@ -9189,6 +9356,8 @@
             // Spectrum: aparte MapLibre-laag, netwerk-links normaal inkleuren
             const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+          { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
           // MIXED-modus: fietslinks krijgen eigen kleurschaal (paars→magenta→amber) én eigen normalisatie
           const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
           let norm;
@@ -9314,6 +9483,8 @@
           if (f.properties.capacity === 0) return [210, 40, 40, 200];
           const v = getMetricValue(f.properties);
           if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+          { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
           const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
           let norm;
           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
@@ -13937,6 +14108,22 @@
       // Wegenscan banner verbergen als andere metric gekozen wordt
       setWegenscanBanner(false);
       closeWegenscanPanel();
+
+      // ── Afgeleide lagen (geluid / emissie) ────────────────────────────────
+      // Haal de losse laag op en join op linkId vóór het (her)tekenen.
+      const derivedKind = DERIVED_METRIC_KIND[colorMetric];
+      if (derivedKind) {
+        try {
+          await ensureDerivedLayer(derivedKind);
+        } catch (err) {
+          console.warn(err);
+          colorMetric = 'flow';
+          document.getElementById('colorMetric').value = 'flow';
+          updateLegend();
+          updateOverlay(true);
+          return;
+        }
+      }
 
       if (colorMetric === 'compare') {
         // Laad COMPARE-bestand als nog niet aanwezig
