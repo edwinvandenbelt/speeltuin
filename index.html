@@ -1505,6 +1505,8 @@
             title="ScenarioVergelijker" style="display:none">⧉</button>
     <!-- Verschilplot: toont toe-/afnames per wegvak (rood/groen) -->
     <button class="tb-btn" id="diffPlotBtn" title="Verschilplot (Δ intensiteit)" style="display:none">Δ</button>
+    <!-- Verschilplot met ongewijzigd deel: grijze kern + gekleurde rand -->
+    <button class="tb-btn" id="diffStackBtn" title="Verschilplot met ongewijzigd deel (grijs)" style="display:none">Δ▤</button>
 
     <!-- Zone-centroids weergave -->
     <div class="tb-icon-group">
@@ -1805,6 +1807,15 @@
         <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#8c8c8c;margin-left:6px;opacity:0.6;"></span>Ongewijzigd
       </div>
       <div style="font-size:10px; color:#aaa; margin-top:2px;">Breedte = schaal t.o.v. max. intensiteit</div>
+    </div>
+    <!-- Gestapelde verschilplot-legende — alleen zichtbaar als diffStackActive -->
+    <div id="legendDiffStack" style="display:none; margin-top:4px;">
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#ddd;">
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#8c8c8c;"></span>Ongewijzigd
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#dc1e1e;margin-left:6px;"></span>Toename
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#1eb43c;margin-left:6px;"></span>Afname
+      </div>
+      <div style="font-size:10px; color:#aaa; margin-top:2px;">Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname</div>
     </div>
     <div id="carCountStrip"></div>
   </div>
@@ -5032,10 +5043,19 @@
         document.getElementById('legendDiff').style.display  = '';
         return;
       }
+      if (diffStackActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiffStack').style.display = '';
+        return;
+      }
       // Normaal: zorg dat alles weer zichtbaar is
       document.getElementById('legendBar').style.display    = '';
       if (legendLabelsEl) legendLabelsEl.style.display = '';
       document.getElementById('legendDiff').style.display   = 'none';
+      document.getElementById('legendDiffStack').style.display = 'none';
       const unit = T('legendUnit');
       // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
       const bp = Math.max(2, Math.round(25 / (globalMaxFlow || 1) * 100));
@@ -9097,6 +9117,7 @@
     let splitViewActive    = false;
     let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
     var diffPlotActive     = false;  // verschilplot actief
+    var diffStackActive    = false;  // gestapelde verschilplot (grijze kern + gekleurde rand) actief
     var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (uurintensiteit)
     var diffMaxOrigFlow    = 1;      // max uurflow bron-scenario (schaalreferentie)
 
@@ -9328,7 +9349,7 @@
         data: MODE !== 'MIXED'
           ? geojson.features
           : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
-        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum' && !selectedZoneId && !selectedLinkId && !diffPlotActive,
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum' && !selectedZoneId && !selectedLinkId && !diffPlotActive && !diffStackActive,
         stroked: false,
         filled: false,
         lineWidthUnits: 'meters',
@@ -9648,6 +9669,157 @@
           getLineWidth: [diffByLinkId.size, daypart],
         },
       });
+    }
+
+    // ── Gestapelde verschilplot: grijze kern (ongewijzigd deel) + gekleurde rand ──
+    // Twee lagen: onder een gekleurde laag met breedte = max(oud,nieuw), erbovenop
+    // een grijze laag met breedte = min(oud,nieuw). De gekleurde rand die overblijft
+    // stelt |verschil| voor (rood = toename, groen = afname).
+    function makeDiffStackLayer() {
+      if (!diffStackActive || !diffByLinkId.size) {
+        return [];
+      }
+      const isBike = MODE === 'BIKE';
+      const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer/makeDiffLayer
+      const ref    = diffMaxOrigFlow;     // schaalreferentie (max bron-intensiteit)
+
+      // Lineaire breedteschaal: de breedte is recht evenredig met de intensiteit,
+      // zodat de verhouding grijze kern (ongewijzigd) t.o.v. gekleurde rand (verschil)
+      // klopt. Een logaritmische schaal zou die verhouding verstoren.
+      const widthOf = (f, flow) => {
+        if (!(flow > 0)) return 0;
+        const lanes = f.properties.lanes || 1;
+        const t = flow / ref;
+        return t * lanes * maxW;
+      };
+
+      const data = MODE !== 'MIXED'
+        ? geojson.features
+        : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      const commonHover = info => {
+        if (info.object) {
+          _segTipLastInfo = info;
+          if (_segTipVisible) {
+            _diffTipRender(info);
+          } else if (!_segTipTimer) {
+            _segTipTimer = setTimeout(() => {
+              _segTipTimer = null;
+              _segTipVisible = true;
+              if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+            }, 600);
+          }
+        } else {
+          clearTimeout(_segTipTimer); _segTipTimer = null;
+          _segTipVisible = false;
+          _segTip.style.display = 'none';
+        }
+      };
+
+      // Verschuif een polylijn loodrecht met `dist` meter naar één vaste zijde.
+      // Werkt in een lokale equirectangular benadering (meters ↔ graden per vertex).
+      const offsetPath = (coords, dist) => {
+        const R_LAT = 111320;
+        const n = coords.length;
+        const out = new Array(n);
+        // Per-segment loodrechte normalen (rechterzijde van de rijrichting)
+        const segNx = new Array(n - 1), segNy = new Array(n - 1);
+        for (let i = 0; i < n - 1; i++) {
+          const [lng1, lat1] = coords[i];
+          const [lng2, lat2] = coords[i + 1];
+          const latMid = (lat1 + lat2) * 0.5 * Math.PI / 180;
+          const dx = (lng2 - lng1) * R_LAT * Math.cos(latMid);
+          const dy = (lat2 - lat1) * R_LAT;
+          const len = Math.hypot(dx, dy) || 1;
+          // Normaal (rechterzijde): (dy, -dx) genormaliseerd
+          segNx[i] = dy / len;
+          segNy[i] = -dx / len;
+        }
+        for (let i = 0; i < n; i++) {
+          // Gemiddelde normaal van aangrenzende segmenten (vloeiende hoeken)
+          let nx = 0, ny = 0;
+          if (i > 0)     { nx += segNx[i - 1]; ny += segNy[i - 1]; }
+          if (i < n - 1) { nx += segNx[i];     ny += segNy[i];     }
+          const nl = Math.hypot(nx, ny) || 1;
+          nx /= nl; ny /= nl;
+          const [lng, lat] = coords[i];
+          const latRad = lat * Math.PI / 180;
+          const oLng = (nx * dist) / (R_LAT * Math.cos(latRad));
+          const oLat = (ny * dist) / R_LAT;
+          out[i] = [lng + oLng, lat + oLat];
+        }
+        return out;
+      };
+
+      // Bouw offset-paden voor de gekleurde band: volledig aan de buitenzijde van
+      // de grijze kern (de binnenrand raakt de buitenrand van de grijze kern).
+      const colorPaths = [];
+      for (const f of data) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = f.properties.linkId;
+        const diff   = diffByLinkId.get(linkId);
+        if (diff == null || diff === 0) continue;
+        const newFlow = dpFlowOf(f.properties);
+        const oldFlow = newFlow - diff;
+        const greyW = widthOf(f, Math.min(oldFlow, newFlow));
+        const colW  = widthOf(f, Math.abs(diff));
+        if (!(colW > 0)) continue;
+        // Middellijn van de band ligt op greyW/2 + colW/2 uit de wegas.
+        const off = greyW / 2 + colW / 2;
+        colorPaths.push({
+          path: offsetPath(f.geometry.coordinates, off),
+          color: diff > 0 ? [220, 30, 30, 230] : [30, 180, 60, 230],
+          width: colW,
+          properties: f.properties,
+        });
+      }
+
+      // Onderlaag: gekleurde band (toe-/afname), volledig aan de buitenzijde
+      const colorLayer = new PathLayer({
+        id: 'diff-stack-color',
+        data: colorPaths,
+        widthUnits: 'meters',
+        widthMinPixels: 1.5,
+        capRounded: false,
+        jointRounded: true,
+        getPath:  d => d.path,
+        getColor: d => d.color,
+        getWidth: d => d.width,
+        pickable: true,
+        onHover: commonHover,
+        updateTriggers: {
+          getColor: [diffByLinkId.size, daypart],
+          getWidth: [diffByLinkId.size, daypart],
+          getPath:  [diffByLinkId.size, daypart],
+        },
+      });
+
+      // Bovenlaag: grijze kern met breedte = min(oud, nieuw) = het wegvak zelf
+      const coreLayer = new GeoJsonLayer({
+        id: 'diff-stack-core',
+        data,
+        visible: true,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1,
+        getLineWidth: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null) return 1.5;
+          const newFlow = dpFlowOf(f.properties);
+          const oldFlow = newFlow - diff;
+          return widthOf(f, Math.min(oldFlow, newFlow));
+        },
+        getLineColor: [140, 140, 140, 255],  // ondoorzichtig grijs = ongewijzigd deel
+        pickable: true,
+        onHover: commonHover,
+        updateTriggers: {
+          getLineWidth: [diffByLinkId.size, daypart],
+        },
+      });
+
+      return [colorLayer, coreLayer];
     }
 
     function makeLinkEditLayer() {      return new GeoJsonLayer({
@@ -11052,6 +11224,7 @@
           makeSpeedBumpLayer(),
           makeNetworkLayer(),
           makeDiffLayer(),
+          ...makeDiffStackLayer(),
           makeLinkEditLayer(),
           ...makeSelectedLinkHighlightLayers(),
           makeWhatifRcHighlightLayer(),
@@ -13071,8 +13244,10 @@
       splitViewSrcAreaId = AREA_ID;
       if (splitViewActive) deactivateSplitView();
       if (diffPlotActive) deactivateDiffPlot();
+      if (diffStackActive) deactivateDiffStack();
       document.getElementById('splitViewBtn').style.display = '';
       document.getElementById('diffPlotBtn').style.display  = '';
+      document.getElementById('diffStackBtn').style.display = '';
       AREA_ID = newAreaId;
       _historicalChanges = [];   // invalideer bij scenario-advance
 
@@ -13125,6 +13300,7 @@
           splitViewSrcAreaId = area.srcAreaId;
           document.getElementById('splitViewBtn').style.display = '';
           document.getElementById('diffPlotBtn').style.display  = '';
+          document.getElementById('diffStackBtn').style.display = '';
         }
       }).catch(() => {});
     }
@@ -13169,6 +13345,8 @@
       document.getElementById('splitViewBtn').style.display =
         splitViewSrcAreaId ? '' : 'none';
       document.getElementById('diffPlotBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffStackBtn').style.display =
         splitViewSrcAreaId ? '' : 'none';
       // Als de huidige selectie 'compare' is maar er geen data meer is, reset
       if (!hasCompare && colorMetric === 'compare') {
@@ -13326,41 +13504,47 @@
     }
 
     // ── Verschilplot — activeren/deactiveren ────────────────────────────────────
+
+    // Gedeelde berekening: vult diffByLinkId (berekend − bron) en diffMaxOrigFlow.
+    // Gebruikt door zowel de gewone verschilplot als de gestapelde variant.
+    async function computeDiffData() {
+      if (!splitViewSrcAreaId) return false;
+      const coll = 'network';
+      const url = `/collections/${coll}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      const origGeoJson  = await fetch(url).then(r => r.json());
+      const origFeatures = origGeoJson.features.filter(
+        f => f.geometry?.type === 'LineString' && f.properties?.linkId != null
+      );
+
+      // Bouw een map linkId → uurflow bron-scenario
+      const origFlowByLinkId = new Map();
+      let maxOrigFlow = 0;
+      for (const f of origFeatures) {
+        const flow = dpFlowOf(f.properties);
+        origFlowByLinkId.set(f.properties.linkId, flow);
+        if (flow > maxOrigFlow) maxOrigFlow = flow;
+      }
+      diffMaxOrigFlow = maxOrigFlow || 1;
+
+      // Bereken verschil per linkId: berekend − bron
+      diffByLinkId.clear();
+      for (const seg of segments) {
+        const linkId   = seg.props.linkId;
+        const calcFlow = dpFlowOf(seg.props);
+        const origFlow = origFlowByLinkId.get(linkId) ?? 0;
+        diffByLinkId.set(linkId, calcFlow - origFlow);
+      }
+      return true;
+    }
+
     async function activateDiffPlot() {
       if (!splitViewSrcAreaId) return;
-      // Zorg dat split-view niet tegelijk actief is
+      // Zorg dat split-view / gestapelde plot niet tegelijk actief zijn
       if (splitViewActive) deactivateSplitView();
-
-      const mkUrl2 = type => {
-        const collMap = { NETWORK: 'network' };
-        const coll = collMap[type] || type.toLowerCase();
-        return `/collections/${coll}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
-      };
+      deactivateDiffStack();
 
       try {
-        const origGeoJson  = await fetch(mkUrl2('NETWORK')).then(r => r.json());
-        const origFeatures = origGeoJson.features.filter(
-          f => f.geometry?.type === 'LineString' && f.properties?.linkId != null
-        );
-
-        // Bouw een map linkId → uurflow bron-scenario
-        const origFlowByLinkId = new Map();
-        let maxOrigFlow = 0;
-        for (const f of origFeatures) {
-          const flow = dpFlowOf(f.properties);
-          origFlowByLinkId.set(f.properties.linkId, flow);
-          if (flow > maxOrigFlow) maxOrigFlow = flow;
-        }
-        diffMaxOrigFlow = maxOrigFlow || 1;
-
-        // Bereken verschil per linkId: berekend − bron
-        diffByLinkId.clear();
-        for (const seg of segments) {
-          const linkId   = seg.props.linkId;
-          const calcFlow = dpFlowOf(seg.props);
-          const origFlow = origFlowByLinkId.get(linkId) ?? 0;
-          diffByLinkId.set(linkId, calcFlow - origFlow);
-        }
+        await computeDiffData();
 
         diffPlotActive = true;
         document.getElementById('diffPlotBtn').classList.add('active');
@@ -13384,6 +13568,38 @@
       updateOverlay(true);
     }
 
+    // ── Gestapelde verschilplot (grijze kern + gekleurde rand) ──────────────────
+    async function activateDiffStack() {
+      if (!splitViewSrcAreaId) return;
+      // Onderling exclusief met split-view en de gewone verschilplot
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffPlot();
+
+      try {
+        await computeDiffData();
+
+        diffStackActive = true;
+        document.getElementById('diffStackBtn').classList.add('active');
+        document.getElementById('legendDiffStack').style.display = '';
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Gestapelde verschilplot activeren mislukt:', e);
+        diffStackActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffStack() {
+      if (!diffStackActive) return;
+      diffStackActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffStackBtn').classList.remove('active');
+      document.getElementById('legendDiffStack').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
     function _syncMap1ToMap2() {
       if (_mapSyncing || !map2) return;
       _mapSyncing = true;
@@ -13402,12 +13618,17 @@
 
     document.getElementById('splitViewBtn').addEventListener('click', () => {
       if (splitViewActive) deactivateSplitView();
-      else { deactivateDiffPlot(); activateSplitView(); }
+      else { deactivateDiffPlot(); deactivateDiffStack(); activateSplitView(); }
     });
 
     document.getElementById('diffPlotBtn').addEventListener('click', () => {
       if (diffPlotActive) deactivateDiffPlot();
       else activateDiffPlot();
+    });
+
+    document.getElementById('diffStackBtn').addEventListener('click', () => {
+      if (diffStackActive) deactivateDiffStack();
+      else activateDiffStack();
     });
 
     // ── Selected Link Analysis — knop ─────────────────────────────────────────
