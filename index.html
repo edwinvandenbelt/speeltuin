@@ -1507,6 +1507,8 @@
     <button class="tb-btn" id="diffPlotBtn" title="Verschilplot (Δ intensiteit)" style="display:none">Δ</button>
     <!-- Verschilplot met ongewijzigd deel: grijze kern + gekleurde rand -->
     <button class="tb-btn" id="diffStackBtn" title="Verschilplot met ongewijzigd deel (grijs)" style="display:none">Δ▤</button>
+    <!-- Smiley-verschilplot: blije/boze smiley per wegvak bij duidelijke verbetering/verslechtering -->
+    <button class="tb-btn" id="diffSmileyBtn" title="Verschilplot met smileys (verbetering/verslechtering)" style="display:none">☺</button>
 
     <!-- Zone-centroids weergave -->
     <div class="tb-icon-group">
@@ -1816,6 +1818,27 @@
         <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#1eb43c;margin-left:6px;"></span>Afname
       </div>
       <div id="legendDiffStackSub" style="font-size:10px; color:#aaa; margin-top:2px;">Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname</div>
+    </div>
+    <!-- Smiley-verschilplot-legende — alleen zichtbaar als diffSmileyActive -->
+    <div id="legendDiffSmiley" style="display:none; margin-top:4px;">
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#ddd;">
+        <span style="font-size:14px;">🙂</span>Verbetering
+        <span style="font-size:14px; margin-left:6px;">😠</span>Verslechtering
+      </div>
+      <div style="font-size:10px; color:#aaa; margin-top:4px; display:flex; align-items:center; gap:8px;">
+        <span>Drempel:</span>
+        <label style="cursor:pointer;"><input type="radio" name="diffSmileyMode" value="rel" checked style="vertical-align:middle;"> relatief</label>
+        <label style="cursor:pointer;"><input type="radio" name="diffSmileyMode" value="abs" style="vertical-align:middle;"> absoluut</label>
+      </div>
+      <div id="diffSmileyRelRow" style="font-size:10px; color:#aaa; margin-top:4px; display:flex; align-items:center; gap:6px;">
+        <input type="range" id="diffSmileyThresholdSlider" min="0" max="50" step="1" value="10" style="flex:1; min-width:80px;">
+        <span id="diffSmileyThresholdLabel" style="min-width:40px; text-align:right;">10%</span>
+      </div>
+      <div id="diffSmileyAbsRow" style="font-size:10px; color:#aaa; margin-top:4px; display:none; align-items:center; gap:6px;">
+        <input type="range" id="diffSmileyAbsSlider" min="0" max="100" step="1" value="0" style="flex:1; min-width:80px;">
+        <span id="diffSmileyAbsLabel" style="min-width:40px; text-align:right;">0</span>
+      </div>
+      <div style="font-size:10px; color:#aaa; margin-top:2px;">Alleen wijzigingen groter dan de drempel krijgen een smiley</div>
     </div>
     <div id="carCountStrip"></div>
   </div>
@@ -5056,11 +5079,20 @@
           metricShortLabel(colorMetric) + ')';
         return;
       }
+      if (diffSmileyActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiffSmiley').style.display = '';
+        return;
+      }
       // Normaal: zorg dat alles weer zichtbaar is
       document.getElementById('legendBar').style.display    = '';
       if (legendLabelsEl) legendLabelsEl.style.display = '';
       document.getElementById('legendDiff').style.display   = 'none';
       document.getElementById('legendDiffStack').style.display = 'none';
+      document.getElementById('legendDiffSmiley').style.display = 'none';
       const unit = T('legendUnit');
       // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
       const bp = Math.max(2, Math.round(25 / (globalMaxFlow || 1) * 100));
@@ -7989,6 +8021,12 @@
       'flow', 'capacity', 'emis_co2', 'emis_nox', 'emis_pm10',
     ]);
 
+    /** Metrieken waarbij een TOENAME een verbetering is (blije smiley). Voor alle
+     *  overige DIFF_SUPPORTED-metrieken geldt: een AFNAME is de verbetering. */
+    const DIFF_HIGHER_IS_BETTER = new Set([
+      'speed', 'capacity',
+    ]);
+
     // ── Wegenscan state ───────────────────────────────────────────────────────
     /** GeoJSON van het WEGENSCAN-bestand; null als nog niet geladen. */
     let wegenscanData = null;
@@ -9145,6 +9183,10 @@
     let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
     var diffPlotActive     = false;  // verschilplot actief
     var diffStackActive    = false;  // gestapelde verschilplot (grijze kern + gekleurde rand) actief
+    var diffSmileyActive   = false;  // smiley-verschilplot actief
+    var diffSmileyThreshold = 0.10;  // relatieve drempel (0..1) voor "duidelijke" wijziging
+    var diffSmileyMode     = 'rel';  // 'rel' = relatieve drempel, 'abs' = absolute drempel
+    var diffSmileyAbsThreshold = 0;  // absolute drempel in metriek-eenheden
     var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (voor actieve metriek)
     var curValByLinkId     = new Map(); // linkId → huidige metriekwaarde (berekend scenario)
     var diffMaxOrigFlow    = 1;      // max bron-metriekwaarde (schaalreferentie stapelplot)
@@ -9854,6 +9896,141 @@
       });
 
       return [colorLayer, coreLayer];
+    }
+
+    // ── Smiley-verschilplot: blije/boze smiley per wegvak ────────────────────
+    // Bouw éénmalig een icon-atlas (canvas) met twee sprites: een groene blije
+    // smiley (verbetering) en een rode boze smiley (verslechtering).
+    let _smileyIconAtlas = null;
+    const _SMILEY_ICON_MAP = {
+      happy: { x: 0,   y: 0, width: 128, height: 128, mask: false },
+      angry: { x: 128, y: 0, width: 128, height: 128, mask: false },
+    };
+    function _getSmileyIconAtlas() {
+      if (_smileyIconAtlas) return _smileyIconAtlas;
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 128;
+      const ctx = cv.getContext('2d');
+
+      const drawFace = (cx, kind) => {
+        const cy = 64, r = 56;
+        const isHappy = kind === 'happy';
+        // Gezicht
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = isHappy ? '#2e9e4f' : '#d64545';
+        ctx.fill();
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = isHappy ? '#1e6e37' : '#9e2f2f';
+        ctx.stroke();
+
+        // Ogen
+        ctx.fillStyle = '#ffffff';
+        const eyeY = cy - 14, eyeDX = 20, eyeR = 8;
+        ctx.beginPath(); ctx.arc(cx - eyeDX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + eyeDX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+
+        // Boze wenkbrauwen (alleen bij angry)
+        if (!isHappy) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(cx - eyeDX - 12, eyeY - 16); ctx.lineTo(cx - eyeDX + 10, eyeY - 6);
+          ctx.moveTo(cx + eyeDX + 12, eyeY - 16); ctx.lineTo(cx + eyeDX - 10, eyeY - 6);
+          ctx.stroke();
+        }
+
+        // Mond: blij = opwaartse boog, boos = neerwaartse boog
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        if (isHappy) {
+          ctx.arc(cx, cy + 6, 24, 0.15 * Math.PI, 0.85 * Math.PI, false);
+        } else {
+          ctx.arc(cx, cy + 34, 24, 1.15 * Math.PI, 1.85 * Math.PI, false);
+        }
+        ctx.stroke();
+      };
+
+      drawFace(64, 'happy');
+      drawFace(192, 'angry');
+      _smileyIconAtlas = cv;
+      return _smileyIconAtlas;
+    }
+
+    function makeSmileyLayer() {
+      if (!diffSmileyActive || !diffByLinkId.size) {
+        return new IconLayer({ id: 'diff-smiley', data: [] });
+      }
+      const higherBetter = DIFF_HIGHER_IS_BETTER.has(diffMetric);
+      const useAbs = diffSmileyMode === 'abs';
+      const tau = diffSmileyThreshold;      // relatieve drempel (0..1)
+      const absTau = diffSmileyAbsThreshold; // absolute drempel (metriek-eenheden)
+      const EPS = 1e-9;
+
+      const data = MODE !== 'MIXED'
+        ? geojson.features
+        : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      // Bouw punten (wegvak-middelpunt) met een 'happy'/'angry' klasse.
+      const pts = [];
+      for (const f of data) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = f.properties.linkId;
+        const diff   = diffByLinkId.get(linkId);
+        if (diff == null || diff === 0) continue;
+        const newVal = curValByLinkId.get(linkId);
+        if (newVal == null) continue;
+        const baseline = newVal - diff;
+        // Marginaal? → niets tonen (relatieve of absolute drempel)
+        if (useAbs) {
+          if (Math.abs(diff) < absTau) continue;
+        } else {
+          const rel = diff / Math.max(Math.abs(baseline), EPS);
+          if (Math.abs(rel) < tau) continue;
+        }
+        // Is de wijziging een verbetering?
+        const improved = higherBetter ? (diff > 0) : (diff < 0);
+        // Middelpunt van de polylijn (middelste vertex)
+        const coords = f.geometry.coordinates;
+        const mid = coords[Math.floor(coords.length / 2)];
+        pts.push({ position: mid, icon: improved ? 'happy' : 'angry', properties: f.properties });
+      }
+
+      return new IconLayer({
+        id: 'diff-smiley',
+        data: pts,
+        iconAtlas: _getSmileyIconAtlas(),
+        iconMapping: _SMILEY_ICON_MAP,
+        getIcon: d => d.icon,
+        getPosition: d => d.position,
+        sizeUnits: 'pixels',
+        getSize: 22,
+        billboard: true,
+        pickable: true,
+        onHover: info => {
+          if (info.object) {
+            _segTipLastInfo = { ...info, object: { properties: info.object.properties } };
+            if (_segTipVisible) {
+              _diffTipRender(_segTipLastInfo);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+              }, 600);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getIcon:     [diffByLinkId.size, daypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+          getPosition: [diffByLinkId.size, daypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+        },
+      });
     }
 
     function makeLinkEditLayer() {      return new GeoJsonLayer({
@@ -11259,6 +11436,7 @@
           makeNetworkLayer(),
           makeDiffLayer(),
           ...makeDiffStackLayer(),
+          makeSmileyLayer(),
           makeLinkEditLayer(),
           ...makeSelectedLinkHighlightLayers(),
           makeWhatifRcHighlightLayer(),
@@ -13279,9 +13457,11 @@
       if (splitViewActive) deactivateSplitView();
       if (diffPlotActive) deactivateDiffPlot();
       if (diffStackActive) deactivateDiffStack();
+      if (diffSmileyActive) deactivateDiffSmiley();
       document.getElementById('splitViewBtn').style.display = '';
       document.getElementById('diffPlotBtn').style.display  = '';
       document.getElementById('diffStackBtn').style.display = '';
+      document.getElementById('diffSmileyBtn').style.display = '';
       updateDiffButtonsState();
       AREA_ID = newAreaId;
       _historicalChanges = [];   // invalideer bij scenario-advance
@@ -13336,6 +13516,7 @@
           document.getElementById('splitViewBtn').style.display = '';
           document.getElementById('diffPlotBtn').style.display  = '';
           document.getElementById('diffStackBtn').style.display = '';
+          document.getElementById('diffSmileyBtn').style.display = '';
           updateDiffButtonsState();
         }
       }).catch(() => {});
@@ -13383,6 +13564,8 @@
       document.getElementById('diffPlotBtn').style.display =
         splitViewSrcAreaId ? '' : 'none';
       document.getElementById('diffStackBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffSmileyBtn').style.display =
         splitViewSrcAreaId ? '' : 'none';
       updateDiffButtonsState();
       // Als de huidige selectie 'compare' is maar er geen data meer is, reset
@@ -13637,6 +13820,7 @@
       const additive   = DIFF_ADDITIVE.has(colorMetric);
       const plotBtn    = document.getElementById('diffPlotBtn');
       const stackBtn   = document.getElementById('diffStackBtn');
+      const smileyBtn  = document.getElementById('diffSmileyBtn');
       if (!plotBtn || !stackBtn) return;
 
       const plotOk  = hasSrc && supported;
@@ -13645,6 +13829,13 @@
       stackBtn.disabled = !stackOk;
       plotBtn.style.opacity  = plotOk  ? '' : '0.4';
       stackBtn.style.opacity = stackOk ? '' : '0.4';
+      if (smileyBtn) {
+        smileyBtn.disabled = !plotOk;
+        smileyBtn.style.opacity = plotOk ? '' : '0.4';
+        smileyBtn.title = supported
+          ? 'Verschilplot met smileys (Δ ' + metricShortLabel(colorMetric) + ')'
+          : 'Verschilplot niet beschikbaar voor deze kaartlaag';
+      }
       plotBtn.title  = supported
         ? 'Verschilplot (Δ ' + metricShortLabel(colorMetric) + ')'
         : 'Verschilplot niet beschikbaar voor deze kaartlaag';
@@ -13700,6 +13891,10 @@
         _diffToast(okPlot
           ? 'De gestapelde plot werkt alleen voor optelbare grootheden.'
           : 'Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      if (diffSmileyActive && !okPlot) {
+        deactivateDiffSmiley();
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
       }
       updateDiffButtonsState();
     }
@@ -13781,6 +13976,45 @@
       updateOverlay(true);
     }
 
+    // ── Smiley-verschilplot (blije/boze smiley per wegvak) ──────────────────────
+    async function activateDiffSmiley() {
+      if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      // Onderling exclusief met split-view en de andere verschilplots
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffPlot();
+      deactivateDiffStack();
+
+      try {
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
+
+        diffSmileyActive = true;
+        document.getElementById('diffSmileyBtn').classList.add('active');
+        document.getElementById('legendDiffSmiley').style.display = '';
+        _configureSmileyAbsSlider();
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Smiley-verschilplot activeren mislukt:', e);
+        diffSmileyActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffSmiley() {
+      if (!diffSmileyActive) return;
+      diffSmileyActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffSmileyBtn').classList.remove('active');
+      document.getElementById('legendDiffSmiley').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
     function _syncMap1ToMap2() {
       if (_mapSyncing || !map2) return;
       _mapSyncing = true;
@@ -13799,7 +14033,7 @@
 
     document.getElementById('splitViewBtn').addEventListener('click', () => {
       if (splitViewActive) deactivateSplitView();
-      else { deactivateDiffPlot(); deactivateDiffStack(); activateSplitView(); }
+      else { deactivateDiffPlot(); deactivateDiffStack(); deactivateDiffSmiley(); activateSplitView(); }
     });
 
     document.getElementById('diffPlotBtn').addEventListener('click', () => {
@@ -13811,6 +14045,64 @@
       if (diffStackActive) deactivateDiffStack();
       else activateDiffStack();
     });
+
+    document.getElementById('diffSmileyBtn').addEventListener('click', () => {
+      if (diffSmileyActive) deactivateDiffSmiley();
+      else activateDiffSmiley();
+    });
+
+    // Drempel-slider(s): relatieve grens (%) of absolute grens (metriek-eenheden).
+    /** Stel het bereik/stap van de absolute slider in op basis van het grootste
+     *  voorkomende |verschil| (diffMaxAbs) en behoud de huidige waarde indien mogelijk. */
+    function _configureSmileyAbsSlider() {
+      const slider = document.getElementById('diffSmileyAbsSlider');
+      const label  = document.getElementById('diffSmileyAbsLabel');
+      if (!slider) return;
+      const maxAbs = diffMaxAbs > 0 ? diffMaxAbs : 1;
+      // Stap ~1/200 van het bereik, met een redelijke afronding
+      const rawStep = maxAbs / 200;
+      const mag  = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+      const step = Math.max(mag, 1e-6);
+      slider.max  = maxAbs;
+      slider.step = step;
+      // Clamp huidige absolute drempel binnen het nieuwe bereik
+      if (diffSmileyAbsThreshold > maxAbs) diffSmileyAbsThreshold = 0;
+      slider.value = diffSmileyAbsThreshold;
+      if (label) label.textContent = fmtMetricVal(diffSmileyAbsThreshold, diffMetric);
+    }
+
+    (() => {
+      const relSlider = document.getElementById('diffSmileyThresholdSlider');
+      const relLabel  = document.getElementById('diffSmileyThresholdLabel');
+      const absSlider = document.getElementById('diffSmileyAbsSlider');
+      const absLabel  = document.getElementById('diffSmileyAbsLabel');
+      const relRow    = document.getElementById('diffSmileyRelRow');
+      const absRow    = document.getElementById('diffSmileyAbsRow');
+
+      if (relSlider) relSlider.addEventListener('input', () => {
+        const pct = Number(relSlider.value);
+        diffSmileyThreshold = pct / 100;
+        if (relLabel) relLabel.textContent = pct + '%';
+        if (diffSmileyActive && diffSmileyMode === 'rel') updateOverlay(false);
+      });
+
+      if (absSlider) absSlider.addEventListener('input', () => {
+        diffSmileyAbsThreshold = Number(absSlider.value);
+        if (absLabel) absLabel.textContent = fmtMetricVal(diffSmileyAbsThreshold, diffMetric);
+        if (diffSmileyActive && diffSmileyMode === 'abs') updateOverlay(false);
+      });
+
+      document.querySelectorAll('input[name="diffSmileyMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          diffSmileyMode = radio.value;
+          if (relRow) relRow.style.display = (diffSmileyMode === 'rel') ? 'flex' : 'none';
+          if (absRow) absRow.style.display = (diffSmileyMode === 'abs') ? 'flex' : 'none';
+          if (diffSmileyMode === 'abs') _configureSmileyAbsSlider();
+          if (diffSmileyActive) updateOverlay(false);
+        });
+      });
+    })();
 
     // ── Selected Link Analysis — knop ─────────────────────────────────────────
     document.getElementById('purposeChartClose').addEventListener('click', () => {
@@ -14592,8 +14884,9 @@
       updateDiffButtonsState();
 
       // Als een verschilplot nog actief is, herbereken deze voor de nieuwe metriek.
-      if (diffPlotActive || diffStackActive) {
+      if (diffPlotActive || diffStackActive || diffSmileyActive) {
         await computeDiffData();
+        if (diffSmileyActive) _configureSmileyAbsSlider();
         updateOverlay(false);
       } else {
         updateOverlay(true);
