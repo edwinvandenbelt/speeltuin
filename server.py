@@ -27,6 +27,7 @@ import io
 import json
 import os
 import queue
+import time
 import re
 import shutil
 import subprocess
@@ -41,6 +42,7 @@ from flask import (
     Flask,
     Response,
     abort,
+    g,
     jsonify,
     make_response,
     request,
@@ -233,6 +235,16 @@ parser.add_argument(
 )
 parser.add_argument(
     "--port", type=int, default=5000, help="TCP-poort (standaard: 5000)"
+)
+parser.add_argument(
+    "--no-threaded",
+    action="store_true",
+    help="Draai de dev-server single-threaded (standaard: multi-threaded)",
+)
+parser.add_argument(
+    "--timing",
+    action="store_true",
+    help="Log de duur van elke request (standaard: alleen trage requests >500ms)",
 )
 args, _ = parser.parse_known_args()
 
@@ -452,21 +464,24 @@ def _find_data_file(directory: Path, stem: str) -> "Path | None":
 import gzip as _gzip
 
 _GEODATA_CACHE: dict = {}  # (path_str, mtime_ms) → data dict
+_GEODATA_CACHE_LOCK = threading.Lock()  # beschermt cache-mutaties bij threaded server
 
 
 def _geodata_cache_get(path: Path):
     """Geeft gecachede data-dict terug als in cache, anders None."""
     mtime_ms = int(path.stat().st_mtime * 1000)
-    return _GEODATA_CACHE.get((str(path), mtime_ms))
+    with _GEODATA_CACHE_LOCK:
+        return _GEODATA_CACHE.get((str(path), mtime_ms))
 
 
 def _geodata_cache_set(path: Path, data: dict):
     """Sla data op; verwijder verouderde entries voor hetzelfde pad."""
     mtime_ms = int(path.stat().st_mtime * 1000)
     key = (str(path), mtime_ms)
-    _GEODATA_CACHE[key] = data
-    for k in [k for k in _GEODATA_CACHE if k[0] == str(path) and k != key]:
-        del _GEODATA_CACHE[k]
+    with _GEODATA_CACHE_LOCK:
+        _GEODATA_CACHE[key] = data
+        for k in [k for k in _GEODATA_CACHE if k[0] == str(path) and k != key]:
+            _GEODATA_CACHE.pop(k, None)
 
 
 _NETWORK_DERIVED_CACHE: dict = {}  # (path_str, mtime_ms, kind) → volledige verrijkte FC
@@ -505,12 +520,13 @@ def _network_derived_fc(path: Path, kind: str) -> dict:
     else:
         fc = _estimate_emissions(data)  # type: ignore[misc]
     _NETWORK_DERIVED_CACHE[key] = fc
-    for k in [
-        k
-        for k in _NETWORK_DERIVED_CACHE
-        if k[0] == str(path) and k[2] == kind and k != key
-    ]:
-        del _NETWORK_DERIVED_CACHE[k]
+    with _GEODATA_CACHE_LOCK:
+        for k in [
+            k
+            for k in _NETWORK_DERIVED_CACHE
+            if k[0] == str(path) and k[2] == kind and k != key
+        ]:
+            _NETWORK_DERIVED_CACHE.pop(k, None)
     return fc
 
 
@@ -4308,6 +4324,45 @@ def ogc_collection_items(collection_id):
             abort(503, str(exc))
         _geodata_cache_set(path, data)
 
+    # NDJSON / GeoJSONL-streaming (alleen routes): één JSON-object per regel.
+    # Regel 1 = header-object met metadata; daarna één feature per regel. Zo
+    # hoeft de client geen monolithische JSON.parse te doen en kan progressief
+    # renderen. Getriggerd via ?format=ndjson.
+    if (
+        collection_id == "routes"
+        and request.args.get("format", "").strip().lower() == "ndjson"
+    ):
+        features = data.get("features", []) if isinstance(data, dict) else []
+        top_props = (
+            data.get("properties")
+            if isinstance(data, dict) and isinstance(data.get("properties"), dict)
+            else {}
+        )
+
+        def _ndjson_gen():
+            header = {
+                "type": "Header",
+                "collection": collection_id,
+                "numberMatched": len(features),
+                "timeStamp": _dt.datetime.now(_dt.timezone.utc).isoformat(
+                    timespec="seconds"
+                ),
+                "properties": top_props,
+            }
+            yield json.dumps(header, ensure_ascii=False) + "\n"
+            for feat in features:
+                yield json.dumps(feat, ensure_ascii=False) + "\n"
+
+        resp = Response(
+            stream_with_context(_ndjson_gen()),
+            mimetype="application/x-ndjson",
+        )
+        resp.headers["ETag"] = etag
+        resp.headers["Last-Modified"] = last_modified
+        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["X-Accel-Buffering"] = "no"  # Nginx: geen buffering
+        return resp
+
     resp = _ogc_items_response(collection_id, data, self_url)
     resp.headers["ETag"] = etag
     resp.headers["Last-Modified"] = last_modified
@@ -4821,6 +4876,31 @@ def error_handler(e):
 
 
 # ---------------------------------------------------------------------------
+# Request-timing: log trage requests (>500ms), of alle requests met --timing.
+# ---------------------------------------------------------------------------
+_TIMING_SLOW_MS = 500.0
+
+
+@app.before_request
+def _timing_start():
+    g._t0 = time.perf_counter()
+
+
+@app.after_request
+def _timing_end(response):
+    t0 = getattr(g, "_t0", None)
+    if t0 is not None:
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        if args.timing or elapsed_ms > _TIMING_SLOW_MS:
+            tag = "[timing]" if args.timing else "[slow]"
+            print(
+                f"{tag} {request.method} {request.full_path} "
+                f"{response.status_code} {elapsed_ms:.0f}ms"
+            )
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Start
 # ---------------------------------------------------------------------------
 
@@ -4835,4 +4915,6 @@ if __name__ == "__main__":
     )
     print(f"whatif      : {'beschikbaar' if _WHATIF_AVAILABLE else 'NIET beschikbaar'}")
     print(f"Server      : http://localhost:{args.port}")
-    app.run(host="0.0.0.0", port=args.port, debug=True)
+    _threaded = not args.no_threaded
+    print(f"threading   : {'multi-threaded' if _threaded else 'single-threaded'}")
+    app.run(host="0.0.0.0", port=args.port, debug=True, threaded=_threaded)

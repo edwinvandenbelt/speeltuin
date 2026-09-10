@@ -4696,6 +4696,59 @@
   let lastAttractionCount  = 0;   // aantal aangekomen (verdwenen) auto's in de laatste seconde
   let attractionAccum      = 0;   // lopende teller aankomsten binnen huidig productie-interval
 
+  /**
+   * Haal een routes-collectie op als NDJSON-stream (?format=ndjson) en parse
+   * progressief, regel voor regel. Retourneert een FeatureCollection-achtig
+   * object { type, features, properties } dat identiek is aan de gewone
+   * GeoJSON-respons, zodat _parseAndAddRoutes() ongewijzigd kan blijven.
+   * Gooit bij een niet-OK status of ontbrekende stream, zodat de aanroeper
+   * kan terugvallen op de gewone fetch.
+   */
+  async function _fetchRoutesNdjson(url) {
+    const resp = await fetch(url, { headers: { Accept: 'application/x-ndjson' } });
+    if (!resp.ok) throw new Error(`routes ndjson ${resp.status}`);
+    const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+    if (!resp.body || !ct.includes('ndjson')) {
+      // Server ondersteunt geen streaming → gebruik de complete JSON.
+      return resp.json();
+    }
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const features = [];
+    let properties = {};
+    let buf = '';
+    let count = 0;
+
+    const handleLine = (line) => {
+      const s = line.trim();
+      if (!s) return;
+      let obj;
+      try { obj = JSON.parse(s); } catch { return; }
+      if (obj && obj.type === 'Header') {
+        properties = obj.properties || {};
+        return;
+      }
+      features.push(obj);
+      count++;
+      if ((count & 1023) === 0) setLoaderMsg(`${T('loaderRoutes')} (${count})`);
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    buf += decoder.decode();
+    if (buf.length) handleLine(buf);
+
+    return { type: 'FeatureCollection', features, properties };
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
 
@@ -4705,12 +4758,20 @@
       return r.json();
     });
     const _zFetch  = fetch(apiUrl('ZONE')).then(r => r.ok ? r.json() : null).catch(() => null);
+    // Routes progressief laden via NDJSON (?format=ndjson): één JSON-object per
+    // regel (header + features). Vermijdt één grote blokkerende JSON.parse en
+    // geeft voortgang. Valt terug op gewone GeoJSON bij fouten/oude caches.
+    const _fetchRoutes = (url) => {
+      const ndUrl = url + (url.includes('?') ? '&' : '?') + 'format=ndjson';
+      return _fetchRoutesNdjson(ndUrl)
+        .catch(() => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null));
+    };
     const _rtFetch = MODE === 'MIXED'
       ? Promise.all([
-          fetch(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
+          _fetchRoutes(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=CAR')),
+          _fetchRoutes(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=BIKE')),
         ])
-      : fetch(ROUTES_FILE).then(r => r.ok ? r.json() : null).catch(() => null);
+      : _fetchRoutes(ROUTES_FILE);
     // ── Daglichtdata (sunrise/sunset per maand, Rotterdam) ────────────────
     const _daylightData = [
       { month:  1, sunrise_hour: 8, sunset_hour: 16 },
@@ -7931,19 +7992,26 @@
       }
     }
 
+    const _tPost = performance.now();
     try {
       if (MODE === 'MIXED') {
         const [carFc, bikeFc] = await _rtFetch;
+        const _tP0 = performance.now();
         _parseAndAddRoutes(carFc,  'CAR');
         _parseAndAddRoutes(bikeFc, 'BIKE');
+        console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
       } else {
         const routesFc = await _rtFetch;
         if (!routesFc) throw new Error('geen data');
+        const _tP0 = performance.now();
         _parseAndAddRoutes(routesFc, MODE);
+        console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
       }
       totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
       routeMode = routeList.length > 0;
+      const _tBlrm = performance.now();
       buildLinkRouteMap();
+      console.log('[perf] buildLinkRouteMap:', (performance.now() - _tBlrm).toFixed(0), 'ms | routes:', routeList.length);
       if (routeMode) {
         document.getElementById('whatifRcBtn').style.display = '';
         document.getElementById('odEditBtn').style.display   = '';
@@ -7964,8 +8032,13 @@
     const DP_FRACTION = { mrh: (2/2)/14.4, erh: (2/2)/14.4, rest: (10.4/20)/14.4 };
     // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
+    const _tRlfm = performance.now();
     rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan)
+    console.log('[perf] rebuildLinkFlowMap:', (performance.now() - _tRlfm).toFixed(0), 'ms');
+    const _tCal = performance.now();
     calibrateRouteProductions();  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
+    console.log('[perf] calibrateRouteProductions:', (performance.now() - _tCal).toFixed(0), 'ms');
+    console.log('[perf] TOTAL post-routes sync:', (performance.now() - _tPost).toFixed(0), 'ms');
     let widthScale = false;
     let colorMetric = 'flow';
     let cars      = [];
@@ -11860,6 +11933,10 @@
     });
 
     function _onMapStyleLoad() {
+      if (typeof _tPost === 'number') {
+        console.log('[perf] routes-loaded → map style load / loader hide:',
+                    (performance.now() - _tPost).toFixed(0), 'ms');
+      }
       hideLaadscherm();
       _startFollowMode();
       if (_MAQUETTE) {
