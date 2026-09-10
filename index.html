@@ -2519,6 +2519,14 @@
       buildingTypeIndustrial:'Industrie', buildingTypeParking:'Parkeren',
       buildingTypeTransport:'OV / station', buildingTypeRecreation:'Recreatie',
       buildingTypeOther:'Overig',
+      // Gebouw P/A-berekening (tooltip-breakdown)
+      calcTitle:'Berekening P/A', calcFloorArea:'Vloeroppervlak', calcZoneBase:'Zone-basis',
+      calcShare:'Aandeel pand', calcInZone:'(zone)', calcInBuilding:'(pand)', calcResidents:'Inwoners zone', calcHouseholds:'Huishoudens zone',
+      calcNorm:'Normalisatie (P95)', calcScore:'Intensiteit', calcNotRelevant:'Niet relevant voor dit motief',
+      capBaseHouseholds:'Huishoudens', capBaseResidents:'Inwoners', capBaseJobsOffice:'Arbeidsplaatsen kantoor',
+      capBaseJobsShop:'Arbeidsplaatsen winkel', capBaseJobsIndustry:'Arbeidsplaatsen industrie',
+      capBaseSeats:'Leerlingplaatsen', capBaseCars:'Auto\u2019s', capBaseJobsRec:'Arbeidsplaatsen recreatie',
+      capBaseJobsOther:'Arbeidsplaatsen overig', capBaseJobs:'Arbeidsplaatsen', capBaseWorkers:'Werkende inwoners', capBaseChildren:'Kinderen (<18\u202fjr)',
       // Taal-dropdown
       langSelectTitle:'Taal kiezen',
       numberLocale:'nl',
@@ -2758,6 +2766,14 @@
       buildingTypeIndustrial:'Industrial', buildingTypeParking:'Parking',
       buildingTypeTransport:'Transit / station', buildingTypeRecreation:'Recreation',
       buildingTypeOther:'Other',
+      // Building P/A calculation (tooltip breakdown)
+      calcTitle:'P/A calculation', calcFloorArea:'Floor area', calcZoneBase:'Zone base',
+      calcShare:'Building share', calcInZone:'(zone)', calcInBuilding:'(building)', calcResidents:'Zone residents', calcHouseholds:'Zone households',
+      calcNorm:'Normalisation (P95)', calcScore:'Intensity', calcNotRelevant:'Not relevant for this purpose',
+      capBaseHouseholds:'Households', capBaseResidents:'Residents', capBaseJobsOffice:'Office jobs',
+      capBaseJobsShop:'Retail jobs', capBaseJobsIndustry:'Industry jobs',
+      capBaseSeats:'Student places', capBaseCars:'Cars', capBaseJobsRec:'Recreation jobs',
+      capBaseJobsOther:'Other jobs', capBaseJobs:'Jobs', capBaseWorkers:'Working residents', capBaseChildren:'Children (<18\u202fyr)',
       // Language dropdown
       langSelectTitle:'Select language',
       numberLocale:'en-GB',
@@ -2941,6 +2957,14 @@
       buildingTypeIndustrial:'Teollisuus', buildingTypeParking:'Pysäköinti',
       buildingTypeTransport:'Joukkoliikenne', buildingTypeRecreation:'Virkistys',
       buildingTypeOther:'Muu',
+      // Rakennuksen P/A-laskenta (tooltip)
+      calcTitle:'P/A-laskenta', calcFloorArea:'Kerrosala', calcZoneBase:'Vyöhykeperusta',
+      calcShare:'Rakennuksen osuus', calcInZone:'(vyöhyke)', calcInBuilding:'(rakennus)', calcResidents:'Vyöhykkeen asukkaat', calcHouseholds:'Vyöhykkeen taloudet',
+      calcNorm:'Normalisointi (P95)', calcScore:'Intensiteetti', calcNotRelevant:'Ei merkityksellinen tälle tarkoitukselle',
+      capBaseHouseholds:'Taloudet', capBaseResidents:'Asukkaat', capBaseJobsOffice:'Toimistotyöpaikat',
+      capBaseJobsShop:'Kaupan työpaikat', capBaseJobsIndustry:'Teollisuustyöpaikat',
+      capBaseSeats:'Oppilaspaikat', capBaseCars:'Autot', capBaseJobsRec:'Virkistystyöpaikat',
+      capBaseJobsOther:'Muut työpaikat', capBaseJobs:'Työpaikat', capBaseWorkers:'Työssäkäyvät asukkaat', capBaseChildren:'Lapset (<18\u202fv)',
       // Kielen valinta
       langSelectTitle:'Valitse kieli',
       numberLocale:'fi',
@@ -5378,12 +5402,23 @@
       return 'other';
     }
 
+    // Fysieke parkeer-detectie, onafhankelijk van classifyBuilding.
+    // classifyBuilding kan een parkeerplaats als 'residential' e.d. labelen (landuse-erfenis
+    // voor de kleur); deze helper bewaart of het pand fysiek een parkeervoorziening is,
+    // zodat het géén inwoners krijgt en niet meetelt in de vloeroppervlak-noemer per type.
+    function _isPhysicalParking(props) {
+      const b       = (props.building || '').toLowerCase();
+      const amenity = (props.amenity  || '').toLowerCase();
+      return ['parking','garage','garages','carport','bicycle_parking'].includes(b)
+          || amenity === 'parking' || amenity === 'parking_space';
+    }
+
     // Richting per gebouwtype en dagdeel: -1 = productie (rood), 0 = neutraal, +1 = attractie (groen)
     const _BUILDING_SCORES = {
-      residential: { mrh: -1.0, erh:  1.0, rest:  0   },
+      residential: { mrh: -1.0, erh:  1.0, rest:  0.3 },  // restdag: lichte attractie (thuiskomen/thuis zijn)
       office:      { mrh:  1.0, erh: -1.0, rest:  0.3 },
       commercial:  { mrh:  0.3, erh:  1.0, rest:  0.5 },
-      education:   { mrh:  1.0, erh: -0.5, rest:  0   },
+      education:   { mrh:  1.0, erh: -0.5, rest: -0.3 },  // restdag: lichte productie (naar huis/activiteit)
       industrial:  { mrh:  0.3, erh: -0.3, rest:  0   },
       parking:     { mrh:  0,   erh:  0,   rest:  0   },  // neutraal: context ontbreekt (zie herclassificatie in _tryZoneJoin)
       transport:   { mrh:  0.8, erh:  0.8, rest:  0.5 },  // OV-hub: altijd attractief
@@ -5458,6 +5493,13 @@
       return Math.abs(area) / 2;
     }
 
+    // Grondoppervlak in m² (schoenveter in graden² → m² op basis van breedtegraad `lat`).
+    function _polygonAreaM2(coords, lat) {
+      const mPerDegLon = 111320 * Math.cos((lat || 0) * Math.PI / 180);
+      const mPerDegLat = 110540;
+      return _polygonArea(coords) * mPerDegLon * mPerDegLat;
+    }
+
     // Demografische capaciteitsindicator per gebouwtype en motief
     function _getBuildingCapacity(type, purpose, zp) {
       const shopJobs = (zp.arbeidsplaatsen_overige_winkelfunctie          || 0)
@@ -5521,6 +5563,68 @@
       return 0;
     }
 
+    // Demografische maat per gebouwtype: welke zone-grootheid hoort bij het type
+    // (inwoners voor wonen, leerlingplaatsen voor onderwijs, arbeidsplaatsen voor werk).
+    // Retourneert { key: i18n-label, zoneVal: totaal in de zone }.
+    function _buildingDemographic(type, zp) {
+      const shopJobs = (zp.arbeidsplaatsen_overige_winkelfunctie          || 0)
+                     + (zp.arbeidsplaatsen_overige_voedselwinkelfunctie   || 0)
+                     + (zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie || 0);
+      const eduSeats = (zp.leerlingplaatsen_basisonderwijs           || 0)
+                     + (zp.leerlingplaatsen_middelbaaronderwijs       || 0)
+                     + (zp.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                     + (zp.leerlingplaatsen_hogeronderwijs            || 0)
+                     || (zp.arbeidsplaatsen_onderwijsfunctie          || 0);
+      switch (type) {
+        case 'residential': return { key:'capBaseResidents',   zoneVal: zp.inwoners || 0 };
+        case 'office':      return { key:'capBaseJobsOffice',   zoneVal: zp.arbeidsplaatsen_kantoorfunctie || 0 };
+        case 'commercial':  return { key:'capBaseJobsShop',     zoneVal: shopJobs };
+        case 'education':   return { key:'capBaseSeats',        zoneVal: eduSeats };
+        case 'industrial':  return { key:'capBaseJobsIndustry', zoneVal: zp.arbeidsplaatsen_industriefunctie || 0 };
+        case 'parking':     return { key:'capBaseCars',         zoneVal: zp.autos || 0 };
+        case 'transport':   return { key:'capBaseResidents',    zoneVal: zp.inwoners || 0 };
+        case 'recreation':  return { key:'capBaseJobsRec',      zoneVal: (zp.arbeidsplaatsen_sportfunctie || 0) + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0) };
+        default:            return { key:'capBaseJobsOther',    zoneVal: (zp.arbeidsplaatsen_overige_gebruiksfunctie || 0) + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0) };
+      }
+    }
+
+    /**
+     * Bouwt een HTML-breakdown die laat zien hoe de demografische maat van een pand
+     * wordt afgeleid: vloeroppervlak → aandeel in zone-type → zone-totaal → pand-waarde
+     * (inwoners bij wonen, leerlingen bij onderwijs, arbeidsplaatsen bij werk).
+     * Herbruikbaar in de latere bewerk-stap. Verwacht de (mogelijk JSON-geserialiseerde)
+     * gebouw-properties `p`; retourneert een HTML-string ('' als niets te tonen).
+     */
+    function _buildingCalcHtml(p) {
+      const floorArea = Number(p._floorArea) || 0;
+      const share     = Number(p._demoShare ?? p._areaShare) || 0;
+      const demoKey   = p._demoKey || null;
+      const zoneVal   = Number(p._demoZoneVal) || 0;
+
+      const nfmt = (v, d = 0) => Number(v).toLocaleString(T('numberLocale'),
+        { minimumFractionDigits: d, maximumFractionDigits: d });
+      const row = (label, value) => `<tr>
+        <td style="color:#5a6272;padding-right:10px;white-space:nowrap">${label}</td>
+        <td style="text-align:right;white-space:nowrap"><b>${value}</b></td></tr>`;
+
+      const rows = [];
+      rows.push(row(T('calcFloorArea'), floorArea > 0 ? nfmt(floorArea) + '\u202fm\u00b2' : '\u2013'));
+
+      // demoKey is leeg voor parkeren of ontbrekende zone → geen demografie tonen
+      if (demoKey) {
+        const perBuilding = zoneVal * share;
+        rows.push(row(`${T(demoKey)} ${T('calcInZone')}`, nfmt(zoneVal)));
+        if (share > 0) rows.push(row(T('calcShare'), nfmt(share * 100, 1) + '\u202f%'));
+        rows.push(row(`${T(demoKey)} ${T('calcInBuilding')}`, nfmt(perBuilding, perBuilding < 10 ? 1 : 0)));
+      }
+
+      if (!rows.length) return '';
+      return `<div style="margin-top:6px;border-top:1px solid rgba(126,200,227,0.15);padding-top:6px">
+        <div style="color:#7ec8e3;font-size:11px;margin-bottom:3px">${T('calcTitle')}</div>
+        <table style="border-collapse:collapse;font-size:12px;width:100%">${rows.join('')}</table>
+      </div>`;
+    }
+
     // Ruimtelijke koppeling gebouwen ↔ zones; wordt uitgevoerd zodra beide datasets gereed zijn
     let zoneAreaBreakdown = new Map(); // zoneId → { residential, office, industrial, commercial, education, recreation, other } in m²
     function _tryZoneJoin() {
@@ -5557,13 +5661,18 @@
         const coords = f.geometry?.coordinates;
         if (!coords) { p._bzoneProps = null; p._bzoneId = null; p._btype = type; p._floorArea = 0; p._cx = null; p._cy = null; continue; }
 
-        // Vloeroppervlak = grondoppervlak × aantal verdiepingen (min. 1)
-        const footprint = _polygonArea(coords);
-        const levels    = Math.max(1, parseFloat(p['building:levels']) || Math.round(p.height / 3) || 1);
-        p._floorArea    = footprint * levels;
-
         const [cx, cy] = _buildingCentroid(coords);
         p._cx = cx; p._cy = cy;
+
+        // Vloeroppervlak = grondoppervlak (m²) × aantal verdiepingen × floorFraction
+        const footprintM2   = _polygonAreaM2(coords, cy);
+        const levels        = Math.max(1, parseFloat(p['building:levels']) || Math.round(p.height / 3) || 1);
+        const floorFraction = Number(p.floorFraction) > 0 ? Number(p.floorFraction) : 1;
+        p._footprintM2  = footprintM2;
+        p._levels       = levels;
+        p._floorFraction = floorFraction;
+        p._floorArea    = footprintM2 * levels * floorFraction;
+
         let foundZone = null;
         for (const z of zoneLookup) {
           if (cx < z.mnX || cx > z.mxX || cy < z.mnY || cy > z.mxY) continue;
@@ -5572,6 +5681,7 @@
         p._bzoneId    = foundZone?.props?.zoneId ?? null;
         p._bzoneProps = foundZone ? foundZone.props : null;
         p._btype      = type;
+        p._bPark      = _isPhysicalParking(p);
       }
 
       // Herclassificeer parkeergebouwen op basis van nabijgelegen gebouwen (binnen 100 m).
@@ -5603,22 +5713,32 @@
         }
       }
 
-      // Sommeer vloeroppervlak per zone×type (na herclassificatie parkeren)
+      // Sommeer vloeroppervlak per zone×type (na herclassificatie parkeren).
+      // Fysieke parkeervoorzieningen krijgen een eigen 'parking'-bucket, zodat ze de
+      // residential-m² (en dus de inwoners-verdeling van échte woningen) niet vervuilen.
       const zoneTypeAreaMap = new Map();
       zoneAreaBreakdown = new Map();
       for (const f of _buildingsRaw.features) {
         const p = f.properties;
+        const effType = p._bPark ? 'parking' : (p._btype || 'other');
+        p._bEffType = effType;
         if (p._bzoneId && p._floorArea) {
-          const key = `${p._bzoneId}|${p._btype}`;
+          const key = `${p._bzoneId}|${effType}`;
           zoneTypeAreaMap.set(key, (zoneTypeAreaMap.get(key) || 0) + p._floorArea);
           // Bouw ook de per-zone breakdown voor de tooltip
           if (!zoneAreaBreakdown.has(p._bzoneId)) zoneAreaBreakdown.set(p._bzoneId, {});
           const bd = zoneAreaBreakdown.get(p._bzoneId);
-          bd[p._btype] = (bd[p._btype] || 0) + p._floorArea;
+          bd[effType] = (bd[effType] || 0) + p._floorArea;
         }
       }
 
-      // Tweede pass: verdeel zone-capaciteit naar vloeroppervlak-aandeel
+      // Tweede pass: bepaal kleur-intensiteit per motief op basis van vloeroppervlak.
+      // (De granulaire zone-demografie per functie is niet meer beschikbaar; de richting
+      //  komt uit _BUILDING_SCORES, de felheid uit de m² van het pand.)
+      // Daarnaast: reken het zone-aggregaat (inwoners / arbeidsplaatsen) voor naar het pand,
+      // naar rato van vloeroppervlak binnen de functiegroep, voor de tooltip-breakdown.
+      const POP_TYPES = ['residential', 'transport'];              // → inwoners
+      const JOB_TYPES = ['office', 'industrial', 'commercial'];    // → arbeidsplaatsen (kantoor/industrie/winkel)
       const purposes = ['all', 'werk', 'onderwijs', 'winkelen', 'recreatie'];
       for (const f of _buildingsRaw.features) {
         const p         = f.properties;
@@ -5626,17 +5746,39 @@
         const zp        = p._bzoneProps;
         p._cap = {};
         for (const pur of purposes) {
-          if (!zp || !p._floorArea) { p._cap[pur] = 0; continue; }
-          const totalCap  = _getBuildingCapacity(type, pur, zp);
-          const totalArea = zoneTypeAreaMap.get(`${p._bzoneId}|${type}`) || 1;
-          p._cap[pur]     = totalCap * (p._floorArea / totalArea);
+          const rel   = _PURPOSE_RELEVANT_TYPES[pur];
+          const isRel = rel == null || rel.has(type);
+          p._cap[pur] = (isRel && p._floorArea > 0) ? p._floorArea : 0;
         }
         p.color_mrh = p.color_erh = p.color_rest = '#888888';
+
+        // Demografie-toewijzing voor de tooltip: kies aggregaat + functiegroep.
+        const bd = zoneAreaBreakdown.get(p._bzoneId) || {};
+        let demoKey = null, zoneVal = 0, groupArea = 0;
+        if (p._bPark) {
+          // parkeren: geen demografie tonen
+        } else if (POP_TYPES.includes(type)) {
+          demoKey = 'capBaseResidents';
+          zoneVal = zp?.inwoners || 0;
+          groupArea = POP_TYPES.reduce((s, t) => s + (bd[t] || 0), 0);
+        } else if (JOB_TYPES.includes(type)) {
+          demoKey = 'capBaseJobs';
+          zoneVal = zp?.arbeidsplaatsen || 0;
+          groupArea = JOB_TYPES.reduce((s, t) => s + (bd[t] || 0), 0);
+        }
+        // overige functies (onderwijs, recreatie, overig): geen passend aggregaat → alleen m²
+        const demoShare = groupArea > 0 ? (p._floorArea / groupArea) : 0;
+        p._demoKey     = demoKey;
+        p._demoZoneVal = zoneVal;
+        p._demoShare   = demoShare;
+        // _areaShare blijft het aandeel binnen dezelfde functiegroep (voor de tooltip)
+        p._areaShare   = demoShare;
       }
 
       _buildingsGeoJson = _buildingsRaw;
 
-      // Normalisatie: 95e percentiel per motief
+      // Normalisatie: mediaan (P50) van de vloeroppervlakken per motief, zodat een
+      // gemiddeld pand duidelijk gekleurd is en alleen erg kleine panden lichter zijn.
       _NORM = {};
       for (const pur of purposes) {
         const vals = _buildingsGeoJson.features
@@ -5644,7 +5786,7 @@
           .filter(v => v > 0)
           .sort((a, b) => a - b);
         _NORM[pur] = vals.length > 0
-          ? (vals[Math.floor(vals.length * 0.95)] || vals[vals.length - 1])
+          ? (vals[Math.floor(vals.length * 0.5)] || vals[vals.length - 1])
           : 1;
       }
 
@@ -5675,27 +5817,22 @@
       for (const f of _buildingsGeoJson.features) {
         const p    = f.properties;
         const type = p._btype || 'other';
-        const cap  = p._cap?.[purpose] ?? 0;
-        const zp   = p._bzoneProps;
-        const hasDemoData = zp != null
-          && ((zp.huishoudens ?? -1) >= 0 || (zp.arbeidsplaatsen ?? -1) >= 0);
+        const cap  = p._cap?.[purpose] ?? 0;   // = vloeroppervlak (0 als type niet relevant)
         const isRelevant = relevantTypes === null || relevantTypes.has(type);
 
         for (const dp of ['mrh', 'erh', 'rest']) {
           const dir = _getBuildingDir(type, purpose, dp);
           let score;
-          if (!isRelevant) {
-            score = 0;               // type niet relevant voor dit motief → grijs
-          } else if (!hasDemoData) {
-            score = dir * 0.5;       // fallback: vaste richting bij halve intensiteit
-          } else if (cap <= 0) {
-            score = 0;               // geen capaciteit voor dit motief → grijs
+          if (!isRelevant || dir === 0) {
+            score = 0;               // niet relevant of neutrale functie → grijs
+          } else if (cap > 0) {
+            score = dir * Math.min(1, cap / norm);   // richting × vloeroppervlak-intensiteit
           } else {
-            score = dir * Math.min(1, cap / norm);
+            score = dir * 0.5;       // relevant maar geen m² bekend → halve intensiteit
           }
           p['color_' + dp] = buildingColor(score);
         }
-        // Geschaalde hoogte: 2m basis + tot 60m extra naar rato van capaciteitsaandeel
+        // Geschaalde hoogte: 2m basis + tot 60m extra naar rato van vloeroppervlak
         if (scaled) {
           const capNorm = Math.min(1, cap / norm);
           p.height_sc = 2 + capNorm * 60;
@@ -5847,9 +5984,10 @@
         map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
       }
 
-      // OGC GeoJSON-source (kleuren)
+      // OGC GeoJSON-source (kleuren). generateId → stabiele feature-ids voor
+      // feature-state (selectie-highlight).
       if (!map.getSource('buildings')) {
-        map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson, attribution: OSM_ATTRIBUTION });
+        map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson, generateId: true, attribution: OSM_ATTRIBUTION });
       } else {
         map.getSource('buildings').setData(_buildingsGeoJson);
       }
@@ -5866,6 +6004,23 @@
             'fill-outline-color': 'transparent',
           },
         }, map.getLayer('building-3d') ? 'building-3d' : undefined);
+
+        // ── Selectie-highlight: gele contour rond het geselecteerde pand ────
+        if (!map.getLayer('buildings-selected')) {
+          map.addLayer({
+            id:     'buildings-selected',
+            type:   'line',
+            source: 'buildings',
+            paint: {
+              'line-color': '#ffd400',
+              'line-width': 3,
+              'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0],
+            },
+          }, map.getLayer('building-3d') ? 'building-3d' : undefined);
+        }
+
+        // Id van het momenteel geselecteerde pand (feature-state), of null.
+        let _bSelectedId = null;
 
         // ── Gebouw-tooltip via native MapLibre-events ──────────────────────
         const _bTip         = document.getElementById('buildingTooltip');
@@ -5887,9 +6042,10 @@
           let zoneName = null;
           try { zoneName = JSON.parse(p._bzoneProps || 'null')?.zoneName ?? null; } catch (_) {}
 
-          const typeKey   = 'buildingType' + (p._btype || 'other').charAt(0).toUpperCase()
-                            + (p._btype || 'other').slice(1);
-          const typeLabel = T(typeKey) || p._btype || '–';
+          const _labelType = p._bEffType || p._btype || 'other';
+          const typeKey   = 'buildingType' + _labelType.charAt(0).toUpperCase()
+                            + _labelType.slice(1);
+          const typeLabel = T(typeKey) || _labelType || '–';
           const heightM   = p.height ? Math.round(p.height) + '\u202fm' : '–';
           const capFmt    = cap > 0 ? Math.round(cap).toLocaleString(T('numberLocale')) : '–';
 
@@ -5928,17 +6084,13 @@
             }
           }
 
-          // OSM-tags: alles behalve interne/berekende velden
-          const _SKIP = new Set([
-            '_btype','_bzoneId','_bzoneProps','_cap',
-            'color_mrh','color_erh','color_rest','height_sc','height','osm_id',
-          ]);
-          const osmRows = Object.entries(p)
-            .filter(([k]) => !_SKIP.has(k) && !k.startsWith('_'))
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([k, v]) => `<tr>
+          // OSM-tags: alleen 'building' en 'buildingType' tonen
+          const _SHOW = ['building', 'buildingType'];
+          const osmRows = _SHOW
+            .filter((k) => p[k] != null && p[k] !== '')
+            .map((k) => `<tr>
               <td style="color:#5a6272;padding-right:10px;white-space:nowrap">${k}</td>
-              <td style="word-break:break-word"><b>${v}</b></td>
+              <td style="word-break:break-word"><b>${p[k]}</b></td>
             </tr>`)
             .join('');
 
@@ -5952,8 +6104,8 @@
             <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">${typeLabel}</div>
             ${zoneName ? `<div><span style="color:#5a6272">${T('tooltipBuildingZone')}: </span><b>${zoneName}</b></div>` : ''}
             <div><span style="color:#5a6272">${T('tooltipBuildingHeight')}: </span><b>${heightM}</b></div>
-            ${cap > 0 ? `<div><span style="color:#5a6272">${T('tooltipBuildingCap')}: </span><b>${capFmt}</b></div>` : ''}
             ${dirHtml}
+            ${_buildingCalcHtml(p)}
             ${osmRows ? `<div style="margin-top:6px;border-top:1px solid rgba(126,200,227,0.15);padding-top:6px">
               <table style="border-collapse:collapse;font-size:12px;width:100%">${osmRows}</table>
             </div>` : ''}
@@ -5972,6 +6124,7 @@
         map.on('mouseenter', 'buildings-fill', () => {
           if (map.getZoom() < _TOOLTIP_ZOOM) return;
           map.getCanvas().style.cursor = 'pointer';
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
           if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
           // Start vertraagd tonen (2 s) als tooltip nog niet zichtbaar is
           if (!_bTipVisible && !_bTipShowTimer) {
@@ -5984,6 +6137,7 @@
 
         map.on('mouseleave', 'buildings-fill', () => {
           map.getCanvas().style.cursor = '';
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
           if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
           _bTipVisible = false;
           _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
@@ -5994,15 +6148,63 @@
           if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
         });
         _bTip.addEventListener('mouseleave', () => {
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
           _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
         });
 
         map.on('mousemove', 'buildings-fill', e => {
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
           if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
           if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
           _bTipLastEvent = e;
           // Tooltip is al zichtbaar: direct positie/inhoud bijwerken
           if (_bTipVisible) _bTipRender(e);
+        });
+
+        // ── Klik: pand selecteren/deselecteren ─────────────────────────────
+        // Selecteren → gele contour + tooltip direct tonen (vastgepind).
+        // Opnieuw klikken op hetzelfde pand → deselecteren + tooltip weg.
+        map.on('click', 'buildings-fill', e => {
+          const f = e.features?.[0];
+          if (!f || f.id == null) return;
+          const id = f.id;
+
+          // Klik op reeds geselecteerd pand → deselecteren
+          if (_bSelectedId === id) {
+            map.setFeatureState({ source: 'buildings', id }, { selected: false });
+            _bSelectedId   = null;
+            _bTipVisible   = false;
+            _bTip.style.display = 'none';
+            return;
+          }
+
+          // Vorige selectie opheffen
+          if (_bSelectedId != null) {
+            map.setFeatureState({ source: 'buildings', id: _bSelectedId }, { selected: false });
+          }
+
+          _bSelectedId = id;
+          map.setFeatureState({ source: 'buildings', id }, { selected: true });
+
+          // Tooltip direct tonen op de klikpositie
+          if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          _bTipRender(e);
+          _bTipVisible = true;
+        });
+
+        // ── Klik náást een pand → huidige selectie opheffen ────────────────
+        // Algemene kaartklik: als er géén gebouw onder de cursor zit, deselecteren.
+        map.on('click', e => {
+          if (_bSelectedId == null) return;
+          const hits = map.getLayer('buildings-fill')
+            ? map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] })
+            : [];
+          if (hits.length) return;   // op een pand geklikt → laat de laag-handler het afhandelen
+          map.setFeatureState({ source: 'buildings', id: _bSelectedId }, { selected: false });
+          _bSelectedId = null;
+          _bTipVisible = false;
+          _bTip.style.display = 'none';
         });
       }
 
