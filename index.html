@@ -1806,7 +1806,7 @@
         <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#1eb43c;margin-left:6px;"></span>Afname
         <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#8c8c8c;margin-left:6px;opacity:0.6;"></span>Ongewijzigd
       </div>
-      <div style="font-size:10px; color:#aaa; margin-top:2px;">Breedte = schaal t.o.v. max. intensiteit</div>
+      <div id="legendDiffSub" style="font-size:10px; color:#aaa; margin-top:2px;">Breedte = schaal t.o.v. max. intensiteit</div>
     </div>
     <!-- Gestapelde verschilplot-legende — alleen zichtbaar als diffStackActive -->
     <div id="legendDiffStack" style="display:none; margin-top:4px;">
@@ -1815,7 +1815,7 @@
         <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#dc1e1e;margin-left:6px;"></span>Toename
         <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#1eb43c;margin-left:6px;"></span>Afname
       </div>
-      <div style="font-size:10px; color:#aaa; margin-top:2px;">Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname</div>
+      <div id="legendDiffStackSub" style="font-size:10px; color:#aaa; margin-top:2px;">Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname</div>
     </div>
     <div id="carCountStrip"></div>
   </div>
@@ -5041,6 +5041,8 @@
         document.getElementById('legendLabelsBike').style.display = 'none';
         if (legendLabelsEl) legendLabelsEl.style.display = 'none';
         document.getElementById('legendDiff').style.display  = '';
+        document.getElementById('legendDiffSub').textContent =
+          'Breedte = schaal t.o.v. grootste verschil (' + metricShortLabel(colorMetric) + ')';
         return;
       }
       if (diffStackActive) {
@@ -5049,6 +5051,9 @@
         document.getElementById('legendLabelsBike').style.display = 'none';
         if (legendLabelsEl) legendLabelsEl.style.display = 'none';
         document.getElementById('legendDiffStack').style.display = '';
+        document.getElementById('legendDiffStackSub').textContent =
+          'Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname (' +
+          metricShortLabel(colorMetric) + ')';
         return;
       }
       // Normaal: zorg dat alles weer zichtbaar is
@@ -7969,6 +7974,21 @@
       emis_pm10:    'emission',
     };
 
+    /** Metrieken waarvoor de verschilplot (Δ) beschikbaar is.
+     *  Geschaalde varianten (_scaled) vallen hier buiten: daar werkt het niet op.
+     *  Veiligheid (categorisch), spectrum/compare/none vallen ook buiten. */
+    const DIFF_SUPPORTED = new Set([
+      'flow', 'occupancy', 'coverage', 'speed', 'capacity',
+      'noise_lden', 'noise_lnight', 'emis_co2', 'emis_nox', 'emis_pm10',
+    ]);
+
+    /** Metrieken die optelbaar zijn → de gestapelde plot (Δ▤, grijze kern + gekleurde
+     *  rand) is fysiek zinvol. Verhoudingen (I/C, bezetting), snelheid en het
+     *  logaritmische geluid (dB) vallen hier buiten: alleen de gewone deltaplot. */
+    const DIFF_ADDITIVE = new Set([
+      'flow', 'capacity', 'emis_co2', 'emis_nox', 'emis_pm10',
+    ]);
+
     // ── Wegenscan state ───────────────────────────────────────────────────────
     /** GeoJSON van het WEGENSCAN-bestand; null als nog niet geladen. */
     let wegenscanData = null;
@@ -8216,7 +8236,14 @@
 
     /** Waarde van de actieve metric voor een feature-properties object */
     function getMetricValue(p) {
-      switch (colorMetric) {
+      return evalMetric(p, colorMetric, noiseByLinkId, emisByLinkId);
+    }
+
+    /** Bereken de metriekwaarde voor een wegvak, met expliciet meegegeven
+     *  geluid-/emissie-lookups. Zo kan zowel het huidige scenario (globale maps)
+     *  als het bronscenario (aparte maps) geëvalueerd worden. */
+    function evalMetric(p, metric, noiseMap, emisMap) {
+      switch (metric) {
         case 'flow':
         case 'flow_scaled': {
           return dpFlowOf(p);
@@ -8246,19 +8273,19 @@
         // Geluid (dB(A)) — losse laag, gejoind op linkId
         case 'noise_lden':
         case 'noise_lnight': {
-          const d = noiseByLinkId && noiseByLinkId.get(p.linkId);
+          const d = noiseMap && noiseMap.get(p.linkId);
           if (!d) return null;
-          const v = colorMetric === 'noise_lden' ? d.noiseLden : d.noiseLnight;
+          const v = metric === 'noise_lden' ? d.noiseLden : d.noiseLnight;
           return (v != null) ? v : null;
         }
         // Emissie per km — kg/etmaal gedeeld door linklengte (lengte-onafhankelijk)
         case 'emis_co2':
         case 'emis_nox':
         case 'emis_pm10': {
-          const d = emisByLinkId && emisByLinkId.get(p.linkId);
+          const d = emisMap && emisMap.get(p.linkId);
           if (!d) return null;
-          const kg = colorMetric === 'emis_co2' ? d.co2Kg
-                   : colorMetric === 'emis_nox' ? d.noxKg
+          const kg = metric === 'emis_co2' ? d.co2Kg
+                   : metric === 'emis_nox' ? d.noxKg
                    : d.pm10Kg;
           if (kg == null) return null;
           const len = (d.length != null) ? d.length : p.length;
@@ -9118,8 +9145,12 @@
     let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
     var diffPlotActive     = false;  // verschilplot actief
     var diffStackActive    = false;  // gestapelde verschilplot (grijze kern + gekleurde rand) actief
-    var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (uurintensiteit)
-    var diffMaxOrigFlow    = 1;      // max uurflow bron-scenario (schaalreferentie)
+    var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (voor actieve metriek)
+    var curValByLinkId     = new Map(); // linkId → huidige metriekwaarde (berekend scenario)
+    var diffMaxOrigFlow    = 1;      // max bron-metriekwaarde (schaalreferentie stapelplot)
+    var diffMaxAbs         = 1;      // max |verschil| (breedte-referentie gewone deltaplot)
+    var diffMetric         = 'flow'; // metriek waarvoor de verschilplot berekend is
+    var diffVersion        = 0;      // ophoog-teller: forceert deck.gl-accessors te hertekenen
 
     // ── Spectrum — state ─────────────────────────────────────────────────────
     var _spectrumLayerDpKey = null;  // dpKey waarvoor de MapLibre-laag momenteel zichtbaar is
@@ -9578,24 +9609,23 @@
       if (!p) { _segTip.style.display = 'none'; return; }
       const linkId  = p.linkId;
       const diff    = diffByLinkId.get(linkId);
-      const newFlow = dpFlowOf(p);
-      const oldFlow = diff != null ? newFlow - diff : null;
+      const newVal  = curValByLinkId.has(linkId) ? curValByLinkId.get(linkId) : null;
+      const oldVal  = (diff != null && newVal != null) ? newVal - diff : null;
       const loc     = T('numberLocale');
-      const fmtFlow = v => v != null ? Math.round(v).toLocaleString(loc) : '–';
-      const diffVal = diff != null ? Math.round(diff) : null;
-      const diffStr = diffVal != null
-        ? (diffVal > 0 ? '+' : '') + diffVal.toLocaleString(loc)
-        : '–';
-      const diffColor = diffVal == null || diffVal === 0
+      const unit    = metricUnit(diffMetric);
+      const diffColor = diff == null || Math.abs(diff) < 1e-9
         ? '#aaa'
-        : diffVal > 0 ? '#e85555' : '#3dc45a';
+        : diff > 0 ? '#e85555' : '#3dc45a';
+      const diffStr = diff != null
+        ? (diff > 0 ? '+' : '') + fmtMetricVal(diff, diffMetric)
+        : '–';
       _segTip.innerHTML = `
         <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
           ${T('tooltipSegment', Math.abs(linkId))}
         </div>
-        <div><span style="color:#5a6272">Oud: </span><b>${fmtFlow(oldFlow)} ${T('tooltipFlowUnit')}</b></div>
-        <div><span style="color:#5a6272">Nieuw: </span><b>${fmtFlow(newFlow)} ${T('tooltipFlowUnit')}</b></div>
-        <div><span style="color:#5a6272">Verschil: </span><b style="color:${diffColor}">${diffStr} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#5a6272">Oud: </span><b>${fmtMetricVal(oldVal, diffMetric)}</b></div>
+        <div><span style="color:#5a6272">Nieuw: </span><b>${fmtMetricVal(newVal, diffMetric)}</b></div>
+        <div><span style="color:#5a6272">Verschil: </span><b style="color:${diffColor}">${diffStr}</b></div>
         <div style="margin-top:4px;font-size:10px;color:#666">${p.speed} km/h · ${p.lanes} rijstr. · ${p.length?.toFixed(0)} m</div>
       `;
       const rect = map.getCanvas().getBoundingClientRect();
@@ -9615,8 +9645,10 @@
       const isBike = MODE === 'BIKE';
       const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer
 
-      // Schaal t.o.v. het maximum van de bron-intensiteit
-      const ref = diffMaxOrigFlow;
+      // Schaal de breedte t.o.v. het grootste voorkomende |verschil|, zodat de
+      // gewijzigde wegvakken altijd goed zichtbaar zijn — ook voor metrieken waar
+      // het verschil klein is t.o.v. de absolute waarde (bijv. geluid in dB).
+      const ref = diffMaxAbs;
 
       return new GeoJsonLayer({
         id: 'diff-plot',
@@ -9633,7 +9665,7 @@
           const diff   = diffByLinkId.get(linkId);
           if (diff == null || diff === 0) return 1.5;
           const lanes  = f.properties.lanes || 1;
-          // Logaritmische schaal identiek aan flow_scaled, maar op |diff| t.o.v. globalMaxFlow
+          // Logaritmische schaal op |diff| t.o.v. het maximale verschil
           const t = Math.log1p(Math.abs(diff)) / Math.log1p(ref);
           return Math.max(1.5, t * lanes * maxW);
         },
@@ -9665,8 +9697,8 @@
           }
         },
         updateTriggers: {
-          getLineColor: [diffByLinkId.size, daypart],
-          getLineWidth: [diffByLinkId.size, daypart],
+          getLineColor: [diffByLinkId.size, daypart, diffMetric, diffVersion],
+          getLineWidth: [diffByLinkId.size, daypart, diffMetric, diffVersion],
         },
       });
     }
@@ -9676,20 +9708,20 @@
     // een grijze laag met breedte = min(oud,nieuw). De gekleurde rand die overblijft
     // stelt |verschil| voor (rood = toename, groen = afname).
     function makeDiffStackLayer() {
-      if (!diffStackActive || !diffByLinkId.size) {
+      if (!diffStackActive || !diffByLinkId.size || !DIFF_ADDITIVE.has(diffMetric)) {
         return [];
       }
       const isBike = MODE === 'BIKE';
       const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer/makeDiffLayer
-      const ref    = diffMaxOrigFlow;     // schaalreferentie (max bron-intensiteit)
+      const ref    = diffMaxOrigFlow;     // schaalreferentie (max bron-metriekwaarde)
 
-      // Lineaire breedteschaal: de breedte is recht evenredig met de intensiteit,
+      // Lineaire breedteschaal: de breedte is recht evenredig met de metriekwaarde,
       // zodat de verhouding grijze kern (ongewijzigd) t.o.v. gekleurde rand (verschil)
       // klopt. Een logaritmische schaal zou die verhouding verstoren.
-      const widthOf = (f, flow) => {
-        if (!(flow > 0)) return 0;
+      const widthOf = (f, val) => {
+        if (!(val > 0)) return 0;
         const lanes = f.properties.lanes || 1;
-        const t = flow / ref;
+        const t = val / ref;
         return t * lanes * maxW;
       };
 
@@ -9759,9 +9791,10 @@
         const linkId = f.properties.linkId;
         const diff   = diffByLinkId.get(linkId);
         if (diff == null || diff === 0) continue;
-        const newFlow = dpFlowOf(f.properties);
-        const oldFlow = newFlow - diff;
-        const greyW = widthOf(f, Math.min(oldFlow, newFlow));
+        const newVal = curValByLinkId.get(linkId);
+        if (newVal == null) continue;
+        const oldVal = newVal - diff;
+        const greyW = widthOf(f, Math.min(oldVal, newVal));
         const colW  = widthOf(f, Math.abs(diff));
         if (!(colW > 0)) continue;
         // Middellijn van de band ligt op greyW/2 + colW/2 uit de wegas.
@@ -9788,9 +9821,9 @@
         pickable: true,
         onHover: commonHover,
         updateTriggers: {
-          getColor: [diffByLinkId.size, daypart],
-          getWidth: [diffByLinkId.size, daypart],
-          getPath:  [diffByLinkId.size, daypart],
+          getColor: [diffByLinkId.size, daypart, diffMetric, diffVersion],
+          getWidth: [diffByLinkId.size, daypart, diffMetric, diffVersion],
+          getPath:  [diffByLinkId.size, daypart, diffMetric, diffVersion],
         },
       });
 
@@ -9807,15 +9840,16 @@
           const linkId = f.properties.linkId;
           const diff   = diffByLinkId.get(linkId);
           if (diff == null) return 1.5;
-          const newFlow = dpFlowOf(f.properties);
-          const oldFlow = newFlow - diff;
-          return widthOf(f, Math.min(oldFlow, newFlow));
+          const newVal = curValByLinkId.get(linkId);
+          if (newVal == null) return 1.5;
+          const oldVal = newVal - diff;
+          return widthOf(f, Math.min(oldVal, newVal));
         },
         getLineColor: [140, 140, 140, 255],  // ondoorzichtig grijs = ongewijzigd deel
         pickable: true,
         onHover: commonHover,
         updateTriggers: {
-          getLineWidth: [diffByLinkId.size, daypart],
+          getLineWidth: [diffByLinkId.size, daypart, diffMetric, diffVersion],
         },
       });
 
@@ -13248,6 +13282,7 @@
       document.getElementById('splitViewBtn').style.display = '';
       document.getElementById('diffPlotBtn').style.display  = '';
       document.getElementById('diffStackBtn').style.display = '';
+      updateDiffButtonsState();
       AREA_ID = newAreaId;
       _historicalChanges = [];   // invalideer bij scenario-advance
 
@@ -13301,6 +13336,7 @@
           document.getElementById('splitViewBtn').style.display = '';
           document.getElementById('diffPlotBtn').style.display  = '';
           document.getElementById('diffStackBtn').style.display = '';
+          updateDiffButtonsState();
         }
       }).catch(() => {});
     }
@@ -13348,6 +13384,7 @@
         splitViewSrcAreaId ? '' : 'none';
       document.getElementById('diffStackBtn').style.display =
         splitViewSrcAreaId ? '' : 'none';
+      updateDiffButtonsState();
       // Als de huidige selectie 'compare' is maar er geen data meer is, reset
       if (!hasCompare && colorMetric === 'compare') {
         colorMetric = 'flow';
@@ -13505,46 +13542,181 @@
 
     // ── Verschilplot — activeren/deactiveren ────────────────────────────────────
 
-    // Gedeelde berekening: vult diffByLinkId (berekend − bron) en diffMaxOrigFlow.
-    // Gebruikt door zowel de gewone verschilplot als de gestapelde variant.
+    // Gedeelde berekening: vult diffByLinkId (berekend − bron), curValByLinkId
+    // (huidige metriekwaarde) en diffMaxOrigFlow, voor de actieve colorMetric.
+    // Geeft false terug als de metriek niet ondersteund wordt.
     async function computeDiffData() {
       if (!splitViewSrcAreaId) return false;
-      const coll = 'network';
-      const url = `/collections/${coll}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
-      const origGeoJson  = await fetch(url).then(r => r.json());
+      const metric = colorMetric;
+      if (!DIFF_SUPPORTED.has(metric)) return false;
+      diffMetric = metric;
+
+      // Zorg dat de afgeleide laag (geluid/emissie) voor het huidige gebied geladen is
+      const derivedKind = DERIVED_METRIC_KIND[metric];
+      if (derivedKind) {
+        try { await ensureDerivedLayer(derivedKind); } catch (e) { /* laat leeg */ }
+      }
+
+      // Haal bron-NETWORK op
+      const netUrl = `/collections/network/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      const origGeoJson  = await fetch(netUrl).then(r => r.json());
       const origFeatures = origGeoJson.features.filter(
         f => f.geometry?.type === 'LineString' && f.properties?.linkId != null
       );
 
-      // Bouw een map linkId → uurflow bron-scenario
-      const origFlowByLinkId = new Map();
-      let maxOrigFlow = 0;
-      for (const f of origFeatures) {
-        const flow = dpFlowOf(f.properties);
-        origFlowByLinkId.set(f.properties.linkId, flow);
-        if (flow > maxOrigFlow) maxOrigFlow = flow;
+      // Haal bron-versie van de afgeleide laag op (geluid/emissie) indien nodig
+      let srcNoiseMap = null, srcEmisMap = null;
+      if (derivedKind) {
+        try {
+          const dUrl = `/collections/${derivedKind}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+          const dFc  = await fetch(dUrl).then(r => r.ok ? r.json() : { features: [] });
+          const m = new Map();
+          for (const f of (dFc.features || [])) {
+            const p = f.properties || {};
+            if (p.linkId != null) m.set(p.linkId, p);
+          }
+          if (derivedKind === 'noise') srcNoiseMap = m; else srcEmisMap = m;
+        } catch (e) { /* bron-data ontbreekt → links zonder bronwaarde worden overgeslagen */ }
       }
-      diffMaxOrigFlow = maxOrigFlow || 1;
 
-      // Bereken verschil per linkId: berekend − bron
-      diffByLinkId.clear();
-      for (const seg of segments) {
-        const linkId   = seg.props.linkId;
-        const calcFlow = dpFlowOf(seg.props);
-        const origFlow = origFlowByLinkId.get(linkId) ?? 0;
-        diffByLinkId.set(linkId, calcFlow - origFlow);
+      // Bouw map linkId → bron-metriekwaarde
+      const origValByLinkId = new Map();
+      let maxOrigVal = 0;
+      for (const f of origFeatures) {
+        const v = evalMetric(f.properties, metric, srcNoiseMap, srcEmisMap);
+        if (v == null || !isFinite(v)) continue;
+        origValByLinkId.set(f.properties.linkId, v);
+        if (v > maxOrigVal) maxOrigVal = v;
       }
+      diffMaxOrigFlow = maxOrigVal || 1;
+
+      // Bereken verschil per linkId: berekend − bron (alleen als beide geldig)
+      diffByLinkId.clear();
+      curValByLinkId.clear();
+      let maxAbs = 0;
+      for (const seg of segments) {
+        const linkId  = seg.props.linkId;
+        const curVal  = evalMetric(seg.props, metric, noiseByLinkId, emisByLinkId);
+        if (curVal == null || !isFinite(curVal)) continue;
+        curValByLinkId.set(linkId, curVal);
+        const origVal = origValByLinkId.get(linkId);
+        if (origVal == null) continue;   // geen bronwaarde → geen betrouwbaar verschil
+        const d = curVal - origVal;
+        diffByLinkId.set(linkId, d);
+        if (Math.abs(d) > maxAbs) maxAbs = Math.abs(d);
+      }
+      diffMaxAbs = maxAbs || 1;
+      diffVersion++;   // forceer hertekening van de deck.gl-lagen
       return true;
+    }
+
+    // Korte, vanzelf verdwijnende melding (voor verschilplot-beperkingen e.d.)
+    let _diffToastTimer = null;
+    function _diffToast(msg) {
+      let el = document.getElementById('_diffToast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = '_diffToast';
+        el.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);' +
+          'background:rgba(20,24,34,0.94);color:#e8ecf4;padding:8px 14px;border-radius:6px;' +
+          'font-size:12px;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.4);' +
+          'border:1px solid rgba(126,200,227,0.4);transition:opacity 0.3s;';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg;
+      el.style.opacity = '1';
+      clearTimeout(_diffToastTimer);
+      _diffToastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2600);
+    }
+
+    // Werk de knop-status (enabled/disabled + title) bij op basis van de actieve
+    // metriek en de aanwezigheid van een bronscenario.
+    function updateDiffButtonsState() {
+      const hasSrc     = !!splitViewSrcAreaId;
+      const supported  = DIFF_SUPPORTED.has(colorMetric);
+      const additive   = DIFF_ADDITIVE.has(colorMetric);
+      const plotBtn    = document.getElementById('diffPlotBtn');
+      const stackBtn   = document.getElementById('diffStackBtn');
+      if (!plotBtn || !stackBtn) return;
+
+      const plotOk  = hasSrc && supported;
+      const stackOk = hasSrc && supported && additive;
+      plotBtn.disabled  = !plotOk;
+      stackBtn.disabled = !stackOk;
+      plotBtn.style.opacity  = plotOk  ? '' : '0.4';
+      stackBtn.style.opacity = stackOk ? '' : '0.4';
+      plotBtn.title  = supported
+        ? 'Verschilplot (Δ ' + metricShortLabel(colorMetric) + ')'
+        : 'Verschilplot niet beschikbaar voor deze kaartlaag';
+      stackBtn.title = !supported
+        ? 'Verschilplot niet beschikbaar voor deze kaartlaag'
+        : additive
+          ? 'Verschilplot met ongewijzigd deel (Δ ' + metricShortLabel(colorMetric) + ')'
+          : 'Gestapelde plot alleen voor optelbare grootheden (niet voor deze kaartlaag)';
+    }
+
+    /** Eenheid voor een metriek (voor tooltips/titels van de verschilplot). */
+    function metricUnit(metric) {
+      switch (metric) {
+        case 'occupancy': case 'occupancy_scaled':
+        case 'coverage':  case 'coverage_scaled': return '%';
+        case 'speed':        return 'km/h';
+        case 'noise_lden':
+        case 'noise_lnight': return 'dB(A)';
+        case 'emis_co2':
+        case 'emis_nox':
+        case 'emis_pm10':    return 'kg/km';
+        default:             return T('legendUnit');   // flow/capacity → vtg/u
+      }
+    }
+    function metricShortLabel(metric) { return metricUnit(metric); }
+
+    /** Formatteer een metriekwaarde met passende afronding + eenheid. */
+    function fmtMetricVal(v, metric) {
+      if (v == null || !isFinite(v)) return '–';
+      const loc = T('numberLocale');
+      const u = metricUnit(metric);
+      const dec = (metric === 'noise_lden' || metric === 'noise_lnight') ? 1
+                : (metric && metric.startsWith('emis_')) ? 3
+                : (metric === 'occupancy' || metric === 'occupancy_scaled' ||
+                   metric === 'coverage'  || metric === 'coverage_scaled' ||
+                   metric === 'speed') ? 0 : 0;
+      const num = (dec > 0) ? Number(v.toFixed(dec)).toLocaleString(loc)
+                            : Math.round(v).toLocaleString(loc);
+      return num + ' ' + u;
+    }
+
+    /** Zorg dat actieve verschilplots verenigbaar zijn met de huidige metriek;
+     *  deactiveer + meld indien niet. Werk daarna de knop-status bij. */
+    function _ensureDiffCompatible() {
+      const okPlot  = DIFF_SUPPORTED.has(colorMetric);
+      const okStack = okPlot && DIFF_ADDITIVE.has(colorMetric);
+      if (diffPlotActive && !okPlot) {
+        deactivateDiffPlot();
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      if (diffStackActive && !okStack) {
+        deactivateDiffStack();
+        _diffToast(okPlot
+          ? 'De gestapelde plot werkt alleen voor optelbare grootheden.'
+          : 'Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      updateDiffButtonsState();
     }
 
     async function activateDiffPlot() {
       if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
       // Zorg dat split-view / gestapelde plot niet tegelijk actief zijn
       if (splitViewActive) deactivateSplitView();
       deactivateDiffStack();
 
       try {
-        await computeDiffData();
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
 
         diffPlotActive = true;
         document.getElementById('diffPlotBtn').classList.add('active');
@@ -13571,12 +13743,21 @@
     // ── Gestapelde verschilplot (grijze kern + gekleurde rand) ──────────────────
     async function activateDiffStack() {
       if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      if (!DIFF_ADDITIVE.has(colorMetric)) {
+        _diffToast('De gestapelde plot werkt alleen voor optelbare grootheden (bijv. intensiteit, emissies).');
+        return;
+      }
       // Onderling exclusief met split-view en de gewone verschilplot
       if (splitViewActive) deactivateSplitView();
       deactivateDiffPlot();
 
       try {
-        await computeDiffData();
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
 
         diffStackActive = true;
         document.getElementById('diffStackBtn').classList.add('active');
@@ -14327,6 +14508,10 @@
     document.getElementById('colorMetric').addEventListener('change', async e => {
       colorMetric = e.target.value;
 
+      // Deactiveer verschilplots die niet verenigbaar zijn met de nieuwe metriek
+      // (dekt ook de vroege returns hieronder voor safety/spectrum/compare).
+      _ensureDiffCompatible();
+
       // ── Veiligheidsmodus ──────────────────────────────────────────────
       if (colorMetric === 'safety') {
         closeWegenscanPanel();
@@ -14404,7 +14589,15 @@
       _removeSpectrumLayer();
 
       updateLegend();
-      updateOverlay(true);
+      updateDiffButtonsState();
+
+      // Als een verschilplot nog actief is, herbereken deze voor de nieuwe metriek.
+      if (diffPlotActive || diffStackActive) {
+        await computeDiffData();
+        updateOverlay(false);
+      } else {
+        updateOverlay(true);
+      }
     });
 
     document.getElementById('timeScale').addEventListener('input', e => {
