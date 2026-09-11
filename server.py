@@ -1801,6 +1801,20 @@ def _format_pipeline_call(func_name: str, kwargs: dict) -> str:
     return f"{func_name}(\n    " + ",\n    ".join(parts) + ",\n)"
 
 
+def _call_prepare_run_pipeline(**kwargs):
+    """Roep de prepare-library aan en vertaal verouderde kwarg-namen.
+
+    De server gebruikt historisch 'no_osm'/'only_osm'; de huidige prepare-library
+    verwacht 'no_dt'/'only_dt' (digital-twin i.p.v. osm). Vertaal hier zodat de
+    aanroep blijft werken zonder alle call-sites aan te passen.
+    """
+    if "no_osm" in kwargs:
+        kwargs["no_dt"] = bool(kwargs.pop("no_osm"))
+    if "only_osm" in kwargs:
+        kwargs["only_dt"] = bool(kwargs.pop("only_osm"))
+    return _prepare_run_pipeline(**kwargs)
+
+
 def _run_prepare_job(
     job_id: str, out_dir: Path, kwargs: dict, name: str, mode_label: str
 ):
@@ -1822,7 +1836,7 @@ def _run_prepare_job(
             print("[server] prepare-pipeline aanroep:")
             print(_format_pipeline_call("run_pipeline", kwargs))
             print(f"[server] {_osm_source_summary()}")
-            _prepare_run_pipeline(**kwargs)
+            _call_prepare_run_pipeline(**kwargs)
         stream.flush()
 
         # Schrijf .full-twin marker als de OSM/BGT-verrijking gedraaid heeft, zodat
@@ -2386,7 +2400,7 @@ def _run_fetch_osm_job(job_id: str, area_id: str):
                 print("[server] prepare-pipeline aanroep (only_osm):")
                 print(_format_pipeline_call("run_pipeline", _osm_kwargs))
                 print(f"[server] {_osm_source_summary()}")
-                _prepare_run_pipeline(**_osm_kwargs)
+                _call_prepare_run_pipeline(**_osm_kwargs)
         stream.flush()
 
         # Schrijf .full-twin marker: dit gebied heeft nu echte OSM/BGT-verrijking.
@@ -4073,20 +4087,52 @@ def ogc_collection_items(collection_id):
                 except Exception:
                     pass
 
-        # bbox-filter op de response (Point/LineString → eerste vertex).
+        # bbox-filter op de response. Voor vlakken (Polygon/MultiPolygon) en
+        # lijnen mag NIET op één representatief punt gefilterd worden: een groot
+        # bosvlak waarvan het eerste hoekpunt buiten beeld valt zou dan volledig
+        # verdwijnen (flikkeren bij pannen). We testen daarom of de geometrie-
+        # bounding-box de query-bbox overlapt.
         if bbox is not None:
             min_lon, min_lat, max_lon, max_lat = bbox
+
+            def _geom_bbox(coords):
+                lo_x = lo_y = float("inf")
+                hi_x = hi_y = float("-inf")
+                stack = [coords]
+                while stack:
+                    cur = stack.pop()
+                    if not isinstance(cur, list) or not cur:
+                        continue
+                    if isinstance(cur[0], (int, float)) and len(cur) >= 2:
+                        x, y = cur[0], cur[1]
+                        if x < lo_x:
+                            lo_x = x
+                        if x > hi_x:
+                            hi_x = x
+                        if y < lo_y:
+                            lo_y = y
+                        if y > hi_y:
+                            hi_y = y
+                    else:
+                        stack.extend(cur)
+                if lo_x == float("inf"):
+                    return None
+                return lo_x, lo_y, hi_x, hi_y
+
             feats = []
             for feat in data.get("features", []):
                 geom = feat.get("geometry") or {}
-                coords = geom.get("coordinates")
-                pt = coords
-                while isinstance(pt, list) and pt and isinstance(pt[0], list):
-                    pt = pt[0]
-                if not pt or len(pt) < 2:
+                gb = _geom_bbox(geom.get("coordinates"))
+                if gb is None:
                     continue
-                lon, lat = pt[0], pt[1]
-                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+                g_min_lon, g_min_lat, g_max_lon, g_max_lat = gb
+                # Rechthoek-overlap (geen disjunctie).
+                if (
+                    g_min_lon <= max_lon
+                    and g_max_lon >= min_lon
+                    and g_min_lat <= max_lat
+                    and g_max_lat >= min_lat
+                ):
                     feats.append(feat)
             data = {**data, "features": feats}
 

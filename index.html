@@ -5329,8 +5329,13 @@
     let basemapStyle       = localStorage.getItem('basemapStyle') || 'map'; // 'map' | 'satellite' | 'none'
 
     // Gebouwclassificatie op basis van OSM-tags
-    function classifyBuilding(props) {
-      const b       = (props.building         || '').toLowerCase();
+     function classifyBuilding(props) {
+      // 'building' is vaak generiek ('yes'); de semantische waarde staat dan in
+      // 'buildingType' (bv. building=yes + buildingType=house). Val in dat geval
+      // terug op buildingType zodat woningen e.d. correct worden herkend.
+      let b         = (props.building         || '').toLowerCase();
+      const bType   = (props.buildingType     || '').toLowerCase();
+      if ((!b || b === 'yes') && bType) b = bType;
       const amenity = (props.amenity          || '').toLowerCase();
       const shop    = (props.shop             || '').toLowerCase();
       const office  = (props.office           || '').toLowerCase();
@@ -5349,8 +5354,10 @@
         return 'transport';
 
       // Sport & recreatie
-      if (['stadium','sports_centre','sports_hall'].includes(b)
+      if (['stadium','sports_centre','sports_hall','hotel','hostel','motel',
+           'guest_house'].includes(b)
           || ['sports_centre','stadium','swimming_pool','ice_rink'].includes(leisure)
+          || (props.tourism || '').toLowerCase() === 'hotel'
           || amenity === 'theatre' || amenity === 'cinema' || amenity === 'place_of_worship')
         return 'recreation';
 
@@ -5383,6 +5390,20 @@
            'semidetached_house','bungalow','dormitory','cabin','houseboat'].includes(b))
         return 'residential';
 
+      // Fallback: genormaliseerde buildingType-categorie uit de digital twin.
+      // Alleen benut als geen enkele OSM-use-tag of building-waarde matchte.
+      const _btCat = {
+        residential:'residential', house:'residential', apartments:'residential',
+        office:'office',
+        commercial:'commercial', retail:'commercial', shop:'commercial',
+        industrial:'industrial', warehouse:'industrial',
+        education:'education',
+        recreational:'recreation', recreation:'recreation', sport:'recreation',
+        transport:'transport', station:'transport',
+        parking:'parking',
+      };
+      if (_btCat[bType]) return _btCat[bType];
+
       // Fallback 1: gebruik landuse-type van het omvattende gebied
       const landuse = (props['_landuse'] || '').toLowerCase();
       if (['residential','housing'].includes(landuse))                          return 'residential';
@@ -5406,8 +5427,10 @@
     // classifyBuilding kan een parkeerplaats als 'residential' e.d. labelen (landuse-erfenis
     // voor de kleur); deze helper bewaart of het pand fysiek een parkeervoorziening is,
     // zodat het géén inwoners krijgt en niet meetelt in de vloeroppervlak-noemer per type.
-    function _isPhysicalParking(props) {
-      const b       = (props.building || '').toLowerCase();
+     function _isPhysicalParking(props) {
+      let b         = (props.building || '').toLowerCase();
+      const bType   = (props.buildingType || '').toLowerCase();
+      if ((!b || b === 'yes') && bType) b = bType;
       const amenity = (props.amenity  || '').toLowerCase();
       return ['parking','garage','garages','carport','bicycle_parking'].includes(b)
           || amenity === 'parking' || amenity === 'parking_space';
@@ -5765,6 +5788,15 @@
           demoKey = 'capBaseJobs';
           zoneVal = zp?.arbeidsplaatsen || 0;
           groupArea = JOB_TYPES.reduce((s, t) => s + (bd[t] || 0), 0);
+        } else if (type === 'education') {
+          // Onderwijs → leerlingplaatsen (consistent met inwoners/arbeidsplaatsen).
+          demoKey = 'capBaseSeats';
+          zoneVal = (zp?.leerlingplaatsen_basisonderwijs            || 0)
+                  + (zp?.leerlingplaatsen_middelbaaronderwijs       || 0)
+                  + (zp?.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                  + (zp?.leerlingplaatsen_hogeronderwijs            || 0)
+                  || (zp?.arbeidsplaatsen_onderwijsfunctie          || 0);
+          groupArea = bd['education'] || 0;
         }
         // overige functies (onderwijs, recreatie, overig): geen passend aggregaat → alleen m²
         const demoShare = groupArea > 0 ? (p._floorArea / groupArea) : 0;
@@ -6121,7 +6153,12 @@
           _bTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
         };
 
-        map.on('mouseenter', 'buildings-fill', () => {
+        // Interactie op beide gebouwlagen: 'buildings-fill' (plat) is zichtbaar in
+        // de normale modus, 'buildings-3d' (extrusie) in de geschaalde 3D-modus.
+        // Zonder 'buildings-3d' zouden panden in 3D-modus onklikbaar zijn.
+        const _bLayers = ['buildings-fill', 'buildings-3d'];
+
+        map.on('mouseenter', _bLayers, () => {
           if (map.getZoom() < _TOOLTIP_ZOOM) return;
           map.getCanvas().style.cursor = 'pointer';
           if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
@@ -6135,7 +6172,7 @@
           }
         });
 
-        map.on('mouseleave', 'buildings-fill', () => {
+        map.on('mouseleave', _bLayers, () => {
           map.getCanvas().style.cursor = '';
           if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
           if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
@@ -6152,7 +6189,7 @@
           _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
         });
 
-        map.on('mousemove', 'buildings-fill', e => {
+        map.on('mousemove', _bLayers, e => {
           if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
           if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
           if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
@@ -6164,7 +6201,7 @@
         // ── Klik: pand selecteren/deselecteren ─────────────────────────────
         // Selecteren → gele contour + tooltip direct tonen (vastgepind).
         // Opnieuw klikken op hetzelfde pand → deselecteren + tooltip weg.
-        map.on('click', 'buildings-fill', e => {
+        map.on('click', _bLayers, e => {
           const f = e.features?.[0];
           if (!f || f.id == null) return;
           const id = f.id;
@@ -6198,7 +6235,8 @@
         map.on('click', e => {
           if (_bSelectedId == null) return;
           const hits = map.getLayer('buildings-fill')
-            ? map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] })
+            ? map.queryRenderedFeatures(e.point, {
+                layers: ['buildings-fill', 'buildings-3d'].filter(l => map.getLayer(l)) })
             : [];
           if (hits.length) return;   // op een pand geklikt → laat de laag-handler het afhandelen
           map.setFeatureState({ source: 'buildings', id: _bSelectedId }, { selected: false });
@@ -6552,9 +6590,14 @@
     let _taBridgeFeatures    = [];   // CIMLK brug-wegvakken (verhoogd brugdek)
     let _taTunnelFeatures    = [];   // CIMLK tunnel-wegvakken (dekband + doorschijnend dak)
     let _taRetWallQuads      = [];   // CIMLK keermuren → geëxtrudeerde muur-quads
-    let _taCulvertFeatures   = [];   // CIMLK duikers (lage donkere kruising)
+     let _taCulvertFeatures   = [];   // CIMLK duikers (lage donkere kruising)
+     let _taSunkenFloors      = [];   // verzonken wegdelen (tunnel-polygon / bak) → donkere vloervlakken
+     let _taSunkenWalls       = [];   // randmuurtjes rond de bakken → geëxtrudeerde quads
+      let _taTunnelDecks       = [];   // grijs wegdek over de centrale tunnelband (onderdoorgang)
     let _taUnderpassFeatures = [];   // CIMLK overspanningen boven verdiepte weg (belowGround)
     let _taBusStopFeatures   = [];   // busStop-features (billboard-sprite met halte-bordje)
+    let _taFootPathFeatures  = [];   // footPath-lijnen (platte voetpad-ribbon)
+    let _taCyclePathFeatures = [];   // cyclePath-lijnen (platte fietspad-ribbon)
     let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
     let _taHover             = null; // {props,lngLat} van het object onder de cursor
 
@@ -6864,7 +6907,142 @@
     const _TA_RETWALL_HALF_M  = 0.30;  // halve dikte van een keermuur (m)
     const _TA_RETWALL_DEF_H   = 2;     // fallback keermuurhoogte (m)
     const _TA_CULVERT_WIDTH_M = 2.5;   // breedte van de duiker-kruising (m)
-    const _TA_UNDERPASS_H_M   = 4.0;   // hoogte waarop de overspanning boven de verdiepte weg zweeft (m)
+     const _TA_UNDERPASS_H_M   = 4.0;   // hoogte waarop de overspanning boven de verdiepte weg zweeft (m)
+
+     // Verzonken wegdelen (tunnel-polygonen / bak): donker vloervlak nét boven
+     // maaiveld + lage donkere randmuurtjes. De satelliet-basemap is ondoorzichtig
+     // op z=0, dus een écht verdiept vlak zou onzichtbaar zijn; deze weergave houdt
+     // het "verlaagd wegdeel tussen muren" leesbaar én zichtbaar.
+     const _TA_SUNKEN_WALL_H     = 0.9;   // hoogte van de bak-randmuurtjes (m)
+     const _TA_SUNKEN_WALL_HALF  = 0.25;  // halve dikte van een randmuurtje (m)
+     const _TA_SUNKEN_FLOOR_Z    = 0.06;  // vloervlak nét boven maaiveld (m, tegen z-fighting)
+     const _TA_BAK_HALF_M        = 2.5;   // halve zijde van het bak-vierkant rond een punt (m)
+     const _TA_SUNKEN_FLOOR_COLOR = [26, 27, 31, 240];   // donkere tunnelmond/vloer
+     const _TA_SUNKEN_WALL_COLOR  = [96, 98, 106, 245];  // betongrijs (bak-wanden)
+     // Tunnel-onderdoorgang: grijs wegdek over de centrale band (de weg loopt door),
+     // met donkere vloer aan de uiteinden als portaalmonden.
+     const _TA_TUNNEL_DECK_Z      = 0.22;                 // dek net boven de donkere vloer (m)
+     const _TA_TUNNEL_DECK_COLOR  = [126, 128, 134, 250]; // wegdek-grijs (dek over tunnel)
+     const _TA_TUNNEL_DECK_FRAC   = 0.45;                 // aandeel van de langsas dat overdekt is
+     const _TA_TUNNEL_DECK_MIN_M  = 8;                    // min. deklengte (m)
+     const _TA_TUNNEL_DECK_MAX_M  = 22;                   // max. deklengte (m)
+     const _TA_TUNNEL_DECK_VPAD_M = 1.0;                  // overstek dek buiten footprint (m)
+
+     // Ringen (buitenring per polygon) uit een feature; een Point wordt een klein
+     // vierkant. Alleen eindige coördinaten.
+     function _sunkenRings(f) {
+       const g = f.geometry || {};
+       if (g.type === 'Polygon')
+         return (g.coordinates || []).slice(0, 1).filter(r => r && r.length >= 4);
+       if (g.type === 'MultiPolygon')
+         return (g.coordinates || []).map(p => p && p[0]).filter(r => r && r.length >= 4);
+       if (g.type === 'Point') {
+         const c = g.coordinates || [];
+         if (!isFinite(c[0]) || !isFinite(c[1])) return [];
+         const cosLat = Math.max(0.1, Math.cos(c[1] * Math.PI / 180));
+         const dx = _TA_BAK_HALF_M / (111320 * cosLat), dy = _TA_BAK_HALF_M / 110540;
+         return [[[c[0] - dx, c[1] - dy], [c[0] + dx, c[1] - dy],
+                  [c[0] + dx, c[1] + dy], [c[0] - dx, c[1] + dy], [c[0] - dx, c[1] - dy]]];
+       }
+       return [];
+     }
+
+     // Dunne geëxtrudeerde muur-quads langs de randen van een ring.
+     function _ringWallQuads(ring, props, halfW, h) {
+       const out = [];
+       for (let i = 0; i + 1 < ring.length; i++) {
+         const a = ring[i], b = ring[i + 1];
+         if (!a || !b || !isFinite(a[0]) || !isFinite(a[1]) || !isFinite(b[0]) || !isFinite(b[1])) continue;
+         const latMid = (a[1] + b[1]) * 0.5, cosLat = Math.max(0.1, Math.cos(latMid * Math.PI / 180));
+         const dxm = (b[0] - a[0]) * 111320 * cosLat, dym = (b[1] - a[1]) * 110540;
+         const len = Math.hypot(dxm, dym) || 1;
+         const px = -dym / len, py = dxm / len;
+         const ox = (px * halfW) / (111320 * cosLat), oy = (py * halfW) / 110540;
+         out.push({ polygon: [
+           [a[0] + ox, a[1] + oy], [b[0] + ox, b[1] + oy],
+           [b[0] - ox, b[1] - oy], [a[0] - ox, a[1] - oy],
+         ], height: h, props });
+       }
+       return out;
+     }
+
+     // Centrale wegdek-band ("het dak") over een set tunnelringen. Bepaalt met een
+     // PCA de langsas van de (samengevoegde) footprint en legt een grijs dek over
+     // het centrale deel; de open donkere uiteinden vormen de portaalmonden.
+     function _tunnelDeckBand(rings) {
+       const pts = [];
+       for (const ring of rings)
+         for (const c of ring)
+           if (c && isFinite(c[0]) && isFinite(c[1])) pts.push(c);
+       if (pts.length < 3) return null;
+       let cLng = 0, cLat = 0;
+       for (const p of pts) { cLng += p[0]; cLat += p[1]; }
+       cLng /= pts.length; cLat /= pts.length;
+       const cosLat = Math.max(0.1, Math.cos(cLat * Math.PI / 180));
+       const mx = p => (p[0] - cLng) * 111320 * cosLat, my = p => (p[1] - cLat) * 110540;
+       // Covariantiematrix [[sxx,sxy],[sxy,syy]].
+       let sxx = 0, sxy = 0, syy = 0;
+       for (const p of pts) { const x = mx(p), y = my(p); sxx += x * x; sxy += x * y; syy += y * y; }
+       // Grootste eigenwaarde → hoofdrichting (langsas).
+       const tr = sxx + syy, det = sxx * syy - sxy * sxy;
+       const l = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det));
+       let ux, uy;
+       if (Math.abs(sxy) > 1e-9) { ux = l - syy; uy = sxy; }
+       else { ux = sxx >= syy ? 1 : 0; uy = sxx >= syy ? 0 : 1; }
+       const un = Math.hypot(ux, uy) || 1; ux /= un; uy /= un;
+       const vx = -uy, vy = ux;
+       let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+       for (const p of pts) {
+         const x = mx(p), y = my(p), u = x * ux + y * uy, v = x * vx + y * vy;
+         if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+         if (v < vMin) vMin = v; if (v > vMax) vMax = v;
+       }
+       const uLen = uMax - uMin;
+       const coverLen = Math.max(_TA_TUNNEL_DECK_MIN_M,
+                                 Math.min(uLen * _TA_TUNNEL_DECK_FRAC, _TA_TUNNEL_DECK_MAX_M));
+       const uMid = (uMin + uMax) / 2, uc0 = uMid - coverLen / 2, uc1 = uMid + coverLen / 2;
+       const v0 = vMin - _TA_TUNNEL_DECK_VPAD_M, v1 = vMax + _TA_TUNNEL_DECK_VPAD_M;
+       const toLL = (u, v) => {
+         const x = u * ux + v * vx, y = u * uy + v * vy;
+         return [cLng + x / (111320 * cosLat), cLat + y / 110540, _TA_TUNNEL_DECK_Z];
+       };
+       return [toLL(uc0, v0), toLL(uc1, v0), toLL(uc1, v1), toLL(uc0, v1), toLL(uc0, v0)];
+     }
+
+     // (Her)bouw de verzonken-wegdeel stores.
+     //   bakFeats    → Point-bakken: donker vierkant + lage randmuurtjes.
+     //   tunnelFeats → polygon-tunnels: donkere vloer (portaalmonden) + centraal dek.
+     function _taRebuildSunken(bakFeats, tunnelFeats) {
+       const floors = [], walls = [], decks = [];
+       // Bakken: klein donker vloervierkant met opstaande randmuurtjes.
+       for (const f of bakFeats) {
+         const props = f.properties || {};
+         for (const ring of _sunkenRings(f)) {
+           floors.push({ polygon: ring.map(c => [c[0], c[1], _TA_SUNKEN_FLOOR_Z]), props });
+           walls.push(..._ringWallQuads(ring, props, _TA_SUNKEN_WALL_HALF, _TA_SUNKEN_WALL_H));
+         }
+       }
+       // Tunnels: donkere vloer over de hele footprint (overlappende/dubbele
+       // polygonen overlappen visueel → geen dubbele wanden). Eén dek over de
+       // samengevoegde langsas.
+       const tunnelRings = [];
+       for (const f of tunnelFeats) {
+         const props = f.properties || {};
+         for (const ring of _sunkenRings(f)) {
+           floors.push({ polygon: ring.map(c => [c[0], c[1], _TA_SUNKEN_FLOOR_Z]), props });
+           tunnelRings.push(ring);
+         }
+       }
+       if (tunnelRings.length) {
+         const deck = _tunnelDeckBand(tunnelRings);
+         if (deck) decks.push({ polygon: deck, props: (tunnelFeats[0] || {}).properties || {} });
+       }
+        _taSunkenFloors = floors;
+        _taSunkenWalls  = walls;
+        _taTunnelDecks  = decks;
+      }
+
+
 
     // Zet een lijn-feature om naar per-segment quads (dunne footprint) voor de
     // geëxtrudeerde PolygonLayer. Perpendiculaire offset in meters → graden.
@@ -6922,6 +7100,71 @@
         quads.push(..._screenQuadsFromFeature(f, _TA_RETWALL_HALF_M, _TA_RETWALL_DEF_H));
       }
       _taRetWallQuads = quads;
+    }
+
+    // Voet-/fietspad-ribbons als platte lijnen op wegniveau. Worden ONDER de
+    // netwerk-visualisatie getekend (staan vóór makeNetworkLayer in de overlay).
+    function makePathRibbonLayers() {
+      if (!_trafficAssetsVisible) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      const lineOf = f => {
+        const g = f.geometry || {};
+        const raw = g.type === 'MultiLineString'
+          ? (g.coordinates && g.coordinates[0]) || []
+          : g.coordinates || [];
+        const out = [];
+        for (const c of raw) {
+          if (!Array.isArray(c) || !isFinite(c[0]) || !isFinite(c[1])) continue;
+          const prev = out[out.length - 1];
+          if (prev && prev[0] === c[0] && prev[1] === c[1]) continue;
+          out.push(c);
+        }
+        return out;
+      };
+      const okLine = f => lineOf(f).length >= 2;
+      const elevatedPath = (f, h) => lineOf(f).map(c => [c[0], c[1], h]);
+      const hoverPath = info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; };
+      const layers = [];
+
+      // Voetpaden: dunne platte grijze/bruine ribbon op wegniveau. Kleur naar
+      // verharding (onverhard = bruin, verhard = licht grijs).
+      const _footFeats = _taFootPathFeatures.filter(okLine);
+      if (_footFeats.length) {
+        const unpaved = new Set(['dirt', 'ground', 'earth', 'unpaved', 'grass', 'sand', 'gravel', 'fine_gravel', 'compacted']);
+        layers.push(new PathLayer({
+          id:            'ta-footpaths-deck',
+          data:          _footFeats,
+          widthUnits:    'meters',
+          getWidth:      f => Math.max(0.8, parseFloat((f.properties || {}).width) || 1.2),
+          widthMinPixels: 1,
+          getColor:      f => unpaved.has(((f.properties || {}).surface || '').toLowerCase())
+                           ? [150, 120, 84, 220] : [176, 178, 182, 220],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.04),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Fietspaden: platte roodbruine ribbon op wegniveau (herkenbare fietspad-kleur).
+      const _cycleFeats = _taCyclePathFeatures.filter(okLine);
+      if (_cycleFeats.length) {
+        layers.push(new PathLayer({
+          id:            'ta-cyclepaths-deck',
+          data:          _cycleFeats,
+          widthUnits:    'meters',
+          getWidth:      f => Math.max(1.2, parseFloat((f.properties || {}).width) || 1.8),
+          widthMinPixels: 1.5,
+          getColor:      [178, 76, 60, 225],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.045),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+      return layers;
     }
 
     function makeHeightAssetLayers() {
@@ -7053,6 +7296,10 @@
         }));
       }
 
+      // Voetpaden: dunne platte grijze/bruine ribbon op wegniveau. Fiets- en
+      // voetpad-ribbons worden ONDER de netwerk-visualisatie getekend
+      // (zie makePathRibbonLayers) en zitten daarom niet meer in deze functie.
+
       // Geluidsschermen: geëxtrudeerde dunne muur.
       if (_taScreenQuads.length) {
         layers.push(new PolygonLayer({
@@ -7085,12 +7332,64 @@
         }));
       }
 
-      return layers;
-    }
+        return layers;
+      }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  STRAATMEUBILAIR — procedurele SimpleMeshLayer-objecten
-    //  Volumetrische assets (brievenbus, bushokje, mast, fietssluis, infobord,
+      // ═══════════════════════════════════════════════════════════════════════
+      //  VERZONKEN WEGDELEN — tunnel-polygonen / bak
+      //  Donker vloervlak + randmuurtjes + grijs tunneldek. Wordt als ÉÉRSTE
+      //  deck-laaggroep getekend (direct boven de kaart), zodat alle andere
+      //  lagen er visueel bovenop liggen.
+      // ═══════════════════════════════════════════════════════════════════════
+      function makeSunkenLayers() {
+        const layers = [];
+        if (_taSunkenFloors.length) {
+          layers.push(new PolygonLayer({
+            id:             'ta-sunken-floor',
+            data:           _taSunkenFloors,
+            extruded:       false,
+            stroked:        false,
+            filled:         true,
+            getPolygon:     d => d.polygon,
+            getFillColor:   _TA_SUNKEN_FLOOR_COLOR,
+            pickable:       true,
+            onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+          }));
+        }
+        if (_taSunkenWalls.length) {
+          layers.push(new PolygonLayer({
+            id:             'ta-sunken-walls',
+            data:           _taSunkenWalls,
+            extruded:       true,
+            wireframe:      false,
+            getPolygon:     d => d.polygon,
+            getElevation:   d => d.height,
+            getFillColor:   _TA_SUNKEN_WALL_COLOR,
+            material:       { ambient: 0.55, diffuse: 0.7, shininess: 8 },
+            pickable:       true,
+            onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+          }));
+        }
+        // Grijs wegdek over de centrale tunnelband: leest als onderdoorgang.
+        if (_taTunnelDecks.length) {
+          layers.push(new PolygonLayer({
+            id:             'ta-tunnel-deck',
+            data:           _taTunnelDecks,
+            extruded:       false,
+            stroked:        false,
+            filled:         true,
+            getPolygon:     d => d.polygon,
+            getFillColor:   _TA_TUNNEL_DECK_COLOR,
+            pickable:       true,
+            onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+          }));
+        }
+        return layers;
+      }
+
+     // ═══════════════════════════════════════════════════════════════════════
+     //  STRAATMEUBILAIR — procedurele SimpleMeshLayer-objecten
+     //  Volumetrische assets (brievenbus, bushokje, mast, fietssluis, infobord,
     //  prullenbak) worden als kleine 3D-meshes getekend. Elke mesh bestaat uit
     //  één of meer kleurgroepen; per kleurgroep één SimpleMeshLayer die dezelfde
     //  instantie-array (positie + yaw) deelt. Oriëntatie per type:
@@ -7273,9 +7572,24 @@
     const _VEG_MAX_TREES = 4000;    // harde cap op getekende boom-instanties
 
     let _vegTreeFeatures = [];      // Point/LineString-features → boom-instanties
-    let _vegTrees        = null;    // afgeleide instanties [{position, yaw, scale, needle}]
+    let _vegPolyFeatures = [];      // Polygon/MultiPolygon-features → struik-/bosvlakken
+    let _vegTrees        = null;    // afgeleide boom-instanties [{position, yaw, scale, needle}]
+    let _vegBushes       = null;    // afgeleide struik-instanties [{position, yaw, sxy, sz, color}]
+    let _vegAreaTrees    = null;    // bomen verspreid over bos-vlakken (forest/wood)
     let _lastVegBbox     = null;
     let _vegNoFile       = false;   // true na 404 → geen VEGETATION bestand, niet blijven pollen
+
+    // Struikvlakken (scrub) worden gevuld met verspreide lage struik-meshes.
+    // Bosvlakken (forest/wood) krijgen verspreide volwaardige bomen (zoals OSM).
+    // gras wordt niet getekend.
+    const _VEG_MAX_BUSHES   = 6000;                 // harde cap struiken
+    const _VEG_BUSH_SPACING = { scrub: 6.0 };       // m tussen struiken
+    const _VEG_BUSH_HEIGHT  = { scrub: 0.7 };       // volle struikhoogte (m)
+    const _VEG_BUSH_COLOR   = { scrub: [104, 142, 74, 255] };  // lichter struikgroen
+    // Bos: onderlinge boomafstand (m), hoogtebereik (m) en cap.
+    const _VEG_AREA_TREE_SPACING = { forest: 7.0, wood: 8.0 };
+    const _VEG_AREA_TREE_H       = { forest: [5, 10], wood: [4, 8] };  // [min,max] m
+    const _VEG_MAX_AREA_TREES    = 3000;
 
     // ── Procedurele mesh-onderdelen (Z = omhoog, basis op z=0) ──────────────
     function _vegCylZ(radius, h, z0, seg = 8) {
@@ -7340,7 +7654,7 @@
     }
 
     // Gedeelde meshes (lazy, één keer gebouwd op referentiehoogte _VEG_REF_H).
-    let _vegTrunkMesh = null, _vegBroadMesh = null, _vegNeedleMesh = null;
+    let _vegTrunkMesh = null, _vegBroadMesh = null, _vegNeedleMesh = null, _vegBushMesh = null;
     function _vegEnsureMeshes() {
       if (_vegTrunkMesh) return;
       const trunkH = _VEG_REF_H * 0.4;
@@ -7349,6 +7663,9 @@
       _vegBroadMesh  = mergeMeshes([_vegSphereZ(1.7, trunkH + 1.5)]);
       // Naaldboom: kegelvormige kroon.
       _vegNeedleMesh = mergeMeshes([_vegConeZ(1.5, _VEG_REF_H - trunkH, trunkH)]);
+      // Struik: bol met eenheidshoogte ~2 m (radius 1, centrum op z=1), zodat
+      // een instantie-schaal sz de struik op de gewenste hoogte zet.
+      _vegBushMesh   = mergeMeshes([_vegSphereZ(1.0, 1.0, 7)]);
     }
 
     // Deterministische pseudo-random uit een string (osmId) → [0,1).
@@ -7368,15 +7685,21 @@
     // Bouw de boom-instanties uit punt-/lijnfeatures (gecapt op _VEG_MAX_TREES).
     function _vegBuildTrees() {
       const out = [];
-      const push = (lng, lat, props, seed) => {
+       const push = (lng, lat, props, seed) => {
         if (out.length >= _VEG_MAX_TREES) return;
+        // Sla niet-eindige coördinaten over: BGT/OSM-punten kunnen een Z-waarde
+        // of ongeldige waarde bevatten die anders een NaN-instantie (→
+        // degenererende mesh-driehoek die de kaart zwart overtekent) oplevert.
+        if (!isFinite(lng) || !isFinite(lat)) return;
         const h = _vegClampH(props.height);
         const needle = props.leafType === 'needleleaved';
         const r = _vegHash(seed);
+        const scale = (h / _VEG_REF_H) * (0.85 + r * 0.3);   // hoogte + jitter
+        if (!isFinite(scale)) return;
         out.push({
           position: [lng, lat, 0],
           yaw:      r * 360,
-          scale:    (h / _VEG_REF_H) * (0.85 + r * 0.3),   // hoogte + jitter
+          scale,
           needle,
         });
       };
@@ -7410,15 +7733,136 @@
       return out;
     }
 
+    // Ray-casting point-in-ring test (ring = [[lng,lat],...]).
+    function _vegPointInRing(lng, lat, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+        if (((yi > lat) !== (yj > lat)) &&
+            (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+      return inside;
+    }
+    // Point in a single Polygon (rings[0] = buiten, rest = gaten).
+    function _vegPointInPolygon(lng, lat, rings) {
+      if (!rings.length || !_vegPointInRing(lng, lat, rings[0])) return false;
+      for (let k = 1; k < rings.length; k++)
+        if (_vegPointInRing(lng, lat, rings[k])) return false;   // in een gat
+      return true;
+    }
+
+    // Verspreid een deterministisch, gejitterd raster van punten binnen de
+    // polygon-vlakken van een feature.  Roept cb(jx, jy, r1, r2) voor elk punt
+    // binnen het vlak; stopt zodra stop() waar is.
+    function _vegScatterPolygon(f, spacing, stop, cb) {
+      const g = f.geometry || {};
+      // Polygon → [rings]; MultiPolygon → [[rings], ...].
+      const polys = g.type === 'Polygon' ? [g.coordinates]
+                  : g.type === 'MultiPolygon' ? g.coordinates : [];
+      for (const rings of polys) {
+        const ring = rings[0];
+        if (!ring || ring.length < 4) continue;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const c of ring) {
+          // Alleen eindige lng/lat meenemen; BGT-punten kunnen een Z-waarde of
+          // ongeldige coördinaten bevatten die anders NaN-instanties opleveren
+          // (→ degenererende mesh-driehoek die de kaart zwart kan overtekenen).
+          if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
+          if (c[0] < minX) minX = c[0]; if (c[0] > maxX) maxX = c[0];
+          if (c[1] < minY) minY = c[1]; if (c[1] > maxY) maxY = c[1];
+        }
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) continue;
+        const midLat = (minY + maxY) / 2;
+        const dLng = spacing / (111320 * Math.cos(midLat * Math.PI / 180) || 1);
+        const dLat = spacing / 110540;
+        if (!(dLng > 0) || !(dLat > 0)) continue;
+        for (let y = minY; y <= maxY; y += dLat) {
+          for (let x = minX; x <= maxX; x += dLng) {
+            if (stop()) return;
+            const r1 = _vegHash(`${x.toFixed(6)}:${y.toFixed(6)}`);
+            const r2 = _vegHash(`${y.toFixed(6)}:${x.toFixed(6)}`);
+            const jx = x + (r1 - 0.5) * dLng * 0.8;   // jitter binnen cel
+            const jy = y + (r2 - 0.5) * dLat * 0.8;
+            if (!isFinite(jx) || !isFinite(jy)) continue;
+            if (!_vegPointInPolygon(jx, jy, rings)) continue;
+            cb(jx, jy, r1, r2);
+          }
+          if (stop()) return;
+        }
+      }
+    }
+
+    // Struikvlakken (scrub) → verspreide lage struik-instanties (cap _VEG_MAX_BUSHES).
+    function _vegBuildBushes() {
+      const out = [];
+      const stop = () => out.length >= _VEG_MAX_BUSHES;
+      for (const f of _vegPolyFeatures) {
+        if (stop()) break;
+        const vt = (f.properties || {}).vegType;
+        const spacing = _VEG_BUSH_SPACING[vt];
+        if (!spacing) continue;                       // niet-scrub → geen struiken
+        const h     = _VEG_BUSH_HEIGHT[vt] || 1.0;
+        const color = _VEG_BUSH_COLOR[vt] || [80, 120, 60, 255];
+         _vegScatterPolygon(f, spacing, stop, (jx, jy, r1, r2) => {
+          const sz  = (h / 2) * (0.8 + r1 * 0.4);   // hoogtejitter
+          const sxy = sz * (1.1 + r2 * 0.4);        // iets breder dan hoog
+          if (!isFinite(sz) || !isFinite(sxy)) return;
+          out.push({ position: [jx, jy, 0], yaw: r1 * 360, sxy, sz, color });
+        });
+      }
+      return out;
+    }
+
+    // Bosvlakken (forest/wood) → verspreide volwaardige bomen, vergelijkbaar met
+    // de OSM-bomen (zelfde mesh/instantie-vorm), hoogte uit _VEG_AREA_TREE_H.
+    function _vegBuildAreaTrees() {
+      const out = [];
+      const stop = () => out.length >= _VEG_MAX_AREA_TREES;
+      for (const f of _vegPolyFeatures) {
+        if (stop()) break;
+        const p = f.properties || {}, vt = p.vegType;
+        const spacing = _VEG_AREA_TREE_SPACING[vt];
+        if (!spacing) continue;                       // niet-bos → geen bomen
+        const range  = _VEG_AREA_TREE_H[vt] || [6, 12];
+        const hMin = range[0], hSpan = range[1] - range[0];
+        const needle = p.leafType === 'needleleaved';
+         _vegScatterPolygon(f, spacing, stop, (jx, jy, r1, r2) => {
+          const h = hMin + r1 * hSpan;
+          const scale = (h / _VEG_REF_H) * (0.9 + r2 * 0.2);
+          if (!isFinite(scale)) return;
+          out.push({ position: [jx, jy, 0], yaw: r2 * 360, scale, needle });
+        });
+      }
+      return out;
+    }
+
     function makeVegetationTreeLayers() {
       if (!_trafficAssetsVisible) return [];
       if (map.getZoom() < _VEG_MINZOOM) return [];
-      if (_vegTrees === null) _vegTrees = _vegBuildTrees();
-      if (!_vegTrees.length) return [];
-      _vegEnsureMeshes();
-      const broad  = _vegTrees.filter(t => !t.needle);
-      const needle = _vegTrees.filter(t => t.needle);
       const layers = [];
+      _vegEnsureMeshes();
+      // Struikvlakken (scrub) als verspreide lage struik-meshes.
+      if (_vegBushes === null) _vegBushes = _vegBuildBushes();
+      if (_vegBushes.length) {
+        layers.push(new SimpleMeshLayer({
+          id:             'veg-bushes',
+          data:           _vegBushes,
+          mesh:           _vegBushMesh,
+          getPosition:    d => d.position,
+          getOrientation: d => [0, d.yaw, 0],
+          getScale:       d => [d.sxy, d.sxy, d.sz],
+          getColor:       d => d.color,
+          material:       { ambient: 0.65, diffuse: 0.8, shininess: 4, specularColor: [8, 8, 8] },
+          pickable:       false,
+        }));
+      }
+      // OSM-bomen + verspreide bos-bomen (forest/wood) samen als volwaardige bomen.
+      if (_vegTrees === null) _vegTrees = _vegBuildTrees();
+      if (_vegAreaTrees === null) _vegAreaTrees = _vegBuildAreaTrees();
+      const allTrees = _vegAreaTrees.length ? _vegTrees.concat(_vegAreaTrees) : _vegTrees;
+      if (!allTrees.length) return layers;
+      const broad  = allTrees.filter(t => !t.needle);
+      const needle = allTrees.filter(t => t.needle);
       const shared = (id, data) => ({
         id, data,
         getPosition:    d => d.position,
@@ -7429,7 +7873,7 @@
       });
       // Stammen (bruin) voor alle bomen.
       layers.push(new SimpleMeshLayer({
-        ...shared('veg-trunks', _vegTrees),
+        ...shared('veg-trunks', allTrees),
         mesh:     _vegTrunkMesh,
         getColor: [96, 70, 44, 255],
         material: { ambient: 0.6, diffuse: 0.7, shininess: 10, specularColor: [20, 20, 20] },
@@ -7467,12 +7911,17 @@
       if (!data || !Array.isArray(data.features)) return;
       _lastVegBbox = bbox;
       const trees = [];
+      const polys = [];
       for (const f of data.features) {
         const t = (f.geometry || {}).type;
         if (t === 'Point' || t === 'LineString' || t === 'MultiLineString') trees.push(f);
+        else if (t === 'Polygon' || t === 'MultiPolygon') polys.push(f);
       }
       _vegTreeFeatures = trees;
+      _vegPolyFeatures = polys;
       _vegTrees = null;   // opnieuw afleiden bij volgende render
+      _vegBushes = null;
+      _vegAreaTrees = null;
       updateOverlay(true);
     }
 
@@ -7495,9 +7944,21 @@
         html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
         if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
         html += '</div>';
+      } else if (at === 'footPath' || at === 'cyclePath') {
+        const label = at === 'footPath' ? 'Voetpad' : 'Fietspad';
+        const surf  = (p.surface || '').replace(/_/g, ' ');
+        const road  = p.roadName || p.road_name || p.name || '';
+        html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        if (surf) html += `<br><span style="font-size:0.8em;color:#777">${surf}</span>`;
+        html += '</div>';
+      } else if (at === 'bak' || at === 'tunnel') {
+        const label = at === 'bak' ? 'Verlaagd wegdeel (bak)' : 'Tunnel';
+        const road  = p.roadName || p.road_name || p.name || '';
+        html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        html += '</div>';
       } else {
-        const black  = (p.blackCode || '').trim();
-        const rvv    = p.rvvCode ? (black ? `${p.rvvCode}-${black}` : p.rvvCode) : '—';
         const road   = p.roadName || p.road_name || '';
         const imgUrl = p.imageUrl || '';
         html = '<div style="text-align:center;min-width:90px">';
@@ -7598,9 +8059,14 @@
       // CIMLK hoogte-/constructie-objecten. belowGround-viaducten/bruggen worden
       // als 'underpass' (zwevende overspanning) getekend i.p.v. weggelaten.
       const _below = f => !!(f.properties || {}).belowGround;
+      const _isPoly = f => { const t = f.geometry?.type; return t === 'Polygon' || t === 'MultiPolygon'; };
       _taViaductFeatures = (byType.viaduct || []).filter(f => !_below(f));
       _taBridgeFeatures  = (byType.bridge  || []).filter(f => !_below(f));
-      _taTunnelFeatures  = byType.tunnel || [];
+      // Tunnels: lijn-features via de bestaande dekband/dak-render; polygon-tunnels
+      // (BGT) via het verzonken-wegdeel vloervlak + randmuurtjes (samen met bak).
+      const _tunnels = byType.tunnel || [];
+      _taTunnelFeatures  = _tunnels.filter(f => !_isPoly(f));
+      _taRebuildSunken(byType.bak || [], _tunnels.filter(_isPoly));
       _taCulvertFeatures = byType.culvert || [];
       _taUnderpassFeatures = [
         ...(byType.underpass || []),
@@ -7611,6 +8077,9 @@
       _taRebuildRetWallQuads(byType.retainingWall || []);
       // Bushalte-billboard + straatmeubilair (procedurele meshes, per-type oriëntatie).
       _taBusStopFeatures = byType.busStop || [];
+      // Voet-/fietspaden als platte lijn-ribbons.
+      _taFootPathFeatures  = byType.footPath  || [];
+      _taCyclePathFeatures = byType.cyclePath || [];
       _taFurniture = {
         mailbox:    _taMkInstances(byType.mailbox,    'along'),
         busShelter: _taMkInstances(byType.busShelter, 'along'),
@@ -7618,7 +8087,7 @@
         streetLight: _taMkInstances(byType.streetLight, 'none'),
         bikeGate:   _taMkInstances(byType.bikeGate,   'across'),
         infoBoard:  _taMkInstances(byType.infoBoard,  'along'),
-        trashBin:   _taMkInstances(byType.trashBin,   'none'),
+        trashBin:   _taMkInstances(byType.trashBin || [], 'none'),
       };
       // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
       // ondertussen tonen borden alvast hun paal.
@@ -11706,8 +12175,10 @@
     }
 
       function updateOverlay(withCars = true) {
-        overlay.setProps({ layers: [
-          makeSpeedBumpLayer(),
+         overlay.setProps({ layers: [
+           ...makeSunkenLayers(),
+           ...makePathRibbonLayers(),
+           makeSpeedBumpLayer(),
           makeNetworkLayer(),
           makeDiffLayer(),
           ...makeDiffStackLayer(),
