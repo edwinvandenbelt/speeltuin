@@ -14,37 +14,37 @@
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1117; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #f4f6f8; }
     /* ── Kaart-container (enkelvoudig / split-view) ──────────────────── */
     #mapContainer { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
     #map          { flex: 1 1 50%; min-width: 200px; height: 100%; }
     #map-orig     { flex: 1 1 50%; min-width: 200px; height: 100%; display: none; }
     #map-splitter {
       flex: 0 0 6px; display: none; cursor: col-resize; height: 100%;
-      background: #1a2840;
-      border-left:  1px solid rgba(61,90,122,0.8);
-      border-right: 1px solid rgba(61,90,122,0.8);
+      background: #eef1f4;
+      border-left:  1px solid rgba(0,165,171,0.8);
+      border-right: 1px solid rgba(0,165,171,0.8);
       transition: background 0.15s;
       position: relative; z-index: 5;
     }
-    #map-splitter:hover, #map-splitter.dragging { background: #3d5a7a; }
+    #map-splitter:hover, #map-splitter.dragging { background: #00a5ab; }
     .split-mode #map-orig     { display: block; }
     .split-mode #map-splitter { display: flex; align-items: center; justify-content: center; }
     /* Grip-icoon op de splitter */
     #map-splitter::after {
       content: ''; display: block;
       width: 2px; height: 40px;
-      background: rgba(126,200,227,0.35);
+      background: rgba(0,165,171,0.35);
       border-radius: 2px;
     }
     /* Badges boven elke kaart */
     .map-badge {
       position: absolute; top: 10px; z-index: 20;
-      background: rgba(13,17,23,0.85); color: #7ec8e3;
+      background: rgba(255,255,255,0.85); color: #00a5ab;
       font-family: 'Segoe UI', system-ui, sans-serif;
       font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
       padding: 4px 10px; border-radius: 5px;
-      border: 1px solid rgba(126,200,227,0.25);
+      border: 1px solid rgba(0,165,171,0.25);
       pointer-events: none; display: none;
     }
     .split-mode .map-badge { display: block; }
@@ -75,26 +75,26 @@
       position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
       z-index: 10;
       display: flex; align-items: center; gap: 3px;
-      background: rgba(13, 17, 23, 0.93);
-      color: #dde4f0;
-      padding: 5px 10px;
+      background: #ffffff;
+      color: #232931;
+      padding: 6px 8px;
       border-radius: 10px;
       font-family: 'Segoe UI', system-ui, sans-serif;
       font-size: 13px;
-      border: 1px solid rgba(255,255,255,0.07);
+      border: 1px solid #e3e6ea;
       backdrop-filter: blur(10px);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 18px rgba(35,41,49,0.10);
       white-space: nowrap;
     }
     .tb-title {
-      font-size: 11px; color: #5a6272;
+      font-size: 11px; color: #6a757c;
       padding: 0 4px;
       max-width: 180px;
       overflow: hidden; text-overflow: ellipsis;
     }
     .tb-sep {
       width: 1px; height: 22px;
-      background: rgba(255,255,255,0.1);
+      background: #e3e6ea;
       margin: 0 3px; flex-shrink: 0;
     }
     .tb-icon-group {
@@ -107,9 +107,9 @@
     .tb-btn {
       width: 30px; height: 30px;
       border-radius: 6px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.05);
-      color: #8896aa;
+      border: 1px solid #e3e6ea;
+      background: transparent;
+      color: #6a757c;
       font-size: 13px;
       cursor: pointer;
       display: flex; align-items: center; justify-content: center;
@@ -117,39 +117,40 @@
       flex-shrink: 0;
       padding: 0;
     }
-    .tb-btn:hover { background: rgba(126,200,227,0.15); color: #b8d8e8; }
-    .tb-btn.active { background: rgba(126,200,227,0.22); color: #7ec8e3; border-color: rgba(126,200,227,0.45); }
+    .tb-btn:hover { background: #f0f2f4; color: #4b5159; }
+    .tb-btn.active { background: #de0058; color: #ffffff; border-color: #de0058; }
     .tb-select {
       height: 30px;
-      background: #1a2233; color: #c9d6e8;
-      border: 1px solid rgba(126,200,227,0.25); border-radius: 6px;
+      background: #ffffff; color: #232931;
+      border: 1px solid #e3e6ea; border-radius: 6px;
       padding: 0 8px; font-size: 12px; cursor: pointer;
       font-family: 'Segoe UI', system-ui, sans-serif;
       flex-shrink: 0;
     }
     .tb-scale { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-    .tb-scale-lbl { font-size: 11px; color: #5a6272; white-space: nowrap; }
-    .tb-scale-lbl b { color: #dde4f0; font-weight: 600; }
-    #timeScale { width: 70px; accent-color: #7ec8e3; cursor: pointer; }
-    #pauseBtn { font-size: 15px; color: #7ec8e3; border-color: rgba(126,200,227,0.3); background: rgba(126,200,227,0.1); }
-    #pauseBtn:hover { background: rgba(126,200,227,0.22); color: #7ec8e3; }
-    #pauseBtn.paused { background: rgba(255,200,80,0.13); color: #ffc850; border-color: rgba(255,200,80,0.35); }
-    #pauseBtn.paused:hover { background: rgba(255,200,80,0.22); }
-    .tb-add { border-color: rgba(100,220,150,0.3); color: #4caf80; background: rgba(100,220,150,0.06); }
-    .tb-add:hover { background: rgba(100,220,150,0.14) !important; color: #6de0a0 !important; border-color: rgba(100,220,150,0.5) !important; }
-    .tb-add.active { background: rgba(100,220,150,0.18) !important; color: #6de0a0 !important; border-color: rgba(100,220,150,0.55) !important; }
+    .tb-scale-lbl { font-size: 11px; color: #6a757c; white-space: nowrap; }
+    .tb-scale-lbl b { color: #232931; font-weight: 600; }
+    #timeScale { width: 70px; accent-color: #00a5ab; cursor: pointer; }
+    #pauseBtn { font-size: 15px; color: #00a5ab; border-color: rgba(0,165,171,0.3); background: rgba(0,165,171,0.1); }
+    #pauseBtn:hover { background: rgba(0,165,171,0.22); color: #00a5ab; }
+    #pauseBtn.paused { background: rgba(221,122,0,0.13); color: #dd7a00; border-color: rgba(221,122,0,0.35); }
+    #pauseBtn.paused:hover { background: rgba(221,122,0,0.22); }
+    .tb-add { border-color: #49a748; color: #49a748; background: transparent; }
+    .tb-add:hover { background: #f0f2f4 !important; color: #49a748 !important; border-color: #49a748 !important; }
+    .tb-add.active { background: #49a748 !important; color: #ffffff !important; border-color: #49a748 !important; }
     .lang-select { min-width: 70px; padding: 0 4px; font-size: 12px; }
 
-    /* ── Legend strip ────────────────────────────────────────────────── */
+    /* ── Legend strip ────────────────────────────────────────────────– */
     #legendStrip {
       position: absolute; bottom: 16px; left: 16px; z-index: 10;
-      background: rgba(13,17,23,0.88);
-      border: 1px solid rgba(255,255,255,0.07);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 8px;
       padding: 8px 12px;
       font-family: 'Segoe UI', system-ui, sans-serif;
       backdrop-filter: blur(8px);
       min-width: 180px;
+      box-shadow: 0 4px 18px rgba(35,41,49,0.08);
     }
     .legend-bar {
       width: 100%; height: 7px; border-radius: 4px;
@@ -157,14 +158,14 @@
     }
     .legend-labels {
       display: flex; justify-content: space-between;
-      font-size: 10px; color: #5a6272;
+      font-size: 10px; color: #6a757c;
     }
     #carCountStrip {
       margin-top: 5px;
       padding-top: 4px;
-      border-top: 1px solid rgba(255,255,255,0.07);
+      border-top: 1px solid rgba(35,41,49,0.07);
       font-size: 10px;
-      color: #7ec8e3;
+      color: #00a5ab;
       text-align: center;
       min-height: 0;
     }
@@ -173,75 +174,75 @@
     /* ── Nieuw-scherm ─────────────────────────────────────────────────── */
     #newScreen {
       display: none; position: fixed; inset: 0; z-index: 150;
-      background: #0d1117;
+      background: #f4f6f8;
       flex-direction: row;
     }
     #newScreen.visible { display: flex; }
     #newPanel {
       width: 360px; min-width: 320px;
-      background: #151d2e;
-      border-right: 1px solid rgba(126,200,227,0.15);
+      background: #ffffff;
+      border-right: 1px solid #e3e6ea;
       display: flex; flex-direction: column;
       padding: 24px 20px; gap: 16px;
       font-family: 'Segoe UI', sans-serif;
       overflow-y: auto;
     }
-    #newPanel h2 { margin: 0; color: #7ec8e3; font-size: 16px; }
+    #newPanel h2 { margin: 0; color: #de0058; font-size: 16px; }
     #newPanel label {
       display: flex; flex-direction: column; gap: 5px;
-      font-size: 12px; color: #5a6272;
+      font-size: 12px; color: #6a757c;
       text-transform: uppercase; letter-spacing: .05em;
     }
     #newPanel input, #newPanel select {
-      background: #1a2233; color: #c9d6e8;
-      border: 1px solid rgba(126,200,227,0.25); border-radius: 6px;
+      background: #ffffff; color: #232931;
+      border: 1px solid #e3e6ea; border-radius: 6px;
       padding: 7px 10px; font-size: 13px;
     }
-    #newPanel input::placeholder { color: #3a4455; }
+    #newPanel input::placeholder { color: #e3e6ea; }
     .new-mode-group {
       display: flex; flex-direction: column; gap: 6px;
-      font-size: 12px; color: #5a6272;
+      font-size: 12px; color: #6a757c;
       text-transform: uppercase; letter-spacing: .05em;
     }
     #newModes { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
     .new-mode-check {
       display: flex; align-items: center; gap: 8px;
-      font-size: 13px; color: #c9d6e8; text-transform: none; letter-spacing: 0;
+      font-size: 13px; color: #232931; text-transform: none; letter-spacing: 0;
       cursor: pointer;
     }
     .new-mode-check input[type=checkbox] {
       width: 14px; height: 14px; margin: 0;
-      accent-color: #7ec8e3; cursor: pointer;
+      accent-color: #00a5ab; cursor: pointer;
     }
     #bboxDisplay {
-      font-size: 11px; color: #5a6272; font-family: monospace;
-      background: #1a2233; border-radius: 6px; padding: 8px 10px;
+      font-size: 11px; color: #6a757c; font-family: monospace;
+      background: #f4f6f8; border-radius: 6px; padding: 8px 10px;
       line-height: 1.7;
     }
     #newMap { flex: 1; }
     .new-btn {
       padding: 9px 14px; border-radius: 7px; font-size: 13px; cursor: pointer;
-      border: 1px solid rgba(126,200,227,0.35);
-      background: rgba(126,200,227,0.12); color: #7ec8e3;
+      border: 1px solid #de0058;
+      background: #de0058; color: #ffffff;
       transition: background .15s;
     }
-    .new-btn:hover { background: rgba(126,200,227,0.22); }
+    .new-btn:hover { background: #c70050; }
     .new-btn.secondary {
-      background: transparent; color: #5a6272;
-      border-color: rgba(255,255,255,0.1);
+      background: #ffffff; color: #232931;
+      border-color: #e3e6ea;
     }
-    .new-btn.secondary:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    .new-btn.secondary:hover { background: #f0f2f4; color: #232931; }
     #newProgress {
       display: none; flex-direction: column; gap: 8px;
     }
     #newProgressBar {
       height: 6px; border-radius: 3px;
-      background: rgba(126,200,227,0.15);
+      background: rgba(0,165,171,0.15);
       overflow: hidden;
     }
     #newProgressFill {
       height: 100%; width: 0%;
-      background: #7ec8e3;
+      background: #de0058;
       transition: width .3s;
       animation: progressPulse 1.5s ease-in-out infinite;
     }
@@ -249,15 +250,15 @@
       0%,100% { opacity: 1; } 50% { opacity: .5; }
     }
     #newLog {
-      font-size: 11px; font-family: monospace; color: #5a6272;
-      background: #1a2233; border-radius: 6px; padding: 8px 10px;
+      font-size: 11px; font-family: monospace; color: #6a757c;
+      background: #ffffff; border: 1px solid #e3e6ea; border-radius: 6px; padding: 8px 10px;
       max-height: 160px; overflow-y: auto; white-space: pre-wrap;
     }
 
     /* ── Laadscherm ───────────────────────────────────────────────────── */
     #loader {
       position: absolute; inset: 0; z-index: 100;
-      background: #0d1117;
+      background: #f4f6f8;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       gap: 16px;
@@ -266,11 +267,11 @@
       transition: opacity 0.6s;
     }
     #loader.fade { opacity: 0; pointer-events: none; }
-    #loader p { color: #5a6272; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
+    #loader p { color: #6a757c; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
     .spinner {
       width: 40px; height: 40px;
-      border: 3px solid rgba(126,200,227,0.15);
-      border-top-color: #7ec8e3;
+      border: 3px solid rgba(0,165,171,0.15);
+      border-top-color: #00a5ab;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -283,28 +284,29 @@
       align-items: center; justify-content: center;
       gap: 16px;
     }
-    #calcOverlay p { color: #7ec8e3; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
+    #calcOverlay p { color: #00a5ab; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
 
     .dpBtn  { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
-    .dpBtn.active  { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
+    .dpBtn.active  { background: #de0058 !important; color: #ffffff !important; border-color: #de0058 !important; }
     .dpBtn:disabled, .dpBtn:disabled:hover {
       opacity: 0.35; cursor: not-allowed;
-      background: rgba(255,255,255,0.05) !important;
-      color: #8896aa !important; border-color: rgba(255,255,255,0.1) !important;
+      background: #f4f6f8 !important;
+      color: #6a757c !important; border-color: #e3e6ea !important;
     }
     .fillBtn { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
-    .fillBtn.active { background: rgba(126,200,227,0.22) !important; color: #7ec8e3 !important; border-color: rgba(126,200,227,0.45) !important; }
+    .fillBtn.active { background: #de0058 !important; color: #ffffff !important; border-color: #de0058 !important; }
 
     /* ── Edit-modus knoppen ───────────────────────────────────────────── */
     .edit-btn {
-      border-color: rgba(255,180,80,0.35) !important;
-      background: rgba(255,180,80,0.08) !important;
-      color: #ffb450 !important;
+      border-color: #dd7a00 !important;
+      background: transparent !important;
+      color: #dd7a00 !important;
     }
-    .edit-btn:hover { background: rgba(255,180,80,0.2) !important; }
+    .edit-btn:hover { background: #fff3e6 !important; }
     .edit-btn.active {
-      background: rgba(255,180,80,0.25) !important;
-      border-color: rgba(255,180,80,0.6) !important;
+      background: #dd7a00 !important;
+      border-color: #dd7a00 !important;
+      color: #ffffff !important;
     }
 
     /* ── Node-dialoog ─────────────────────────────────────────────────── */
@@ -312,13 +314,13 @@
       display: none;
       position: absolute;
       z-index: 50;
-      background: rgba(13,17,23,0.97);
-      border: 1px solid rgba(126,200,227,0.25);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       padding: 18px 20px;
       width: 260px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #gmtUploadDialog {
@@ -328,29 +330,29 @@
       left: 50%;
       transform: translate(-50%, -50%);
       z-index: 10000;
-      background: rgba(13,17,23,0.97);
-      border: 1px solid rgba(126,200,227,0.25);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       padding: 18px 20px;
       width: 300px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #gmtUploadDialog h3 {
-      font-size: 13px; color: #7ec8e3; margin-bottom: 14px;
-      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 13px; color: #de0058; margin-bottom: 14px;
+      padding-bottom: 8px; border-bottom: 1px solid #e3e6ea;
     }
     #gmtUploadDialogOk {
-      background: rgba(126,200,227,0.15); color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.35);
+      background: #de0058; color: #ffffff;
+      border: 1px solid #de0058;
     }
-    #gmtUploadDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #gmtUploadDialogOk:hover { background: #c70050; }
     #gmtUploadDialogCancel {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #ffffff; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #gmtUploadDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #gmtUploadDialogCancel:hover { background: #f0f2f4; color: #232931; }
 
     /* ── Nieuw wegvak attribuut-dialoog ──────────────────────────────── */
     #linkAddDialog {
@@ -359,77 +361,77 @@
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       z-index: 10000;
-      background: rgba(13,17,23,0.97);
-      border: 1px solid rgba(109,224,160,0.3);
+      background: #ffffff;
+      border: 1px solid #49a748;
       border-radius: 12px;
       padding: 18px 20px;
       width: 280px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #linkAddDialog h3 {
-      font-size: 13px; color: #6de0a0; margin-bottom: 10px;
-      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 13px; color: #49a748; margin-bottom: 10px;
+      padding-bottom: 8px; border-bottom: 1px solid #e3e6ea;
     }
     #linkAddDialogOk {
-      background: rgba(109,224,160,0.15); color: #6de0a0;
-      border: 1px solid rgba(109,224,160,0.4);
+      background: #49a748; color: #ffffff;
+      border: 1px solid #49a748;
     }
-    #linkAddDialogOk:hover { background: rgba(109,224,160,0.28); }
+    #linkAddDialogOk:hover { background: #3d8a38; }
     #linkAddDialogCancel {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #ffffff; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #linkAddDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #linkAddDialogCancel:hover { background: #f0f2f4; color: #232931; }
 
     #nodeDialog h3, #linkDialog h3, #linkFlowDialog h3 {
-      font-size: 13px; color: #7ec8e3; margin-bottom: 14px;
-      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 13px; color: #de0058; margin-bottom: 14px;
+      padding-bottom: 8px; border-bottom: 1px solid #e3e6ea;
     }
     #linkDialogOk, #linkFlowDialogOk {
-      background: rgba(126,200,227,0.15); color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.35);
+      background: #de0058; color: #ffffff;
+      border: 1px solid #de0058;
     }
-    #linkDialogOk:hover, #linkFlowDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #linkDialogOk:hover, #linkFlowDialogOk:hover { background: #c70050; }
     #linkDialogCancel, #linkFlowDialogCancel {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #ffffff; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #linkDialogCancel:hover, #linkFlowDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #linkDialogCancel:hover, #linkFlowDialogCancel:hover { background: #f0f2f4; color: #232931; }
      .speed-btn, .link-poly-speed-btn {
        padding: 3px 7px; font-size: 11px; border-radius: 4px; cursor: pointer;
-       background: rgba(255,255,255,0.07); color: #c9d6e8;
-       border: 1px solid rgba(255,255,255,0.15);
+       background: rgba(35,41,49,0.07); color: #232931;
+       border: 1px solid rgba(35,41,49,0.15);
      }
-     .speed-btn:hover, .link-poly-speed-btn:hover  { background: rgba(126,200,227,0.18); color: #7ec8e3; }
-      .speed-btn.active, .link-poly-speed-btn.active { background: rgba(126,200,227,0.30); color: #7ec8e3; border-color: rgba(126,200,227,0.6); }
+     .speed-btn:hover, .link-poly-speed-btn:hover  { background: rgba(0,165,171,0.18); color: #00a5ab; }
+      .speed-btn.active, .link-poly-speed-btn.active { background: rgba(0,165,171,0.30); color: #00a5ab; border-color: rgba(0,165,171,0.6); }
       /* Afsluitingsknop (verboden in te rijden) */
       .link-close-btn {
         padding: 4px 6px; border-radius: 4px; cursor: pointer; line-height: 0;
-        background: rgba(180,20,20,0.12); color: #ff6666;
-        border: 1px solid rgba(180,20,20,0.28);
+        background: rgba(230,51,18,0.12); color: #e63312;
+        border: 1px solid rgba(230,51,18,0.28);
       }
-      .link-close-btn:hover  { background: rgba(200,30,30,0.27); border-color: rgba(220,50,50,0.55); }
-      .link-close-btn.active { background: rgba(200,30,30,0.45); border-color: rgba(255,80,80,0.85);
-                                box-shadow: 0 0 7px rgba(220,30,30,0.45); }
+      .link-close-btn:hover  { background: rgba(230,51,18,0.27); border-color: rgba(230,51,18,0.55); }
+      .link-close-btn.active { background: rgba(230,51,18,0.45); border-color: rgba(230,51,18,0.85);
+                                box-shadow: 0 0 7px rgba(230,51,18,0.45); }
     .node-field { margin-bottom: 12px; }
-    .node-field label { font-size: 11px; color: #5a6272; display: block; margin-bottom: 4px; }
-    .field-hint { font-size: 10px; color: #3d4454; font-weight: 400; }
+    .node-field label { font-size: 11px; color: #6a757c; display: block; margin-bottom: 4px; }
+    .field-hint { font-size: 10px; color: #e3e6ea; font-weight: 400; }
     .node-field-row { display: flex; align-items: center; gap: 6px; }
     .node-field-row input {
-      flex: 1; background: #1a2233; color: #c9d6e8;
-      border: 1px solid rgba(126,200,227,0.25); border-radius: 6px;
+      flex: 1; background: #ffffff; color: #232931;
+      border: 1px solid #e3e6ea; border-radius: 6px;
       padding: 6px 8px; font-size: 13px; font-family: 'Segoe UI', sans-serif;
     }
     .node-field-row button {
       width: 28px; height: 28px; border-radius: 6px;
-      background: rgba(126,200,227,0.1); color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.3);
+      background: transparent; color: #de0058;
+      border: 1px solid #e3e6ea;
       font-size: 16px; cursor: pointer; line-height: 1;
       transition: background 0.15s;
     }
-    .node-field-row button:hover { background: rgba(126,200,227,0.22); }
+    .node-field-row button:hover { background: #f0f2f4; }
     .node-dialog-btns { display: flex; gap: 8px; margin-top: 14px; }
     .node-dialog-btns button {
       flex: 1; padding: 7px 0; border-radius: 7px;
@@ -437,15 +439,15 @@
       transition: background 0.15s;
     }
     #nodeDialogOk {
-      background: rgba(126,200,227,0.15); color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.35);
+      background: #de0058; color: #ffffff;
+      border: 1px solid #de0058;
     }
-    #nodeDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #nodeDialogOk:hover { background: #c70050; }
     #nodeDialogCancel {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #ffffff; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #nodeDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #nodeDialogCancel:hover { background: #f0f2f4; color: #232931; }
 
     /* ── Wijzigingenlijst ─────────────────────────────────────────────── */
     #changesPanel {
@@ -454,18 +456,18 @@
       bottom: 24px; right: 24px;
       z-index: 20;
       width: 300px;
-      background: rgba(13,17,23,0.93);
-      border: 1px solid rgba(255,180,80,0.25);
+      background: #ffffff;
+      border: 1px solid #dd7a00;
       border-radius: 12px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
       overflow: hidden;
     }
     #changesPanelHeader {
       padding: 12px 16px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      font-size: 12px; color: #ffb450; font-weight: 600; letter-spacing: 0.3px;
+      border-bottom: 1px solid #e3e6ea;
+      font-size: 12px; color: #dd7a00; font-weight: 600; letter-spacing: 0.3px;
       display: flex; justify-content: space-between; align-items: center;
     }
     #changesList {
@@ -475,45 +477,45 @@
     .change-item {
       display: flex; align-items: center; justify-content: space-between;
       padding: 6px 16px;
-      font-size: 12px; color: #c9d6e8;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 12px; color: #232931;
+      border-bottom: 1px solid #e3e6ea;
       cursor: pointer;
       transition: background 0.12s;
     }
-    .change-item:hover { background: rgba(255,255,255,0.04); }
-    .change-item.highlighted { background: rgba(255,180,80,0.13); }
+    .change-item:hover { background: #f8f8f8; }
+    .change-item.highlighted { background: rgba(221,122,0,0.08); }
     .change-item:last-child { border-bottom: none; }
     .change-item-label { flex: 1; line-height: 1.4; }
-    .change-item-label span { color: #5a6272; font-size: 11px; display: block; }
+    .change-item-label span { color: #6a757c; font-size: 11px; display: block; }
     .change-item-del {
       width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0;
-      background: transparent; color: #4a5568;
-      border: 1px solid rgba(255,255,255,0.08);
+      background: transparent; color: #6a757c;
+      border: 1px solid #e3e6ea;
       font-size: 13px; cursor: pointer; line-height: 1;
       transition: background 0.15s, color 0.15s;
     }
-    .change-item-del:hover { background: rgba(255,80,80,0.15); color: #ff6b6b; border-color: rgba(255,80,80,0.3); }
-    #changesPanelFooter { padding: 10px 16px; border-top: 1px solid rgba(255,255,255,0.07); }
+    .change-item-del:hover { background: rgba(230,51,18,0.15); color: #e63312; border-color: rgba(230,51,18,0.3); }
+    #changesPanelFooter { padding: 10px 16px; border-top: 1px solid #e3e6ea; }
     #scenarioNameInput {
-      width: 100%; background: #1a2233; color: #c9d6e8;
-      border: 1px solid rgba(255,180,80,0.25); border-radius: 6px;
+      width: 100%; background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea; border-radius: 6px;
       padding: 6px 9px; font-size: 12px; font-family: 'Segoe UI', sans-serif;
       margin-bottom: 8px; box-sizing: border-box;
     }
-    #scenarioNameInput:focus { outline: none; border-color: rgba(255,180,80,0.55); }
+    #scenarioNameInput:focus { outline: none; border-color: #dd7a00; }
     #applyChangesBtn {
       width: 100%; padding: 8px 0; border-radius: 7px;
-      background: rgba(255,180,80,0.15); color: #ffb450;
-      border: 1px solid rgba(255,180,80,0.4);
+      background: #dd7a00; color: #ffffff;
+      border: 1px solid #dd7a00;
       font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif;
       letter-spacing: 0.3px; transition: background 0.15s;
     }
-    #applyChangesBtn:hover { background: rgba(255,180,80,0.28); }
+    #applyChangesBtn:hover { background: #c96800; }
     #applyChangesBtn:disabled { opacity: 0.4; cursor: not-allowed; }
-    #applyStatus { font-size: 11px; color: #7ec8e3; margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
+    #applyStatus { font-size: 11px; color: #00a5ab; margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
     #adjustDebugLabel {
       display: flex; align-items: center; gap: 7px;
-      font-size: 11px; color: #7a8699; cursor: pointer;
+      font-size: 11px; color: #6a757c; cursor: pointer;
       margin-bottom: 8px;
     }
 
@@ -525,20 +527,20 @@
     .change-section-header {
       padding: 4px 16px 3px;
       font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
-      color: #5a6272; text-transform: uppercase;
-      border-top: 1px solid rgba(255,255,255,0.06);
+      color: #6a757c; text-transform: uppercase;
+      border-top: 1px solid rgba(35,41,49,0.06);
     }
     .change-section-header:first-child { border-top: none; }
 
     /* ── Historische wijziging (al toegepast, lichtere opmaak) ──────────────── */
     .change-item-hist { opacity: 0.72; }
-    .change-item-hist:hover { background: rgba(255,255,255,0.04); }
+    .change-item-hist:hover { background: rgba(35,41,49,0.04); }
 
     /* ── Badge op toolbar-knop (wijzigingsteller) ────────────────────────────── */
     .tb-badge {
       position: absolute; top: 3px; right: 2px;
       min-width: 13px; height: 13px; padding: 0 2px;
-      background: #ffb450; color: #13171f;
+      background: #dd7a00; color: #ffffff;
       border-radius: 7px; font-size: 8px; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
       pointer-events: none; line-height: 1;
@@ -553,26 +555,26 @@
       bottom: 24px; right: 340px;
       z-index: 20;
       width: 360px;
-      background: rgba(13,17,23,0.93);
-      border: 1px solid rgba(78,154,241,0.25);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
       overflow: hidden;
     }
     #purposeChartHeader {
       padding: 12px 16px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+      border-bottom: 1px solid #e3e6ea;
+      font-size: 12px; color: #00a5ab; font-weight: 600; letter-spacing: 0.3px;
       display: flex; justify-content: space-between; align-items: center;
     }
     #purposeChartClose {
-      background: transparent; border: none; color: #4a5568;
+      background: transparent; border: none; color: #6a757c;
       font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
       transition: color 0.15s;
     }
-    #purposeChartClose:hover { color: #c9d6e8; }
+    #purposeChartClose:hover { color: #232931; }
     #purposeChartBody {
       padding: 12px 14px;
       display: flex; align-items: center; gap: 12px;
@@ -583,13 +585,13 @@
     }
     .pcl-item {
       display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: #c9d6e8;
+      font-size: 11px; color: #232931;
     }
     .pcl-dot {
       width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
     }
     .pcl-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-    .pcl-pct { color: #7a8699; font-size: 10px; flex-shrink: 0; }
+    .pcl-pct { color: #6a757c; font-size: 10px; flex-shrink: 0; }
 
     /* ── What-if wegafsluiting panel ─────────────────────────────────── */
     #whatifRcPanel {
@@ -598,18 +600,18 @@
       bottom: 24px; right: 24px;
       z-index: 20;
       width: 300px;
-      background: rgba(13,17,23,0.93);
-      border: 1px solid rgba(255,80,80,0.25);
+      background: #ffffff;
+      border: 1px solid #e63312;
       border-radius: 12px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
       overflow: hidden;
     }
     #whatifRcPanelHeader {
       padding: 12px 16px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      font-size: 12px; color: #ff6b6b; font-weight: 600; letter-spacing: 0.3px;
+      border-bottom: 1px solid #e3e6ea;
+      font-size: 12px; color: #e63312; font-weight: 600; letter-spacing: 0.3px;
       display: flex; justify-content: space-between; align-items: center;
     }
     #whatifRcList {
@@ -619,67 +621,67 @@
     .whatif-rc-item {
       display: flex; align-items: center; justify-content: space-between;
       padding: 6px 16px;
-      font-size: 12px; color: #c9d6e8;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 12px; color: #232931;
+      border-bottom: 1px solid #e3e6ea;
     }
     .whatif-rc-item:last-child { border-bottom: none; }
     .whatif-rc-item-label { flex: 1; line-height: 1.4; }
     .whatif-rc-item-del {
       width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0;
-      background: transparent; color: #4a5568;
-      border: 1px solid rgba(255,255,255,0.08);
+      background: transparent; color: #6a757c;
+      border: 1px solid #e3e6ea;
       font-size: 13px; cursor: pointer; line-height: 1;
       transition: background 0.15s, color 0.15s;
     }
-    .whatif-rc-item-del:hover { background: rgba(255,80,80,0.15); color: #ff6b6b; border-color: rgba(255,80,80,0.3); }
+    .whatif-rc-item-del:hover { background: rgba(230,51,18,0.15); color: #e63312; border-color: rgba(230,51,18,0.3); }
     .whatif-rc-empty {
       padding: 10px 16px;
-      font-size: 12px; color: #5a6272; font-style: italic;
+      font-size: 12px; color: #6a757c; font-style: italic;
     }
-    #whatifRcFooter { padding: 10px 16px; border-top: 1px solid rgba(255,255,255,0.07); }
+    #whatifRcFooter { padding: 10px 16px; border-top: 1px solid #e3e6ea; }
     #whatifRcDirRow {
       display: flex; align-items: center; gap: 8px;
       margin-bottom: 8px;
     }
-    #whatifRcDirLabel { font-size: 12px; color: #7a8699; white-space: nowrap; }
+    #whatifRcDirLabel { font-size: 12px; color: #6a757c; white-space: nowrap; }
     #whatifRcDirSelect {
-      flex: 1; background: #1a2233; color: #c9d6e8;
-      border: 1px solid rgba(255,80,80,0.25); border-radius: 6px;
+      flex: 1; background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea; border-radius: 6px;
       padding: 5px 8px; font-size: 12px; font-family: 'Segoe UI', sans-serif;
     }
-    #whatifRcDirSelect:focus { outline: none; border-color: rgba(255,80,80,0.55); }
+    #whatifRcDirSelect:focus { outline: none; border-color: #e63312; }
     #whatifRcNameInput {
-      width: 100%; background: #1a2233; color: #c9d6e8;
-      border: 1px solid rgba(255,80,80,0.25); border-radius: 6px;
+      width: 100%; background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea; border-radius: 6px;
       padding: 6px 9px; font-size: 12px; font-family: 'Segoe UI', sans-serif;
       margin-bottom: 8px; box-sizing: border-box;
     }
-    #whatifRcNameInput:focus { outline: none; border-color: rgba(255,80,80,0.55); }
+    #whatifRcNameInput:focus { outline: none; border-color: #e63312; }
     #whatifRcRunBtn {
       width: 100%; padding: 8px 0; border-radius: 7px;
-      background: rgba(255,80,80,0.15); color: #ff6b6b;
-      border: 1px solid rgba(255,80,80,0.4);
+      background: #e63312; color: #ffffff;
+      border: 1px solid #e63312;
       font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif;
       letter-spacing: 0.3px; transition: background 0.15s;
       margin-bottom: 6px;
     }
-    #whatifRcRunBtn:hover { background: rgba(255,80,80,0.28); }
+    #whatifRcRunBtn:hover { background: #d42a0e; }
     #whatifRcRunBtn:disabled { opacity: 0.4; cursor: not-allowed; }
     #whatifRcClearBtn {
       width: 100%; padding: 6px 0; border-radius: 7px;
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.08);
+      background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea;
       font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif;
       transition: background 0.15s, color 0.15s;
     }
-    #whatifRcClearBtn:hover { background: rgba(255,255,255,0.04); color: #c9d6e8; }
-    #whatifRcStatus { font-size: 11px; color: #7ec8e3; margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
+    #whatifRcClearBtn:hover { background: #e8ecf0; color: #232931; }
+    #whatifRcStatus { font-size: 11px; color: #00a5ab; margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
     /* Rode gloedkleur voor active what-if-knop */
-    #whatifRcBtn:hover { background: rgba(255,80,80,0.15) !important; color: #ff8080 !important; }
-    #whatifRcBtn.active { background: rgba(255,80,80,0.22) !important; color: #ff6b6b !important; border-color: rgba(255,80,80,0.5) !important; }
+    #whatifRcBtn:hover { background: rgba(230,51,18,0.15) !important; color: #e63312 !important; }
+    #whatifRcBtn.active { background: #e63312 !important; color: #ffffff !important; border-color: #e63312 !important; }
     /* OD-paar aanpassen knop */
-    #odEditBtn:hover  { background: rgba(100,180,255,0.15) !important; color: #7ec8e3 !important; }
-    #odEditBtn.active { background: rgba(100,180,255,0.22) !important; color: #5bc0de !important; border-color: rgba(100,180,255,0.5) !important; }
+    #odEditBtn:hover  { background: rgba(0,128,201,0.15) !important; color: #00a5ab !important; }
+    #odEditBtn.active { background: #00a5ab !important; color: #ffffff !important; border-color: #00a5ab !important; }
 
     /* ── OD-edit paneel ─────────────────────────────────────────────────── */
     #odEditPanel {
@@ -690,77 +692,77 @@
       width: 320px;
       max-height: calc(100vh - 80px);
       overflow-y: auto;
-      background: rgba(13,17,23,0.95);
-      border: 1px solid rgba(100,180,255,0.25);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      font-size: 12px; color: #c9d6e8;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+      font-size: 12px; color: #232931;
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #odEditHeader {
       padding: 12px 16px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+      border-bottom: 1px solid #e3e6ea;
+      font-size: 12px; color: #00a5ab; font-weight: 600; letter-spacing: 0.3px;
       display: flex; justify-content: space-between; align-items: center; gap:6px;
     }
     #odEditHeader span { flex:1; }
     #odEditClose {
       background: none; border: none; cursor: pointer;
-      color: #5a6272; font-size: 14px; padding: 0 2px; line-height:1;
+      color: #6a757c; font-size: 14px; padding: 0 2px; line-height:1;
     }
-    #odEditClose:hover { color: #ff6b6b; }
+    #odEditClose:hover { color: #e63312; }
     #odEditBody { padding: 12px 16px; }
     .ode-step {
       margin-bottom: 10px; padding: 8px 10px;
-      border-radius: 8px; background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px; background: #f4f6f8;
+      border: 1px solid #e3e6ea;
     }
-    .ode-step-label { font-size: 10px; color: #5a6272; text-transform: uppercase; letter-spacing:.4px; margin-bottom:4px; }
-    .ode-step-value { font-size: 12px; color: #e8edf5; font-weight: 500; min-height:16px; }
-    .ode-step-value.waiting { color:#4a5568; font-style:italic; }
+    .ode-step-label { font-size: 10px; color: #6a757c; text-transform: uppercase; letter-spacing:.4px; margin-bottom:4px; }
+    .ode-step-value { font-size: 12px; color: #232931; font-weight: 500; min-height:16px; }
+    .ode-step-value.waiting { color:#6a757c; font-style:italic; }
     .ode-section-title {
-      font-size: 10px; color: #5a6272; text-transform: uppercase;
+      font-size: 10px; color: #6a757c; text-transform: uppercase;
       letter-spacing:.4px; margin: 12px 0 6px;
     }
     .ode-field-row {
       display: flex; align-items: center; gap:8px;
       margin-bottom: 6px;
     }
-    .ode-field-label { flex:1; color:#7a8699; font-size:11px; }
+    .ode-field-label { flex:1; color:#6a757c; font-size:11px; }
     .ode-field-input {
       width: 88px; padding: 3px 7px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12); border-radius:5px;
-      color: #e8edf5; font-size:12px; text-align:right;
+      background: #ffffff;
+      border: 1px solid #e3e6ea; border-radius:5px;
+      color: #232931; font-size:12px; text-align:right;
     }
-    .ode-field-input:focus { outline:none; border-color: rgba(100,180,255,0.45); }
+    .ode-field-input:focus { outline:none; border-color: #00a5ab; }
     .ode-motif-grid {
       display: grid; grid-template-columns: 1fr auto auto;
       gap: 4px 8px; align-items: center;
       margin-bottom:8px;
     }
-    .ode-motif-key  { color:#7a8699; font-size:11px; }
+    .ode-motif-key  { color:#6a757c; font-size:11px; }
     .ode-motif-dot  { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
     .ode-motif-pct  {
       width:60px; padding:2px 6px;
-      background:rgba(255,255,255,0.06);
-      border:1px solid rgba(255,255,255,0.12); border-radius:5px;
-      color:#e8edf5; font-size:12px; text-align:right;
+      background:#ffffff;
+      border:1px solid #e3e6ea; border-radius:5px;
+      color:#232931; font-size:12px; text-align:right;
     }
-    .ode-motif-pct:focus { outline:none; border-color:rgba(100,180,255,0.45); }
+    .ode-motif-pct:focus { outline:none; border-color:#00a5ab; }
     .ode-motif-sum { font-size:10px; margin-bottom:8px; }
-    .ode-motif-sum.ok   { color:#5cb85c; }
-    .ode-motif-sum.bad  { color:#ff6b6b; }
+    .ode-motif-sum.ok   { color:#49a748; }
+    .ode-motif-sum.bad  { color:#e63312; }
     #odEditSaveBtn {
       width:100%; padding:7px 0; margin-top:6px;
-      background:rgba(100,180,255,0.15); border:1px solid rgba(100,180,255,0.3);
-      border-radius:7px; color:#7ec8e3; font-size:12px; font-weight:600;
+      background:#00a5ab; border:1px solid #00a5ab;
+      border-radius:7px; color:#ffffff; font-size:12px; font-weight:600;
       cursor:pointer; transition:background .15s;
     }
-    #odEditSaveBtn:hover    { background:rgba(100,180,255,0.28); }
+    #odEditSaveBtn:hover    { background:#008a90; }
     #odEditSaveBtn:disabled { opacity:.4; cursor:not-allowed; }
-    #odEditRouteInfo { font-size:11px; color:#5a6272; margin-bottom:8px; line-height:1.5; }
+    #odEditRouteInfo { font-size:11px; color:#6a757c; margin-bottom:8px; line-height:1.5; }
 
     /* ── COMPARE laag-toggle ──────────────────────────────────────────── */
     .compare-btn {
@@ -773,45 +775,45 @@
       cursor: pointer;
       letter-spacing: 0.3px;
       transition: background 0.15s;
-      border: 1px solid rgba(100,220,150,0.3);
-      background: rgba(100,220,150,0.08);
-      color: #64dc96;
+      border: 1px solid #49a748;
+      background: transparent;
+      color: #49a748;
       display: none;
     }
-    .compare-btn:hover { background: rgba(100,220,150,0.18); }
-    .compare-btn.active { background: rgba(100,220,150,0.22); border-color: rgba(100,220,150,0.6); }
+    .compare-btn:hover { background: #f0f2f4; }
+    .compare-btn.active { background: #49a748; border-color: #49a748; color: #ffffff; }
 
     /* ── Node-selectiemodus popup ─────────────────────────────────────────── */
     #nodeSelectPopup {
       display: none;
       position: fixed; left: 16px; top: 70px;
       z-index: 50;
-      background: rgba(13,17,23,0.97);
-      border: 1px solid rgba(255,180,80,0.3);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       padding: 14px 16px; width: 200px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #nodeSelectPopup h4 {
       margin: 0 0 10px;
-      font-size: 11px; color: #ffb450; font-weight: 600;
+      font-size: 11px; color: #dd7a00; font-weight: 600;
       letter-spacing: 0.5px; text-transform: uppercase;
     }
     .nsm-option {
       display: flex; align-items: center; gap: 8px;
       padding: 5px 0; cursor: pointer;
-      font-size: 12px; color: #c9d6e8;
+      font-size: 12px; color: #232931;
     }
-    .nsm-option:hover { color: #ffb450; }
-    .nsm-option input[type=radio] { accent-color: #ffb450; cursor: pointer; flex-shrink: 0; }
+    .nsm-option:hover { color: #dd7a00; }
+    .nsm-option input[type=radio] { accent-color: #dd7a00; cursor: pointer; flex-shrink: 0; }
     #polygonHint {
       display: none;
-      font-size: 10px; color: #5a6272;
+      font-size: 10px; color: #6a757c;
       margin-top: 8px; line-height: 1.5;
       padding: 6px 8px;
-      background: rgba(255,255,255,0.03); border-radius: 6px;
+      background: #f4f6f8; border-radius: 6px;
     }
     .poly-ctrl-btn {
       display: none; width: 100%;
@@ -821,79 +823,79 @@
       margin-top: 5px; transition: background 0.15s;
     }
     #polygonFinishBtn {
-      background: rgba(255,180,80,0.15); color: #ffb450;
-      border: 1px solid rgba(255,180,80,0.4);
+      background: #dd7a00; color: #ffffff;
+      border: 1px solid #dd7a00;
     }
-    #polygonFinishBtn:hover { background: rgba(255,180,80,0.28); }
+    #polygonFinishBtn:hover { background: #c96800; }
     #polygonClearBtn {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #polygonClearBtn:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #polygonClearBtn:hover { background: #e8ecf0; color: #232931; }
 
     /* ── Polygon aanpassing dialoog ───────────────────────────────────────── */
     #polygonDialog {
       display: none;
       position: fixed; left: 16px; top: 70px;
       z-index: 51;
-      background: rgba(13,17,23,0.97);
-      border: 1px solid rgba(126,200,227,0.25);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       padding: 18px 20px; width: 260px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #polygonDialog h3 {
-      font-size: 13px; color: #7ec8e3; margin-bottom: 8px;
-      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 13px; color: #00a5ab; margin-bottom: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid #e3e6ea;
     }
-    #polygonNodeInfo { font-size: 11px; color: #ffb450; margin-bottom: 12px; }
+    #polygonNodeInfo { font-size: 11px; color: #dd7a00; margin-bottom: 12px; }
     .poly-per-node {
-      font-size: 10px; color: #5a6272; margin-top: 2px; min-height: 14px;
+      font-size: 10px; color: #6a757c; margin-top: 2px; min-height: 14px;
     }
     #polygonDialogOk {
-      background: rgba(126,200,227,0.15); color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.35);
+      background: #00a5ab; color: #ffffff;
+      border: 1px solid #00a5ab;
     }
-    #polygonDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #polygonDialogOk:hover { background: #008a90; }
     #polygonDialogCancel {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #polygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #polygonDialogCancel:hover { background: #e8ecf0; color: #232931; }
 
     /* ── Link-selectiemodus popup ─────────────────────────────────────────── */
     #linkSelectPopup {
       display: none;
       position: fixed; left: 16px; top: 70px;
       z-index: 50;
-      background: rgba(13,17,23,0.97);
-      border: 1px solid rgba(255,180,80,0.3);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       padding: 14px 16px; width: 200px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #linkSelectPopup h4 {
       margin: 0 0 10px;
-      font-size: 11px; color: #ffb450; font-weight: 600;
+      font-size: 11px; color: #dd7a00; font-weight: 600;
       letter-spacing: 0.5px; text-transform: uppercase;
     }
     .lsm-option {
       display: flex; align-items: center; gap: 8px;
       padding: 5px 0; cursor: pointer;
-      font-size: 12px; color: #c9d6e8;
+      font-size: 12px; color: #232931;
     }
-    .lsm-option:hover { color: #ffb450; }
-    .lsm-option input[type=radio] { accent-color: #ffb450; cursor: pointer; flex-shrink: 0; }
+    .lsm-option:hover { color: #dd7a00; }
+    .lsm-option input[type=radio] { accent-color: #dd7a00; cursor: pointer; flex-shrink: 0; }
     #linkPolygonHint {
       display: none;
-      font-size: 10px; color: #5a6272;
+      font-size: 10px; color: #6a757c;
       margin-top: 8px; line-height: 1.5;
       padding: 6px 8px;
-      background: rgba(255,255,255,0.03); border-radius: 6px;
+      background: #f4f6f8; border-radius: 6px;
     }
     .link-poly-ctrl-btn {
       display: none; width: 100%;
@@ -903,57 +905,56 @@
       margin-top: 5px; transition: background 0.15s;
     }
     #linkPolygonFinishBtn {
-      background: rgba(255,180,80,0.15); color: #ffb450;
-      border: 1px solid rgba(255,180,80,0.4);
+      background: #dd7a00; color: #ffffff;
+      border: 1px solid #dd7a00;
     }
-    #linkPolygonFinishBtn:hover { background: rgba(255,180,80,0.28); }
+    #linkPolygonFinishBtn:hover { background: #c96800; }
     #linkPolygonClearBtn {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #linkPolygonClearBtn:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #linkPolygonClearBtn:hover { background: #e8ecf0; color: #232931; }
 
     /* ── Link polygon aanpassing dialoog ─────────────────────────────────── */
     #linkPolygonDialog {
       display: none;
       position: fixed; left: 16px; top: 70px;
       z-index: 51;
-      background: rgba(13,17,23,0.97);
-      border: 1px solid rgba(126,200,227,0.25);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       padding: 18px 20px; width: 260px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
     }
     #linkPolygonDialog h3 {
-      font-size: 13px; color: #7ec8e3; margin-bottom: 8px;
-      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 13px; color: #00a5ab; margin-bottom: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid #e3e6ea;
     }
-    #linkPolygonLinkInfo { font-size: 11px; color: #ffb450; margin-bottom: 12px; }
+    #linkPolygonLinkInfo { font-size: 11px; color: #dd7a00; margin-bottom: 12px; }
     .link-poly-per-link {
-      font-size: 10px; color: #5a6272; margin-top: 2px; min-height: 14px;
+      font-size: 10px; color: #6a757c; margin-top: 2px; min-height: 14px;
     }
     #linkPolygonDialogOk {
-      background: rgba(126,200,227,0.15); color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.35);
+      background: #00a5ab; color: #ffffff;
+      border: 1px solid #00a5ab;
     }
-    #linkPolygonDialogOk:hover { background: rgba(126,200,227,0.25); }
+    #linkPolygonDialogOk:hover { background: #008a90; }
     #linkPolygonDialogCancel {
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea;
     }
-    #linkPolygonDialogCancel:hover { background: rgba(255,255,255,0.05); color: #c9d6e8; }
+    #linkPolygonDialogCancel:hover { background: #e8ecf0; color: #232931; }
 
-    /* ── Flow-scaler panel ───────────────────────────────────────────── */
-    /* ── Simulatie-paneel (floating, draggable, collapsible) ──────────────── */
+    /* ── Sim-paneel (floating, draggable, collapsible) ──────────────── */
     #simPanel {
       position: fixed;
       z-index: 25;
-      background: rgba(13,17,23,0.96);
-      border: 1px solid rgba(126,200,227,0.18);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 10px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+      box-shadow: 0 4px 24px rgba(35,41,49,0.12);
       min-width: 170px;
       backdrop-filter: blur(6px);
     }
@@ -961,32 +962,32 @@
       display: flex; align-items: center; justify-content: space-between;
       padding: 6px 8px 6px 12px;
       cursor: grab;
-      font-size: 11px; font-weight: 600; color: #7ec8e3;
+      font-size: 11px; font-weight: 600; color: #00a5ab;
       letter-spacing: 0.06em; text-transform: uppercase;
-      border-bottom: 1px solid rgba(126,200,227,0.12);
+      border-bottom: 1px solid #e3e6ea;
       border-radius: 10px 10px 0 0;
     }
     #simPanelHeader:active { cursor: grabbing; }
     #simPanelCollapseBtn {
-      background: none; border: none; color: #5a6272;
+      background: none; border: none; color: #6a757c;
       font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
       flex-shrink: 0;
     }
-    #simPanelCollapseBtn:hover { color: #7ec8e3; }
+    #simPanelCollapseBtn:hover { color: #00a5ab; }
     #simPanelBody {
       padding: 8px 10px;
       display: flex; flex-direction: column; gap: 7px;
     }
     .sim-row { display: flex; align-items: center; gap: 6px; }
 
-    /* ── Aanpassingen-paneel (floating, draggable, collapsible) ──────────────── */
+    /* ── Edit-paneel (floating, draggable, collapsible) ──────────────────── */
     #editPanel {
       position: fixed;
       z-index: 25;
-      background: rgba(13,17,23,0.96);
-      border: 1px solid rgba(126,200,227,0.18);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 10px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+      box-shadow: 0 4px 24px rgba(35,41,49,0.12);
       min-width: 170px;
       backdrop-filter: blur(6px);
     }
@@ -994,18 +995,18 @@
       display: flex; align-items: center; justify-content: space-between;
       padding: 6px 8px 6px 12px;
       cursor: grab;
-      font-size: 11px; font-weight: 600; color: #7ec8e3;
+      font-size: 11px; font-weight: 600; color: #00a5ab;
       letter-spacing: 0.06em; text-transform: uppercase;
-      border-bottom: 1px solid rgba(126,200,227,0.12);
+      border-bottom: 1px solid #e3e6ea;
       border-radius: 10px 10px 0 0;
     }
     #editPanelHeader:active { cursor: grabbing; }
     #editPanelCollapseBtn {
-      background: none; border: none; color: #5a6272;
+      background: none; border: none; color: #6a757c;
       font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
       flex-shrink: 0;
     }
-    #editPanelCollapseBtn:hover { color: #7ec8e3; }
+    #editPanelCollapseBtn:hover { color: #00a5ab; }
     #editPanelBody {
       padding: 8px 10px;
       display: flex; flex-direction: column; gap: 7px;
@@ -1017,174 +1018,54 @@
       top: 60px; left: 16px;
       z-index: 30;
       width: 300px;
-      background: rgba(13,17,23,0.96);
-      border: 1px solid rgba(126,200,227,0.25);
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
       border-radius: 12px;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
       backdrop-filter: blur(10px);
       overflow: hidden;
     }
     #flowScalerPanel.fsp-visible { display: block; }
 
-    /* ── Instellingen-paneel ───────────────────────────────────────────────── */
-    #settingsPanel {
-      display: none;
-      position: fixed;
-      top: 52px;
-      z-index: 30;
-      width: 320px;
-      background: rgba(13,17,23,0.96);
-      border: 1px solid rgba(126,200,227,0.25);
-      border-radius: 12px;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-      backdrop-filter: blur(10px);
-      overflow: hidden;
-    }
-    #settingsPanel.sp-visible { display: block; }
-    .sp-text {
-      background: rgba(255,255,255,0.07);
-      border: 1px solid rgba(126,200,227,0.2);
-      border-radius: 4px;
-      color: #e0e0e0;
-      padding: 2px 5px;
-      font-size: 10px;
-      width: 100%;
-      box-sizing: border-box;
-    }
-    .sp-text:focus { outline: none; border-color: rgba(126,200,227,0.5); }
-
-    /* ── Voertuigteller-paneel ───────────────────────────────────── */
-    #counterPanel {
-      display: none;
-      position: fixed;
-      top: 52px;
-      z-index: 30;
-      width: 290px;
-      background: rgba(13,17,23,0.96);
-      border: 1px solid rgba(126,200,227,0.25);
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-      backdrop-filter: blur(10px);
-      overflow: hidden;
-    }
-    #counterPanel.cp-visible { display: block; }
-    #cpHeader {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px;
-      background: rgba(126,200,227,0.08);
-      border-bottom: 1px solid rgba(126,200,227,0.15);
-      font-size: 12px; font-weight: 600; color: #7ec8e3; letter-spacing: 0.3px;
-    }
-    #cpHeader button {
-      background: none; border: none; color: #5a6272; cursor: pointer;
-      font-size: 15px; padding: 0; line-height: 1; transition: color 0.15s;
-    }
-    #cpHeader button:hover { color: #c9d6e8; }
-    #cpBody { padding: 8px; max-height: 380px; overflow-y: auto; }
-    .cp-hint {
-      color: rgba(255,255,255,0.35); font-size: 11px;
-      padding: 10px 4px; text-align: center; line-height: 1.5;
-    }
-    .cp-counter {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(126,200,227,0.12);
-      border-radius: 8px; margin-bottom: 6px; overflow: hidden;
-    }
-    .cp-counter-head {
-      display: flex; align-items: center; gap: 4px;
-      padding: 5px 8px 5px 10px;
-      background: rgba(126,200,227,0.06);
-      font-size: 11px; color: #7ec8e3; font-weight: 600;
-    }
-    .cp-counter-head .cp-link-label { flex: 1; }
-    .cp-ctrl { background: none; border: none; cursor: pointer; padding: 1px 4px; line-height: 1; border-radius: 3px; font-size: 12px; }
-    .cp-ctrl.cp-reset { color: rgba(126,200,227,0.5); border: 1px solid rgba(126,200,227,0.2); font-size: 11px; }
-    .cp-ctrl.cp-reset:hover { background: rgba(126,200,227,0.12); color: #7ec8e3; }
-    .cp-ctrl.cp-remove { color: rgba(255,255,255,0.3); font-size: 14px; }
-    .cp-ctrl.cp-remove:hover { color: #e57373; }
-    .cp-counter-rows { padding: 6px 10px 8px; }
-    .cp-row { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: rgba(255,255,255,0.82); padding: 1px 0; }
-    .cp-dir { color: #7ec8e3; font-weight: 700; min-width: 14px; font-size: 13px; }
-    .cp-total { font-weight: 700; min-width: 30px; text-align: right; }
-    .cp-expected { color: rgba(255,255,255,0.5); font-size: 10px; min-width: 34px; }
-    .cp-modes { flex: 1; color: rgba(255,255,255,0.42); font-size: 10px; }
-    .cp-elapsed { font-size: 10px; color: rgba(255,255,255,0.28); padding-top: 3px; }
-    #spHeader {
-      padding: 11px 14px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    #spHeader button {
-      background: none; border: none; color: #5a6272; cursor: pointer;
-      font-size: 15px; padding: 0; line-height: 1;
-      transition: color 0.15s;
-    }
-    #spHeader button:hover { color: #c9d6e8; }
-    #spBody { padding: 12px 16px 14px; }
-    #spApply {
-      width: 100%; padding: 7px 0; margin-top: 2px;
-      background: rgba(126,200,227,0.15);
-      color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.35);
-      border-radius: 7px;
-      font-size: 12px; font-weight: 600; cursor: pointer;
-      transition: background 0.15s;
-    }
-    #spApply:hover { background: rgba(126,200,227,0.28); }
-    .sp-section { margin-bottom: 0; }
-    .sp-section + .sp-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.07); }
-    .sp-label {
-      font-size: 10px; color: #5a6272; text-transform: uppercase;
-      letter-spacing: 0.4px; margin-bottom: 6px; font-weight: 600;
-    }
-    .sp-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 3px 0; cursor: pointer;
-    }
-    .sp-row input { accent-color: #7ec8e3; cursor: pointer; margin: 0; }
-    .sp-row span  { font-size: 12px; color: #c9d6e8; }
-
     #fspHeader {
       padding: 11px 14px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      font-size: 12px; color: #7ec8e3; font-weight: 600; letter-spacing: 0.3px;
+      border-bottom: 1px solid #e3e6ea;
+      font-size: 12px; color: #00a5ab; font-weight: 600; letter-spacing: 0.3px;
       display: flex; justify-content: space-between; align-items: center;
     }
     #fspClose {
-      background: transparent; border: none; color: #5a6272;
+      background: transparent; border: none; color: #6a757c;
       font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
       transition: color 0.15s;
     }
-    #fspClose:hover { color: #c9d6e8; }
+    #fspClose:hover { color: #232931; }
     #fspBody { padding: 12px 14px 14px; }
     .fsp-row {
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 8px; gap: 8px;
     }
     .fsp-label {
-      font-size: 11px; color: #7a8699; flex-shrink: 0; white-space: nowrap; width: 80px;
+      font-size: 11px; color: #6a757c; flex-shrink: 0; white-space: nowrap; width: 80px;
     }
     .fsp-input, .fsp-select {
       flex: 1; min-width: 0;
-      background: #1a2233; color: #c9d6e8;
-      border: 1px solid rgba(126,200,227,0.2); border-radius: 6px;
+      background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea; border-radius: 6px;
       padding: 5px 7px; font-size: 11px;
       font-family: 'Segoe UI', system-ui, sans-serif;
       appearance: none; -webkit-appearance: none;
     }
     .fsp-input:focus, .fsp-select:focus {
-      outline: none; border-color: rgba(126,200,227,0.5);
+      outline: none; border-color: #00a5ab;
     }
     .fsp-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
     .fsp-slider {
       flex: 1; min-width: 0; height: 4px; cursor: pointer;
-      accent-color: #7ec8e3;
+      accent-color: #00a5ab;
     }
     .fsp-hour-val {
-      font-size: 11px; color: #7ec8e3; font-weight: 600;
+      font-size: 11px; color: #00a5ab; font-weight: 600;
       width: 32px; text-align: right; flex-shrink: 0;
     }
     #fspBtns {
@@ -1192,49 +1073,49 @@
     }
     #fspApply {
       flex: 1; padding: 7px 0; border-radius: 7px;
-      background: rgba(126,200,227,0.15); color: #7ec8e3;
-      border: 1px solid rgba(126,200,227,0.35);
+      background: #00a5ab; color: #ffffff;
+      border: 1px solid #00a5ab;
       font-size: 12px; cursor: pointer; font-family: 'Segoe UI', system-ui, sans-serif;
       letter-spacing: 0.3px; transition: background 0.15s;
     }
-    #fspApply:hover:not(:disabled) { background: rgba(126,200,227,0.28); }
+    #fspApply:hover:not(:disabled) { background: #008a90; }
     #fspApply:disabled { opacity: 0.4; cursor: not-allowed; }
     #fspReset {
       flex: 1; padding: 7px 0; border-radius: 7px;
-      background: transparent; color: #5a6272;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #f4f6f8; color: #232931;
+      border: 1px solid #e3e6ea;
       font-size: 12px; cursor: pointer; font-family: 'Segoe UI', system-ui, sans-serif;
       letter-spacing: 0.3px; transition: background 0.15s, color 0.15s;
     }
-    #fspReset:hover:not(:disabled) { background: rgba(255,80,80,0.1); color: #ff6b6b; border-color: rgba(255,80,80,0.3); }
+    #fspReset:hover:not(:disabled) { background: #e8ecf0; color: #232931; }
     #fspReset:disabled { opacity: 0.35; cursor: not-allowed; }
     #fspStatus {
-      font-size: 11px; color: #7ec8e3; margin-top: 7px;
+      font-size: 11px; color: #00a5ab; margin-top: 7px;
       min-height: 14px; line-height: 1.4;
     }
-    #fspStatus.fsp-error { color: #ff6b6b; }
+    #fspStatus.fsp-error { color: #e63312; }
     /* Active-indicator op de toolbar-knop (nu in #daypartBtns) */
-    #fspBtn.active { color: #7ec8e3; border-color: rgba(126,200,227,0.5); background: rgba(126,200,227,0.12); }
+    #fspBtn.active { color: #00a5ab; border-color: rgba(0,165,171,0.5); background: rgba(0,165,171,0.12); }
 
     /* ── Debug-paneel ────────────────────────────────────────────────── */
     #debugPanel {      position: absolute; top: 56px; right: 16px; z-index: 10;
-      background: rgba(13,17,23,0.93);
-      border: 1px solid rgba(255,140,80,0.3);
+      background: rgba(255,255,255,0.93);
+      border: 1px solid rgba(221,122,0,0.3);
       border-radius: 8px;
       padding: 10px 14px;
       font-family: 'Segoe UI', system-ui, monospace;
-      font-size: 11px; color: #7a8699;
+      font-size: 11px; color: #6a757c;
       backdrop-filter: blur(8px);
       min-width: 240px;
       display: none;
       line-height: 1.85;
     }
     #debugPanel.visible { display: block; }
-    #debugPanel b { color: #ffb450; font-weight: 600; }
+    #debugPanel b { color: #dd7a00; font-weight: 600; }
     .dbg-head {
-      font-size: 10px; color: #5a6272; text-transform: uppercase;
+      font-size: 10px; color: #6a757c; text-transform: uppercase;
       letter-spacing: 0.06em; margin-top: 7px; margin-bottom: 1px;
-      border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 2px;
+      border-bottom: 1px solid rgba(35,41,49,0.06); padding-bottom: 2px;
     }
     .dbg-head:first-child { margin-top: 0; }
 
@@ -1278,11 +1159,11 @@
       bottom: 18px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(20,30,48,0.88);
-      border: 1px solid rgba(126,200,227,0.35);
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(0,165,171,0.35);
       border-radius: 20px;
       padding: 7px 18px;
-      color: #7ec8e3;
+      color: #00a5ab;
       font-size: 12px;
       font-family: 'Segoe UI', sans-serif;
       letter-spacing: .4px;
@@ -1299,11 +1180,11 @@
       display: none;
       align-items: center;
       gap: 7px;
-      background: rgba(20,30,48,0.88);
-      border: 1px solid rgba(126,200,227,0.25);
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(0,165,171,0.25);
       border-radius: 20px;
       padding: 5px 13px 5px 10px;
-      color: #7ec8e3;
+      color: #00a5ab;
       font-size: 12px;
       font-family: 'Segoe UI', sans-serif;
       letter-spacing: .4px;
@@ -1314,12 +1195,12 @@
     #cameraIndicator .cam-dot {
       width: 8px; height: 8px;
       border-radius: 50%;
-      background: #555;
+      background: #4b5159;
       flex-shrink: 0;
       transition: background .4s;
     }
-    #cameraIndicator.cam-active .cam-dot   { background: #4caf50; }
-    #cameraIndicator.cam-inactive .cam-dot { background: #e53935; }
+    #cameraIndicator.cam-active .cam-dot   { background: #49a748; }
+    #cameraIndicator.cam-inactive .cam-dot { background: #e63312; }
     #cameraToggleBtn {
       position: fixed;
       top: 14px;
@@ -1327,11 +1208,11 @@
       display: none;
       align-items: center;
       gap: 7px;
-      background: rgba(20,30,48,0.88);
-      border: 1px solid rgba(126,200,227,0.35);
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(0,165,171,0.35);
       border-radius: 20px;
       padding: 5px 14px 5px 11px;
-      color: #7ec8e3;
+      color: #00a5ab;
       font-size: 12px;
       font-family: 'Segoe UI', sans-serif;
       letter-spacing: .4px;
@@ -1340,12 +1221,12 @@
       user-select: none;
       transition: background .2s, border-color .2s;
     }
-    #cameraToggleBtn:hover { background: rgba(40,60,90,0.92); border-color: rgba(126,200,227,.7); }
+    #cameraToggleBtn:hover { background: rgba(0,165,171,0.92); border-color: rgba(0,165,171,.7); }
     body.maquette-mode #cameraToggleBtn { display: flex; }
     #cameraToggleBtn .cam-dot {
-      width: 8px; height: 8px; border-radius: 50%; background: #e53935; flex-shrink: 0; transition: background .4s;
+      width: 8px; height: 8px; border-radius: 50%; background: #e63312; flex-shrink: 0; transition: background .4s;
     }
-    #cameraToggleBtn.cam-on .cam-dot { background: #4caf50; }
+    #cameraToggleBtn.cam-on .cam-dot { background: #49a748; }
 
     body.maquette-mode,
     body.maquette-mode * { cursor: none !important; }
@@ -1410,7 +1291,7 @@
         </div>
       </div>
 
-      <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa" data-i18n="newAreaBboxHint">
+      <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c" data-i18n="newAreaBboxHint">
         Teken een rechthoek op de kaart om de bbox te bepalen.
         Klik voor de eerste hoek, klik nogmaals voor de tweede.
       </label>
@@ -1421,20 +1302,20 @@
         <button class="new-btn" id="newClearBtn" style="flex:1" data-i18n="newAreaClearBbox">Wis bbox</button>
       </div>
 
-      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa;cursor:pointer">
-        <input type="checkbox" id="newDebug" style="accent-color:#7ec8e3;width:14px;height:14px;flex-shrink:0"/>
+      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer">
+        <input type="checkbox" id="newDebug" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0"/>
         Debug-uitvoer activeren
       </label>
 
-      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#8896aa;cursor:pointer" title="Verrijk het gebied met OSM-data (gebouwen, verkeersobjecten, signalering). Duurt langer.">
-        <input type="checkbox" id="newFullTwin" style="accent-color:#7ec8e3;width:14px;height:14px;flex-shrink:0"/>
+      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer" title="Verrijk het gebied met OSM-data (gebouwen, verkeersobjecten, signalering). Duurt langer.">
+        <input type="checkbox" id="newFullTwin" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0"/>
         Full digital twin (OSM-verrijking)
       </label>
 
       <!-- Voortgang -->
       <div id="newProgress">
         <div id="newProgressBar"><div id="newProgressFill"></div></div>
-        <div id="newStatus" style="font-size:12px;color:#7ec8e3"></div>
+        <div id="newStatus" style="font-size:12px;color:#00a5ab"></div>
         <div id="newLog"></div>
       </div>
 
@@ -1615,7 +1496,7 @@
               <line x1="17.66" y1="6.34"  x2="19.07" y2="4.93"/>
             </svg>
           </button>
-          <div style="width:1px;height:16px;background:rgba(255,255,255,0.12);margin:0 2px;flex-shrink:0"></div>
+          <div style="width:1px;height:16px;background:rgba(35,41,49,0.12);margin:0 2px;flex-shrink:0"></div>
           <button class="tb-btn" id="fspBtn" data-i18n-title="fspBtnTitle" title="Flow-scaler instellen">&#9201;</button>
         </div>
       </div>
@@ -1745,17 +1626,17 @@
       <div class="sp-section" id="spSpectrumSection">
         <div class="sp-label">Spectrum — externe tiles</div>
         <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 6px;align-items:center;font-size:11px;margin-top:4px;">
-          <span style="color:#aaa">OS layer</span>
+          <span style="color:#6a757c">OS layer</span>
           <input type="text" id="spSpectrumLayerOS"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#aaa">mapping</span>
+          <span style="color:#6a757c">mapping</span>
           <input type="text" id="spSpectrumMappingOS" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#aaa">AS layer</span>
+          <span style="color:#6a757c">AS layer</span>
           <input type="text" id="spSpectrumLayerAS"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#aaa">mapping</span>
+          <span style="color:#6a757c">mapping</span>
           <input type="text" id="spSpectrumMappingAS" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#aaa">RD layer</span>
+          <span style="color:#6a757c">RD layer</span>
           <input type="text" id="spSpectrumLayerRD"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#aaa">mapping</span>
+          <span style="color:#6a757c">mapping</span>
           <input type="text" id="spSpectrumMappingRD" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
         </div>
       </div>
@@ -1803,42 +1684,42 @@
     </div>
     <!-- Verschilplot-legende — alleen zichtbaar als diffPlotActive -->
     <div id="legendDiff" style="display:none; margin-top:4px;">
-      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#ddd;">
-        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#dc1e1e;"></span>Toename
-        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#1eb43c;margin-left:6px;"></span>Afname
-        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#8c8c8c;margin-left:6px;opacity:0.6;"></span>Ongewijzigd
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#e3e6ea;">
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#e63312;"></span>Toename
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#49a748;margin-left:6px;"></span>Afname
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#6a757c;margin-left:6px;opacity:0.6;"></span>Ongewijzigd
       </div>
-      <div id="legendDiffSub" style="font-size:10px; color:#aaa; margin-top:2px;">Breedte = schaal t.o.v. max. intensiteit</div>
+      <div id="legendDiffSub" style="font-size:10px; color:#6a757c; margin-top:2px;">Breedte = schaal t.o.v. max. intensiteit</div>
     </div>
     <!-- Gestapelde verschilplot-legende — alleen zichtbaar als diffStackActive -->
     <div id="legendDiffStack" style="display:none; margin-top:4px;">
-      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#ddd;">
-        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#8c8c8c;"></span>Ongewijzigd
-        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#dc1e1e;margin-left:6px;"></span>Toename
-        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#1eb43c;margin-left:6px;"></span>Afname
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#e3e6ea;">
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#6a757c;"></span>Ongewijzigd
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#e63312;margin-left:6px;"></span>Toename
+        <span style="display:inline-block;width:28px;height:8px;border-radius:2px;background:#49a748;margin-left:6px;"></span>Afname
       </div>
-      <div id="legendDiffStackSub" style="font-size:10px; color:#aaa; margin-top:2px;">Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname</div>
+      <div id="legendDiffStackSub" style="font-size:10px; color:#6a757c; margin-top:2px;">Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname</div>
     </div>
     <!-- Smiley-verschilplot-legende — alleen zichtbaar als diffSmileyActive -->
     <div id="legendDiffSmiley" style="display:none; margin-top:4px;">
-      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#ddd;">
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#e3e6ea;">
         <span style="font-size:14px;">🙂</span>Verbetering
         <span style="font-size:14px; margin-left:6px;">😠</span>Verslechtering
       </div>
-      <div style="font-size:10px; color:#aaa; margin-top:4px; display:flex; align-items:center; gap:8px;">
+      <div style="font-size:10px; color:#6a757c; margin-top:4px; display:flex; align-items:center; gap:8px;">
         <span>Drempel:</span>
         <label style="cursor:pointer;"><input type="radio" name="diffSmileyMode" value="rel" checked style="vertical-align:middle;"> relatief</label>
         <label style="cursor:pointer;"><input type="radio" name="diffSmileyMode" value="abs" style="vertical-align:middle;"> absoluut</label>
       </div>
-      <div id="diffSmileyRelRow" style="font-size:10px; color:#aaa; margin-top:4px; display:flex; align-items:center; gap:6px;">
+      <div id="diffSmileyRelRow" style="font-size:10px; color:#6a757c; margin-top:4px; display:flex; align-items:center; gap:6px;">
         <input type="range" id="diffSmileyThresholdSlider" min="0" max="50" step="1" value="10" style="flex:1; min-width:80px;">
         <span id="diffSmileyThresholdLabel" style="min-width:40px; text-align:right;">10%</span>
       </div>
-      <div id="diffSmileyAbsRow" style="font-size:10px; color:#aaa; margin-top:4px; display:none; align-items:center; gap:6px;">
+      <div id="diffSmileyAbsRow" style="font-size:10px; color:#6a757c; margin-top:4px; display:none; align-items:center; gap:6px;">
         <input type="range" id="diffSmileyAbsSlider" min="0" max="100" step="1" value="0" style="flex:1; min-width:80px;">
         <span id="diffSmileyAbsLabel" style="min-width:40px; text-align:right;">0</span>
       </div>
-      <div style="font-size:10px; color:#aaa; margin-top:2px;">Alleen wijzigingen groter dan de drempel krijgen een smiley</div>
+      <div style="font-size:10px; color:#6a757c; margin-top:2px;">Alleen wijzigingen groter dan de drempel krijgen een smiley</div>
     </div>
     <div id="carCountStrip"></div>
   </div>
@@ -1884,7 +1765,7 @@
         <span data-i18n="linkFlowDialogLabel">Intensiteit (24u)</span>
         <span class="field-hint" data-i18n="linkFlowDialogUnit">pae/dag</span>
       </label>
-      <div style="font-size:11px;color:#8a9bb5;margin-bottom:4px;" id="linkFlowCurrentDisplay"></div>
+      <div style="font-size:11px;color:#6a757c;margin-bottom:4px;" id="linkFlowCurrentDisplay"></div>
       <div class="node-field-row">
         <button id="linkFlowMinus">−</button>
         <input type="text" id="linkFlowVal"
@@ -1902,8 +1783,8 @@
   <!-- ── Nieuw wegvak — hint-balk ──────────────────────────────────────────── -->
   <div id="linkAddHintEl" style="display:none;
     position:fixed;bottom:52px;left:50%;transform:translateX(-50%);
-    background:rgba(13,17,23,0.88);border:1px solid rgba(109,224,160,0.35);
-    border-radius:8px;padding:7px 16px;font-size:12px;color:#6de0a0;
+    background:rgba(255,255,255,0.88);border:1px solid rgba(73,167,72,0.35);
+    border-radius:8px;padding:7px 16px;font-size:12px;color:#49a748;
     pointer-events:none;z-index:300;white-space:nowrap;">
     <span data-i18n="linkAddHint">Klik om een punt te plaatsen · dubbelklik of Afronden om te voltooien</span>
   </div>
@@ -1911,18 +1792,18 @@
   <!-- ── Nieuw wegvak — afronden popup ─────────────────────────────────────── -->
   <div id="linkAddFinishPopup" style="display:none;
     position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
-    background:rgba(13,17,23,0.95);border:1px solid rgba(109,224,160,0.3);
+    background:rgba(255,255,255,0.95);border:1px solid rgba(73,167,72,0.3);
     border-radius:10px;padding:10px 14px;z-index:400;
     display:none;flex-direction:column;gap:6px;min-width:180px">
     <button id="linkAddFinishBtn" style="
-      background:rgba(109,224,160,0.15);color:#6de0a0;
-      border:1px solid rgba(109,224,160,0.4);border-radius:7px;
+      background:rgba(73,167,72,0.15);color:#49a748;
+      border:1px solid rgba(73,167,72,0.4);border-radius:7px;
       padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer">
       &#10003; <span data-i18n="linkAddFinishBtn">Lijn afronden</span>
     </button>
     <button id="linkAddClearBtn" style="
-      background:transparent;color:#5a6272;
-      border:1px solid rgba(255,255,255,0.1);border-radius:7px;
+      background:transparent;color:#6a757c;
+      border:1px solid rgba(35,41,49,0.1);border-radius:7px;
       padding:7px 10px;font-size:12px;cursor:pointer">
       &#10005; <span data-i18n="linkAddClearBtn">Wis lijn</span>
     </button>
@@ -1931,7 +1812,7 @@
   <!-- ── Nieuw wegvak — attribuut-dialoog ──────────────────────────────────── -->
   <div id="linkAddDialog" style="display:none">
     <h3 data-i18n="linkAddDialogTitle">Nieuw wegvak</h3>
-    <div id="linkAddLengthDisplay" style="font-size:11px;color:#8a9bb5;margin-bottom:10px;"></div>
+    <div id="linkAddLengthDisplay" style="font-size:11px;color:#6a757c;margin-bottom:10px;"></div>
     <div class="node-field">
       <label>
         <span data-i18n="linkAddCapLabel">Capaciteit</span>
@@ -1974,7 +1855,7 @@
   <div id="gmtUploadDialog" style="display:none">
     <h3 data-i18n="gmtUploadDialogTitle">Upload naar GMT</h3>
     <div class="node-field">
-      <div id="gmtUploadMaxFlowDisplay" style="font-size:12px;color:#8a9bb5;margin-bottom:8px;"></div>
+      <div id="gmtUploadMaxFlowDisplay" style="font-size:12px;color:#6a757c;margin-bottom:8px;"></div>
       <label>
         <span data-i18n="gmtUploadFilterLabel">Max. voor upload (leeg = alles)</span>
         <span class="field-hint" data-i18n="linkFlowDialogUnit">pae/dag</span>
@@ -2122,13 +2003,13 @@
   <div id="changesPanel">
     <div id="changesPanelHeader">
       <span data-i18n="changesTitle">Wijzigingen</span>
-      <span id="changesCount" style="color:#5a6272;font-weight:400">0</span>
+      <span id="changesCount" style="color:#6a757c;font-weight:400">0</span>
     </div>
     <div id="changesList"></div>
     <div id="changesPanelFooter">
       <input type="text" id="scenarioNameInput" placeholder="Scenario-naam" data-i18n-ph="scenarioNamePh"/>
       <label id="adjustDebugLabel">
-        <input type="checkbox" id="adjustDebug" style="accent-color:#ffb450;width:13px;height:13px;flex-shrink:0"/>
+        <input type="checkbox" id="adjustDebug" style="accent-color:#dd7a00;width:13px;height:13px;flex-shrink:0"/>
         Debug-uitvoer activeren
       </label>
       <button id="applyChangesBtn" data-i18n="applyBtn">&#9654; Doorvoeren</button>
@@ -2140,7 +2021,7 @@
   <div id="whatifRcPanel">
     <div id="whatifRcPanelHeader">
       <span data-i18n="whatifRcTitle">What-if wegafsluiting</span>
-      <span id="whatifRcCount" style="color:#5a6272;font-weight:400">0</span>
+      <span id="whatifRcCount" style="color:#6a757c;font-weight:400">0</span>
     </div>
     <div id="whatifRcList"></div>
     <div id="whatifRcFooter">
@@ -3530,11 +3411,11 @@
   if (!AREA_ID) {
     const loader = document.getElementById('loader');
     loader.innerHTML = `
-      <div style="font-family:'Segoe UI',sans-serif;color:#c9d6e8;width:500px;max-width:96vw;padding:24px">
-        <h2 style="color:#7ec8e3;margin:0 0 8px;font-size:20px;text-align:center">${T('areaTitle')}</h2>
-        <p style="color:#5a6272;font-size:13px;margin:0 0 16px;text-align:center">${T('areaSubtitle')}</p>
+      <div style="font-family:'Segoe UI',sans-serif;color:#232931;width:500px;max-width:96vw;padding:24px">
+        <h2 style="color:#00a5ab;margin:0 0 8px;font-size:20px;text-align:center">${T('areaTitle')}</h2>
+        <p style="color:#6a757c;font-size:13px;margin:0 0 16px;text-align:center">${T('areaSubtitle')}</p>
         <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px"></div>
-        <p id="areaError" style="display:none;color:#ff6b6b;font-size:13px;margin-top:16px;text-align:center"></p>
+        <p id="areaError" style="display:none;color:#e63312;font-size:13px;margin-top:16px;text-align:center"></p>
       </div>`;
 
     fetch('/collections/areas/items')
@@ -5627,7 +5508,7 @@
       const nfmt = (v, d = 0) => Number(v).toLocaleString(T('numberLocale'),
         { minimumFractionDigits: d, maximumFractionDigits: d });
       const row = (label, value) => `<tr>
-        <td style="color:#5a6272;padding-right:10px;white-space:nowrap">${label}</td>
+        <td style="color:#6a757c;padding-right:10px;white-space:nowrap">${label}</td>
         <td style="text-align:right;white-space:nowrap"><b>${value}</b></td></tr>`;
 
       const rows = [];
@@ -5642,8 +5523,8 @@
       }
 
       if (!rows.length) return '';
-      return `<div style="margin-top:6px;border-top:1px solid rgba(126,200,227,0.15);padding-top:6px">
-        <div style="color:#7ec8e3;font-size:11px;margin-bottom:3px">${T('calcTitle')}</div>
+      return `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
+        <div style="color:#00a5ab;font-size:11px;margin-bottom:3px">${T('calcTitle')}</div>
         <table style="border-collapse:collapse;font-size:12px;width:100%">${rows.join('')}</table>
       </div>`;
     }
@@ -6104,13 +5985,13 @@
               const color  = isAttr ? '#2ca02c' : '#d62728';
               const arrow  = isAttr ? '↑' : '↓';
               const label  = T(isAttr ? 'tooltipBuildingAttraction' : 'tooltipBuildingProduction');
-              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(126,200,227,0.15);padding-top:5px">
-                <span style="color:#5a6272;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
                 <b style="color:${color}">${arrow} ${label}</b><span style="color:#888"> (${pct}%)</span>
               </div>`;
             } else if (isRelevant) {
-              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(126,200,227,0.15);padding-top:5px">
-                <span style="color:#5a6272;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
                 <b style="color:#888">${T('tooltipBuildingNeutral')}</b>
               </div>`;
             }
@@ -6121,24 +6002,24 @@
           const osmRows = _SHOW
             .filter((k) => p[k] != null && p[k] !== '')
             .map((k) => `<tr>
-              <td style="color:#5a6272;padding-right:10px;white-space:nowrap">${k}</td>
+              <td style="color:#6a757c;padding-right:10px;white-space:nowrap">${k}</td>
               <td style="word-break:break-word"><b>${p[k]}</b></td>
             </tr>`)
             .join('');
 
           const osmLink = p.osm_id
-            ? `<div style="margin-top:6px;border-top:1px solid rgba(126,200,227,0.15);padding-top:6px">
+            ? `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
                 <a href="https://www.openstreetmap.org/way/${p.osm_id}" target="_blank"
-                   style="color:#7ec8e3;font-size:11px">OSM way/${p.osm_id} ↗</a>
+                   style="color:#00a5ab;font-size:11px">OSM way/${p.osm_id} ↗</a>
                </div>` : '';
 
           _bTip.innerHTML = `
-            <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">${typeLabel}</div>
-            ${zoneName ? `<div><span style="color:#5a6272">${T('tooltipBuildingZone')}: </span><b>${zoneName}</b></div>` : ''}
-            <div><span style="color:#5a6272">${T('tooltipBuildingHeight')}: </span><b>${heightM}</b></div>
+            <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">${typeLabel}</div>
+            ${zoneName ? `<div><span style="color:#6a757c">${T('tooltipBuildingZone')}: </span><b>${zoneName}</b></div>` : ''}
+            <div><span style="color:#6a757c">${T('tooltipBuildingHeight')}: </span><b>${heightM}</b></div>
             ${dirHtml}
             ${_buildingCalcHtml(p)}
-            ${osmRows ? `<div style="margin-top:6px;border-top:1px solid rgba(126,200,227,0.15);padding-top:6px">
+            ${osmRows ? `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
               <table style="border-collapse:collapse;font-size:12px;width:100%">${osmRows}</table>
             </div>` : ''}
             ${osmLink}
@@ -7935,28 +7816,28 @@
       if (_taHover.signal) {
         const road = p.roadName || '';
         html = '<div style="text-align:center;min-width:90px"><strong>Verkeerslicht</strong>';
-        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         html += '</div>';
       } else if (at === 'speedBump' || at === 'pedestrianCrossing' || at === 'stopSign' || at === 'giveWay') {
         const label = { speedBump: 'Verkeersdrempel', pedestrianCrossing: 'Voetgangersoversteek',
                         stopSign: 'Stopbord (B7)', giveWay: 'Voorrang verlenen (B6)' }[at];
         const road = p.roadName || p.road_name || '';
         html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
-        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         html += '</div>';
       } else if (at === 'footPath' || at === 'cyclePath') {
         const label = at === 'footPath' ? 'Voetpad' : 'Fietspad';
         const surf  = (p.surface || '').replace(/_/g, ' ');
         const road  = p.roadName || p.road_name || p.name || '';
         html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
-        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         if (surf) html += `<br><span style="font-size:0.8em;color:#777">${surf}</span>`;
         html += '</div>';
       } else if (at === 'bak' || at === 'tunnel') {
         const label = at === 'bak' ? 'Verlaagd wegdeel (bak)' : 'Tunnel';
         const road  = p.roadName || p.road_name || p.name || '';
         html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
-        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         html += '</div>';
       } else {
         const road   = p.roadName || p.road_name || '';
@@ -7964,7 +7845,7 @@
         html = '<div style="text-align:center;min-width:90px">';
         if (imgUrl) html += `<img src="${imgUrl}" style="display:block;max-width:130px;max-height:90px;margin:0 auto 6px;border-radius:4px" onerror="this.style.display='none'">`;
         html += `<strong>${rvv}</strong>`;
-        if (road) html += `<br><span style="font-size:0.85em;color:#555">${road}</span>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         html += '</div>';
       }
       new maplibregl.Popup({ closeButton: false, offset: 10 })
@@ -8856,7 +8737,7 @@
         const score = safety[key] ?? 'NVT';
         const color = kpiColor(score);
         return `<div style="display:flex;justify-content:space-between;align-items:center;
-          padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+          padding:5px 0;border-bottom:1px solid rgba(35,41,49,0.05)">
           <span style="color:#aab4c8">${label}</span>
           <span style="font-weight:600;color:${color}">${score}</span>
         </div>`;
@@ -9825,7 +9706,7 @@
       infoEl.innerHTML = pairRoutes.length
         ? `${T('odEditFoundRoutes', pairRoutes.length)} &nbsp;·&nbsp; `
           + `${T('odEditCurrentTrips')} <b>${totalTrips.toLocaleString(loc, {maximumFractionDigits:1})}</b>`
-        : `<span style="color:#ff6b6b">${T('odEditNoRoutes')}</span>`;
+        : `<span style="color:#e63312">${T('odEditNoRoutes')}</span>`;
 
       // Trips invoer
       document.getElementById('odEditTripsInput').value = totalTrips.toFixed(1);
@@ -10088,24 +9969,24 @@
       const contextLabel = _fspActiveLabel ?? dpLabels[daypart];
       const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
       _segTip.innerHTML = `
-        <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
           ${T('tooltipSegment', Math.abs(p.linkId))}
         </div>
-        <div><span style="color:#5a6272">${contextKey}: </span><b>${contextLabel}</b></div>
-        <div><span style="color:#5a6272">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
-        <div><span style="color:#5a6272">${T('tooltipFlowTotal')}: </span><b>${p.flow?.toFixed(0)} ${T('tooltipFlow24Unit')}</b></div>
-        <div><span style="color:#5a6272">${T('tooltipSpeed')}: </span><b>${p.speed} km/h</b></div>
-        <div><span style="color:#5a6272">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
-        <div><span style="color:#5a6272">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
-        <div><span style="color:#5a6272">${T('tooltipOccup')}: </span><b>${occ}</b></div>
-        <div><span style="color:#5a6272">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
-        <div><span style="color:#5a6272">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
+        <div><span style="color:#6a757c">${contextKey}: </span><b>${contextLabel}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipFlowTotal')}: </span><b>${p.flow?.toFixed(0)} ${T('tooltipFlow24Unit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipSpeed')}: </span><b>${p.speed} km/h</b></div>
+        <div><span style="color:#6a757c">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
         ${(() => {
           const nd = noiseByLinkId && noiseByLinkId.get(p.linkId);
           if (!nd) return '';
           let h = '';
-          if (nd.noiseLden != null)   h += `<div><span style="color:#5a6272">${T('legendNoiseLden')}: </span><b>${nd.noiseLden.toFixed(1)} dB(A)</b></div>`;
-          if (nd.noiseLnight != null) h += `<div><span style="color:#5a6272">${T('legendNoiseLnight')}: </span><b>${nd.noiseLnight.toFixed(1)} dB(A)</b></div>`;
+          if (nd.noiseLden != null)   h += `<div><span style="color:#6a757c">${T('legendNoiseLden')}: </span><b>${nd.noiseLden.toFixed(1)} dB(A)</b></div>`;
+          if (nd.noiseLnight != null) h += `<div><span style="color:#6a757c">${T('legendNoiseLnight')}: </span><b>${nd.noiseLnight.toFixed(1)} dB(A)</b></div>`;
           return h;
         })()}
         ${(() => {
@@ -10115,19 +9996,19 @@
           if (!(len > 0)) return '';
           const km = len / 1000;
           let h = '';
-          if (ed.co2Kg  != null) h += `<div><span style="color:#5a6272">CO\u2082: </span><b>${(ed.co2Kg/km).toFixed(1)} kg/km</b></div>`;
-          if (ed.noxKg  != null) h += `<div><span style="color:#5a6272">NO\u2093: </span><b>${(ed.noxKg/km).toFixed(2)} kg/km</b></div>`;
-          if (ed.pm10Kg != null) h += `<div><span style="color:#5a6272">PM10: </span><b>${(ed.pm10Kg/km).toFixed(2)} kg/km</b></div>`;
+          if (ed.co2Kg  != null) h += `<div><span style="color:#6a757c">CO\u2082: </span><b>${(ed.co2Kg/km).toFixed(1)} kg/km</b></div>`;
+          if (ed.noxKg  != null) h += `<div><span style="color:#6a757c">NO\u2093: </span><b>${(ed.noxKg/km).toFixed(2)} kg/km</b></div>`;
+          if (ed.pm10Kg != null) h += `<div><span style="color:#6a757c">PM10: </span><b>${(ed.pm10Kg/km).toFixed(2)} kg/km</b></div>`;
           return h;
         })()}
         ${(() => {
           const wsProps = wegenscanByLinkId.get(String(p.linkId));
           if (!wsProps?.generic_safety) return '';
-          return `<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px">
-            <span style="color:#5a6272">Veiligheid: </span>
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            <span style="color:#6a757c">Veiligheid: </span>
             <b style="color:${kpiColor(wsProps.generic_safety)}">${wsProps.generic_safety}</b>
             ${colorMetric === 'safety'
-              ? `<span style="color:#7ec8e3;margin-left:6px;cursor:pointer" onclick="openWegenscanPanel(wegenscanByLinkId.get('${p.linkId}'))">→ details</span>`
+              ? `<span style="color:#00a5ab;margin-left:6px;cursor:pointer" onclick="openWegenscanPanel(wegenscanByLinkId.get('${p.linkId}'))">→ details</span>`
               : ''}
           </div>`;
         })()}
@@ -10406,12 +10287,12 @@
         ? (diff > 0 ? '+' : '') + fmtMetricVal(diff, diffMetric)
         : '–';
       _segTip.innerHTML = `
-        <div style="color:#7ec8e3;font-weight:600;margin-bottom:6px">
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
           ${T('tooltipSegment', Math.abs(linkId))}
         </div>
-        <div><span style="color:#5a6272">Oud: </span><b>${fmtMetricVal(oldVal, diffMetric)}</b></div>
-        <div><span style="color:#5a6272">Nieuw: </span><b>${fmtMetricVal(newVal, diffMetric)}</b></div>
-        <div><span style="color:#5a6272">Verschil: </span><b style="color:${diffColor}">${diffStr}</b></div>
+        <div><span style="color:#6a757c">Oud: </span><b>${fmtMetricVal(oldVal, diffMetric)}</b></div>
+        <div><span style="color:#6a757c">Nieuw: </span><b>${fmtMetricVal(newVal, diffMetric)}</b></div>
+        <div><span style="color:#6a757c">Verschil: </span><b style="color:${diffColor}">${diffStr}</b></div>
         <div style="margin-top:4px;font-size:10px;color:#666">${p.speed} km/h · ${p.lanes} rijstr. · ${p.length?.toFixed(0)} m</div>
       `;
       const rect = map.getCanvas().getBoundingClientRect();
@@ -11935,7 +11816,7 @@
          })[d.zoneClass] ?? d.zoneClass;
          const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
          const flowRow = d.flow > 0
-           ? `<div><span style="color:#5a6272">${T('tooltipZoneRoute')} (${dpLabels[daypart]}): </span>
+           ? `<div><span style="color:#6a757c">${T('tooltipZoneRoute')} (${dpLabels[daypart]}): </span>
                 <b>${d.flow.toFixed(0)}\u202f${T('tooltipZoneRouteUnit')}</b></div>`
            : '';
 
@@ -11957,28 +11838,28 @@
                  const m2 = Math.round(bd[type] || 0);
                  if (!m2) return '';
                  return `<div style="display:flex;justify-content:space-between;gap:16px">
-                   <span style="color:#5a6272">${T(key)}</span>
+                   <span style="color:#6a757c">${T(key)}</span>
                    <b>${m2.toLocaleString(loc)}\u202f${T('tooltipZoneFloorUnit')}</b></div>`;
                })
                .join('')
            : '';
          const floorSection = floorRows
-           ? `<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px">
+           ? `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
                 <div style="color:#7a8494;font-size:11px;margin-bottom:3px">${T('tooltipZoneFloorTitle')}</div>
                 ${floorRows}
               </div>`
            : '';
          return {
            html: `
-             <div style="font:13px 'Segoe UI',sans-serif;color:#dde4f0;line-height:1.8">
+             <div style="font:13px 'Segoe UI',sans-serif;color:#232931;line-height:1.8">
                <div style="color:${accentColor};font-weight:600;margin-bottom:6px">
                  ${d.zoneName}
                </div>
-               <div><span style="color:#5a6272">${T('tooltipZoneClass')}: </span>
+               <div><span style="color:#6a757c">${T('tooltipZoneClass')}: </span>
                  <b>${classLabel}</b></div>
-               <div><span style="color:#5a6272">${T('tooltipZoneProd')}: </span>
+               <div><span style="color:#6a757c">${T('tooltipZoneProd')}: </span>
                  <b>${(d.production).toLocaleString(loc)}\u202f${T('tooltipZoneProdUnit')}</b></div>
-                <div><span style="color:#5a6272">${T('tooltipZoneAttr')}: </span>
+                <div><span style="color:#6a757c">${T('tooltipZoneAttr')}: </span>
                   <b>${(d.attraction).toLocaleString(loc)}\u202f${T('tooltipZoneAttrUnit')}</b></div>
                 ${flowRow}
                 ${floorSection}
@@ -16243,56 +16124,56 @@
   </script>
   <div id="segmentTooltip" style="
     display:none; position:fixed; z-index:9998; pointer-events:none;
-    background:rgba(13,17,23,0.95); border-radius:10px; padding:12px 16px;
-    border:1px solid rgba(126,200,227,0.25); box-shadow:0 4px 20px rgba(0,0,0,0.5);
-    font:13px 'Segoe UI',sans-serif; color:#dde4f0; line-height:1.8;
+    background:rgba(255,255,255,0.95); border-radius:10px; padding:12px 16px;
+    border:1px solid rgba(0,165,171,0.25); box-shadow:0 4px 20px rgba(35,41,49,0.5);
+    font:13px 'Segoe UI',sans-serif; color:#232931; line-height:1.8;
     max-width:260px;
   "></div>
   <div id="buildingTooltip" style="
     display:none; position:fixed; z-index:9999; pointer-events:auto;
-    background:rgba(13,17,23,0.95); border-radius:10px; padding:12px 16px;
-    border:1px solid rgba(126,200,227,0.25); box-shadow:0 4px 20px rgba(0,0,0,0.5);
-    font:13px 'Segoe UI',sans-serif; color:#dde4f0; line-height:1.8;
+    background:rgba(255,255,255,0.95); border-radius:10px; padding:12px 16px;
+    border:1px solid rgba(0,165,171,0.25); box-shadow:0 4px 20px rgba(35,41,49,0.5);
+    font:13px 'Segoe UI',sans-serif; color:#232931; line-height:1.8;
     max-width:260px;
   "></div>
 
   <!-- ── Wegenscan: "uitvoeren"-banner ──────────────────────────────────── -->
   <div id="wegenscanBanner" style="
     display:none; position:fixed; bottom:56px; left:50%; transform:translateX(-50%);
-    z-index:9990; background:rgba(13,17,23,0.95);
-    border:1px solid rgba(126,200,227,0.35); border-radius:10px;
-    padding:12px 20px; font:13px 'Segoe UI',sans-serif; color:#dde4f0;
-    display:none; align-items:center; gap:12px; box-shadow:0 4px 20px rgba(0,0,0,0.5);
+    z-index:9990; background:rgba(255,255,255,0.95);
+    border:1px solid rgba(0,165,171,0.35); border-radius:10px;
+    padding:12px 20px; font:13px 'Segoe UI',sans-serif; color:#232931;
+    display:none; align-items:center; gap:12px; box-shadow:0 4px 20px rgba(35,41,49,0.5);
   ">
     <span id="wegenscanBannerMsg">Nog geen veiligheidsdata voor dit gebied.</span>
     <button id="wegenscanRunBtn" style="
       background:#1976d2; color:#fff; border:none; border-radius:6px;
       padding:6px 14px; cursor:pointer; font:13px 'Segoe UI',sans-serif;
     ">Wegenscan uitvoeren</button>
-    <span id="wegenscanProgress" style="display:none;color:#7ec8e3"></span>
+    <span id="wegenscanProgress" style="display:none;color:#00a5ab"></span>
   </div>
 
   <!-- ── Wegenscan: KPI-zijpaneel ───────────────────────────────────────── -->
   <div id="wegenscanPanel" style="
     display:none; position:fixed; top:56px; right:0; bottom:0; width:320px;
-    z-index:9980; background:rgba(13,17,23,0.97);
-    border-left:1px solid rgba(126,200,227,0.25);
-    box-shadow:-4px 0 20px rgba(0,0,0,0.5);
-    font:13px 'Segoe UI',sans-serif; color:#dde4f0;
+    z-index:9980; background:rgba(255,255,255,0.97);
+    border-left:1px solid rgba(0,165,171,0.25);
+    box-shadow:-4px 0 20px rgba(35,41,49,0.5);
+    font:13px 'Segoe UI',sans-serif; color:#232931;
     overflow-y:auto; padding:16px;
   ">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div>
-        <div style="color:#7ec8e3;font-weight:700;font-size:15px">Wegenscan</div>
+        <div style="color:#00a5ab;font-weight:700;font-size:15px">Wegenscan</div>
         <div id="wegenscanPanelLinkId" style="color:#8892aa;font-size:12px"></div>
       </div>
       <button id="wegenscanPanelClose" style="
-        background:none;border:none;color:#7ec8e3;font-size:18px;cursor:pointer;line-height:1
+        background:none;border:none;color:#00a5ab;font-size:18px;cursor:pointer;line-height:1
       " title="Sluiten">✕</button>
     </div>
     <div id="wegenscanPanelScore" style="
       margin-bottom:16px;padding:10px 14px;border-radius:8px;
-      background:rgba(255,255,255,0.05);
+      background:rgba(35,41,49,0.05);
     ">
       <span style="color:#8892aa">Veiligheidsscore: </span>
       <span id="wegenscanGenericScore" style="font-weight:700;font-size:15px"></span>
