@@ -119,6 +119,11 @@
     }
     .tb-btn:hover { background: #f0f2f4; color: #4b5159; }
     .tb-btn.active { background: #de0058; color: #ffffff; border-color: #de0058; }
+    /* Tekstknoppen (tbtn) - voor navigatie items zoals "Netwerk", "Scenario" */
+    .tbtn { border: 0; background: transparent; color: #4b5159; font-size: 13px; padding: 7px 12px; border-radius: 7px; cursor: pointer; font-weight: 600; }
+    .tbtn:hover { background: #f0f2f4; }
+    .tbtn.active { background: #de0058; color: #fff; }
+    .tbtn.ghost { border: 1px solid #e3e6ea; }
     .tb-select {
       height: 30px;
       background: #ffffff; color: #232931;
@@ -963,7 +968,7 @@
       padding: 6px 8px 6px 12px;
       cursor: grab;
       font-size: 11px; font-weight: 600; color: #00a5ab;
-      letter-spacing: 0.06em; text-transform: uppercase;
+      letter-spacing: 0.3px;
       border-bottom: 1px solid #e3e6ea;
       border-radius: 10px 10px 0 0;
     }
@@ -996,7 +1001,7 @@
       padding: 6px 8px 6px 12px;
       cursor: grab;
       font-size: 11px; font-weight: 600; color: #00a5ab;
-      letter-spacing: 0.06em; text-transform: uppercase;
+      letter-spacing: 0.3px;
       border-bottom: 1px solid #e3e6ea;
       border-radius: 10px 10px 0 0;
     }
