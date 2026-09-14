@@ -1033,6 +1033,34 @@
     }
     #flowScalerPanel.fsp-visible { display: block; }
 
+    /* ── Instellingen-paneel ───────────────────────────────────────────────── */
+    #settingsPanel {
+      display: none;
+      position: fixed;
+      top: 52px;
+      z-index: 30;
+      width: 320px;
+      background: #ffffff;
+      border: 1px solid #e3e6ea;
+      border-radius: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    #settingsPanel.sp-visible { display: block; }
+    .sp-text {
+      background: #f4f6f8;
+      border: 1px solid #e3e6ea;
+      border-radius: 4px;
+      color: #4b5159;
+      padding: 2px 5px;
+      font-size: 10px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .sp-text:focus { outline: none; border-color: #00a5ab; }
+
     #fspHeader {
       padding: 11px 14px 10px;
       border-bottom: 1px solid #e3e6ea;
@@ -1102,7 +1130,43 @@
     /* Active-indicator op de toolbar-knop (nu in #daypartBtns) */
     #fspBtn.active { color: #00a5ab; border-color: rgba(0,165,171,0.5); background: rgba(0,165,171,0.12); }
 
-    /* ── Debug-paneel ────────────────────────────────────────────────── */
+    #spHeader {
+      padding: 11px 14px 10px;
+      border-bottom: 1px solid #e3e6ea;
+      font-size: 12px; color: #00a5ab; font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #spHeader button {
+      background: none; border: none; color: #6a757c; cursor: pointer;
+      font-size: 15px; padding: 0; line-height: 1;
+      transition: color 0.15s;
+    }
+    #spHeader button:hover { color: #232931; }
+    #spBody { padding: 12px 16px 14px; }
+    #spApply {
+      width: 100%; padding: 7px 0; margin-top: 2px;
+      background: #00a5ab;
+      color: #ffffff;
+      border: 1px solid #00a5ab;
+      border-radius: 7px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    #spApply:hover { background: #008a90; }
+    .sp-section { margin-bottom: 0; }
+    .sp-section + .sp-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e3e6ea; }
+    .sp-label {
+      font-size: 10px; color: #6a757c; text-transform: uppercase;
+      letter-spacing: 0.4px; margin-bottom: 6px; font-weight: 600;
+    }
+    .sp-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 3px 0; cursor: pointer;
+    }
+    .sp-row input { accent-color: #00a5ab; cursor: pointer; margin: 0; }
+    .sp-row span  { font-size: 12px; color: #232931; }
+
+    /* ── Debug-paneel ────────────────────────────────────────────────– */
     #debugPanel {      position: absolute; top: 56px; right: 16px; z-index: 10;
       background: rgba(255,255,255,0.93);
       border: 1px solid rgba(221,122,0,0.3);
