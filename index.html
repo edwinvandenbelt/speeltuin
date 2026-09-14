@@ -140,9 +140,9 @@
     #pauseBtn:hover { background: rgba(0,165,171,0.22); color: #00a5ab; }
     #pauseBtn.paused { background: rgba(221,122,0,0.13); color: #dd7a00; border-color: rgba(221,122,0,0.35); }
     #pauseBtn.paused:hover { background: rgba(221,122,0,0.22); }
-    .tb-add { border-color: #49a748; color: #49a748; background: transparent; }
+    /* .tb-add { border-color: #49a748; color: #49a748; background: transparent; }
     .tb-add:hover { background: #f0f2f4 !important; color: #49a748 !important; border-color: #49a748 !important; }
-    .tb-add.active { background: #49a748 !important; color: #ffffff !important; border-color: #49a748 !important; }
+    .tb-add.active { background: #49a748 !important; color: #ffffff !important; border-color: #49a748 !important; } */
     .lang-select { min-width: 70px; padding: 0 4px; font-size: 12px; }
 
     /* ── Legend strip ────────────────────────────────────────────────– */
@@ -303,14 +303,14 @@
 
     /* ── Edit-modus knoppen ───────────────────────────────────────────── */
     .edit-btn {
-      border-color: #dd7a00 !important;
+      border-color: 1px solid #e3e6ea;
       background: transparent !important;
-      color: #dd7a00 !important;
+      color:1px solid #e3e6ea
     }
     .edit-btn:hover { background: #fff3e6 !important; }
     .edit-btn.active {
-      background: #dd7a00 !important;
-      border-color: #dd7a00 !important;
+      background: #de0058 !important;
+      border-color: #de0058  !important;
       color: #ffffff !important;
     }
 
@@ -682,10 +682,10 @@
     #whatifRcClearBtn:hover { background: #e8ecf0; color: #232931; }
     #whatifRcStatus { font-size: 11px; color: #00a5ab; margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
     /* Rode gloedkleur voor active what-if-knop */
-    #whatifRcBtn:hover { background: rgba(230,51,18,0.15) !important; color: #e63312 !important; }
+    #whatifRcBtn:hover { color: #e63312 !important; }
     #whatifRcBtn.active { background: #e63312 !important; color: #ffffff !important; border-color: #e63312 !important; }
     /* OD-paar aanpassen knop */
-    #odEditBtn:hover  { background: rgba(0,128,201,0.15) !important; color: #00a5ab !important; }
+    #odEditBtn:hover  { color: #00a5ab !important; }
     #odEditBtn.active { background: #00a5ab !important; color: #ffffff !important; border-color: #00a5ab !important; }
 
     /* ── OD-edit paneel ─────────────────────────────────────────────────── */
@@ -968,6 +968,7 @@
       padding: 6px 8px 6px 12px;
       cursor: grab;
       font-size: 11px; font-weight: 600; color: #00a5ab;
+      font-family: 'Segoe UI', system-ui, sans-serif;
       letter-spacing: 0.3px;
       border-bottom: 1px solid #e3e6ea;
       border-radius: 10px 10px 0 0;
@@ -1001,6 +1002,7 @@
       padding: 6px 8px 6px 12px;
       cursor: grab;
       font-size: 11px; font-weight: 600; color: #00a5ab;
+      font-family: 'Segoe UI', system-ui, sans-serif;
       letter-spacing: 0.3px;
       border-bottom: 1px solid #e3e6ea;
       border-radius: 10px 10px 0 0;

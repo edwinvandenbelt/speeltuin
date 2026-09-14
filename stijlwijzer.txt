@@ -1,0 +1,622 @@
+STIJLWIJZER
+Goudappel en Dat.mobility 
+
+Opdrachtgever
+Concept
+Design
+Titel rapport
+Datum publicatie
+Projectleider Goudappel
+Projectteam Goudappel
+© Copyright Goudappel
+1. Logo 
+4
+1.1  
+Goudappel 
+6
+1.1.1 Kleur 
+6
+1.1.2 Niet doen 
+6
+1.2  
+Dat.mobility 
+8
+1.2.1 Kleur 
+8
+1.2.2 Niet doen 
+8
+2. Lettertype 
+10
+2.1  
+Segoe UI 
+12
+3. Kleuren 
+16
+3.1  
+Primaire kleuren 
+18
+3.2  
+Secundaire kleuren 
+20
+4. Beeld 
+24
+5. Stijlelementen 
+30
+5.1  
+Dubbele lijn 
+32
+Goudappel
+O-bureau
+O-bureau
+November 2020
+ 
+Inhoudsopgave
+6. Bijlagen 
+6.1      Instructies voor digitale onderzoeksrapporten
+6.2      Aanpassingen primair kleurgebruik
+6.3      Aanpassingen secundair kleurgebruik
+6.4      Aanpassingen in kleurgebruik voor datavisualisaties
+6.5      Aanpassingen tekstgebruik
+6.5.1   Kleur tekst
+6.5.2   Tekst op een gekleurde achtergrond
+ 34
+   36
+   38
+   40
+   42
+   44
+   44
+   46
+v2: Maart 2024
+v2 Aangepast op digitale toegankelijkheid: 
+Leon Rook, Ruben Hanterink, Ilone Tijsseling, 
+Chris Valk
+m
+
+Goudappel en Dat.mobility.
+1. LOGO
+
+Logo
+Logo icoon
+1.1 Goudappel
+1.1.1 Kleur 
+In verband met het rekening houden van 
+niet mogelijk.
+1.1.2 Niet doen
+Logo
+Logo icoon
+6
+Goudappel stijlwijzer - 25 maart 2024
+
+1.2 Dat.mobility
+1.2.1 kleur
+In verband met het rekening houden van 
+niet mogelijk.
+1.2.2 Niet doen
+Logo
+Logo icoon
+Logo
+Logo icoon
+8
+Goudappel stijlwijzer - 25 maart 2024
+m
+
+2. LETTERTYPE
+
+2.1 Segoe UI
+Segoe UI Bold
+Segoe UI Semibold
+Segoe UI Regular
+Segoe UI Semilight
+Segoe UI Light
+abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLM
+NOPQRSTUVWXYZ 1234567890 !?\><()#@%^&*
+abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLM
+NOPQRSTUVWXYZ 1234567890 !?\><()#@%^&*
+#@%^&*
+abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLM
+NOPQRSTUVWXYZ 1234567890 !?\><()#@%^&*
+abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLM
+NOPQRSTUVWXYZ 1234567890 !?\><()#@%^&*
+13
+12
+Goudappel stijlwijzer - 25 maart 2024
+Goudappel stijlwijzer - 25 maart 2024
+Voor het gebruik van tekst in onderzoeksrapporten:
+ 
+Zie: 6. Bijlagen ‘6.4 Aanpassingen in tekstgebruik’.
+m
+
+TITEL IN  
+KAPITALEN 
+Subtitel onder de lijnen  
+van een titel in kapitalen
+Titel in kleine letters  
+over twee regels
+Inleiding
+Platte tekst 
+Hightlighted tekst (bold) 
+Eum natque niendit eum, tem simporeium dolessitatet ut acipsa 
+nonserc iendio eici cones earum lis erunt quid.
+Primaire kleur van Goudappel of Datmobility gebruiken.
+Toelichting tekst (light en 10° schuin)
+occulpar chillendit quae remquae solo conecum, sin pa voluptatent.
+Vaste fontgrootte: 10 pt.
+15
+Goudappel stijlwijzer - 25 maart 2024
+Goudappel stijlwijzer - 25 maart 2024
+
+3. KLEUREN
+
+3.1 Primaire kleuren
+Goudappel = Goudappel rood 
+Dat.mobility = Dat.mobility blauw 
+kleuren mocht dit nodig zijn.
+Goudappel rood
+licht grijs
+Dat.mobility blauw
+donker grijs
+Goudappel stijlwijzer - 25 maart 2024
+18
+Goudappel stijlwijzer - 25 maart 2024
+Voor het gebruik van primaire kleuren in digitale 
+onderzoeksrapporten:
+ 
+Zie: 6. Bijlagen ‘6.1 Aanpassingen   
+ 
+ 
+ 
+primair kleurgebruik’.
+m
+
+3.000
+3.000
+2.500
+2.500
+2.000
+2.000
+1.500
+1.500
+1.000
+1.000
+500
+500
+0
+0
+ochtend
+ochtend
+middag
+middag
+avond
+avond
+koopavond
+koopavond
+nacht
+nacht
+3.2 Secundaire kleuren
+lichtgrijs
+lichtblauw
+geel
+lichtgroen
+roze
+blauw
+geel/oranje
+groen
+roze/paars
+donkerblauw
+oranje
+licht turquoise
+paars
+grijs/blauw
+rood
+turquoise
+grijs/paars
+donkergrijs
+extra donkergrijs
+midgrijs
+Goudappel en Dat.mobility kunnen beide gebruik 
+21
+Goudappel stijlwijzer - 25 maart 2024
+20
+Goudappel stijlwijzer - 25 maart 2024
+Voor het gebruik van secundaire kleuren in 
+digitale onderzoeksrapporten:
+ 
+Zie: 6. Bijlagen ‘6.1 Aanpassingen   
+ 
+ 
+ 
+primair kleurgebruik’.
+
+3.000
+2.500
+2.000
+1.500
+1.000
+500
+0
+ochtend
+middag
+avond
+koopavond
+nacht
+3.000
+2.500
+2.000
+1.500
+1.000
+500
+0
+ochtend
+middag
+avond
+koopavond
+nacht
+3.2 Secundaire kleuren
+1. Goudappel 
+rood
+1. Dat.Mobility 
+blauw
+6. groen
+6. groen
+3. donkergrijs
+3. donkergrijs
+8. midgrijs
+8. midgrijs
+2. lichtgrijs
+2. lichtgrijs
+7. grijs/blauw
+7. grijs/blauw
+4. lichtblauw
+4. roze
+9. geel/oranje
+9. geel
+5. grijs/paars
+5. grijs/paars
+10. paars
+10. turquoise
+23
+22
+Goudappel stijlwijzer - 25 maart 2024
+Goudappel stijlwijzer - 25 maart 2024
+Voor het gebruik van secundaire kleuren in 
+digitale onderzoeksrapporten:
+ 
+Zie: 6. Bijlagen ‘6.1 Aanpassingen   
+ 
+ 
+ 
+primair kleurgebruik’.
+
+Mobiliteit in beeld.
+4. BEELD
+
+4.1 Beeld
+Randvoorwaarden bij beeldgebruik:
+26
+Goudappel stijlwijzer - 25 maart 2024
+
+
+De dubbele lijn.
+5. STIJL-
+ELEMENT(EN)
+
+5.1 Dubbele lijn
+Dat.mobility. 
+5.1.1 Indesign 
+5.1.2 Illustrator 
+33
+32
+Goudappel stijlwijzer - 25 maart 2024
+Goudappel stijlwijzer - 25 maart 2024
+
+Aangescherpte toegankelijkheideisen voor digitale
+onderzoeksrapporten
+6. BIJLAGEN
+
+6.1  Instructies voor digitale onderzoeksrapporten
+36
+Goudappel stijlwijzer - 25 maart 2024
+37
+Om te voldoen aan de wettelijke eisen van digitale toegankelijkheid (WCAG AA) worden de volgende 
+wijzigingen m.b.t. kleurgebruik en datavisualisaties in onderzoeksrapporten, in de stijlwijzer van 
+Goudappel gedaan:
+-
+Gebruik geen lichtgrijs op wit voor maatstreepjes in datavisualisaties. Dit heeft te weinig 
+contrast met elkaar. Voor de leesbaarheid wordt aanbevolen geen maatstreepjes te gebruiken. Bij 
+sporadisch gebruik: gebruik HEX #6a757c.
+-
+Vermijd het gebruik van teksten/woorden in KAPITALEN. Dit is slecht leesbaar voor mensen 
+met dyslexie. 
+-
+Vermijd het gebruik van teksten op een foto. Plaats tekst op een kleurvlak, liefst 1 groot 
+kleurvlak, anders een klein vlak om de tekst heen / achter de tekst. 
+▪
+Voor de eisen aan de kleur van de tekst zie: ‘hoofdstuk 6.5 Aanpassingen in tekstgebruik’.
+-
+Gebruik deze nieuwe versie van Dat.mobility blauw: HEX00a5ab.
+     De kleur Dat.mobility blauw (HEX3fcfd5) heeft niet voldoende contrast met wit. Hierdoor voldoet   
+     deze kleur niet aan de wettelijke eisen van digitale toegankelijkheid (WCAG AA).
+-
+Het huidige secundaire kleurenpalet van Goudappel en Dat.mobility bevatten kleuren die niet 
+voldoen aan de wettelijke eisen van digitale toegankelijkheid (WCAG AA) omdat ze niet voldoende 
+contrast hebben met wit. 
+     Gebruik het vernieuwde kleurenpalet voor datavisualisaties (staaf-, lijn- en  
+ 
+ 
+ 
+     vlakkendiagrammen).
+▪
+Voor het gebruik van kleuren in datavisualisaties zie: ‘hoofdstuk 6.4 Aanpassingen in 
+kleurgebruik voor datavisualisaties’.
+▪
+Gebruik per kleur alleen de bijbehorende tekstkleur. Zie: ‘hoofdstuk 6.5 Aanpassingen in 
+tekstgebruik’.
+-
+Kleuren mogen niet meer aangrenzend zijn in datavisualisaties. Dit voldoet namelijk niet aan de 
+wettelijke eisen van digitale toegankelijkheid (WCAG AA). Alle kleuren hebben wel voldoende 
+contrast met wit. Plaats daarom tussen alle kleurvlakken/elementen in datavisualisaties 
+(staaf-, lijn- en vlakkendiagrammen) altijd een witruimte. 
+▪
+Bij een onduidelijk beeld: vormen en patronen toevoegen aan kleurvlakken ter onderscheiding
+Goudappel stijlwijzer - 25 maart 2024
+
+6.2  Aanpassingen primair kleurgebruik
+38
+Goudappel stijlwijzer - 25 maart 2024
+Elk merk zijn eigen primaire kleur.
+Goudappel = Goudappel rood 
+Dat.mobility = Dat.mobility blauw 
+Naast de twee primaire kleuren hebben we een pallet met secundaire kleuren 
+(zie volgende pagina). Hieruit hebben we twee grijswaarden gekozen die 
+eerste keuze zijn naast de primaire kleuren mocht dit nodig zijn.
+Goudappel rood i.c.m. midgrijs
+Dat.mobility blauw i.c.m. donkergrijs
+Goudappel rood
+midgrijs
+Dat.mobility blauw
+donkergrijs
+00a5ab
+6a757c
+106,117,124
+59,42,38,22
+0,165,171
+77,10,36,0
+Huidig  
+ 
+ 
+Nieuw 
+ 
+Gebruik deze nieuwe versie van Dat.mobility blauw: HEX00a5ab
+De kleur Dat.Mobility blauw (HEX3fcfd5) heeft niet voldoende contrast met 
+wit. Hierdoor voldoet deze kleur niet aan de wettelijke eisen van digitale 
+toegankelijkheid (WCAG AA)
+39
+Goudappel stijlwijzer - 25 maart 2024
+
+6.3  Aanpassingen secundair kleurgebruik
+Goudappel en Dat.mobility kunnen beide gebruik 
+maken van een aangepast pallet secundaire kleuren 
+voor b.v. grafieken en tabellen.
+Voor de Microsoft Office templates is er een 
+standaard secundair kleuren pallet, met bepaalde 
+volgorde. Deze staat op de volgende pagina.
+midgrijs
+CMYK 59,42,38,22
+RGB 106,117,124
+HEX 6a757c
+donkergrijs
+CMYK 76,63,55,24
+RGB 75,81,89
+HEX 4b5159
+extra donkergrijs
+CMYK 83,69,54,66
+RGB 35,41,49
+HEX 232931
+lichtblauw
+CMYK 76,22,0,0
+RGB 86,0,157,221
+HEX 009ddd
+oranje
+CMYK 10,59,100,1
+RGB 221,122,0
+HEX dd7a00
+grijs/blauw
+CMYK 80,67,44,40
+RGB 57,64,83
+HEX 394053
+donkerblauw
+CMYK 100,75,0,26
+RGB 2,58,125
+HEX 023a7d
+blauw
+CMYK 100,30,0,0
+RGB 0,128,201
+HEX 0080c9
+roze/paars
+CMYK 45,80,16,0
+RGB 159,76,136
+HEX 9f4c88
+roze
+CMYK 0,80,0,0
+RGB 234,82,151
+HEX ea5297
+groen
+CMYK 73,6,91,0
+RGB 73,167,72
+HEX 49a748
+rood
+CMYK 0,90,100,0
+RGB 230,51,18
+HEX e63312
+grijs/paars
+CMYK 68,65,43,38
+RGB 79,71,87
+HEX 4f4757
+paars
+CMYK 75,80,16,10
+RGB 90,66,126
+HEX 5a427e
+turquoise
+CMYK 95,0,40,40
+RGB 0,113,116
+HEX 007174
+licht turquoise
+CMYK 90,0,50,0
+RGB 0,162,149
+HEX 00a295
+40
+Goudappel stijlwijzer - 25 maart 2024
+41
+Goudappel stijlwijzer - 25 maart 2024
+
+6.4  Aanpassingen in kleurgebruik voor datavisualisaties
+42
+Goudappel stijlwijzer - 25 maart 2024
+Goudappel rood
+Midgrijs
+Blauw
+Donkergrijs
+Groen
+Grijs/paars
+Oranje
+Grijs/blauw
+Paars
+Turquoise
+Dat.mobility blauw
+Midgrijs
+Roze
+Donkergrijs
+Groen
+Grijs/paars
+Donkerblauw
+Grijs/blauw
+Oranje
+Turquoise
+43
+Goudappel stijlwijzer - 25 maart 2024
+
+6.5  Aanpassingen in tekstgebruik
+44
+Goudappel stijlwijzer - 25 maart 2024
+Om te voldoen aan de wettelijke eisen van digitaal toegankelijke 
+onderzoeksrapporten zijn er een aantal aangescherpte regels m.b.t. 
+het gebruik van tekst:
+•
+Vermijd het gebruik van teksten/woorden in KAPITALEN. Dit is 
+slecht leesbaar voor mensen met dyslexie. 
+•
+Vermijd het gebruik van teksten op een foto. Plaats tekst op een 
+kleurvlak, liefst 1 groot kleurvlak, anders een klein vlak om de 
+tekst heen / achter de tekst. 
+ 
+Dat ziet er zo uit: 
+ 
+ 
+6.5.1 Kleur tekst
+Er zijn drie mogelijkheden voor het kleurgebruik van tekst:
+1. 
+Zwarte tekst (#000000) op een witte achtergrond (#ffffff)
+2. 
+Witte tekst (#ffffff) op een zwarte achtergrond (#000000)
+3. 
+Roze tekst (#de0058) op een witte achtergrond (#ffffff) 
+I.
+Deze optie alléén gebruiken voor het highlighten van 
+tekst
+Voor het gebruik van tekst op een gekleurde achtergrond, zie 
+volgende pagina.
+Voorbeeld tekst
+Het is verplicht om op een roze achtergrond (#de0058) een witte 
+tekstkleur te gebruiken. Hiermee zorgen we voor voldoende 
+contrast, waardoor de tekst voor mensen met kleurenblindheid of 
+slechtzienden ook toegankelijk is.  
+
+6.5.2 Tekst op een gekleurde achtergrond
+46
+Goudappel stijlwijzer - 25 maart 2024
+Voor het gebruik van tekst op een gekleurde achtergrond 
+gelden de volgende regels:
+•
+Per kleur is geselecteerd welke tekstkleur geschikt is: wit 
+(#ffffff) of zwart (#000000). De tekstkleur heeft altijd 
+minimaal een contrast van 4,5:1. 
+▪
+Andere tekstkleuren hebben onvoldoende contrast en 
+mogen niet meer worden gebruikt.
+•
+Eén uitzondering hierop: Goudappel Roze (#de0058) mag 
+worden gebruikt als tekstkleur op een witte achtergrond. Dit 
+komt omdat deze kleur voldoende contrast heeft met wit. 
+Dit kan worden gebruikt voor bijvoorbeeld highlighten.  
+In het onderstaande overzicht staat welke tekstkleur verplicht 
+gebruikt moeten worden voor elke achtergrondkleur.
+midgrijs
+CMYK 59,42,38,22
+RGB 106,117,124
+HEX 6a757c
+donkergrijs
+CMYK 76,63,55,24
+RGB 75,81,89
+HEX 4b5159
+extra donkergrijs
+CMYK 83,69,54,66
+RGB 35,41,49
+HEX 232931
+lichtblauw
+CMYK 76,22,0,0
+RGB 86,0,157,221
+HEX 009ddd
+oranje
+CMYK 10,59,100,1
+RGB 221,122,0
+HEX dd7a00
+grijs/blauw
+CMYK 80,67,44,40
+RGB 57,64,83
+HEX 394053
+donkerblauw
+CMYK 100,75,0,26
+RGB 2,58,125
+HEX 023a7d
+blauw
+CMYK 100,30,0,0
+RGB 0,128,201
+HEX 0080c9
+roze/paars
+CMYK 45,80,16,0
+RGB 159,76,136
+HEX 9f4c88
+roze
+CMYK 0,80,0,0
+RGB 234,82,151
+HEX ea5297
+groen
+CMYK 73,6,91,0
+RGB 73,167,72
+HEX 49a748
+rood
+CMYK 0,90,100,0
+RGB 230,51,18
+HEX e63312
+grijs/paars
+CMYK 68,65,43,38
+RGB 79,71,87
+HEX 4f4757
+paars
+CMYK 75,80,16,10
+RGB 90,66,126
+HEX 5a427e
+turquoise
+CMYK 95,0,40,40
+RGB 0,113,116
+HEX 007174
+licht turquoise
+CMYK 90,0,50,0
+RGB 0,162,149
+HEX 00a295
+47
+Goudappel stijlwijzer - 25 maart 2024
+
+www.goudappel.nl
+Goudappel werkt vanuit Amsterdam, Den Haag, Deventer, Eindhoven en Leeuwarden.
