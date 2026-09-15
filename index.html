@@ -7001,7 +7001,7 @@
           getPosition: _taPosition,
           getIcon:     f => _taMarkIcon((f.properties || {}).assetType),
           getSize:     f => _taMarkSize((f.properties || {}).assetType),
-          getAngle:    f => (f.properties || {})._taAngle || 0,   // dwars over de weg
+          getAngle:    f => ((f.properties || {})._taAngle || 0) + 180,   // dwars over de weg, 180° t.o.v. wegrichting (haaientanden wijzen zo de juiste kant op; symmetrische markeringen zijn hier ongevoelig voor)
           pickable:    true,
           onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
         }));
