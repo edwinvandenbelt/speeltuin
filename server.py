@@ -3384,6 +3384,12 @@ def index():
     return send_from_directory(str(STATIC_DIR), "index.html")
 
 
+@app.route("/svg/<path:filename>")
+def svg_asset(filename):
+    """Serveer statische SVG-iconen (o.a. de laneMarkArrow-pijlen) uit svg/."""
+    return send_from_directory(str(STATIC_DIR / "svg"), filename)
+
+
 @app.route("/conformance")
 def ogc_conformance():
     return jsonify(

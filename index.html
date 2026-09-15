@@ -6606,9 +6606,12 @@
     let _taUnderpassFeatures = [];   // CIMLK overspanningen boven verdiepte weg (belowGround)
     let _taBusStopFeatures   = [];   // busStop-features (billboard-sprite met halte-bordje)
     let _taFootPathFeatures  = [];   // footPath-lijnen (platte voetpad-ribbon)
-    let _taCyclePathFeatures = [];   // cyclePath-lijnen (platte fietspad-ribbon)
-    let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
-    let _taHover             = null; // {props,lngLat} van het object onder de cursor
+     let _taCyclePathFeatures = [];   // cyclePath-lijnen (platte fietspad-ribbon)
+     let _taLaneMarkArrowFeatures = [];  // laneMarkArrow-features (pijlen op middellijn)
+     let _taRefugeAreaCrossingFeatures = [];  // refugeAreaCrossing-polygonen (verhoogde voetganger-eilanden)
+     let _taRefugeAreaTrafficFeatures = [];   // refugeAreaTraffic-polygonen (verhoogde verkeersremmers)
+     let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
+     let _taHover             = null; // {props,lngLat} van het object onder de cursor
 
     // ── Platte wegdekmarkeringen (top-down canvas-iconen, center-anchor) ───────
     // Deze liggen plat op het wegdek (IconLayer billboard:false) en schalen dus
@@ -6713,19 +6716,144 @@
       return bestAng;
     }
 
-    // Zet per markering de rotatie zodat de breedte-as dwars over de weg loopt.
-    // (icoon-breedte → wegloodrecht = wegrichting + 90°). Geen weg gevonden → 0.
-    function _taApplyMarkAngles(feats) {
-      for (const f of (feats || [])) {
-        const p = f.properties || (f.properties = {});
-        const c = (f.geometry && f.geometry.coordinates) || null;
-        if (!c) { p._taAngle = 0; continue; }
-        const phi = _taRoadBearingAt(c[0], c[1]);
-        // Haaientanden (giveWay) hebben een 90° andere canvas-oriëntatie.
-        const extra = p.assetType === 'giveWay' ? -90 : 0;
-        p._taAngle = phi == null ? 0 : phi + 90 + extra;
+     // Zet per markering de rotatie zodat de breedte-as dwars over de weg loopt.
+     // (icoon-breedte → wegloodrecht = wegrichting + 90°). Geen weg gevonden → 0.
+     function _taApplyMarkAngles(feats) {
+       for (const f of (feats || [])) {
+         const p = f.properties || (f.properties = {});
+         const c = (f.geometry && f.geometry.coordinates) || null;
+         if (!c) { p._taAngle = 0; continue; }
+         const phi = _taRoadBearingAt(c[0], c[1]);
+         p._taAngle = phi == null ? 0 : phi + 90;
+       }
+     }
+
+     // deck.gl's IconLayer (billboard:false) rotate_by_angle-shader roteert de
+     // afbeelding in een lokaal frame waarbij de bovenkant van de png (kleine
+     // texture-y) intern al "gespiegeld" wordt t.o.v. wereld-noord. Empirisch
+     // (via de debug-box/groene voorkant-lijn) bleek de volledige afbeelding-
+     // conventie 180° t.o.v. de eerste aanname te staan: om een gewenste
+     // kompasrichting β (0=noord, met de klok mee) te laten overeenkomen met
+     // "bovenkant van de png wijst naar β", moet getAngle = (360 − β) zijn
+     // (equivalent aan −β mod 360).
+     function _taDeckIconAngle(bearingDeg) {
+       return (360 - bearingDeg) % 360;
+     }
+
+     // ── Voorbereiding laneMarkArrow: plaats pijlen per lane op de middellijn ──────
+     // De input-LineString is een kort (2 m) stukje van de wegas zélf, vlak vóór
+     // het eindpunt van het wegvak (5 m → 3 m voor de toNode) — dus de richting
+     // van deze lijn = de rijrichting (zie gmt_calculation_lib/osm_asset_fetcher:
+     // lane_mark_arrows.py). De dwarslijn (haaks op de weg, waarlangs de lanes
+     // náást elkaar staan) is dus de 90°-gedraaide richting van deze lijn — niet
+     // de lijn zelf.
+     // Output: Array van Point features, elk met laterale offset voor een enkele lane
+     function _prepareLaneMarkArrows(feats) {
+       if (!feats || feats.length === 0) return [];
+
+       const result = [];
+       const laneWidth = 2.0;  // hart-tot-hart afstand tussen lanes (m)
+
+       for (const f of feats) {
+          const geom = f.geometry;
+          if (!geom || geom.type !== 'LineString' || !geom.coordinates || geom.coordinates.length < 2) continue;
+
+         const coords = geom.coordinates;
+         const p1 = coords[0];
+         const p2 = coords[coords.length - 1];
+
+         // Middelpunt van het lijntje
+         const midLng = (p1[0] + p2[0]) / 2;
+         const midLat = (p1[1] + p2[1]) / 2;
+
+         // Lokale meter-schaal bij dit punt
+         const mPerLng = 111320 * Math.cos(midLat * Math.PI / 180) || 1;
+         const mPerLat = 110540;
+
+         // Rijrichting = richting van de input-lijn zelf, als eenheidsvector
+         // in lokale oost/noord-meters.
+         const fwdE0 = (p2[0] - p1[0]) * mPerLng;
+         const fwdN0 = (p2[1] - p1[1]) * mPerLat;
+         const fwdLen = Math.hypot(fwdE0, fwdN0) || 1;
+         const fwdE = fwdE0 / fwdLen, fwdN = fwdN0 / fwdLen;
+
+         // Dwarsrichting (haaks ⟂ op de rijrichting, naar links) — hierlangs
+         // staan de lanes náást elkaar.
+         const acrossE = -fwdN, acrossN = fwdE;
+
+         // Kompas-bearing van de rijrichting (0° = noord, met de klok mee) —
+         // dit is de hoek die we ongewijzigd aan IconLayer.getAngle meegeven,
+         // zodat het plaatje zelf niet extra intern geroteerd hoeft te worden.
+         const bearing = (90 - Math.atan2(fwdN, fwdE) * 180 / Math.PI + 360) % 360;
+
+         // Parse turn:lanes
+         const turnLanesStr = f.properties?.['turn:lanes'] || '';
+         const lanes = turnLanesStr.split('|').map(s => s.trim());
+         const nLanes = lanes.length;
+
+         // Plaats pijl per lane
+         for (let i = 0; i < nLanes; i++) {
+           const turnDir = lanes[i];
+
+           // Skip 'none'
+           if (turnDir === 'none') continue;
+
+           // Laterale offset: centreer de groep lanes rond het middelpunt,
+           // verplaatst haaks op de rijrichting (over de dwarslijn).
+           // OSM turn:lanes somt lanes op van links → rechts (gezien in de rij-
+           // richting); i=0 ("left") moet dus de meest linkse (+across) positie
+           // krijgen, i=laatste ("right") de meest rechtse (−across) positie.
+           const offset = ((nLanes - 1) / 2 - i) * laneWidth;
+           const dLng = (acrossE * offset) / mPerLng;
+           const dLat = (acrossN * offset) / mPerLat;
+
+           const arrowLng = midLng + dLng;
+           const arrowLat = midLat + dLat;
+
+           // Maak Point feature
+           const arrowFeature = {
+             type: 'Feature',
+             geometry: {
+               type: 'Point',
+                coordinates: [arrowLng, arrowLat]
+               },
+               properties: {
+                 ...f.properties,
+                 assetType: 'laneMarkArrow',
+                 _taArrowTurn: turnDir,
+                 _taArrowAngle: bearing  // rijrichting
+               }
+             };
+
+            result.push(arrowFeature);
+         }
+       }
+
+       return result;
+     }
+
+      // ── Pijl-iconen laden van SVG-bestanden ────────────────────────────────────────
+      // Alle SVG-bestanden zitten in svg/ folder, benoemd naar turn:lanes waarde
+      function _taStoppingLaneArrowIcon(turnDirection) {
+        if (!turnDirection) turnDirection = 'through';
+        const key = 'arrow:' + turnDirection;
+        if (_taIcons[key]) return _taIcons[key];
+
+        // Bestandsnaam: vervang speciale tekens
+        const filename = turnDirection.replace(/\|/g, '_').replace(/;/g, '_');
+        const svgUrl = `svg/${filename}.svg`;
+
+        // Maak een icon descriptor die naar het SVG wijst
+        _taIcons[key] = {
+          url: svgUrl,
+          width: 48,
+          height: 48,
+          anchorX: 24,  // midden
+          anchorY: 24,  // midden
+          mask: false
+        };
+        return _taIcons[key];
       }
-    }
 
     // ── Witte blokjes bovenop de verkeersdrempels ─────────────────────────────
     // Per drempel-polygon: zwaartepunt + hoofdas (PCA) bepalen en een rij witte
@@ -6879,23 +7007,59 @@
         }));
       }
 
-      // Bushaltes (haltepaal + bordje) — billboard-composietsprite, camera-gericht.
-      if (_taBusStopFeatures.length) {
-        layers.push(new IconLayer({
-          id:          'ta-busstops-deck',
-          data:        _taBusStopFeatures,
-          billboard:   true,
-          sizeUnits:   'meters',
-          sizeScale:   1,
-          getPosition: _taPosition,
-          getIcon:     () => _taBusStopIcon(),
-          getSize:     () => _TA_POLE_H_M + 0.6,
-          pickable:    true,
-          onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
-        }));
-      }
+       // Bushaltes (haltepaal + bordje) — billboard-composietsprite, camera-gericht.
+       if (_taBusStopFeatures.length) {
+         layers.push(new IconLayer({
+            id:          'ta-busstops-deck',
+            data:        _taBusStopFeatures,
+            billboard:   true,
+            sizeUnits:   'meters',
+            sizeScale:   1,
+            getPosition: _taPosition,
+            getIcon:     () => _taBusStopIcon(),
+            getSize:     () => _TA_POLE_H_M + 0.6,
+            pickable:    true,
+            onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+          }));
+        }
 
-      return layers;
+         // Pijlen op middellijn (laneMarkArrow)
+         if (_taLaneMarkArrowFeatures.length) {
+           layers.push(new IconLayer({
+             id:          'ta-lanemarkarrows-deck',
+             data:        _taLaneMarkArrowFeatures,
+             billboard:   false,   // plat op het wegdek, schaalt perspectivisch mee
+             sizeUnits:   'meters',
+             sizeScale:   1,
+             getPosition: _taPosition,
+             getIcon:     f => _taStoppingLaneArrowIcon(f.properties?._taArrowTurn || 'through'),
+             getSize:     () => 1.2,  // breedte van de pijl (m)
+             getAngle:    f => _taDeckIconAngle(f.properties?._taArrowAngle || 0),
+             pickable:    true,
+             onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+           }));
+         }
+
+       // Vluchtheuvels (refugeArea) — witte verhoogde vormen.
+       // Opmerking: momenteel zijn refugeArea-features Points; zodra Polygon-geometrieën beschikbaar zijn, 
+       // kunnen we deze rechtstreeks renderen. Tot die tijd filteren we op geometrie-type.
+       const _refugeFeatures = [..._taRefugeAreaCrossingFeatures, ..._taRefugeAreaTrafficFeatures]
+         .filter(f => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
+       if (_refugeFeatures.length) {
+         layers.push(new PolygonLayer({
+           id:                'ta-refugeareas-deck',
+           data:              _refugeFeatures,
+           getFillColor:      [255, 255, 255, 200],
+           getLineColor:      [100, 100, 100, 200],
+           lineWidthMinPixels: 1,
+           extruded:          true,
+           getElevation:      f => 0.25,  // 25cm height
+           pickable:          true,
+           onHover:           info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+         }));
+       }
+
+       return layers;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -8026,81 +8190,93 @@
 
     // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
     async function loadTrafficAssetsInView() {
-      if (!_mapReady || !_trafficAssetsVisible) return;
-      if (_trafficAssetsNoFile) { _loadTrafficSignsFallback(); return; }
-      if (map.getZoom() < _TRAFFIC_ASSET_MINZOOM) return;
+      if (!_mapReady)            { console.debug('[TA] skip: map niet ready'); return; }
+      if (!_trafficAssetsVisible){ console.debug('[TA] skip: _trafficAssetsVisible=false (checkbox/localStorage)'); return; }
+      if (_trafficAssetsNoFile) { console.debug('[TA] skip: _trafficAssetsNoFile=true (eerdere 404) → fallback NDW-borden'); _loadTrafficSignsFallback(); return; }
+      if (map.getZoom() < _TRAFFIC_ASSET_MINZOOM) { console.debug(`[TA] skip: zoom ${map.getZoom().toFixed(2)} < minzoom ${_TRAFFIC_ASSET_MINZOOM}`); return; }
 
       const b  = map.getBounds();
       const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-      if (_bboxContains(_lastAssetBbox, vw)) return;  // al gedekt → geen request
+      if (_bboxContains(_lastAssetBbox, vw)) { console.debug('[TA] skip: bbox al gedekt door vorige load'); return; }  // al gedekt → geen request
 
       const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
       const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
 
       let data;
       try {
+        console.debug('[TA] fetch traffic_assets', bbox);
         const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`);
-        if (r.status === 404) { _trafficAssetsNoFile = true; _loadTrafficSignsFallback(); return; }
-        if (!r.ok) return;
+        if (r.status === 404) { console.debug('[TA] 404 → traffic_assets bestand ontbreekt, fallback NDW-borden'); _trafficAssetsNoFile = true; _loadTrafficSignsFallback(); return; }
+        if (!r.ok) { console.debug('[TA] fetch niet ok, status=', r.status); return; }
         data = await r.json();
-      } catch { return; }
-      if (!data || !Array.isArray(data.features)) return;
+        console.debug('[TA] features ontvangen:', data?.features?.length);
+      } catch (e) { console.debug('[TA] fetch exception', e); return; }
+      if (!data || !Array.isArray(data.features)) { console.debug('[TA] skip: geen geldige features array'); return; }
 
       _lastAssetBbox = bbox;
-      const byType = {};
-      for (const f of data.features) {
-        const p = f.properties || {};
-        if (p.blackCode) p.blackCode = p.blackCode.trim().replace(/,/g, '.');
-        const t = p.assetType;
-        if (!t) continue;
-        (byType[t] || (byType[t] = [])).push(f);
+      try {
+        const byType = {};
+        for (const f of data.features) {
+          const p = f.properties || {};
+          if (p.blackCode) p.blackCode = p.blackCode.trim().replace(/,/g, '.');
+          const t = p.assetType;
+          if (!t) continue;
+          (byType[t] || (byType[t] = [])).push(f);
+        }
+        // Data-stores voor de deck.gl-lagen bijwerken.
+        _taSignFeatures      = byType.trafficSign   || [];
+        _taSignalFeatures    = byType.trafficSignal || [];
+        _taSpeedBumpFeatures = byType.speedBump     || [];
+        _taMarkFeatures      = [
+          ...(byType.pedestrianCrossing || []),
+          ...(byType.stopSign || []),
+          ...(byType.giveWay || []),
+        ];
+        _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
+        // CIMLK hoogte-/constructie-objecten. belowGround-viaducten/bruggen worden
+        // als 'underpass' (zwevende overspanning) getekend i.p.v. weggelaten.
+        const _below = f => !!(f.properties || {}).belowGround;
+        const _isPoly = f => { const t = f.geometry?.type; return t === 'Polygon' || t === 'MultiPolygon'; };
+        _taViaductFeatures = (byType.viaduct || []).filter(f => !_below(f));
+        _taBridgeFeatures  = (byType.bridge  || []).filter(f => !_below(f));
+        // Tunnels: lijn-features via de bestaande dekband/dak-render; polygon-tunnels
+        // (BGT) via het verzonken-wegdeel vloervlak + randmuurtjes (samen met bak).
+        const _tunnels = byType.tunnel || [];
+        _taTunnelFeatures  = _tunnels.filter(f => !_isPoly(f));
+        _taRebuildSunken(byType.bak || [], _tunnels.filter(_isPoly));
+        _taCulvertFeatures = byType.culvert || [];
+        _taUnderpassFeatures = [
+          ...(byType.underpass || []),
+          ...(byType.viaduct || []).filter(_below),
+          ...(byType.bridge  || []).filter(_below),
+        ];
+        _taRebuildScreenQuads((byType.screen || []).filter(f => !_below(f)));
+        _taRebuildRetWallQuads(byType.retainingWall || []);
+        // Bushalte-billboard + straatmeubilair (procedurele meshes, per-type oriëntatie).
+         _taBusStopFeatures = byType.busStop || [];
+          // Voet-/fietspaden als platte lijn-ribbons.
+          _taFootPathFeatures  = byType.footPath  || [];
+          _taCyclePathFeatures = byType.cyclePath || [];
+          // Pijlen op middellijn (laneMarkArrow) — plaats per lane met laterale offset
+          _taLaneMarkArrowFeatures = _prepareLaneMarkArrows(byType.laneMarkArrow || []);
+          // Vluchtheuvels (verhoogde geometrie)
+          _taRefugeAreaCrossingFeatures = byType.refugeAreaCrossing || [];
+          _taRefugeAreaTrafficFeatures = byType.refugeAreaTraffic || [];
+        _taFurniture = {
+          mailbox:    _taMkInstances(byType.mailbox,    'along'),
+          busShelter: _taMkInstances(byType.busShelter, 'along'),
+          mast:       _taMkInstances(byType.mast,       'none'),
+          streetLight: _taMkInstances(byType.streetLight, 'none'),
+          bikeGate:   _taMkInstances(byType.bikeGate,   'across'),
+          infoBoard:  _taMkInstances(byType.infoBoard,  'along'),
+          trashBin:   _taMkInstances(byType.trashBin || [], 'none'),
+        };
+        // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
+        // ondertussen tonen borden alvast hun paal.
+        _taEnsurePlates(_taSignFeatures);
+      } catch (e) {
+        console.error('loadTrafficAssetsInView: fout bij verwerken traffic assets', e);
       }
-      // Data-stores voor de deck.gl-lagen bijwerken.
-      _taSignFeatures      = byType.trafficSign   || [];
-      _taSignalFeatures    = byType.trafficSignal || [];
-      _taSpeedBumpFeatures = byType.speedBump     || [];
-      _taMarkFeatures      = [
-        ...(byType.pedestrianCrossing || []),
-        ...(byType.stopSign || []),
-        ...(byType.giveWay || []),
-      ];
-      _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
-      // CIMLK hoogte-/constructie-objecten. belowGround-viaducten/bruggen worden
-      // als 'underpass' (zwevende overspanning) getekend i.p.v. weggelaten.
-      const _below = f => !!(f.properties || {}).belowGround;
-      const _isPoly = f => { const t = f.geometry?.type; return t === 'Polygon' || t === 'MultiPolygon'; };
-      _taViaductFeatures = (byType.viaduct || []).filter(f => !_below(f));
-      _taBridgeFeatures  = (byType.bridge  || []).filter(f => !_below(f));
-      // Tunnels: lijn-features via de bestaande dekband/dak-render; polygon-tunnels
-      // (BGT) via het verzonken-wegdeel vloervlak + randmuurtjes (samen met bak).
-      const _tunnels = byType.tunnel || [];
-      _taTunnelFeatures  = _tunnels.filter(f => !_isPoly(f));
-      _taRebuildSunken(byType.bak || [], _tunnels.filter(_isPoly));
-      _taCulvertFeatures = byType.culvert || [];
-      _taUnderpassFeatures = [
-        ...(byType.underpass || []),
-        ...(byType.viaduct || []).filter(_below),
-        ...(byType.bridge  || []).filter(_below),
-      ];
-      _taRebuildScreenQuads((byType.screen || []).filter(f => !_below(f)));
-      _taRebuildRetWallQuads(byType.retainingWall || []);
-      // Bushalte-billboard + straatmeubilair (procedurele meshes, per-type oriëntatie).
-      _taBusStopFeatures = byType.busStop || [];
-      // Voet-/fietspaden als platte lijn-ribbons.
-      _taFootPathFeatures  = byType.footPath  || [];
-      _taCyclePathFeatures = byType.cyclePath || [];
-      _taFurniture = {
-        mailbox:    _taMkInstances(byType.mailbox,    'along'),
-        busShelter: _taMkInstances(byType.busShelter, 'along'),
-        mast:       _taMkInstances(byType.mast,       'none'),
-        streetLight: _taMkInstances(byType.streetLight, 'none'),
-        bikeGate:   _taMkInstances(byType.bikeGate,   'across'),
-        infoBoard:  _taMkInstances(byType.infoBoard,  'along'),
-        trashBin:   _taMkInstances(byType.trashBin || [], 'none'),
-      };
-      // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
-      // ondertussen tonen borden alvast hun paal.
-      _taEnsurePlates(_taSignFeatures);
       updateOverlay(true);
     }
 
