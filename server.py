@@ -1694,7 +1694,9 @@ def _job_to_status(job: dict) -> dict:
     }
 
 
-def _ogc_items_response(collection_id: str, data, self_url: str):
+def _ogc_items_response(
+    collection_id: str, data, self_url: str, *, as_ndgeojson: bool = False
+):
     """Wrap een GeoJSON FeatureCollection in de OGC API Features envelope."""
     if not isinstance(data, dict):
         try:
@@ -1712,6 +1714,14 @@ def _ogc_items_response(collection_id: str, data, self_url: str):
         if k not in ("type", "features", "links", "properties")
     }
     merged = {**top_props, **other}
+
+    # ND-GeoJSON: compact newline-delimited stream zonder wrapper (geen links)
+    if as_ndgeojson:
+        lines = [json.dumps(feat, ensure_ascii=False) for feat in features]
+        body = "\n".join(lines)
+        resp = make_response(body)
+        resp.headers["Content-Type"] = "application/x-ndgeo+json"
+        return resp
 
     result: dict = {
         "type": "FeatureCollection",
@@ -4027,12 +4037,99 @@ def ogc_collection_items(collection_id):
         if asset_type_arg:
             asset_types = {t.strip() for t in asset_type_arg.split(",") if t.strip()}
 
+        # Minimale property-set die de frontend echt gebruikt. Dit scheelt
+        # aanzienlijk in payload (veel lege / ongebruikte BGT/OSM-kolommen).
+        _TRAFFIC_ASSET_KEEP_PROPS = {
+            "assetType",
+            "name",
+            "traffic_sign",  # bevat soms rvvCode (oudere data)
+            "osm_id",
+            "rvvCode",
+            "direction",
+            "bearing",  # orientatie voor borden/lantaarns/meubilair
+            "width",
+            "surface",
+            "linkId",
+            "nodeId",
+            "ref",
+            "bench",
+            "bus",
+            "public_transport",
+            "ref:IFOPT",
+            "shelter",
+            "amenity",
+            "shelter_type",
+            "man_made",
+            "tower:type",
+            "description",
+            "board_type",
+            "information",
+            "tourism",
+            "operator",
+            "collection_times",
+            "colour",
+            "operator:wikidata",
+            "check_date",
+            "waste",
+            "cycle_barrier",
+            "cycle_barrier:installation",
+            "wheelchair",
+            "emergency",
+            "manufacturer",
+            "siren:model",
+            "siren:purpose",
+            "siren:type",
+            "support",
+            "lamp_mount",
+            "lamp_type",
+            "opening_hours",
+            "parkingId",
+            "parkingCapacity",
+            "tag_amenity",
+            "tag_fee",
+            "tag_name",
+            "tag_parking",
+            "tag_access",
+            "tag_capacity",
+            "tag_park_ride",
+            "tag_source",
+            "tag_supervised",
+            "tag_surface",
+            "tag_wheelchair",
+            "tag_lit",
+            "tag_opening_hours",
+            "tag_smoothness",
+            "tag_operator",
+            "tag_orientation",
+            "tag_parking:right",
+            "belowGround",
+            "heightM",
+        }
+
         try:
             data = _read_geodata(path)
         except Exception as exc:
             abort(500, f"Fout bij lezen TRAFFIC-ASSETS: {exc}")
 
         feats = data.get("features", [])
+
+        def _slim_traffic_props(props: dict) -> dict:
+            if not isinstance(props, dict):
+                return {}
+            out = {}
+            for k, v in props.items():
+                if k not in _TRAFFIC_ASSET_KEEP_PROPS:
+                    continue
+                # Sla lege waarden over, behalve assetType (altijd nodig).
+                if k != "assetType":
+                    if v is None:
+                        continue
+                    if isinstance(v, float) and v != v:
+                        continue
+                    if v == "":
+                        continue
+                out[k] = v
+            return out
 
         if asset_types is not None:
             feats = [
@@ -4059,9 +4156,20 @@ def ogc_collection_items(collection_id):
                     filtered.append(feat)
             feats = filtered
 
-        data = {**data, "features": feats}
+        # Strip ongebruikte/lege properties en laat geometry intact.
+        slim_feats = []
+        for feat in feats:
+            slim_feats.append(
+                {
+                    "type": "Feature",
+                    "properties": _slim_traffic_props(feat.get("properties")),
+                    "geometry": feat.get("geometry"),
+                }
+            )
+        data = {"type": "FeatureCollection", "features": slim_feats}
 
-        return _ogc_items_response("traffic_assets", data, self_url)
+        as_nd = request.args.get("f", "").strip().lower() == "ndgeojson"
+        return _ogc_items_response("traffic_assets", data, self_url, as_ndgeojson=as_nd)
 
     # ── heights: hoogte-/constructie-objecten uit geprepareerd HEIGHTS bestand ──
     if collection_id == "heights":
@@ -4136,146 +4244,20 @@ def ogc_collection_items(collection_id):
             except ValueError:
                 abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
 
-        data = None
-
-        # 1) Autoritatief: geprepareerd VEGETATION-bestand (parquet/geojson uit de
-        #    gmt-library). Aparte stam dan de Overpass-cache (-VEGETATION-OSM),
-        #    zodat een later toegevoegd parquet niet overschaduwd wordt.
-        #    Scenario's erven dit van hun basisscenario als ze het zelf niet hebben.
+        # Alleen een vooraf geprepareerd VEGETATION-bestand wordt uitgeleverd.
+        # Als dit ontbreekt, retourneert het endpoint 404. De frontend gebruikt
+        # deze 404 om te stoppen met onnodige retry's.
         prep_path = _find_prepared_with_base_fallback(area_id, "VEGETATION")
-        if prep_path is not None:
-            try:
-                data = _read_geodata(prep_path)
-            except Exception as exc:
-                abort(500, f"Fout bij lezen VEGETATION: {exc}")
+        if prep_path is None:
+            abort(404, "Geen VEGETATION bestand voor dit gebied")
 
-        # 2) Live-Overpass fallback met cache-hiërarchie (analoog aan buildings).
-        if data is None:
-            cache_path = area_dir / f"{area_id}-VEGETATION-OSM.geojson"
-
-            # 2a) Eigen aggregaat-cache
-            if cache_path.exists():
-                try:
-                    with open(cache_path, encoding="utf-8") as fh:
-                        cached = json.load(fh)
-                    if cached.get("properties", {}).get("_qv") == _VEGETATION_QUERY_VER:
-                        data = cached
-                    else:
-                        cache_path.unlink()  # verouderde cache verwijderen
-                except Exception:
-                    pass
-
-            # 2b) Zoek aggregaat-/tegel-cache in ouder-gebieden (baseAreaId-keten)
-            base_tile_cache_dir = None
-            if data is None:
-                visited = {area_id}
-                cur_id = area_id
-                for _ in range(6):
-                    try:
-                        cur_dir = _find_area_dir(cur_id)
-                        _nw_list = list(cur_dir.glob(f"{cur_id}-NETWORK-*.geojson"))
-                        if not _nw_list and _GEOPANDAS_AVAILABLE:
-                            for _ext in _GEOPARQUET_EXTS:
-                                _nw_list = list(
-                                    cur_dir.glob(f"{cur_id}-NETWORK-*{_ext}")
-                                )
-                                if _nw_list:
-                                    break
-                        if not _nw_list:
-                            break
-                        props = _read_geodata(_nw_list[0]).get("properties", {})
-                        parent_id = props.get("baseAreaId") or None
-                    except Exception:
-                        break
-                    if not parent_id or parent_id in visited:
-                        break
-                    visited.add(parent_id)
-                    cur_id = parent_id
-                    parent_dir = _find_area_dir(parent_id)
-                    parent_cache = parent_dir / f"{parent_id}-VEGETATION-OSM.geojson"
-                    if parent_cache.exists():
-                        try:
-                            with open(parent_cache, encoding="utf-8") as fh:
-                                pdata = json.load(fh)
-                            if (
-                                pdata.get("properties", {}).get("_qv")
-                                == _VEGETATION_QUERY_VER
-                            ):
-                                data = pdata
-                                break
-                        except Exception:
-                            pass
-                    ptcd = parent_dir / f"{parent_id}-VEGETATION-OSM-tiles"
-                    if ptcd.exists() and base_tile_cache_dir is None:
-                        base_tile_cache_dir = ptcd
-
-            # 2c) Bepaal NETWORK-bbox en query Overpass (volledige gebied)
-            if data is None:
-                area_bbox = None
-                try:
-                    _nw_list2 = list(area_dir.glob(f"{area_id}-NETWORK-*.geojson"))
-                    if not _nw_list2 and _GEOPANDAS_AVAILABLE:
-                        for _ext in _GEOPARQUET_EXTS:
-                            _nw_list2 = list(
-                                area_dir.glob(f"{area_id}-NETWORK-*{_ext}")
-                            )
-                            if _nw_list2:
-                                break
-                    if _nw_list2:
-                        ndata = _read_geodata(_nw_list2[0])
-                        nprops = ndata.get("properties", {})
-                        area_bbox = nprops.get("bbox")
-                        if not area_bbox or len(area_bbox) < 4:
-                            lons, lats = [], []
-                            for feat in ndata.get("features", []):
-                                for coord in feat.get("geometry", {}).get(
-                                    "coordinates", []
-                                ):
-                                    lons.append(coord[0])
-                                    lats.append(coord[1])
-                            if lons:
-                                area_bbox = [min(lons), min(lats), max(lons), max(lats)]
-                except Exception as exc:
-                    abort(500, f"Fout bij lezen netwerk voor bbox: {exc}")
-
-                if not area_bbox:
-                    abort(404, "Geen bbox beschikbaar voor vegetatie-query")
-
-                try:
-                    tile_cache_dir = area_dir / f"{area_id}-VEGETATION-OSM-tiles"
-                    _overpass_breaker_check("vegetation")
-                    data = _fetch_vegetation_overpass(
-                        area_bbox,
-                        tile_cache_dir=tile_cache_dir,
-                        fallback_tile_cache_dir=base_tile_cache_dir,
-                    )
-                    _overpass_breaker_success("vegetation")
-                except Exception as exc:
-                    _overpass_breaker_failure("vegetation")
-                    abort(502, f"Overpass-query mislukt: {exc}")
-
-                # Aggregaat cachen — alleen als alle tegels succesvol waren
-                try:
-                    if not data.get("properties", {}).get("_partial"):
-                        area_dir.mkdir(parents=True, exist_ok=True)
-                        with open(cache_path, "w", encoding="utf-8") as fh:
-                            json.dump(data, fh, ensure_ascii=False)
-                        if _s3_enabled():
-                            try:
-                                _s3_write_bytes(
-                                    _s3_key(area_id, cache_path.name),
-                                    json.dumps(data, ensure_ascii=False).encode(
-                                        "utf-8"
-                                    ),
-                                    "application/json",
-                                )
-                            except Exception as _e:
-                                print(f"[s3] vegetatie-cache uploaden mislukt: {_e}")
-                except Exception:
-                    pass
+        try:
+            data = _read_geodata(prep_path)
+        except Exception as exc:
+            abort(500, f"Fout bij lezen VEGETATION: {exc}")
 
         # bbox-filter op de response. Voor vlakken (Polygon/MultiPolygon) en
-        # lijnen mag NIET op één representatief punt gefilterd worden: een groot
+        # lijnen mag NIET op één representatief punt gefiltert worden: een groot
         # bosvlak waarvan het eerste hoekpunt buiten beeld valt zou dan volledig
         # verdwijnen (flikkeren bij pannen). We testen daarom of de geometrie-
         # bounding-box de query-bbox overlapt.

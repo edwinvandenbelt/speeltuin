@@ -7047,6 +7047,16 @@
       return _taIcons[key];
     }
 
+    // Masten zonder subtype kunnen ook als toren getoond worden; kies op basis
+    // van de beschikbare properties het juiste procedurele 3D-mesh.
+    function _taFurnitureType(p) {
+      if (!p) return null;
+      if (p.emergency === 'siren') return 'siren';
+      if (p['tower:type']) return 'tower';
+      if (p.man_made === 'mast') return 'mast';
+      return null;
+    }
+
     function _taComputeBumpBlocks(feats) {
       const out = [];
       for (const f of (feats || [])) {
@@ -7178,7 +7188,7 @@
           getPosition: _taPosition,
           getIcon:     f => _taMarkIcon((f.properties || {}).assetType),
           getSize:     f => _taMarkSize((f.properties || {}).assetType),
-          getAngle:    f => (f.properties || {})._taAngle || 0,   // dwars over de weg
+          getAngle:    f => ((f.properties || {})._taAngle || 0) + 180,   // dwars over de weg, haaientanden juiste richting
           pickable:    true,
           onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
         }));
@@ -8387,12 +8397,17 @@
         return;
       }
       if (_trafficAssetsNoFile) return;
-      const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump`);
+      const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump&f=ndgeojson`);
       if (r.status === 404) { _trafficAssetsNoFile = true; return; }
       if (!r.ok) { console.debug('[TA] speedBump fetch niet ok, status=', r.status); return; }
-      const data = await r.json();
-      if (!data || !Array.isArray(data.features)) return;
-      _taSpeedBumpFeatures = data.features;
+      const text = await r.text();
+      const feats = [];
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        try { feats.push(JSON.parse(line)); } catch (_) {}
+      }
+      if (!feats.length) return;
+      _taSpeedBumpFeatures = feats;
       _lastAssetBboxSpeedBump = [ -180, -90, 180, 90 ]; // markeer als globaal compleet
     }
 
@@ -8413,11 +8428,16 @@
       let data;
       try {
         console.debug('[TA] fetch traffic_assets', bbox);
-        const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`);
+        const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}&f=ndgeojson`);
         if (r.status === 404) { console.debug('[TA] 404 → traffic_assets bestand ontbreekt, fallback NDW-borden'); _trafficAssetsNoFile = true; _loadTrafficSignsFallback(); return; }
         if (!r.ok) { console.debug('[TA] fetch niet ok, status=', r.status); return; }
-        data = await r.json();
-        console.debug('[TA] features ontvangen:', data?.features?.length);
+        const text = await r.text();
+        data = { type: 'FeatureCollection', features: [] };
+        for (const line of text.split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          try { data.features.push(JSON.parse(line)); } catch (_) {}
+        }
+        console.debug('[TA] features ontvangen:', data.features.length);
       } catch (e) { console.debug('[TA] fetch exception', e); return; }
       if (!data || !Array.isArray(data.features)) { console.debug('[TA] skip: geen geldige features array'); return; }
 
