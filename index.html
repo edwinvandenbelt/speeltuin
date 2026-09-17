@@ -1503,6 +1503,18 @@
         <option value="emis_nox" data-i18n="metricNox">NOₓ-uitstoot</option>
         <option value="emis_pm10" data-i18n="metricPm10">Fijnstof (PM10)</option>
       </optgroup>
+      <optgroup label="Snelheid" data-i18n-label="metricGroupSpeedFactors">
+        <option value="speed_crossings" data-i18n="metricSpeedCrossings">Zebrapaden</option>
+        <option value="speed_cycle_crossings" data-i18n="metricSpeedCycleCrossings">Fietsoversteek</option>
+        <option value="speed_signals" data-i18n="metricSpeedSignals">Verkeerslichten</option>
+        <option value="speed_yield" data-i18n="metricSpeedYield">Haaientanden/stopstrepen</option>
+        <option value="speed_refuge" data-i18n="metricSpeedRefuge">Vluchtheuvels (midden op de weg)</option>
+        <option value="speed_from_right" data-i18n="metricSpeedFromRight">Verkeer van rechts</option>
+        <option value="speed_left_turn" data-i18n="metricSpeedLeftTurn">Linksaf-hinder</option>
+        <option value="speed_oncoming" data-i18n="metricSpeedOncoming">Tegenliggerhinder</option>
+        <option value="speed_elevation" data-i18n="metricSpeedElevation">Hellingen</option>
+        <option value="speed_penalty_total" data-i18n="metricSpeedPenaltyTotal">Straf-seconden (totaal)</option>
+      </optgroup>
       <option value="safety" id="safetyOption">Veiligheid</option>
       <option value="spectrum">Spectrum</option>
       <option value="none" data-i18n="metricNone">Geen</option>
@@ -2309,6 +2321,13 @@
       metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
       metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
       metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
+      metricGroupSpeedFactors:'Snelheid',
+      metricSpeedCrossings:'Zebrapaden', metricSpeedCycleCrossings:'Fietsoversteek',
+      metricSpeedSignals:'Verkeerslichten', metricSpeedYield:'Haaientanden/stopstrepen',
+      metricSpeedRefuge:'Vluchtheuvels (midden op de weg)',
+      metricSpeedFromRight:'Verkeer van rechts', metricSpeedLeftTurn:'Linksaf-hinder',
+      metricSpeedOncoming:'Tegenliggerhinder', metricSpeedElevation:'Hellingen',
+      metricSpeedPenaltyTotal:'Straf-seconden (totaal)',
       // Laadscherm
       loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
       loaderZones:'Zones laden\u2026', loaderRoutes:'Routes laden\u2026', loaderMap:'Kaart laden\u2026',
@@ -2433,6 +2452,12 @@
       legendNoiseLden:'Geluid Lden', legendNoiseLnight:'Geluid Lnight',
       legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
       legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
+      legendSpeedCrossings:'Zebrapaden', legendSpeedCycleCrossings:'Fietsoversteek',
+      legendSpeedSignals:'Verkeerslichten', legendSpeedYield:'Haaientanden/stopstrepen',
+      legendSpeedRefuge:'Vluchtheuvels',
+      legendSpeedFromRight:'Verkeer van rechts', legendSpeedLeftTurn:'Linksaf-hinder',
+      legendSpeedOncoming:'Tegenliggerhinder', legendSpeedElevation:'Hellingen',
+      legendSpeedPenaltyTotal:'Straf-seconden',
       legendUnit:'vtg/u',
       carCountFmt: n => `~${n.toLocaleString('nl-NL')} voertuigen op de wegen`,
       // Flow-scaler panel
@@ -2459,6 +2484,7 @@
       tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg/24u',
       tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
       tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte',
+      tooltipSpeedDataUnavailable:'Nog niet beschikbaar in deze brondata', tooltipSpeedFactorPresent:'Ja', tooltipSpeedFactorAbsent:'Nee',
       tooltipZoneClass:'Zoneklasse',
       tooltipZoneClassStudy:'Studiegebied', tooltipZoneClassInfluence:'Invloedszone',
       tooltipZoneClassBoundary:'Grenszone', tooltipZoneClassCbs:'CBS-zone',
@@ -2566,6 +2592,13 @@
       metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
       metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
       metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
+      metricGroupSpeedFactors:'Speed',
+      metricSpeedCrossings:'Pedestrian crossings', metricSpeedCycleCrossings:'Cycle crossing',
+      metricSpeedSignals:'Traffic signals', metricSpeedYield:'Give-way/stop markings',
+      metricSpeedRefuge:'Traffic islands (mid-road)',
+      metricSpeedFromRight:'Traffic from the right', metricSpeedLeftTurn:'Left-turn hindrance',
+      metricSpeedOncoming:'Oncoming-traffic hindrance', metricSpeedElevation:'Slopes',
+      metricSpeedPenaltyTotal:'Penalty seconds (total)',
       loaderInit:'Loading GeoJSON\u2026', loaderNetwork:'Loading network data\u2026',
       loaderZones:'Loading zones\u2026', loaderRoutes:'Loading routes\u2026', loaderMap:'Loading map\u2026',
       areaTitle:'Traffic network visualisation', areaSubtitle:'Select an area to load:',
@@ -2682,6 +2715,12 @@
       legendNoiseLden:'Noise Lden', legendNoiseLnight:'Noise Lnight',
       legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
       legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
+      legendSpeedCrossings:'Pedestrian crossings', legendSpeedCycleCrossings:'Cycle crossing',
+      legendSpeedSignals:'Traffic signals', legendSpeedYield:'Give-way/stop markings',
+      legendSpeedRefuge:'Traffic islands',
+      legendSpeedFromRight:'Traffic from the right', legendSpeedLeftTurn:'Left-turn hindrance',
+      legendSpeedOncoming:'Oncoming-traffic hindrance', legendSpeedElevation:'Slope/delay',
+      legendSpeedPenaltyTotal:'Penalty seconds',
       legendUnit:'veh/h',
       carCountFmt: n => `~${n.toLocaleString('en-GB')} vehicles on the road`,
       // Flow-scaler panel
@@ -2707,6 +2746,7 @@
       tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh/24h',
       tooltipSpeed:'Speed', tooltipLanes:'Lanes',
       tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length',
+      tooltipSpeedDataUnavailable:'Not yet available in this source data', tooltipSpeedFactorPresent:'Yes', tooltipSpeedFactorAbsent:'No',
       tooltipZoneClass:'Zone class',
       tooltipZoneClassStudy:'Study area', tooltipZoneClassInfluence:'Influence zone',
       tooltipZoneClassBoundary:'Boundary zone', tooltipZoneClassCbs:'CBS zone',
@@ -2812,6 +2852,13 @@
       metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
       metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
       metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
+      metricGroupSpeedFactors:'Nopeus',
+      metricSpeedCrossings:'Suojatiet', metricSpeedCycleCrossings:'Py\xf6r\xe4ylitys',
+      metricSpeedSignals:'Liikennevalot', metricSpeedYield:'V\xe4istymis-/pys\xe4hdysmerkinn\xe4t',
+      metricSpeedRefuge:'Keskisaarekkeet (kesken tiet\xe4)',
+      metricSpeedFromRight:'Oikealta tuleva liikenne', metricSpeedLeftTurn:'Vasemmalle k\xe4\xe4ntymisen hidaste',
+      metricSpeedOncoming:'Vastasuuntaisen liikenteen hidaste', metricSpeedElevation:'Kaltevuudet',
+      metricSpeedPenaltyTotal:'Viivesekunnit (yhteens\xe4)',
       loaderInit:'Ladataan GeoJSON\u2026', loaderNetwork:'Ladataan verkkodata\u2026',
       loaderZones:'Ladataan alueita\u2026', loaderRoutes:'Ladataan reittej\xe4\u2026', loaderMap:'Ladataan karttaa\u2026',
       areaTitle:'Liikenneverkkovisualisointi', areaSubtitle:'Valitse alue ladattavaksi:',
@@ -2887,6 +2934,12 @@
       legendNoiseLden:'Melu Lden', legendNoiseLnight:'Melu Lnight',
       legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
       legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
+      legendSpeedCrossings:'Suojatiet', legendSpeedCycleCrossings:'Py\xf6r\xe4ylitys',
+      legendSpeedSignals:'Liikennevalot', legendSpeedYield:'V\xe4istymis-/pys\xe4hdysmerkinn\xe4t',
+      legendSpeedRefuge:'Keskisaarekkeet',
+      legendSpeedFromRight:'Oikealta tuleva liikenne', legendSpeedLeftTurn:'Vasemmalle k\xe4\xe4ntymisen hidaste',
+      legendSpeedOncoming:'Vastasuuntaisen liikenteen hidaste', legendSpeedElevation:'Kaltevuus/viive',
+      legendSpeedPenaltyTotal:'Viivesekunnit',
       legendUnit:'ajon/h',
       carCountFmt: n => `~${n.toLocaleString('fi-FI')} ajoneuvoa tiellä`,
       // Flow-scaler panel
@@ -2912,6 +2965,7 @@
       tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon/24h',
       tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
       tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus',
+      tooltipSpeedDataUnavailable:'Ei vielä saatavilla tassa aineistossa', tooltipSpeedFactorPresent:'Kyllä', tooltipSpeedFactorAbsent:'Ei',
       tooltipZoneClass:'Alueluokka',
       tooltipZoneClassStudy:'Tutkimusalue', tooltipZoneClassInfluence:'Vaikutusalue',
       tooltipZoneClassBoundary:'Rajav\u00f6hyke', tooltipZoneClassCbs:'CBS-alue',
@@ -4241,6 +4295,9 @@
     emis_co2:     { std: 500, max: 1000, legal: false }, // indicatief, kg/km/etmaal
     emis_nox:     { std: 1.5, max: 3.0,  legal: false }, // indicatief, kg/km/etmaal
     emis_pm10:    { std: 0.15, max: 0.30, legal: false },// indicatief, kg/km/etmaal
+    // "Snelheid"-straf-seconden v0 (alleen vaste componenten, zie
+    // docs/plan-snelheid-strafseconden.md) — startwaarden, nog te valideren.
+    speed_penalty_total: { std: 4, max: 12, legal: false },
   };
 
   /** Kleur op basis van absolute drempels: groen (toegestaan) → geel/oranje
@@ -4261,6 +4318,16 @@
     return [Math.round(205 - 75 * t), Math.round(30 - 30 * t), Math.round(30 - 30 * t), 230];
   }
 
+  // "Snelheid"-sub-lagen (binaire aanwezigheid van een factor op het wegvak).
+  const BINARY_SPEED_METRICS = new Set(['speed_crossings', 'speed_signals', 'speed_yield', 'speed_refuge']);
+  // Toekomstige Snelheid-sub-lagen die al zichtbaar zijn in het menu, maar grijs
+  // blijven zolang de brondata (gmt-library Deel A / cycle paths) nog ontbreekt.
+  const FUTURE_BINARY_SPEED_METRICS = new Set(['speed_cycle_crossings']);
+  // Snelheid-sub-lagen met een continue (flow-gebaseerde) waarde i.p.v. binair.
+  const FLOW_SPEED_METRICS = new Set(['speed_from_right', 'speed_left_turn', 'speed_oncoming', 'speed_elevation']);
+  const BINARY_SPEED_RGBA = [235, 110, 20, 230];   // opvallend amber/oranje
+  const UNAVAILABLE_GREY_RGBA = [160, 160, 170, 180]; // half-transparant grijs: data nog niet beschikbaar
+
   // Blauw (vrij/snel) → rood (langzaam): norm=0 is langzaam, norm=1 is snel
   function speedRgba(norm) {
     const n = 1 - norm; // omdraaien: hoge snelheid = koel blauw
@@ -4268,6 +4335,49 @@
     const g = Math.min(255, Math.round((1 - n) * 1.5 * 255));
     const b = Math.min(255, Math.round((1 - n) * 255));
     return [r, g, b, 210];
+  }
+
+  // Grijs/transparant (laag) → amber → rood (hoog), voor continue Snelheid-lagen.
+  function redOrangeRgba(norm) {
+    if (norm <= 0) return [80, 80, 100, 120];
+    if (norm >= 1) return [231, 76, 60, 230];
+    if (norm < 0.5) {
+      // grijs (0,0.2,0.4,0.6) → amber
+      const t = norm * 2;
+      const r = Math.round(80 + t * (235 - 80));
+      const g = Math.round(80 + t * (110 - 80));
+      const b = Math.round(100 + t * (20 - 100));
+      const a = Math.round(120 + t * (230 - 120));
+      return [r, g, b, a];
+    }
+    // amber → rood
+    const t = (norm - 0.5) * 2;
+    const r = Math.round(235 + t * (231 - 235));
+    const g = Math.round(110 + t * (76 - 110));
+    const b = Math.round(20 + t * (60 - 20));
+    return [r, g, b, 230];
+  }
+
+  // Hellingspercentage: groen (bergaf, negatief) → geel (0%) → rood (bergop, positief).
+  // maxAbs = maximum absolute helling in het geladen gebied.
+  function slopeRgba(pct, maxAbs) {
+    if (maxAbs <= 0 || pct == null || !isFinite(pct)) return [255, 220, 80, 230];
+    const stop = [
+      { p: -maxAbs, c: [30, 160, 60] },   // groen, bergaf
+      { p: 0,       c: [255, 220, 80] },   // geel, vlak
+      { p: maxAbs,  c: [220, 50, 40] }    // rood, bergop
+    ];
+    // lineair interpoleren tussen de twee dichtstbijzijnde stops
+    let a = stop[0], b = stop[stop.length - 1];
+    for (let i = 0; i < stop.length - 1; i++) {
+      if (pct >= stop[i].p && pct <= stop[i + 1].p) { a = stop[i]; b = stop[i + 1]; break; }
+    }
+    const range = b.p - a.p || 1;
+    const t = Math.max(0, Math.min(1, (pct - a.p) / range));
+    const r = Math.round(a.c[0] + t * (b.c[0] - a.c[0]));
+    const g = Math.round(a.c[1] + t * (b.c[1] - a.c[1]));
+    const bl = Math.round(a.c[2] + t * (b.c[2] - a.c[2]));
+    return [r, g, bl, 230];
   }
 
   // Lichtblauw (laag) → diepblauw (hoog)
@@ -5220,6 +5330,16 @@
         emis_co2:         { labelKey: 'legendCo2',  unit: 'kg/km', gradient: _limitGradient },
         emis_nox:         { labelKey: 'legendNox',  unit: 'kg/km', gradient: _limitGradient },
         emis_pm10:        { labelKey: 'legendPm10', unit: 'kg/km', gradient: _limitGradient },
+        speed_crossings:       { labelKey: 'legendSpeedCrossings',       unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_cycle_crossings: { labelKey: 'legendSpeedCycleCrossings',  unit: '', gradient: 'linear-gradient(to right, #a0a0aa, #a0a0aa 30%, #505064 60%, #eb6e14)' },
+        speed_signals:         { labelKey: 'legendSpeedSignals',         unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_yield:           { labelKey: 'legendSpeedYield',           unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_refuge:          { labelKey: 'legendSpeedRefuge',          unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_from_right:      { labelKey: 'legendSpeedFromRight',       unit,         gradient: flowGradient },
+        speed_left_turn:       { labelKey: 'legendSpeedLeftTurn',        unit,         gradient: flowGradient },
+        speed_oncoming:        { labelKey: 'legendSpeedOncoming',        unit,         gradient: flowGradient },
+        speed_elevation:       { labelKey: 'legendSpeedElevation',       unit: '%',    gradient: 'linear-gradient(to right, rgb(30,160,60), rgb(255,220,80), rgb(220,50,40))' },
+        speed_penalty_total:   { labelKey: 'legendSpeedPenaltyTotal',    unit: 'sec', gradient: _limitGradient },
       };
       // Spectrum: aparte MapLibre-laag, legenda toont gradient van de laag zelf
       if (colorMetric === 'spectrum') {
@@ -5254,7 +5374,7 @@
         : v => (Math.abs(v) > 0 && Math.abs(v) < 10
                   ? Number(v.toFixed(2)).toLocaleString(T('numberLocale'))
                   : Math.round(v).toLocaleString(T('numberLocale'))) + ' ' + u;
-      if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+      if (colorMetric === 'flow' || colorMetric === 'flow_scaled' || colorMetric === 'speed_from_right') {
         // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
         document.getElementById('legendMin').textContent = fmt(0);
         document.getElementById('legendMax').textContent = fmt(globalMaxFlow);
@@ -5276,6 +5396,27 @@
         const lim = METRIC_LIMITS[colorMetric];
         document.getElementById('legendMin').textContent = fmt(lim.std);
         document.getElementById('legendMax').textContent = fmt(lim.max);
+      } else if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        // Toekomstige Snelheid-lagen zonder brondata: geen min/max, wel tekstlabel.
+        document.getElementById('legendMin').textContent = '–';
+        document.getElementById('legendMax').textContent = '–';
+      } else if (FLOW_SPEED_METRICS.has(colorMetric) && colorMetric !== 'speed_from_right') {
+        // Continue Snelheid-lagen met eigen min/max (elevation/left_turn/oncoming).
+        let vMin = Infinity, vMax = -Infinity;
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < vMin) vMin = v;
+            if (v > vMax) vMax = v;
+          }
+        }
+        if (colorMetric === 'speed_elevation' && isFinite(vMin) && isFinite(vMax)) {
+          document.getElementById('legendMin').textContent = fmt(vMin);
+          document.getElementById('legendMax').textContent = fmt(vMax);
+        } else {
+          document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
+          document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
+        }
       } else {
         // Andere metrics: scan segmenten voor het actieve dagdeel
         let vMin = Infinity, vMax = -Infinity;
@@ -7001,7 +7142,7 @@
           getPosition: _taPosition,
           getIcon:     f => _taMarkIcon((f.properties || {}).assetType),
           getSize:     f => _taMarkSize((f.properties || {}).assetType),
-          getAngle:    f => ((f.properties || {})._taAngle || 0) + 180,   // dwars over de weg, 180° t.o.v. wegrichting (haaientanden wijzen zo de juiste kant op; symmetrische markeringen zijn hier ongevoelig voor)
+          getAngle:    f => (f.properties || {})._taAngle || 0,   // dwars over de weg
           pickable:    true,
           onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
         }));
@@ -8182,6 +8323,14 @@
     }
 
     const _TRAFFIC_ASSET_MINZOOM = _TA_MINZOOM;
+    // "Snelheid" v0-lagen mogen altijd het netwerk inkleuren zodra de
+    // traffic assets minstens een keer geladen zijn; ze hoeven niet op zoom 16
+    // te wachten. Voor de eerste keer nog wel de zoom-drempel.
+    let _speedAssetsEverLoaded = false;
+    function _speedShouldSkipLoad() {
+      if (_speedAssetsEverLoaded) return !map.getBounds;
+      return map.getZoom() < _TRAFFIC_ASSET_MINZOOM;
+    }
     function _bboxContains(outer, inner) {
       return !!outer && !!inner &&
         outer[0] <= inner[0] && outer[1] <= inner[1] &&
@@ -8262,6 +8411,7 @@
           // Vluchtheuvels (verhoogde geometrie)
           _taRefugeAreaCrossingFeatures = byType.refugeAreaCrossing || [];
           _taRefugeAreaTrafficFeatures = byType.refugeAreaTraffic || [];
+          rebuildSpeedLayers();                  // "Snelheid": knooppunt-classificatie + straf-seconden v0
         _taFurniture = {
           mailbox:    _taMkInstances(byType.mailbox,    'along'),
           busShelter: _taMkInstances(byType.busShelter, 'along'),
@@ -8360,6 +8510,14 @@
     // Verkeersobjecten worden lazy geladen op basis van het zichtbare kaartdeel
     // (zie loadTrafficAssetsInView / moveend-hook) zodra de kaart klaar is.
 
+    // Verzamelproperty-namen die in het netwerk bestaan, zodat we later kunnen
+    // detecteren of toekomstige Snelheid-kolommen al geleverd zijn.
+    const _speedSegmentsPropSearch = new Set();
+    for (const f of features) {
+      if (!f.properties) continue;
+      for (const k of Object.keys(f.properties)) _speedSegmentsPropSearch.add(k);
+    }
+
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments    = features.map(f => ({
       coords:  f.geometry.coordinates,
@@ -8443,6 +8601,290 @@
         linkMode: p.mode ? p.mode.toUpperCase() : null,
       });
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  "SNELHEID" — knooppunt-classificatie + straf-seconden (v0, fallback)
+    //  ---------------------------------------------------------------------
+    //  Fallback-implementatie zonder gmt-library-data (zie
+    //  docs/plan-snelheid-strafseconden.md, Deel A). Knooppunten worden
+    //  geclassificeerd o.b.v. de dichtstbijzijnde bestaande punt-assets
+    //  (verkeerslicht/voorrangsbord), en wegvakken krijgen vaste straf-
+    //  seconden o.b.v. zebra/verkeerslicht/haaientanden/stopbord in de buurt.
+    //  Flow-afhankelijke componenten (verkeer van rechts, linksaf-hinder,
+    //  tegenliggerhinder) zitten hier bewust nog niet in.
+    // ═══════════════════════════════════════════════════════════════════════
+    const SPEED_NODE_SNAP_M = 20;   // marge punt → knooppunt (zelfde als geplande gmt-library-marge)
+    const SPEED_LINK_SNAP_M = 15;   // marge punt → wegvak
+    const SPEED_REFUGE_END_MARGIN_M = 15;   // vluchtheuvels binnen deze afstand van een knooppunt gelden als "aan het eind" en tellen niet mee
+    const SPEED_PENALTY_SEC = { zebra: 2, signal: 10, yield: 2, stop: 4, refuge: 2, elevationMax: 6 };  // voorstelwaarden, zie plan
+    const SPEED_ELEVATION_MIN_PCT = 3;   // vanaf dit hellingspercentage telt omhoog rijden mee
+    const SPEED_ELEVATION_MAX_PCT = 15;  // boven dit percentage is de straf maximaal
+
+    let nodeControlMap  = new Map();   // nodeId → 'signalized' | 'priority' | 'uncontrolled'
+    let speedLinkFlags  = new Map();   // linkId → { zebra, signal, yield, stop }
+    let penaltyByLinkId = new Map();   // linkId → { zebra, cycleX, signal, yield, stop, refuge, elevation, fromRight, leftTurn, rightTurn, oncoming, total }
+    let _speedLayersVersion = 0;       // bumpt bij elke rebuildSpeedLayers(), voor deck.gl updateTriggers
+
+    function _mPerDeg(lat) {
+      return [111320 * Math.cos(lat * Math.PI / 180) || 1, 110540];
+    }
+
+    /** Controleer of in het geladen netwerk minstens een segment een bepaald
+     *  attribuut draagt. Gebruikt om te bepalen of toekomstige Snelheid-lagen
+     *  al zinvolle data hebben (grijs = nog niet beschikbaar). */
+    function _speedHasAnySegmentWith(checkProp) {
+      if (!_speedSegmentsPropSearch) return false;
+      for (const key of _speedSegmentsPropSearch) {
+        if (checkProp(key)) return true;
+      }
+      return false;
+    }
+
+    /** Hellingspercentage (%) van een wegvak; positief = omhoog rijden
+     *  (van elevationFrom naar elevationTo). */
+    function _speedSlopePct(p) {
+      const from = p.elevationFrom, to = p.elevationTo, len = p.length;
+      if (from == null || to == null || !(len > 0)) return null;
+      return ((to - from) / len) * 100;
+    }
+
+    /** Effectieve wegbreedte voor tegenliggerhinder: roadWidthM lijkt de
+     *  rijstrookbreedte per richting te zijn; vermenigvuldig met het aantal
+     *  rijstroken en met 2 voor tweerichtingsverkeer. */
+    function _speedEffectiveRoadWidth(p) {
+      const widthPerLane = p.roadWidthM != null ? p.roadWidthM : 0;
+      const lanes = p.lanes != null ? p.lanes : 1;
+      return widthPerLane * lanes * 2;
+    }
+
+    /** Actuele uurintensiteit (vtg/u) van een conflict-link opvragen, op basis
+     *  van het huidige dagdeel. Fallback op statische 24u-flow. */
+    function _speedConflictFlow(linkId) {
+      if (linkId == null) return 0;
+      if (linkFlowMap) {
+        const live = linkFlowMap.get(linkId);
+        if (live != null && isFinite(live)) return live;
+      }
+      // Fallback: zoek de segment-properties in het geladen netwerk.
+      const seg = segments && segments.find(s => s.props && s.props.linkId === linkId);
+      if (seg) return segFlow(seg) ?? 0;
+      return 0;
+    }
+
+    /** Straf-seconden voor omhoog rijden, lineair vanaf 3% tot 15%. */
+    function _speedElevationPenaltySec(p) {
+      const slope = _speedSlopePct(p);
+      if (slope == null || slope < SPEED_ELEVATION_MIN_PCT) return 0;
+      const t = Math.min(1, (slope - SPEED_ELEVATION_MIN_PCT) / (SPEED_ELEVATION_MAX_PCT - SPEED_ELEVATION_MIN_PCT));
+      return Math.round(t * SPEED_PENALTY_SEC.elevationMax * 10) / 10;
+    }
+
+    function _speedDistMeters(lon1, lat1, lon2, lat2) {
+      const [mPerLng, mPerLat] = _mPerDeg((lat1 + lat2) / 2);
+      const dx = (lon2 - lon1) * mPerLng, dy = (lat2 - lat1) * mPerLat;
+      return Math.hypot(dx, dy);
+    }
+
+    // Kortste afstand (m) van punt (lon,lat) tot lijnstuk-geometrie coords.
+    function _speedDistToLine(lon, lat, coords) {
+      if (!coords || coords.length < 2) return Infinity;
+      const [mPerLng, mPerLat] = _mPerDeg(lat);
+      let best = Infinity;
+      for (let i = 0; i < coords.length - 1; i++) {
+        const a = coords[i], b = coords[i + 1];
+        const ax = (a[0] - lon) * mPerLng, ay = (a[1] - lat) * mPerLat;
+        const bx = (b[0] - lon) * mPerLng, by = (b[1] - lat) * mPerLat;
+        const vx = bx - ax, vy = by - ay;
+        const len2 = vx * vx + vy * vy;
+        let t = len2 > 0 ? -(ax * vx + ay * vy) / len2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const px = ax + t * vx, py = ay + t * vy;
+        const d = Math.hypot(px, py);
+        if (d < best) best = d;
+      }
+      return best;
+    }
+
+    function _speedNearestNodeId(lon, lat, maxM) {
+      let bestId = null, bestD = maxM;
+      for (const [nodeId, c] of nodeCoords) {
+        const d = _speedDistMeters(lon, lat, c[0], c[1]);
+        if (d < bestD) { bestD = d; bestId = nodeId; }
+      }
+      return bestId;
+    }
+
+    function _speedNearestLinkId(lon, lat, maxM) {
+      let bestId = null, bestD = maxM;
+      for (const [linkId, coords] of linkGeomMap) {
+        const d = _speedDistToLine(lon, lat, coords);
+        if (d < bestD) { bestD = d; bestId = linkId; }
+      }
+      return bestId;
+    }
+
+    // Representatief punt [lon,lat] voor een feature-geometrie (Point of
+    // Polygon/MultiPolygon — voor vluchtheuvels, die als vlak of punt
+    // kunnen binnenkomen).
+    function _speedFeatureCentroid(f) {
+      const g = f.geometry; if (!g) return null;
+      if (g.type === 'Point') return g.coordinates;
+      let ring = null;
+      if (g.type === 'Polygon') ring = g.coordinates?.[0];
+      else if (g.type === 'MultiPolygon') ring = g.coordinates?.[0]?.[0];
+      if (!ring || !ring.length) return null;
+      let sx = 0, sy = 0;
+      for (const [x, y] of ring) { sx += x; sy += y; }
+      return [sx / ring.length, sy / ring.length];
+    }
+
+    /** Herbouw knooppunt-classificatie + straf-seconden-maps. Aanroepen
+     *  zodra `_taSignalFeatures`/`_taMarkFeatures` zijn (bij)gewerkt. */
+    function rebuildSpeedLayers() {
+      // 1. Knooppunt-classificatie: signalized (verkeerslicht) > priority
+      //    (voorrangs-/stopbord/haaientanden) > uncontrolled (default, geen entry).
+      const ncMap = new Map();
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null) ncMap.set(nid, 'signalized');
+      }
+      for (const f of _taMarkFeatures) {
+        const t = f.properties?.assetType;
+        if (t !== 'giveWay' && t !== 'stopSign') continue;
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null && !ncMap.has(nid)) ncMap.set(nid, 'priority');
+      }
+      nodeControlMap = ncMap;
+
+      // 2. Sub-laag-vlaggen per wegvak (zebra/verkeerslicht/haaientanden/stopbord).
+      const flagMap = new Map();
+      const flag = (linkId, key) => {
+        if (linkId == null) return;
+        let e = flagMap.get(linkId);
+        if (!e) { e = {}; flagMap.set(linkId, e); }
+        e[key] = true;
+      };
+      for (const f of _taMarkFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const t = f.properties?.assetType;
+        const key = t === 'pedestrianCrossing' ? 'zebra'
+                  : t === 'giveWay'             ? 'yield'
+                  : t === 'stopSign'            ? 'stop'
+                  : null;
+        if (!key) continue;
+        flag(_speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M), key);
+      }
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        flag(_speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M), 'signal');
+      }
+      // Vluchtheuvels (refugeAreaCrossing/refugeAreaTraffic) — alleen degene die
+      // NIET aan het eind van het wegvak liggen (binnen SPEED_REFUGE_END_MARGIN_M
+      // van een knooppunt): die horen bij de kruising zelf, niet bij een losse
+      // midden-op-het-wegvak-hindernis.
+      const _refugeFeaturesForSpeed = [
+        ..._taRefugeAreaCrossingFeatures,
+        ..._taRefugeAreaTrafficFeatures,
+      ];
+      for (const f of _refugeFeaturesForSpeed) {
+        const c = _speedFeatureCentroid(f); if (!c) continue;
+        const linkId = _speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M);
+        if (linkId == null) continue;
+        const nlm = nodeLinkMap.get(linkId);
+        if (nlm) {
+          const fromC = nodeCoords.get(nlm.fromNode);
+          const toC   = nodeCoords.get(nlm.toNode);
+          const dFrom = fromC ? _speedDistMeters(c[0], c[1], fromC[0], fromC[1]) : Infinity;
+          const dTo   = toC   ? _speedDistMeters(c[0], c[1], toC[0],   toC[1])   : Infinity;
+          if (dFrom < SPEED_REFUGE_END_MARGIN_M || dTo < SPEED_REFUGE_END_MARGIN_M) continue;  // aan het eind → overslaan
+        }
+        flag(linkId, 'refuge');
+      }
+      speedLinkFlags = flagMap;
+
+      // 3. Straf-seconden v0 — vaste componenten + flow-onafhankelijke
+      //    bronkolommen die nu al in NETWORK-CAR zitten (elevationFrom/To,
+      //    numCycleCrossings), plus flow-afhankelijke kolommen (fromRightLinkId,
+      //    oppositeLinkId, fromRightFlow, oppositeFlow, fromLeftFlow,
+      //    leftTurnRatio, rightTurnRatio, roadWidthM) als deze beschikbaar
+      //    zijn. Zie docs/plan-snelheid-strafseconden.md.
+      const penMap = new Map();
+      const hasFromRight   = _speedHasAnySegmentWith(k => k === 'fromRightLinkId');
+      const hasFromLeft    = _speedHasAnySegmentWith(k => k === 'fromLeftFlow');
+      const hasOpposite    = _speedHasAnySegmentWith(k => k === 'oppositeLinkId');
+      const hasTurnRatio   = _speedHasAnySegmentWith(k => k === 'leftTurnRatio' || k === 'rightTurnRatio');
+      const hasRoadWidth   = _speedHasAnySegmentWith(k => k === 'roadWidthM');
+      const hasElevation   = _speedHasAnySegmentWith(k => k === 'elevationFrom' || k === 'elevationTo');
+      const hasCycleCross  = _speedHasAnySegmentWith(k => k === 'numCycleCrossings');
+
+      for (const f of geojson.features) {
+        const p = f.properties;
+        const linkId = p.linkId;
+        const flags = flagMap.get(linkId) || {};
+
+        const zebra  = flags.zebra  || ('numPedestrianCrossings' in p && (p.numPedestrianCrossings || 0) > 0) ? SPEED_PENALTY_SEC.zebra  : 0;
+        const cycleX = hasCycleCross && ((p.numCycleCrossings || 0) > 0 || (p.numCyclePaths || 0) > 0) ? SPEED_PENALTY_SEC.zebra : 0; // zelfde orde als zebra
+        const signal = flags.signal || ('trafficSignal' in p && p.trafficSignal === true) ? SPEED_PENALTY_SEC.signal : 0;
+        const yieldS = flags.yield  || (('numGiveWays' in p && (p.numGiveWays || 0) > 0) || ('numStoppingLanes' in p && (p.numStoppingLanes || 0) > 0)) ? SPEED_PENALTY_SEC.yield  : 0;
+        const stop   = flags.stop   ? SPEED_PENALTY_SEC.stop   : 0;
+        const refuge = flags.refuge || ('numRefugeAreas' in p && (p.numRefugeAreas || 0) > 0) ? SPEED_PENALTY_SEC.refuge : 0;
+        const elevation = hasElevation ? _speedElevationPenaltySec(p) : 0;
+
+        // Flow-afhankelijke componenten (fase 3 + fase 4). De kalibratie-
+        // constanten zijn voorlopige startwaarden; zie plan.
+        const k_rechts      = 3 / 600;   // verkeer van rechts: ≈ 3 sec bij 600 veh/24h
+        const k_links       = 4 / 800;   // linksaf-hinder: ≈ 4 sec bij 800 veh/24h
+        const k_rechts_af   = 1 / 800;   // rechtsaf-hinder: marginaal, ≈ 1 sec bij 800 veh/24h
+        const k_oncoming    = 2 / 600;   // tegenliggerhinder op smalle weg
+
+        // Verkeer-van-rechts-straf geldt alleen bij een ongeregeld knooppunt
+        // (uncontrolled). Bij verkeerslicht, voorrangsweg of rotonde is deze
+        // straf niet van toepassing (wordt via andere componenten afgevangen).
+        const uncontrolledTo = p.nodeControlTo === 'uncontrolled';
+        const fromRightFlow = hasFromRight && uncontrolledTo && p.fromRightLinkId != null
+          ? _speedConflictFlow(p.fromRightLinkId) : 0;
+        const fromRight = Math.round(fromRightFlow * k_rechts * 10) / 10;
+
+        // Linksaf kruist zowel tegenliggers als verkeer van links;
+        // rechtsaf alleen verkeer van links. Beide worden gewogen door het
+        // daadwerkelijke aandeel afslaand verkeer op de toNode.
+        const leftRatio  = hasTurnRatio && p.leftTurnRatio  != null ? p.leftTurnRatio  : 0;
+        const rightRatio = hasTurnRatio && p.rightTurnRatio != null ? p.rightTurnRatio : 0;
+        const fromLeft   = hasFromLeft && p.fromLeftLinkId != null ? _speedConflictFlow(p.fromLeftLinkId) : 0;
+        const opposite   = hasOpposite && p.oppositeLinkId != null ? _speedConflictFlow(p.oppositeLinkId) : 0;
+        const leftTurn  = Math.round((opposite + fromLeft) * k_links * leftRatio * 10) / 10;
+        const rightTurn = Math.round(fromLeft * k_rechts_af * rightRatio * 10) / 10;
+
+        // Tegenliggerhinder (fase 4): smalle weg zonder middenscheiding.
+        // roadWidthM wordt geinterpreteerd als rijstrookbreedte per richting;
+        // effectieve breedte = roadWidthM * lanes * 2.
+        // Fallback: geen middenscheiding aannemen. TODO: vervangen zodra
+        // hasCenterSeparation geleverd wordt.
+        let oncoming = 0;
+        if (hasRoadWidth && p.roadWidthM != null) {
+          const narrowThreshold = 5.5;   // m, onder deze breedte wordt het krap
+          const effectiveWidth = _speedEffectiveRoadWidth(p);
+          const widthShortage = Math.max(0, narrowThreshold - effectiveWidth);
+          const oncomingFlow = hasOpposite && p.oppositeLinkId != null ? _speedConflictFlow(p.oppositeLinkId) : 0;
+          oncoming = Math.round(widthShortage * oncomingFlow * k_oncoming * 10) / 10;
+        }
+
+        const total = zebra + cycleX + signal + yieldS + stop + refuge + elevation + fromRight + leftTurn + rightTurn + oncoming;
+        penMap.set(linkId, {
+          zebra, cycleX, signal, yield: yieldS, stop, refuge, elevation,
+          fromRight, leftTurn, rightTurn, oncoming, total
+        });
+      }
+      penaltyByLinkId = penMap;
+      _speedLayersVersion++;
+    }
+
+    // Initiële opbouw van Snelheid-lagen direct op basis van het netwerk —
+    // de variabelen nodeControlMap/speedLinkFlags/penaltyByLinkId zijn nu
+    // gedeclareerd, dus dit kan veilig.
+    rebuildSpeedLayers();
 
     // Zone-data laden: fromNodeProportions / toNodeProportions
     setLoaderMsg(T('loaderZones'));
@@ -9237,6 +9679,80 @@
         }
         case 'speed':    return p.speed ?? null;
         case 'capacity': return p.capacity ?? null;
+        // "Snelheid"-sub-lagen: binaire aanwezigheid van de betreffende factor
+        // op dit wegvak. Voor de v0-lagen kijken we bij voorkeur naar de
+        // NETWORK-CAR attributen (geen zoom-16 drempel), met de verkregen
+        // traffic-assets als fallback voor oudere exports zonder deze kolommen.
+        case 'speed_crossings': {
+          if ('numPedestrianCrossings' in p) return (p.numPedestrianCrossings || 0) > 0 ? 1 : 0;
+          const flags = speedLinkFlags.get(p.linkId);
+          return flags?.zebra ? 1 : null;
+        }
+        case 'speed_signals': {
+          if ('trafficSignal' in p) return p.trafficSignal === true ? 1 : 0;
+          const flags = speedLinkFlags.get(p.linkId);
+          return flags?.signal ? 1 : null;
+        }
+        case 'speed_yield': {
+          if ('numGiveWays' in p || 'numStoppingLanes' in p) {
+            return ((p.numGiveWays || 0) > 0 || (p.numStoppingLanes || 0) > 0) ? 1 : 0;
+          }
+          const flags = speedLinkFlags.get(p.linkId);
+          return (flags?.yield || flags?.stop) ? 1 : null;
+        }
+        case 'speed_refuge': {
+          // Alleen op basis van NETWORK-CAR registratie (numRefugeAreas).
+          // Traffic-assets worden wel getekend als aparte visuele laag, maar
+          // niet gebruikt voor de penalty/kaartlaag. Zie plan-snelheid-
+          // strafseconden.md, Fase 1.
+          if ('numRefugeAreas' in p) return (p.numRefugeAreas || 0) > 0 ? 1 : 0;
+          const flags = speedLinkFlags.get(p.linkId);
+          return flags?.refuge ? 1 : null;
+        }
+        // Toekomstige Snelheid-sub-lagen: al zichtbaar in het menu; grijs zolang
+        // de bronkolommen (Deel A / numCycleCrossings / fietspaden) ontbreken.
+        // Beschikbaarheid wordt gedetecteerd op basis van het geladen netwerk.
+        case 'speed_cycle_crossings': {
+          if ('numCycleCrossings' in p) return (p.numCycleCrossings || 0) > 0 ? 1 : 0;
+          if ('numCyclePaths' in p) return (p.numCyclePaths || 0) > 0 ? 1 : 0;
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'cycleCrossing' || attr === 'numCycleCrossings' || attr === 'numCyclePaths');
+          if (!hasAttr) return null;
+          return p.cycleCrossing === true ? 1 : 0;
+        }
+        case 'speed_from_right': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'fromRightLinkId');
+          if (!hasAttr) return null;
+          // Toon de actuele uurintensiteit (dagdeel) van de link van rechts,
+          // net als bij de gewone intensiteitskaart. Geen ID = geen weg van rechts.
+          return _speedConflictFlow(p.fromRightLinkId);
+        }
+        case 'speed_left_turn': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'oppositeLinkId');
+          if (!hasAttr) return null;
+          // Raw flows die gekruist worden bij linksafslaan: tegenliggers + van links.
+          const opposite = _speedConflictFlow(p.oppositeLinkId);
+          const fromLeft = _speedConflictFlow(p.fromLeftLinkId);
+          return Math.round((opposite + fromLeft) * 10) / 10;
+        }
+        case 'speed_oncoming': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'roadWidthM');
+          if (!hasAttr) return null;
+          // Raw tegenliggers-flow op smalle weg (effectieve breedte < 5,5 m).
+          const effectiveWidth = _speedEffectiveRoadWidth(p);
+          if (effectiveWidth >= 5.5) return 0;
+          return _speedConflictFlow(p.oppositeLinkId);
+        }
+        case 'speed_elevation': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'elevationFrom' || attr === 'elevationTo');
+          if (!hasAttr) return null;
+          // Toon de werkelijke helling (%), negatief = omlaag, positief = omhoog.
+          const slope = _speedSlopePct(p);
+          return slope != null ? Math.round(slope * 10) / 10 : null;
+        }
+        case 'speed_penalty_total': {
+          const d = penaltyByLinkId.get(p.linkId);
+          return d ? d.total : 0;
+        }
         // Geluid (dB(A)) — losse laag, gejoind op linkId
         case 'noise_lden':
         case 'noise_lnight': {
@@ -10274,7 +10790,7 @@
       const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
       _segTip.innerHTML = `
         <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
-          ${T('tooltipSegment', Math.abs(p.linkId))}
+          ${T('tooltipSegment', p.linkId)}
         </div>
         <div><span style="color:#6a757c">${contextKey}: </span><b>${contextLabel}</b></div>
         <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
@@ -10316,6 +10832,72 @@
               : ''}
           </div>`;
         })()}
+        ${(() => {
+          const pen = penaltyByLinkId.get(p.linkId);
+          if (!pen || !pen.total) return '';
+          const parts = [];
+          if (pen.zebra)  parts.push(`Zebra: +${pen.zebra} sec`);
+          if (pen.cycleX) parts.push(`Fietsoversteek: +${pen.cycleX} sec`);
+          if (pen.signal) parts.push(`Verkeerslicht: +${pen.signal} sec`);
+          if (pen.yield)  parts.push(`Haaientanden: +${pen.yield} sec`);
+          if (pen.stop)   parts.push(`Stopbord: +${pen.stop} sec`);
+          if (pen.refuge) parts.push(`Vluchtheuvel: +${pen.refuge} sec`);
+          if (pen.elevation) parts.push(`Helling: +${pen.elevation} sec`);
+          if (pen.fromRight) parts.push(`Verkeer van rechts: +${pen.fromRight} sec`);
+          if (pen.leftTurn)  parts.push(`Linksaf-hinder: +${pen.leftTurn} sec`);
+          if (pen.rightTurn) parts.push(`Rechtsaf-hinder: +${pen.rightTurn} sec`);
+          if (pen.oncoming)  parts.push(`Tegenliggerhinder: +${pen.oncoming} sec`);
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            <span style="color:#6a757c">Straf-seconden: </span>
+            <b>${pen.total} sec</b>
+            <div style="color:#6a757c;font-size:11px">${parts.join(' · ')}</div>
+          </div>`;
+        })()}
+        ${(() => {
+          // Tooltip-line voor actieve Snelheid-sub-laag (bestaand en toekomstig).
+          if (![...BINARY_SPEED_METRICS, ...FUTURE_BINARY_SPEED_METRICS, ...FLOW_SPEED_METRICS, 'speed_penalty_total'].includes(colorMetric)) return '';
+          const v = getMetricValue(p);
+          if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            if (v == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v ? T('tooltipSpeedFactorPresent') : T('tooltipSpeedFactorAbsent')}</b>
+            </div>`;
+          } else if (FLOW_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            const unit = (colorMetric === 'speed_from_right' ||
+                          colorMetric === 'speed_left_turn'   ||
+                          colorMetric === 'speed_oncoming') ? 'vtg/u'
+                       : colorMetric === 'speed_elevation' ? '%'
+                       : 'sec';
+            if (v == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v}${unit ? ' ' + unit : ''}</b>
+            </div>`;
+          } else if (colorMetric === 'speed_elevation') {
+            const slope = _speedSlopePct(p);
+            if (slope == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T('legendSpeedElevation')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T('legendSpeedElevation')}: </span>
+              <b>${slope > 0 ? '+' : ''}${slope.toFixed(1)}%</b>
+            </div>`;
+          }
+          return '';
+        })()}
       `;
       const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
       const x = rect.left + info.x;
@@ -10327,15 +10909,25 @@
     };
 
     function makeNetworkLayer() {
-      // Bereken min/max voor de actieve metric
+      // Bereken min/max voor de actieve metric. Voor toekomstige Snelheid-lagen
+      // zonder brondata tellen we de null-waarden niet mee zodat (metricMin,
+      // metricMax) ongedefinieerd blijft; de renderer springt dan naar grijs.
       let metricMin = Infinity, metricMax = -Infinity;
-      for (const seg of segments) {
-        const v = getMetricValue(seg.props);
-        if (v != null && isFinite(v)) {
-          if (v < metricMin) metricMin = v;
-          if (v > metricMax) metricMax = v;
+      let slopeMaxAbs = 0;
+      if (!FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < metricMin) metricMin = v;
+            if (v > metricMax) metricMax = v;
+          }
+          if (colorMetric === 'speed_elevation') {
+            const s = _speedSlopePct(seg.props);
+            if (s != null && isFinite(s)) slopeMaxAbs = Math.max(slopeMaxAbs, Math.abs(s));
+          }
         }
       }
+      slopeMaxAbs = Math.max(slopeMaxAbs, 0.01);
       // Bewaar ook de flow-range apart voor breedte-schaling
       let dpMin = Infinity, dpMax = -Infinity;
       for (const seg of segments) {
@@ -10394,36 +10986,57 @@
              const wsProps = wegenscanByLinkId.get(String(f.properties.linkId));
              return safetyToRgba(wsProps?.generic_safety);
            }
-            // Spectrum: aparte MapLibre-laag, netwerk-links normaal inkleuren
-            const v = getMetricValue(f.properties);
-          if (v == null || !isFinite(v)) return [80, 80, 100, 120];
-          // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
-          { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
-          // MIXED-modus: fietslinks krijgen eigen kleurschaal (paars→magenta→amber) én eigen normalisatie
-          const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
-          let norm;
-          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
-              colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
-            norm = Math.max(0, Math.min(1, v / 100));
-          } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-            // Statische schaal t.o.v. modus-specifiek maximum
-            norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
-          } else if (colorMetric === 'capacity') {
-            // Vaste schaal 0–4000 met sqrt-schaling
-            norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
-          } else {
-            norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
-          }
-          switch (colorMetric) {
-            case 'speed':    return speedRgba(norm);
-            case 'capacity': return capacityRgba(norm);
-            case 'occupancy': return greenRedRgba(norm);
-            case 'coverage':  return greenRedRgba(norm);
-            default:         return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
-          }
-        },
-        pickable: !linkEditActive && !linkFlowEditActive,
-        onHover: info => {
+              // Spectrum: aparte MapLibre-laag, netwerk-links normaal inkleuren
+              const v = getMetricValue(f.properties);
+            // Binaire toekomstige Snelheid-lagen zonder brondata: grijs tonen.
+            if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+              if (v == null) return UNAVAILABLE_GREY_RGBA;
+              return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+            }
+            // Continue Snelheid-lagen (flow/penalty-gebaseerd).
+            if (FLOW_SPEED_METRICS.has(colorMetric)) {
+              if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
+              // speed_from_right gebruikt de gewone intensiteitskleuren (flowGradient)
+              // zodat de kaart er identiek uitziet als de intensiteiten-laag.
+              if (colorMetric === 'speed_from_right') {
+                const flowNorm = (globalMaxFlow || 1) > 0 ? v / globalMaxFlow : 0;
+                return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
+              }
+              if (v === 0) return [80, 80, 100, 120];
+              const norm = metricRange > 0 ? Math.max(0, Math.min(1, (v - metricMin) / metricRange)) : 0;
+              return redOrangeRgba(norm);
+            }
+            if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+            // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+            { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+            // Binaire Snelheid-sub-lagen: oranje indien factor aanwezig (1),
+            // anders de neutrale netwerk-kleur.
+            if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+            // MIXED-modus: fietslinks krijgen eigen kleurschaal (paars→magenta→amber) én eigen normalisatie
+           const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
+           let norm;
+           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+               colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
+             norm = Math.max(0, Math.min(1, v / 100));
+           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+             // Statische schaal t.o.v. modus-specifiek maximum
+             norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
+           } else if (colorMetric === 'capacity') {
+             // Vaste schaal 0–4000 met sqrt-schaling
+             norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
+           } else {
+             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+           }
+           switch (colorMetric) {
+             case 'speed':    return speedRgba(norm);
+             case 'capacity': return capacityRgba(norm);
+             case 'occupancy': return greenRedRgba(norm);
+             case 'coverage':  return greenRedRgba(norm);
+             default:         return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
+           }
+         },
+         pickable: !linkEditActive && !linkFlowEditActive,
+         onHover: info => {
           const { object } = info;
           if (selectedLinkActive || whatifRcActive || _counterPlaceMode || colorMetric === 'safety') {
             hoveredLinkId = object?.properties?.linkId ?? null;
@@ -10454,7 +11067,7 @@
           }
         },
         updateTriggers: {
-          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size],
+          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
           getLineWidth: [daypart, colorMetric, _fspVersion],
         },
       });
@@ -10464,13 +11077,21 @@
     function makeNetworkLayer2() {
       if (!origSegments.length) return null;
       let metricMin = Infinity, metricMax = -Infinity;
-      for (const seg of origSegments) {
-        const v = getMetricValue(seg.props);
-        if (v != null && isFinite(v)) {
-          if (v < metricMin) metricMin = v;
-          if (v > metricMax) metricMax = v;
+      let slopeMaxAbs = 0;
+      if (!FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        for (const seg of origSegments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < metricMin) metricMin = v;
+            if (v > metricMax) metricMax = v;
+          }
+          if (colorMetric === 'speed_elevation') {
+            const s = _speedSlopePct(seg.props);
+            if (s != null && isFinite(s)) slopeMaxAbs = Math.max(slopeMaxAbs, Math.abs(s));
+          }
         }
       }
+      slopeMaxAbs = Math.max(slopeMaxAbs, 0.01);
       let dpMin = Infinity, dpMax = -Infinity;
       for (const seg of origSegments) {
         const v = segFlow(seg);
@@ -10520,29 +11141,52 @@
            }
            return Math.max(1.5, lanes * baseW);
          },
-         getLineColor: f => {
-          if (f.properties.capacity === 0) return [210, 40, 40, 200];
-          const v = getMetricValue(f.properties);
-          if (v == null || !isFinite(v)) return [80, 80, 100, 120];
-          // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
-          { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
-          const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
-          let norm;
-          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
-              colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
-            norm = Math.max(0, Math.min(1, v / 100));
-          } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-            norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
-          } else if (colorMetric === 'capacity') {
-            // Vaste schaal 0–4000 met sqrt-schaling
-            norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
-          } else {
-            norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
-          }
-          switch (colorMetric) {
-            case 'speed':     return speedRgba(norm);
-            case 'capacity':  return capacityRgba(norm);
-            case 'occupancy': return greenRedRgba(norm);
+          getLineColor: f => {
+           if (f.properties.capacity === 0) return [210, 40, 40, 200];
+            const v = getMetricValue(f.properties);
+            // Binaire toekomstige Snelheid-lagen zonder brondata: grijs tonen.
+            if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+              if (v == null) return UNAVAILABLE_GREY_RGBA;
+              return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+            }
+            // Continue Snelheid-lagen (flow/penalty-gebaseerd).
+            if (FLOW_SPEED_METRICS.has(colorMetric)) {
+              if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
+              if (colorMetric === 'speed_from_right' ||
+                  colorMetric === 'speed_left_turn' ||
+                  colorMetric === 'speed_oncoming') {
+                const flowNorm = (globalMaxFlow || 1) > 0 ? v / globalMaxFlow : 0;
+                return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
+              }
+              if (colorMetric === 'speed_elevation') {
+                return slopeRgba(v, slopeMaxAbs);
+              }
+              if (v === 0) return [80, 80, 100, 120];
+              const norm = metricRange > 0 ? Math.max(0, Math.min(1, (v - metricMin) / metricRange)) : 0;
+              return redOrangeRgba(norm);
+            }
+            if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+            // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+            { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+            // Binaire Snelheid-sub-lagen: oranje indien factor aanwezig (1).
+            if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+            const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
+            let norm;
+           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+               colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
+             norm = Math.max(0, Math.min(1, v / 100));
+           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+             norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
+           } else if (colorMetric === 'capacity') {
+             // Vaste schaal 0–4000 met sqrt-schaling
+             norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
+           } else {
+             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+           }
+           switch (colorMetric) {
+             case 'speed':     return speedRgba(norm);
+             case 'capacity':  return capacityRgba(norm);
+             case 'occupancy': return greenRedRgba(norm);
             case 'coverage':  return greenRedRgba(norm);
             default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
           }
@@ -10568,7 +11212,7 @@
           }
         },
         updateTriggers: {
-          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size],
+          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
           getLineWidth: [daypart, colorMetric, _fspVersion],
         },
       });
@@ -10592,7 +11236,7 @@
         : '–';
       _segTip.innerHTML = `
         <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
-          ${T('tooltipSegment', Math.abs(linkId))}
+          ${T('tooltipSegment', linkId)}
         </div>
         <div><span style="color:#6a757c">Oud: </span><b>${fmtMetricVal(oldVal, diffMetric)}</b></div>
         <div><span style="color:#6a757c">Nieuw: </span><b>${fmtMetricVal(newVal, diffMetric)}</b></div>
@@ -11287,7 +11931,7 @@
           getWidth:       d => Math.max(1, (d.flow / maxFlow) * 8),
           getColor:       d => d.color ?? defaultColor,
         updateTriggers: {
-          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size],
+          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
           getLineWidth: [daypart, colorMetric, _fspVersion],
         },
         pickable: true,
@@ -14796,6 +15440,16 @@
       }
     }
     function metricShortLabel(metric) { return metricUnit(metric); }
+    /** Label-key voor de actieve Snelheid-sub-laag (binaire / future metrics). */
+    function metricShortLabelKey(metric) {
+      const map = {
+        speed_crossings: 'legendSpeedCrossings', speed_cycle_crossings: 'legendSpeedCycleCrossings',
+        speed_signals: 'legendSpeedSignals', speed_yield: 'legendSpeedYield', speed_refuge: 'legendSpeedRefuge',
+        speed_from_right: 'legendSpeedFromRight', speed_left_turn: 'legendSpeedLeftTurn',
+        speed_oncoming: 'legendSpeedOncoming', speed_penalty_total: 'legendSpeedPenaltyTotal',
+      };
+      return map[metric] || null;
+    }
 
     /** Formatteer een metriekwaarde met passende afronding + eenheid. */
     function fmtMetricVal(v, metric) {
