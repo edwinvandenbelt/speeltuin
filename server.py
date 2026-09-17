@@ -117,6 +117,33 @@ except ImportError as _e:
     print(f"[server] WAARSCHUWING: prepare niet beschikbaar — {_e}")
 
 try:
+    from osm.osm_prepare.core.osm_prepare_core import (
+        run_pipeline as _osm_prepare_run_pipeline,
+    )
+
+    _OSM_PREPARE_AVAILABLE = True
+except ImportError as _e:
+    _osm_prepare_run_pipeline = None  # type: ignore[assignment]
+    _OSM_PREPARE_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: osm_prepare niet beschikbaar — {_e}")
+
+try:
+    from scripts.geofabrik_pbf import (
+        resolve_or_download_pbf as _resolve_or_download_pbf,
+        is_within_netherlands as _is_within_netherlands,
+        OSM_PBF_ENV_VAR as _OSM_PBF_ENV_VAR,
+        OSM_PBF_CACHE_DIR_ENV_VAR as _OSM_PBF_CACHE_DIR_ENV_VAR,
+        DEFAULT_CACHE_DIR as _DEFAULT_PBF_CACHE_DIR,
+    )
+
+    _GEOFABRIK_PBF_AVAILABLE = True
+except ImportError as _e:
+    _resolve_or_download_pbf = None  # type: ignore[assignment]
+    _is_within_netherlands = None  # type: ignore[assignment]
+    _GEOFABRIK_PBF_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: geofabrik_pbf helper niet beschikbaar — {_e}")
+
+try:
     from flow_scaler.core.flow_scaler_core import (
         load_purpose_index,
         parse_date,
@@ -650,7 +677,7 @@ _COLLECTIONS = {
     },
     "traffic_assets": {
         "title": "Verkeersobjecten",
-        "description": "Verkeersobjecten (borden, verkeerslichten, e.a.) uit het geprepareerde TRAFFIC-ASSETS bestand; ondersteunt bbox-filtering.",
+        "description": "Verkeersobjecten (borden, verkeerslichten, e.a.) uit het geprepareerde TRAFFIC-ASSETS bestand; ondersteunt bbox-filtering en optioneel assetType-filtering.",
     },
     "vegetation": {
         "title": "Vegetatie",
@@ -1753,7 +1780,7 @@ def _sse_put(src_area_id: str, event: str, data: str) -> None:
             pass
 
 
-def _osm_source_summary() -> str:
+def _osm_source_summary(osm_path: str | None = None) -> str:
     """Beschrijf de effectieve OSM-databron voor de prepare-pipeline.
 
     ``osm_path``/``osm_workers`` worden niet via de server-kwargs meegegeven maar
@@ -1763,7 +1790,7 @@ def _osm_source_summary() -> str:
     wordt, terwijl lokaal juist de volledige PBF wordt ingelezen — de meest
     waarschijnlijke bron van OOM.
     """
-    pbf = os.environ.get("OSM_PBF_PATH", "").strip()
+    pbf = (osm_path or os.environ.get("OSM_PBF_PATH", "")).strip()
     if not pbf:
         return "OSM-bron: Overpass HTTP-API (geen OSM_PBF_PATH ingesteld)"
     raw_workers = os.environ.get("OSM_PBF_WORKERS", "").strip()
@@ -1772,13 +1799,8 @@ def _osm_source_summary() -> str:
         from shared._osm_pbf_scan import resolve_workers  # noqa: PLC0415
 
         n_workers = resolve_workers(raw_workers or None, cpu)
-    except Exception:
-        # Repliceer de fallback: expliciete env-waarde wint (begrensd door CPU),
-        # anders min(cpu, 8).
-        try:
-            req = int(raw_workers) if raw_workers else 0
-        except ValueError:
-            req = 0
+    except ValueError:
+        req = 0
         n_workers = max(1, min(req, cpu)) if req > 0 else max(1, min(cpu, 8))
     exists = "aanwezig" if Path(pbf).is_file() else "ONTBREEKT"
     return (
@@ -1835,7 +1857,7 @@ def _run_prepare_job(
         ):
             print("[server] prepare-pipeline aanroep:")
             print(_format_pipeline_call("run_pipeline", kwargs))
-            print(f"[server] {_osm_source_summary()}")
+            print(f"[server] {_osm_source_summary(kwargs.get('osm_path'))}")
             _call_prepare_run_pipeline(**kwargs)
         stream.flush()
 
@@ -1869,6 +1891,66 @@ def _run_prepare_job(
             _jobs[job_id]["status"] = "failed"
             _jobs[job_id]["returncode"] = -1
             _jobs[job_id]["finished"] = _now_iso()
+
+
+def _run_osm_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str):
+    """Voer de OSM-only prepare-pipeline uit in achtergrondthread."""
+    env_var = kwargs.get("osm_pbf_env_var", "OSM_PBF_PATH")
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+    stream = _LogStream(_jobs[job_id]["log"], _jobs_lock)
+    old_osm_pbf = os.environ.get(env_var)
+    try:
+        with (
+            _pipeline_stdout_lock,
+            contextlib.redirect_stdout(stream),
+            contextlib.redirect_stderr(stream),
+        ):
+            pbf_path = kwargs["osm_path"]
+            os.environ[env_var] = str(pbf_path)
+            run_kwargs = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in ("osm_path", "osm_pbf_env_var")
+            }
+            print("[server] osm_prepare-pipeline aanroep:")
+            print(_format_pipeline_call("run_pipeline", run_kwargs))
+            print(f"[server] {_osm_source_summary(pbf_path)}")
+            _osm_prepare_run_pipeline(**run_kwargs)
+        stream.flush()
+
+        try:
+            (out_dir / ".full-twin").write_text(_now_iso(), encoding="utf-8")
+        except Exception as _e:
+            print(f"[full-twin] marker schrijven mislukt: {_e}")
+
+        if _s3_enabled():
+            try:
+                _s3_sync_to(out_dir, name)
+            except Exception as _e:
+                print(f"[s3] sync na prepare mislukt: {_e}")
+
+        _areas_cache_invalidate()
+        with _jobs_lock:
+            _jobs[job_id]["returncode"] = 0
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+            _jobs[job_id]["_results"] = {
+                "collection": f"/collections/network/items?areaId={name}&mode=CAR",
+            }
+    except BaseException as exc:
+        stream.flush()
+        with _jobs_lock:
+            _jobs[job_id]["log"].append(f"[server] Fout: {type(exc).__name__}: {exc}")
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["returncode"] = -1
+            _jobs[job_id]["finished"] = _now_iso()
+    finally:
+        if old_osm_pbf is None:
+            os.environ.pop(env_var, None)
+        else:
+            os.environ[env_var] = old_osm_pbf
 
 
 def _run_adjust_job(
@@ -2509,49 +2591,131 @@ def _execute_prepare(inputs: dict):
         except Exception as _e:
             print(f"[s3] .area-uuid schrijven mislukt: {_e}")
 
-    # Full digital twin: verrijk het gebied met OSM/BGT-data (buildings,
-    # traffic-assets, vegetation). Standaard AAN zodat een nieuw gebied deze
-    # onderdelen altijd bevat; expliciet false meesturen schakelt de (tragere)
-    # OSM/Overpass-verrijking uit voor een snelle netwerk-only prepare.
-    full_digital_twin = bool(inputs.get("full_digital_twin", True))
-
-    kwargs = dict(
-        min_lon=min_lon,
-        min_lat=min_lat,
-        max_lon=max_lon,
-        max_lat=max_lat,
-        modes=modes,
-        mode_label=mode_label,
-        name=name,
-        out_dir=out_dir,
-        max_routes=5,
-        catalog=inputs.get("catalog", "spectrum"),
-        schema=inputs.get("schema", "2024_01"),
-        refresh=bool(inputs.get("refresh")),
-        debug=bool(inputs.get("debug", False)),
-        no_osm=(not full_digital_twin),
+    # Bepaal de OSM-bron. Een expliciet pad (input of env) heeft voorrang;
+    # anders wordt het kleinste Geofabrik-extract dat de bbox bevat opgehaald.
+    explicit_osm_path = (
+        inputs.get("osm_path") or os.environ.get(_OSM_PBF_ENV_VAR) or ""
+    ).strip()
+    pbf_cache_dir = Path(
+        inputs.get("pbf_cache_dir")
+        or os.environ.get(_OSM_PBF_CACHE_DIR_ENV_VAR, "")
+        or _DEFAULT_PBF_CACHE_DIR
     )
+    if explicit_osm_path:
+        pbf_path_obj = Path(explicit_osm_path)
+        if not pbf_path_obj.is_file() or pbf_path_obj.suffix.lower() != ".pbf":
+            abort(
+                400, f"OSM PBF pad is geen leesbaar .pbf bestand: {explicit_osm_path}"
+            )
+        pbf_path = str(pbf_path_obj)
+    else:
+        if not _GEOFABRIK_PBF_AVAILABLE:
+            abort(
+                503,
+                "Geofabrik PBF resolver niet beschikbaar en geen OSM_PBF_PATH ingesteld",
+            )
+        try:
+            pbf_path_obj, _ = _resolve_or_download_pbf(
+                min_lon,
+                min_lat,
+                max_lon,
+                max_lat,
+                cache_dir=pbf_cache_dir,
+            )
+        except Exception as exc:
+            abort(400, f"Kon geen passend Geofabrik-extract vinden/downloaden: {exc}")
+        pbf_path = str(pbf_path_obj)
+
+    # Bepaal of de bbox in Nederland ligt; dat kiest de pipeline.
+    if _GEOFABRIK_PBF_AVAILABLE:
+        within_nl = _is_within_netherlands(
+            min_lon, min_lat, max_lon, max_lat, cache_dir=pbf_cache_dir
+        )
+    else:
+        within_nl = _is_netherlands([min_lon, min_lat, max_lon, max_lat])
+
+    # Vegetatie-vinkje (voorheen "Full digital twin"). De OSM/BGT-verrijking
+    # zelf draait altijd; dit vinkje schakelt alleen het ophalen van vegetatie.
+    fetch_vegetation = bool(inputs.get("vegetation", True))
 
     job_id = str(uuid.uuid4())
-    with _jobs_lock:
-        _jobs[job_id] = {
-            "jobID": job_id,
-            "processID": "prepare",
-            "status": "accepted",
-            "log": [],
-            "returncode": None,
-            "out_dir": str(out_dir),
-            "created": _now_iso(),
-            "started": None,
-            "finished": None,
-            "_results": {},
-        }
 
-    threading.Thread(
-        target=_run_prepare_job,
-        args=(job_id, out_dir, kwargs, name, mode_label),
-        daemon=True,
-    ).start()
+    if within_nl:
+        if not _PREPARE_AVAILABLE:
+            abort(503, "prepare-package niet beschikbaar")
+        kwargs = dict(
+            min_lon=min_lon,
+            min_lat=min_lat,
+            max_lon=max_lon,
+            max_lat=max_lat,
+            modes=modes,
+            mode_label=mode_label,
+            name=name,
+            out_dir=out_dir,
+            max_routes=5,
+            catalog=inputs.get("catalog", "spectrum"),
+            schema=inputs.get("schema", "2024_01"),
+            refresh=bool(inputs.get("refresh")),
+            debug=bool(inputs.get("debug", False)),
+            osm_path=pbf_path,
+            fetch_vegetation=fetch_vegetation,
+        )
+        with _jobs_lock:
+            _jobs[job_id] = {
+                "jobID": job_id,
+                "processID": "prepare",
+                "status": "accepted",
+                "log": [],
+                "returncode": None,
+                "out_dir": str(out_dir),
+                "created": _now_iso(),
+                "started": None,
+                "finished": None,
+                "_results": {},
+            }
+        threading.Thread(
+            target=_run_prepare_job,
+            args=(job_id, out_dir, kwargs, name, mode_label),
+            daemon=True,
+        ).start()
+    else:
+        if not _OSM_PREPARE_AVAILABLE:
+            abort(
+                503,
+                "osm_prepare-package niet beschikbaar voor gebieden buiten Nederland",
+            )
+        kwargs = dict(
+            min_lon=min_lon,
+            min_lat=min_lat,
+            max_lon=max_lon,
+            max_lat=max_lat,
+            out_dir=out_dir,
+            area_id=name,
+            name=name,
+            refresh=bool(inputs.get("refresh")),
+            debug=bool(inputs.get("debug", False)),
+            osm_path=pbf_path,
+            osm_pbf_env_var=_OSM_PBF_ENV_VAR,
+        )
+        with _jobs_lock:
+            _jobs[job_id] = {
+                "jobID": job_id,
+                "processID": "prepare",
+                "status": "accepted",
+                "log": [],
+                "returncode": None,
+                "out_dir": str(out_dir),
+                "created": _now_iso(),
+                "started": None,
+                "finished": None,
+                "_results": {},
+            }
+        threading.Thread(
+            target=_run_osm_prepare_job,
+            args=(job_id, out_dir, kwargs, name),
+            daemon=True,
+        ).start()
+
     return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}
 
 
@@ -3857,15 +4021,30 @@ def ogc_collection_items(collection_id):
             except ValueError:
                 abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
 
+        # Optioneel assetType-filter (komma-gescheiden lijst, b.v. speedBump).
+        asset_types = None
+        asset_type_arg = request.args.get("assetType", "").strip()
+        if asset_type_arg:
+            asset_types = {t.strip() for t in asset_type_arg.split(",") if t.strip()}
+
         try:
             data = _read_geodata(path)
         except Exception as exc:
             abort(500, f"Fout bij lezen TRAFFIC-ASSETS: {exc}")
 
+        feats = data.get("features", [])
+
+        if asset_types is not None:
+            feats = [
+                f
+                for f in feats
+                if (f.get("properties") or {}).get("assetType") in asset_types
+            ]
+
         if bbox is not None:
             min_lon, min_lat, max_lon, max_lat = bbox
-            feats = []
-            for feat in data.get("features", []):
+            filtered = []
+            for feat in feats:
                 geom = feat.get("geometry") or {}
                 coords = geom.get("coordinates")
                 # Neem het eerste vertex als representatief punt; werkt voor
@@ -3877,8 +4056,10 @@ def ogc_collection_items(collection_id):
                     continue
                 lon, lat = pt[0], pt[1]
                 if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
-                    feats.append(feat)
-            data = {**data, "features": feats}
+                    filtered.append(feat)
+            feats = filtered
+
+        data = {**data, "features": feats}
 
         return _ogc_items_response("traffic_assets", data, self_url)
 
