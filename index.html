@@ -1494,6 +1494,7 @@
       <option value="coverage_scaled" data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</option>
       <option value="speed" data-i18n="metricSpeed">Snelheid</option>
       <option value="capacity" data-i18n="metricCapacity">Capaciteit</option>
+      <option value="priority_roads" data-i18n="metricPriorityRoads">Voorrangswegen</option>
       <optgroup label="Geluid" data-i18n-label="metricGroupNoise">
         <option value="noise_lden" data-i18n="metricNoiseLden">Geluid (Lden)</option>
         <option value="noise_lnight" data-i18n="metricNoiseLnight">Geluid (Lnight)</option>
@@ -1505,7 +1506,7 @@
       </optgroup>
       <optgroup label="Snelheid" data-i18n-label="metricGroupSpeedFactors">
         <option value="speed_crossings" data-i18n="metricSpeedCrossings">Zebrapaden</option>
-        <option value="speed_cycle_crossings" data-i18n="metricSpeedCycleCrossings">Fietsoversteek</option>
+        <option value="speed_cycle_crossings" data-i18n="metricSpeedCycleCrossings" style="display:none">Fietsoversteek</option>
         <option value="speed_intersections" data-i18n="metricSpeedIntersections">Kruispunten</option>
         <option value="speed_yield" data-i18n="metricSpeedYield">Haaientanden/stopstrepen</option>
         <option value="speed_refuge" data-i18n="metricSpeedRefuge">Vluchtheuvels (midden op de weg)</option>
@@ -2317,7 +2318,7 @@
       metricFlow:'Intensiteit', metricFlowScaled:'Intensiteit (geschaald)',
       metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
       metricIC:'I/C', metricICScaled:'I/C (geschaald)',
-      metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricNone:'Geen', metricCompare:'Vergelijking tonen',
+      metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricPriorityRoads:'Voorrangswegen', metricNone:'Geen', metricCompare:'Vergelijking tonen',
       metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
       metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
       metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
@@ -2455,6 +2456,7 @@
       legendSpeedCrossings:'Zebrapaden', legendSpeedCycleCrossings:'Fietsoversteek',
       legendSpeedIntersections:'Kruispunten', legendSpeedYield:'Haaientanden/stopstrepen',
       legendSpeedRefuge:'Vluchtheuvels',
+      legendPriorityRoads:'Voorrangswegen',
       legendSpeedFromRight:'Verkeer van rechts', legendSpeedLeftTurn:'Linksaf-hinder',
       legendSpeedOncoming:'Tegenliggerhinder', legendSpeedElevation:'Hellingen',
       legendSpeedPenaltyTotal:'Straf-seconden',
@@ -2483,7 +2485,7 @@
       tooltipDaypart:'Dagdeel', tooltipFlow:'Flow (dagdeel)', tooltipFlowTotal:'Flow (totaal/24u)',
       tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg/24u',
       tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
-      tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte',
+      tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte', tooltipWidth:'Breedte',
       tooltipSpeedDataUnavailable:'Nog niet beschikbaar in deze brondata', tooltipSpeedFactorPresent:'Ja', tooltipSpeedFactorAbsent:'Nee',
       tooltipZoneClass:'Zoneklasse',
       tooltipZoneClassStudy:'Studiegebied', tooltipZoneClassInfluence:'Invloedszone',
@@ -2588,7 +2590,7 @@
       metricFlow:'Intensity', metricFlowScaled:'Intensity (scaled)',
       metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
       metricIC:'V/C', metricICScaled:'V/C (scaled)',
-      metricSpeed:'Speed', metricCapacity:'Capacity', metricNone:'None', metricCompare:'Show comparison',
+      metricSpeed:'Speed', metricCapacity:'Capacity', metricPriorityRoads:'Priority roads', metricNone:'None', metricCompare:'Show comparison',
       metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
       metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
       metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
@@ -2718,6 +2720,7 @@
       legendSpeedCrossings:'Pedestrian crossings', legendSpeedCycleCrossings:'Cycle crossing',
       legendSpeedIntersections:'Intersections', legendSpeedYield:'Give-way/stop markings',
       legendSpeedRefuge:'Traffic islands',
+      legendPriorityRoads:'Priority roads',
       legendSpeedFromRight:'Traffic from the right', legendSpeedLeftTurn:'Left-turn hindrance',
       legendSpeedOncoming:'Oncoming-traffic hindrance', legendSpeedElevation:'Slope/delay',
       legendSpeedPenaltyTotal:'Penalty seconds',
@@ -2745,7 +2748,7 @@
       tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
       tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh/24h',
       tooltipSpeed:'Speed', tooltipLanes:'Lanes',
-      tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length',
+      tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length', tooltipWidth:'Width',
       tooltipSpeedDataUnavailable:'Not yet available in this source data', tooltipSpeedFactorPresent:'Yes', tooltipSpeedFactorAbsent:'No',
       tooltipZoneClass:'Zone class',
       tooltipZoneClassStudy:'Study area', tooltipZoneClassInfluence:'Influence zone',
@@ -2848,7 +2851,7 @@
       metricFlow:'Intensiteetti', metricFlowScaled:'Intensiteetti (skaalattu)',
       metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
       metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
-      metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
+      metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricPriorityRoads:'Etuoikeutetut tiet', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
       metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
       metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
       metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
@@ -2936,6 +2939,7 @@
       legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
       legendSpeedCrossings:'Suojatiet', legendSpeedCycleCrossings:'Py\xf6r\xe4ylitys',
       legendSpeedSignals:'Liikennevalot', legendSpeedYield:'V\xe4istymis-/pys\xe4hdysmerkinn\xe4t',
+      legendPriorityRoads:'Etuoikeutetut tiet',
       legendSpeedRefuge:'Keskisaarekkeet',
       legendSpeedFromRight:'Oikealta tuleva liikenne', legendSpeedLeftTurn:'Vasemmalle k\xe4\xe4ntymisen hidaste',
       legendSpeedOncoming:'Vastasuuntaisen liikenteen hidaste', legendSpeedElevation:'Kaltevuus/viive',
@@ -2964,7 +2968,7 @@
       tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
       tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon/24h',
       tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
-      tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus',
+      tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus', tooltipWidth:'Leveys',
       tooltipSpeedDataUnavailable:'Ei vielä saatavilla tassa aineistossa', tooltipSpeedFactorPresent:'Kyllä', tooltipSpeedFactorAbsent:'Ei',
       tooltipZoneClass:'Alueluokka',
       tooltipZoneClassStudy:'Tutkimusalue', tooltipZoneClassInfluence:'Vaikutusalue',
@@ -5344,6 +5348,7 @@
         speed_oncoming:        { labelKey: 'legendSpeedOncoming',        unit,         gradient: flowGradient },
         speed_elevation:       { labelKey: 'legendSpeedElevation',       unit: '%',    gradient: 'linear-gradient(to right, rgb(30,160,60), rgb(255,220,80), rgb(220,50,40))' },
         speed_penalty_total:   { labelKey: 'legendSpeedPenaltyTotal',    unit: 'sec', gradient: _limitGradient },
+        priority_roads:        { labelKey: 'legendPriorityRoads',        unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #1a73e8)' },
       };
       // Spectrum: aparte MapLibre-laag, legenda toont gradient van de laag zelf
       if (colorMetric === 'spectrum') {
@@ -6457,7 +6462,7 @@
     // onderaan → de voet staat op de grond en de hoogte is 1:1 in wereldmeters.
 
     const _TA_PPM        = 40;    // sprite-pixels per meter (logisch, native)
-    const _TA_RS         = 2;     // render-supersampling voor scherpte
+    const _TA_RS         = 1;     // render-supersampling: 1 voor scherpe pixels, 2 maakt iconen veel te klein
     const _TA_POLE_H_M   = 1.8;   // paalhoogte (m)
     const _TA_POLE_W_M   = 0.12;  // paaldikte (m)
     const _TA_SIGN_M     = 0.75;  // bordplaat-diameter (m)
@@ -6467,12 +6472,19 @@
     const _TA_SIGN_TOTAL_M   = _TA_POLE_H_M + _TA_SIGN_M;     // bord: paal+plaat
     const _TA_SIGNAL_TOTAL_M = _TA_POLE_H_M + _TA_SIGNAL_H_M; // licht: paal+kast
 
+    // D1 (verplichte rijrichting) en D2 (verplicht voorbijrijden) staan doorgaans
+    // op een veel kortere paal dan andere borden (vaak vlak bij de grond/berm).
+    const _TA_SHORT_POLE_CODES = new Set(['D1', 'D2']);
+    function _taPoleHeightM(rvvCode) {
+      return _TA_SHORT_POLE_CODES.has(rvvCode) ? _TA_POLE_H_M / 2 : _TA_POLE_H_M;
+    }
+
     // ── Canvas-tekenaars (leveren een <canvas>, niet ImageData) ───────────────
 
     // Rechtopstaande metalen paal (alléén de paal).
-    function _taPoleCanvas() {
+    function _taPoleCanvas(poleHM = _TA_POLE_H_M) {
       const w = Math.round(Math.max(_TA_POLE_W_M * _TA_PPM + 1, 6)) * _TA_RS;
-      const h = Math.round(_TA_POLE_H_M * _TA_PPM) * _TA_RS;
+      const h = Math.round(poleHM * _TA_PPM) * _TA_RS;
       const cv = document.createElement('canvas');
       cv.width = w; cv.height = h;
       const ctx = cv.getContext('2d');
@@ -6525,6 +6537,22 @@
       } else if (cat === 'D') {
         ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
         ctx.fillStyle = '#1a73e8'; ctx.fill();
+        // Generieke witte pijl (rechtdoor) als redelijk-default silhouet,
+        // zodat het bord bij een ontbrekend icoon niet als kale schijf oogt.
+        ctx.save();
+        ctx.translate(S/2, S/2);
+        const aw = S * 0.30, ah = S * 0.42;
+        ctx.beginPath();
+        ctx.moveTo(0, -ah/2);
+        ctx.lineTo(aw/2, ah*0.12);
+        ctx.lineTo(aw*0.18, ah*0.12);
+        ctx.lineTo(aw*0.18, ah/2);
+        ctx.lineTo(-aw*0.18, ah/2);
+        ctx.lineTo(-aw*0.18, ah*0.12);
+        ctx.lineTo(-aw/2, ah*0.12);
+        ctx.closePath();
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.restore();
       } else if (cat === 'E' || cat === 'F' || cat === 'G') {
         rr(M, M, S-2*M, S-2*M, Math.round(S*0.08));
         ctx.fillStyle = '#1a73e8'; ctx.fill();
@@ -6611,8 +6639,8 @@
     }
 
     // Composiet: paal onderaan + `contentCanvas` (plaat/kast) bovenop, gecentreerd.
-    function _taCompositeWithPole(contentCanvas) {
-      const poleH = Math.round(_TA_POLE_H_M * _TA_PPM) * _TA_RS;
+    function _taCompositeWithPole(contentCanvas, poleHM = _TA_POLE_H_M) {
+      const poleH = Math.round(poleHM * _TA_PPM) * _TA_RS;
       const cW = contentCanvas.width, cH = contentCanvas.height;
       const poleMinW = Math.round(Math.max(_TA_POLE_W_M * _TA_PPM + 1, 6)) * _TA_RS;
       const W = Math.max(cW, poleMinW);
@@ -6636,9 +6664,11 @@
                anchorX: cv.width / 2, anchorY: cv.height, mask: false };
     }
 
-    function _taPoleIcon() {
-      if (!_taIcons['pole']) _taIcons['pole'] = _taDesc(_taPoleCanvas());
-      return _taIcons['pole'];
+    function _taPoleIcon(rvvCode) {
+      const short = _TA_SHORT_POLE_CODES.has(rvvCode);
+      const key = short ? 'pole:short' : 'pole';
+      if (!_taIcons[key]) _taIcons[key] = _taDesc(_taPoleCanvas(short ? _TA_POLE_H_M / 2 : _TA_POLE_H_M));
+      return _taIcons[key];
     }
     function _taSignalIcon() {
       if (!_taIcons['signal'])
@@ -6684,9 +6714,11 @@
       return 'circle';
     }
     function _taBackIcon(rvv) {
-      const key = 'back:' + _taBackShape(rvv);
+      const shape = _taBackShape(rvv);
+      const short = _TA_SHORT_POLE_CODES.has(rvv);
+      const key = 'back:' + shape + (short ? ':short' : '');
       if (!_taIcons[key])
-        _taIcons[key] = _taDesc(_taCompositeWithPole(_taSignBackCanvas(_taBackShape(rvv))));
+        _taIcons[key] = _taDesc(_taCompositeWithPole(_taSignBackCanvas(shape), _taPoleHeightM(rvv)));
       return _taIcons[key];
     }
     // Voorkant-composiet voor een bord; null als het (nog) niet gebouwd is.
@@ -6703,10 +6735,12 @@
       const cv = document.createElement('canvas');
       cv.width = S; cv.height = S;
       cv.getContext('2d').drawImage(imgEl, 0, 0, S, S);
-      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(cv));
+      const rvvBase = String(code).split('-')[0];
+      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(cv, _taPoleHeightM(rvvBase)));
     }
     function _taBuildFrontFallback(code) {
-      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(_taSignPlateCanvas(code)));
+      const rvvBase = String(code).split('-')[0];
+      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(_taSignPlateCanvas(code), _taPoleHeightM(rvvBase)));
     }
 
     // Laad ontbrekende voorkant-plaaticonen (NDW-PNG per code, canvas-fallback bij
@@ -6721,12 +6755,13 @@
         if (black) codes.add(`${rvv}-${black}`);
         codes.add(rvv);
       }
+      console.debug('[TA] _taEnsurePlates: codes te laden =', [...codes]);
       let changed = false;
       await Promise.allSettled([...codes].map(code => new Promise(res => {
         if (_taIcons['front:' + code]) { res(); return; }
         const el = new Image();
         el.onload  = () => { try { _taBuildFront(code, el); } catch (_) { _taBuildFrontFallback(code); } changed = true; res(); };
-        el.onerror = () => { _taBuildFrontFallback(code); changed = true; res(); };
+        el.onerror = () => { console.debug('[TA] plaat-icoon 404/error, fallback canvas:', code); _taBuildFrontFallback(code); changed = true; res(); };
         el.src = `/traffic-sign-icon/${encodeURIComponent(code)}?v=2`;
       })));
       if (changed) { _taIconVersion++; updateOverlay(true); }
@@ -6764,6 +6799,7 @@
     let _taSignalFeatures    = [];   // trafficSignal-features
     let _taSpeedBumpFeatures = [];   // speedBump-polygonen (lage 3D-drempel)
     let _taMarkFeatures      = [];   // platte wegdekmarkeringen (voetganger/stop)
+    let _taGiveWayMarkFeatures = []; // haaientanden (B6) — afgeleid uit netwerk-links met numGiveWays>0
     let _taViaductFeatures   = [];   // CIMLK viaduct-wegvakken (verhoogde ribbon)
     let _taScreenQuads       = [];   // CIMLK geluidsschermen → geëxtrudeerde muur-quads
     let _taBridgeFeatures    = [];   // CIMLK brug-wegvakken (verhoogd brugdek)
@@ -6782,12 +6818,16 @@
      let _taRefugeAreaTrafficFeatures = [];   // refugeAreaTraffic-polygonen (verhoogde verkeersremmers)
      let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
      let _taHover             = null; // {props,lngLat} van het object onder de cursor
+     let _taDebugSignLink     = null; // {signPt,roadPt,linkId} — laatst geklikte bord → gekoppelde weg
+     let _networkHoverLink    = null; // {linkId} — laatst gehoverd wegvak (voor klik-op-wegvak debug)
+     let _taDebugLinkAssets   = null; // {linkId, items:[{assetPt,roadPt,label}]} — laatst geklikt wegvak → gekoppelde assets
 
     // ── Platte wegdekmarkeringen (top-down canvas-iconen, center-anchor) ───────
     // Deze liggen plat op het wegdek (IconLayer billboard:false) en schalen dus
     // volledig perspectivisch mee. Geen bearing beschikbaar → noord-uitgelijnd.
     const _TA_ZEBRA_M = 4.0;   // voetgangersoversteek (zebravlak)
     const _TA_STOP_M  = 3.0;   // stopstreep + "STOP"
+    const _TA_SHARK_M = 2.4;   // haaientanden (B6, voorrang verlenen) — breedte over de weg
 
     // Descriptor met center-anchor (voor platte grondmarkeringen).
     function _taDescFlat(cv) {
@@ -6824,10 +6864,31 @@
       return cv;
     }
 
+    // Haaientanden (B6, voorrang verlenen): rij witte driehoeken die naar de
+    // bestuurder toe wijzen (in de rijrichting, dus "naar beneden" in de
+    // top-down canvas — dezelfde oriëntatie als de zebra/stopstreep-iconen).
+    function _taSharkTeethCanvas() {
+      const W = Math.round(_TA_SHARK_M * _TA_PPM) * _TA_RS;
+      const H = Math.round(_TA_SHARK_M * 0.45 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#f5f5f5';
+      const n = 5, tw = W / n;
+      for (let i = 0; i < n; i++) {
+        const x = i * tw;
+        ctx.beginPath();
+        ctx.moveTo(x, 0); ctx.lineTo(x + tw, 0); ctx.lineTo(x + tw / 2, H);
+        ctx.closePath(); ctx.fill();
+      }
+      return cv;
+    }
+
     function _taMarkIcon(assetType) {
       const key = 'mark:' + assetType;
       if (!_taIcons[key]) {
         const cv = assetType === 'stopSign' ? _taStopMarkCanvas()
+                 : assetType === 'giveWay'  ? _taSharkTeethCanvas()
                  : _taZebraCanvas();       // pedestrianCrossing (default)
         _taIcons[key] = _taDescFlat(cv);
       }
@@ -6837,6 +6898,7 @@
     // uit de canvas-verhouding en spant de weg over (zie _taMarkAngle).
     function _taMarkSize(assetType) {
       return assetType === 'stopSign' ? _TA_STOP_M  * 0.70
+           : assetType === 'giveWay'  ? _TA_SHARK_M * 0.45
            : _TA_ZEBRA_M * 0.75;
     }
 
@@ -6865,6 +6927,102 @@
       return bestAng;
     }
 
+    // Zoek het dichtstbijzijnde punt op het netwerk (over alle links), incl.
+    // linkId en afstand in meter. Gebruikt voor de debug-verbindingslijn
+    // "bord → gekoppelde weg" (zie klik-handler hieronder).
+    function _taNearestLinkPoint(lng, lat) {
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      let best = Infinity, bestPt = null, bestLinkId = null;
+      for (const [linkId, coords] of linkGeomMap) {
+        if (!coords || coords.length < 2) continue;
+        for (let i = 0; i < coords.length - 1; i++) {
+          const a = coords[i], b = coords[i + 1];
+          const ax = (a[0] - lng) * mLng, ay = (a[1] - lat) * mLat;
+          const bx = (b[0] - lng) * mLng, by = (b[1] - lat) * mLat;
+          const vx = bx - ax, vy = by - ay;
+          const len2 = vx * vx + vy * vy;
+          if (len2 === 0) continue;
+          let t = -(ax * vx + ay * vy) / len2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const px = ax + t * vx, py = ay + t * vy;
+          const d = px * px + py * py;
+          if (d < best) {
+            best = d; bestLinkId = linkId;
+            bestPt = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+          }
+        }
+      }
+      return bestPt ? { point: bestPt, linkId: bestLinkId, distM: Math.sqrt(best) } : null;
+    }
+
+    // Max. afstand asset → wegvak om als "gekoppeld" te tellen bij de
+    // klik-op-wegvak debug-weergave.
+    const _TA_LINK_ASSET_SNAP_M = 20;
+
+    /** Zoek alle bekende verkeersobjecten die aan `linkId` gekoppeld zijn
+     *  (binnen _TA_LINK_ASSET_SNAP_M van dat specifieke wegvak). Geeft een
+     *  array van {assetPt, roadPt, label} terug, voor de debug-weergave bij
+     *  het klikken op een wegvak. */
+    function _taAssetsForLink(linkId) {
+      const idStr = String(linkId);
+      const items = [];
+      const tryPoint = (coord, label) => {
+        if (!coord) return;
+        const nearest = _taNearestLinkPoint(coord[0], coord[1]);
+        if (!nearest || nearest.distM > _TA_LINK_ASSET_SNAP_M) return;
+        if (String(nearest.linkId) !== idStr) return;
+        items.push({ assetPt: coord, roadPt: nearest.point, label });
+      };
+      for (const f of (_taSignFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, f.properties?.rvvCode || 'Verkeersbord');
+      }
+      for (const f of (_taSignalFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Verkeerslicht');
+      }
+      for (const f of (_taMarkFeatures || [])) {
+        const at = f.properties?.assetType;
+        const label = at === 'stopSign' ? 'Stopstreep (B7)' : 'Zebrapad';
+        tryPoint(f.geometry?.coordinates, label);
+      }
+      for (const f of (_taGiveWayMarkFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Haaientanden (B6)');
+      }
+      for (const f of (_taBusStopFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Bushalte');
+      }
+      for (const f of (_taLaneMarkArrowFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Rijstrookpijl');
+      }
+      for (const f of (_taSpeedBumpFeatures || [])) {
+        tryPoint(_speedFeatureCentroid(f), 'Verkeersdrempel');
+      }
+      for (const f of [..._taRefugeAreaCrossingFeatures, ..._taRefugeAreaTrafficFeatures]) {
+        tryPoint(_speedFeatureCentroid(f), 'Vluchtheuvel');
+      }
+      return items;
+    }
+
+    /** Bouw een pijlkop (driehoek, [lon,lat][]) die de rijrichting van een
+     *  link (fromNode → toNode) aangeeft, geplaatst op het middelste
+     *  segment van de geometrie. Voor de klik-op-wegvak debug-weergave. */
+    function _taBuildDirectionArrow(coords) {
+      if (!coords || coords.length < 2) return null;
+      const segIdx = Math.max(0, Math.min(coords.length - 2, Math.floor((coords.length - 1) / 2)));
+      const a = coords[segIdx], b = coords[segIdx + 1];
+      const midLng = (a[0] + b[0]) / 2, midLat = (a[1] + b[1]) / 2;
+      const mLng = 111320 * Math.cos(midLat * Math.PI / 180) || 1, mLat = 110540;
+      const vx = (b[0] - a[0]) * mLng, vy = (b[1] - a[1]) * mLat;
+      const vlen = Math.hypot(vx, vy) || 1;
+      const ux = vx / vlen, uy = vy / vlen;   // eenheidsvector langs de rijrichting
+      const px = -uy, py = ux;                // loodrecht daarop (breedte pijlkop)
+      const tipLenM = 5, headWM = 3;
+      const tip  = [midLng + (ux * tipLenM / 2) / mLng, midLat + (uy * tipLenM / 2) / mLat];
+      const back = [midLng - (ux * tipLenM / 2) / mLng, midLat - (uy * tipLenM / 2) / mLat];
+      const left  = [back[0] + (px * headWM / 2) / mLng, back[1] + (py * headWM / 2) / mLat];
+      const right = [back[0] - (px * headWM / 2) / mLng, back[1] - (py * headWM / 2) / mLat];
+      return { head: [tip, left, right] };
+    }
+
       // Zet per markering de rotatie zodat de breedte-as dwars over de weg loopt.
       // (icoon-breedte → wegloodrecht = wegrichting + 90°). Geen weg gevonden → 0.
        function _taApplyMarkAngles(feats) {
@@ -6884,6 +7042,105 @@
            }
          }
        }
+
+      // Bouw haaientanden-Point-features voor wegvakken die aan een B6-bord
+      // ("voorrang verlenen") gekoppeld zijn. Twee bronnen, gecombineerd:
+      //  1. NETWORK-CAR-kolom `numGiveWays` (indien aanwezig/betrouwbaar) →
+      //     plaatsing aan het eindpunt (toNode) van de link.
+      //  2. Ruimtelijke matching van trafficSign-features met rvvCode 'B6'
+      //     naar het dichtstbijzijnde netwerk-eindpunt (fromNode/toNode) —
+      //     nodig omdat `numGiveWays` in oudere/andere exports ontbreekt of
+      //     sterk onder-geteld is t.o.v. het werkelijke aantal B6-borden.
+      // Resultaat wordt gededupliceerd per (linkId, eindpunt).
+      const _TA_GIVEWAY_SNAP_M = 30;   // max. afstand bord → dichtstbijzijnde link
+      const _TA_GIVEWAY_BACK_M = 1.5;  // iets terug vanaf het eindpunt (op het wegdek, niet op de knoop)
+
+      // Bouw één haaientanden-feature bij coördinaat `end` (eindpunt van een
+      // link), met rijrichting bepaald door de vector `end - prev`.
+      function _taMakeGiveWayFeature(end, prev, linkId, roadName) {
+        const mLng = 111320 * Math.cos(end[1] * Math.PI / 180) || 1, mLat = 110540;
+        const vx = (end[0] - prev[0]) * mLng, vy = (end[1] - prev[1]) * mLat;
+        const vlen = Math.hypot(vx, vy) || 1;
+        const phi = Math.atan2(vy, vx) * 180 / Math.PI;
+        const lon = end[0] - (vx / vlen) * _TA_GIVEWAY_BACK_M / mLng;
+        const lat = end[1] - (vy / vlen) * _TA_GIVEWAY_BACK_M / mLat;
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [lon, lat] },
+          // +180: de driehoeken in _taSharkTeethCanvas wijzen in de canvas
+          // naar beneden (naar de kijker/bestuurder toe); zonder deze extra
+          // draai stonden ze in de praktijk 180° verkeerd om.
+          properties: { assetType: 'giveWay', linkId, roadName, _taPhi: phi, _taAngle: phi + 90 + 180 },
+        };
+      }
+
+      /** Herbouw `_taGiveWayMarkFeatures` uit de huidige `segments` +
+       *  `_taSignFeatures`. Aanroepen zodra één van beide bijgewerkt is
+       *  (netwerk geladen/gewisseld, of nieuwe borden binnen de bbox). */
+      function _taRebuildGiveWayMarks() {
+        const byKey = new Map();  // "linkId:from"|"linkId:to" → feature
+
+        // linkId → properties, voor de priorityRoad-check hieronder.
+        const linkPropsById = new Map();
+        for (const seg of (segments || [])) linkPropsById.set(seg.props.linkId, seg.props);
+
+        // Haaientanden horen niet op een voorrangsweg (RVV B3) thuis, tenzij
+        // het wegvak ná een "einde voorrangsweg"-bord (B4) ligt — de pipeline
+        // zet `priorityRoad` op dat punt al terug op false, dus deze ene
+        // check dekt beide gevallen.
+        const _isPriorityRoad = linkId => {
+          const props = linkPropsById.get(linkId) ?? linkPropsById.get(Number(linkId));
+          return props ? props.priorityRoad === true : false;
+        };
+
+        // Bron 1: NETWORK-CAR numGiveWays (toNode-eind van de link).
+        for (const seg of (segments || [])) {
+          const p = seg.props || {};
+          if (!((p.numGiveWays || 0) > 0)) continue;
+          if (_isPriorityRoad(p.linkId)) continue;
+          const c = seg.coords;
+          if (!c || c.length < 2) continue;
+          byKey.set(`${p.linkId}:to`, _taMakeGiveWayFeature(c[c.length - 1], c[c.length - 2], p.linkId, p.name));
+        }
+
+        // Bron 2: B6-borden ruimtelijk koppelen aan het netwerk. Een
+        // haaientand-rij hoort altijd bij de toNode-kant van een link (het
+        // einde van de rijrichting, vlak vóór het kruispunt) — nooit bij de
+        // fromNode-kant. Als het bord het dichtst bij het béginpunt van de
+        // gematchte link ligt, hoort de markering dus bij de tegengestelde
+        // rijrichting (reverseLinkId), waarvan dat punt juist het toNode-eind
+        // is; is die niet bekend, dan wordt dit bord overgeslagen.
+        for (const f of (_taSignFeatures || [])) {
+          const p = f.properties || {};
+          if (p.rvvCode !== 'B6') continue;
+          const c = f.geometry?.coordinates;
+          if (!c) continue;
+          const nearest = _taNearestLinkPoint(c[0], c[1]);
+          if (!nearest || nearest.distM > _TA_GIVEWAY_SNAP_M) continue;
+          let linkId = nearest.linkId;
+          let coords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+          if (!coords || coords.length < 2) continue;
+          const fromEnd = coords[0], toEnd = coords[coords.length - 1];
+          const mLng = 111320 * Math.cos(c[1] * Math.PI / 180) || 1, mLat = 110540;
+          const dFrom = Math.hypot((fromEnd[0] - c[0]) * mLng, (fromEnd[1] - c[1]) * mLat);
+          const dTo   = Math.hypot((toEnd[0]   - c[0]) * mLng, (toEnd[1]   - c[1]) * mLat);
+          if (dFrom < dTo) {
+            const linkProps = linkPropsById.get(linkId) ?? linkPropsById.get(Number(linkId));
+            const revIds = linkProps?.reverseLinkIds;
+            const revId = Array.isArray(revIds) && revIds.length ? revIds[0] : -linkId;
+            const revCoords = linkGeomMap.get(revId) ?? linkGeomMap.get(Number(revId));
+            if (!revCoords || revCoords.length < 2) continue;  // geen tegengestelde link bekend → overslaan
+            linkId = revId;
+            coords = revCoords;
+          }
+          if (_isPriorityRoad(linkId)) continue;
+          const key = `${linkId}:to`;
+          if (byKey.has(key)) continue;
+          byKey.set(key, _taMakeGiveWayFeature(coords[coords.length - 1], coords[coords.length - 2], linkId, p.roadName));
+        }
+
+        _taGiveWayMarkFeatures = [...byKey.values()];
+      }
 
       // deck.gl's IconLayer (billboard:false) rotate_by_angle-shader roteert de
      // afbeelding in een lokaal frame waarbij de bovenkant van de png (kleine
@@ -7095,9 +7352,11 @@
     // Platte drempel-vlakken (speedBump-polygonen), plat op het wegdek.
     // Aparte laag zodat ze ONDER de intensiteits-laag (network) getekend worden.
     function makeSpeedBumpLayer() {
-      if (!_trafficAssetsVisible) return null;
-      if (!_taSpeedBumpFeatures.length) return null;
       const active = colorMetric === 'speed_intersections';
+      // De Kruispunten-laag toont verkeersdrempels altijd, ook als de losse
+      // "Traffic assets"-laag is uitgeschakeld.
+      if (!_trafficAssetsVisible && !active) return null;
+      if (!_taSpeedBumpFeatures.length) return null;
       // In normale weergave: grijze vulling. Wanneer de Kruispunten-laag actief
       // is, worden drempels geel getoond en zonder zoom-drempel.
       if (!active && map.getZoom() < _TA_MINZOOM) return null;
@@ -7133,15 +7392,17 @@
           getPosition: _taPosition,
           getIcon: f => {
             const p = f.properties || {};
-            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) || _taPoleIcon();
+            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) || _taPoleIcon(p.rvvCode);
             if (_signBackVisible(p.bearing))  return _taBackIcon(p.rvvCode);
-            return _taPoleIcon();
+            return _taPoleIcon(p.rvvCode);
           },
           getSize: f => {
             const p = f.properties || {};
-            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) ? _TA_SIGN_TOTAL_M : _TA_POLE_H_M;
-            if (_signBackVisible(p.bearing))  return _TA_SIGN_TOTAL_M;
-            return _TA_POLE_H_M;
+            const poleH = _taPoleHeightM(p.rvvCode);
+            const totalM = poleH + _TA_SIGN_M;
+            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) ? totalM : poleH;
+            if (_signBackVisible(p.bearing))  return totalM;
+            return poleH;
           },
           pickable: true,
           onHover:  info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
@@ -7167,8 +7428,8 @@
         }));
       }
 
-      // Platte wegdekmarkeringen (voetganger/stop) — liggen op het asfalt.
-      const _iconMarkFeatures = _taMarkFeatures;
+      // Platte wegdekmarkeringen (voetganger/stop/haaientanden) — liggen op het asfalt.
+      const _iconMarkFeatures = [..._taMarkFeatures, ..._taGiveWayMarkFeatures];
       if (_iconMarkFeatures.length) {
         layers.push(new IconLayer({
           id:          'ta-marks-deck',
@@ -7292,7 +7553,86 @@
          }));
        }
 
-       return layers;
+      // Debug: lijn van geklikt verkeersbord naar het dichtstbijzijnde punt
+      // op het gekoppelde wegvak (zie klik-handler op _taHover).
+      if (_taDebugSignLink) {
+        layers.push(new PathLayer({
+          id:          'ta-debug-sign-link',
+          data:        [{ path: [_taDebugSignLink.signPt, _taDebugSignLink.roadPt] }],
+          getPath:     d => d.path,
+          getColor:    [255, 0, 200, 230],
+          getWidth:    2,
+          widthUnits:  'pixels',
+          widthMinPixels: 2,
+        }));
+        layers.push(new ScatterplotLayer({
+          id:          'ta-debug-sign-link-pts',
+          data:        [
+            { pos: _taDebugSignLink.signPt,  color: [255, 0, 200, 230] },
+            { pos: _taDebugSignLink.roadPt,  color: [0, 200, 255, 230] },
+          ],
+          getPosition: d => d.pos,
+          getFillColor: d => d.color,
+          getRadius:   3,
+          radiusUnits: 'pixels',
+        }));
+      }
+
+      // Debug: lijntjes van een geklikt wegvak naar alle gekoppelde
+      // verkeersobjecten (borden, markeringen, drempels, ...). Zie
+      // klik-handler op _networkHoverLink.
+      if (_taDebugLinkAssets && _taDebugLinkAssets.items.length) {
+        layers.push(new PathLayer({
+          id:          'ta-debug-link-assets',
+          data:        _taDebugLinkAssets.items.map(i => ({ path: [i.roadPt, i.assetPt] })),
+          getPath:     d => d.path,
+          getColor:    [255, 140, 0, 230],
+          getWidth:    2,
+          widthUnits:  'pixels',
+          widthMinPixels: 2,
+        }));
+        layers.push(new ScatterplotLayer({
+          id:          'ta-debug-link-assets-pts',
+          data:        _taDebugLinkAssets.items.flatMap(i => ([
+            { pos: i.roadPt,   color: [0, 200, 255, 230] },
+            { pos: i.assetPt,  color: [255, 140, 0, 230] },
+          ])),
+          getPosition: d => d.pos,
+          getFillColor: d => d.color,
+          getRadius:   3,
+          radiusUnits: 'pixels',
+        }));
+      }
+
+      // Debug: richting (fromNode → toNode) van het geklikte wegvak — de
+      // volledige linkgeometrie gemarkeerd + een pijlkop op het midden.
+      if (_taDebugLinkAssets && _taDebugLinkAssets.dir) {
+        const dirCoords = linkGeomMap.get(_taDebugLinkAssets.linkId) ?? linkGeomMap.get(Number(_taDebugLinkAssets.linkId));
+        if (dirCoords) {
+          layers.push(new PathLayer({
+            id:          'ta-debug-link-dir',
+            data:        [{ path: dirCoords }],
+            getPath:     d => d.path,
+            getColor:    [40, 220, 90, 230],
+            getWidth:    3,
+            widthUnits:  'pixels',
+            widthMinPixels: 3,
+          }));
+        }
+        layers.push(new PolygonLayer({
+          id:          'ta-debug-link-dir-head',
+          data:        [{ polygon: _taDebugLinkAssets.dir.head }],
+          getPolygon:  d => d.polygon,
+          getFillColor: [40, 220, 90, 230],
+          getLineColor: [20, 120, 50, 255],
+          lineWidthMinPixels: 1,
+          stroked:     true,
+          filled:      true,
+          pickable:    false,
+        }));
+      }
+
+      return layers;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -8334,10 +8674,38 @@
     // Klik-popup voor verkeersobjecten (deck.gl onClick is onbetrouwbaar in
     // interleaved-modus → onHover houdt _taHover bij, map-klik toont de popup).
     map.on('click', () => {
-      if (!_trafficAssetsVisible || !_taHover) return;
+      if (!_trafficAssetsVisible || !_taHover) {
+        // Klik buiten een verkeersobject → debug-lijntje weer opruimen.
+        if (_taDebugSignLink) { _taDebugSignLink = null; updateOverlay(true); }
+        // Klik op een wegvak (geen asset eronder) → toon/verberg de
+        // gekoppelde verkeersobjecten voor dat wegvak (toggle per linkId).
+        if (_networkHoverLink) {
+          const linkId = _networkHoverLink.linkId;
+          if (_taDebugLinkAssets && String(_taDebugLinkAssets.linkId) === String(linkId)) {
+            _taDebugLinkAssets = null;   // zelfde wegvak nogmaals geklikt → verbergen
+          } else {
+            const linkCoords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+            _taDebugLinkAssets = {
+              linkId,
+              items: _taAssetsForLink(linkId),
+              dir:   _taBuildDirectionArrow(linkCoords),
+            };
+          }
+          updateOverlay(true);
+        } else if (_taDebugLinkAssets) {
+          _taDebugLinkAssets = null;
+          updateOverlay(true);
+        }
+        return;
+      }
+      // Klik op een asset → eventuele wegvak-debug-weergave opruimen.
+      if (_taDebugLinkAssets) { _taDebugLinkAssets = null; }
       const p = _taHover.props || {};
       let html;
       const at = p.assetType;
+      // Debug-lijntje alleen tonen bij een klik op een generiek verkeersbord
+      // (de laatste `else`-tak hieronder); bij elk ander object weer wissen.
+      let _nextDebugSignLink = null;
       if (_taHover.signal) {
         const road = p.roadName || '';
         html = '<div style="text-align:center;min-width:90px"><strong>Verkeerslicht</strong>';
@@ -8369,10 +8737,20 @@
         const imgUrl = p.imageUrl || '';
         html = '<div style="text-align:center;min-width:90px">';
         if (imgUrl) html += `<img src="${imgUrl}" style="display:block;max-width:130px;max-height:90px;margin:0 auto 6px;border-radius:4px" onerror="this.style.display='none'">`;
-        html += `<strong>${rvv}</strong>`;
+        html += `<strong>${p.rvvCode || ''}</strong>`;
         if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         html += '</div>';
+        // Debug: teken een lijntje van het bord naar het dichtstbijzijnde
+        // punt op het netwerk, zodat zichtbaar is aan welke weg het bord
+        // gekoppeld is (nuttig om linkId/roadSectionId-koppeling te checken).
+        const signLngLat = _taHover.lngLat;
+        const nearest = _taNearestLinkPoint(signLngLat[0], signLngLat[1]);
+        _nextDebugSignLink = nearest
+          ? { signPt: [signLngLat[0], signLngLat[1]], roadPt: nearest.point, linkId: nearest.linkId, distM: nearest.distM }
+          : null;
       }
+      _taDebugSignLink = _nextDebugSignLink;
+      updateOverlay(true);
       new maplibregl.Popup({ closeButton: false, offset: 10 })
         .setLngLat(_taHover.lngLat).setHTML(html).addTo(map);
     });
@@ -8381,7 +8759,7 @@
     // ook als de animatielus gepauzeerd is.
     let _taRotRaf = null;
     map.on('rotate', () => {
-      if (!_trafficAssetsVisible || _taRotRaf) return;
+      if (!_trafficAssetsVisible || _taRotRaf || typeof overlay === 'undefined') return;
       _taRotRaf = requestAnimationFrame(() => { _taRotRaf = null; updateOverlay(true); });
     });
 
@@ -8391,6 +8769,7 @@
       _trafficSignsReady  = true;
       _taSignFeatures     = _trafficSignsGeoJson.features || [];
       _taEnsurePlates(_taSignFeatures);   // async: bumpt + hertekent zodra klaar
+      _taRebuildGiveWayMarks();           // haaientanden (B6) opnieuw koppelen aan het netwerk
       updateOverlay(true);                // toon direct (palen), platen volgen
     }
 
@@ -8503,6 +8882,9 @@
         // overschrijven als die al globaal geladen is voor Kruispunten.
         _taSignFeatures      = byType.trafficSign   || [];
         _taSignalFeatures    = byType.trafficSignal || [];
+        console.debug('[TA] trafficSign count:', _taSignFeatures.length,
+          'met bearing:', _taSignFeatures.filter(f => (f.properties||{}).bearing != null).length,
+          'met rvvCode:', _taSignFeatures.filter(f => (f.properties||{}).rvvCode).length);
         if (!_lastAssetBboxSpeedBump) {
           _taSpeedBumpFeatures = byType.speedBump || [];
         }
@@ -8511,6 +8893,7 @@
           ...(byType.stopSign || []),
         ];
         _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
+        _taRebuildGiveWayMarks();              // haaientanden (B6) opnieuw koppelen aan het netwerk
         // CIMLK hoogte-/constructie-objecten. belowGround-viaducten/bruggen worden
         // als 'underpass' (zwevende overspanning) getekend i.p.v. weggelaten.
         const _below = f => !!(f.properties || {}).belowGround;
@@ -8692,6 +9075,9 @@
       linkSpeedMap.set(seg.props.linkId,    seg.speedMs);
       linkCapacityMap.set(seg.props.linkId, seg.props.capacity ?? 1800);
     }
+    // Haaientanden (B6) — eerste opbouw op basis van het netwerk alleen;
+    // wordt aangevuld/herbouwd zodra trafficSign-features (B6-borden) binnenkomen.
+    _taRebuildGiveWayMarks();
 
     /** Herbouw linkFlowMap voor het huidige dagdeel (aanroepen na dagdeel-wijziging) */
     function rebuildLinkFlowMap() {
@@ -8933,10 +9319,12 @@
       // 1a. Kruispunt-categorieën (nieuwe laag "Kruispunten")
       // Prioriteit: verkeerslicht (1) > rotonde (2) > verkeersdrempel (3).
       const niMap = new Map();
-      // Rotondes op basis van OSM-weg/junction-tag (indien beschikbaar in export).
+      // Rotondes op basis van de NETWORK-CAR-kolom `isRoundabout`/`roundaboutType`
+      // (nieuwe exports), met OSM-weg/junction-tag als fallback voor oudere data.
       for (const f of geojson.features) {
         const p = f.properties;
-        const isRoundabout = p.junction === 'roundabout' || p.highway === 'roundabout' || p.highway === 'mini_roundabout';
+        const isRoundabout = p.isRoundabout === true || p.roundaboutType === 'roundabout' ||
+          p.junction === 'roundabout' || p.highway === 'roundabout' || p.highway === 'mini_roundabout';
         if (!isRoundabout) continue;
         const nlm = nodeLinkMap.get(p.linkId);
         if (!nlm) continue;
@@ -9909,6 +10297,7 @@
         }
         case 'speed':    return p.speed ?? null;
         case 'capacity': return p.capacity ?? null;
+        case 'priority_roads': return p.priorityRoad === true ? 1 : 0;
         // "Snelheid"-sub-lagen: binaire aanwezigheid van de betreffende factor
         // op dit wegvak. Voor de v0-lagen kijken we bij voorkeur naar de
         // NETWORK-CAR attributen (geen zoom-16 drempel), met de verkregen
@@ -11034,6 +11423,7 @@
         <div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
         <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
         <div><span style="color:#6a757c">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
+        ${p.roadWidthM != null ? `<div><span style="color:#6a757c">${T('tooltipWidth')}: </span><b>${Number(p.roadWidthM).toFixed(1)} m</b></div>` : ''}
         ${(() => {
           const nd = noiseByLinkId && noiseByLinkId.get(p.linkId);
           if (!nd) return '';
@@ -11088,7 +11478,7 @@
         })()}
         ${(() => {
           // Tooltip-line voor actieve Snelheid-sub-laag (bestaand en toekomstig).
-          if (![...BINARY_SPEED_METRICS, ...FUTURE_BINARY_SPEED_METRICS, ...FLOW_SPEED_METRICS, 'speed_penalty_total'].includes(colorMetric)) return '';
+          if (![...BINARY_SPEED_METRICS, ...FUTURE_BINARY_SPEED_METRICS, ...FLOW_SPEED_METRICS, 'speed_penalty_total', 'priority_roads'].includes(colorMetric)) return '';
           const v = getMetricValue(p);
           if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
             const key = metricShortLabelKey(colorMetric);
@@ -11127,6 +11517,12 @@
             return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
               <span style="color:#6a757c">${T('legendSpeedElevation')}: </span>
               <b>${slope > 0 ? '+' : ''}${slope.toFixed(1)}%</b>
+            </div>`;
+          } else if (colorMetric === 'priority_roads') {
+            const key = metricShortLabelKey(colorMetric);
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v ? T('tooltipSpeedFactorPresent') : T('tooltipSpeedFactorAbsent')}</b>
             </div>`;
           } else if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
             const key = metricShortLabelKey(colorMetric);
@@ -11259,6 +11655,8 @@
              // Binaire Snelheid-sub-lagen: oranje indien factor aanwezig (1),
              // anders de neutrale netwerk-kleur.
              if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+             // Voorrangswegen: blauw indien voorrangsweg, anders neutrale kleur.
+             if (colorMetric === 'priority_roads') return v ? [26, 115, 232, 230] : [80, 80, 100, 120];
              // Categorische Snelheid-laag "Kruispunten": twee vaste kleuren.
              if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
                if (v == null || !isFinite(v)) return [80, 80, 100, 120];
@@ -11301,6 +11699,9 @@
         pickable: true,
         onHover: info => {
           const { object } = info;
+          // Voor de klik-op-wegvak debug ("welke assets horen bij dit wegvak"):
+          // houd het gehoverde linkId bij, onafhankelijk van de tooltip-logica.
+          _networkHoverLink = object ? { linkId: object.properties?.linkId } : null;
           if (object) {
             _segTipLastInfo = info;
             if (_segTipVisible) {
@@ -15055,6 +15456,9 @@
       // Vervang geojson.features met een nieuwe array zodat deck.gl de referentiewijziging detecteert
       geojson.features = newGeojson.features;
 
+      // Haaientanden (B6) opnieuw afleiden voor het nieuwe scenario/netwerk.
+      _taRebuildGiveWayMarks();
+
       rebuildLinkFlowMap();
       dijkstraCache.clear();
 
@@ -15554,6 +15958,7 @@
         speed_intersections: 'legendSpeedIntersections', speed_yield: 'legendSpeedYield', speed_refuge: 'legendSpeedRefuge',
         speed_from_right: 'legendSpeedFromRight', speed_left_turn: 'legendSpeedLeftTurn',
         speed_oncoming: 'legendSpeedOncoming', speed_penalty_total: 'legendSpeedPenaltyTotal',
+        priority_roads: 'legendPriorityRoads',
       };
       return map[metric] || null;
     }
