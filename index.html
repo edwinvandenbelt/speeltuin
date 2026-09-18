@@ -3094,6 +3094,9 @@
   const _params = new URLSearchParams(window.location.search);
   let AREA_ID = _params.get('areaId');
   const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
+  const _DEBUG_MARKS = _params.get('debugMarks') === '1';  // hulplijnen voor markeringen/hoeken
+  const LINK_ID_PARAM = _params.get('linkId');
+  const NODE_ID_PARAM = _params.get('nodeId');
   let _networkFeatures = []; // gevuld zodra netwerk geladen is; gebruikt door maquette highlight
 
   // ── maquette: combineert hide-panels + blok-cursor + verberg gebouwen (?maquette=true) ──
@@ -6760,7 +6763,7 @@
     let _taSignFeatures      = [];   // trafficSign-features (voor de IconLayer)
     let _taSignalFeatures    = [];   // trafficSignal-features
     let _taSpeedBumpFeatures = [];   // speedBump-polygonen (lage 3D-drempel)
-    let _taMarkFeatures      = [];   // platte wegdekmarkeringen (voetganger/stop/voorrang)
+    let _taMarkFeatures      = [];   // platte wegdekmarkeringen (voetganger/stop)
     let _taViaductFeatures   = [];   // CIMLK viaduct-wegvakken (verhoogde ribbon)
     let _taScreenQuads       = [];   // CIMLK geluidsschermen → geëxtrudeerde muur-quads
     let _taBridgeFeatures    = [];   // CIMLK brug-wegvakken (verhoogd brugdek)
@@ -6784,7 +6787,6 @@
     // Deze liggen plat op het wegdek (IconLayer billboard:false) en schalen dus
     // volledig perspectivisch mee. Geen bearing beschikbaar → noord-uitgelijnd.
     const _TA_ZEBRA_M = 4.0;   // voetgangersoversteek (zebravlak)
-    const _TA_SHARK_M = 2.4;   // haaientanden (voorrang, B6)
     const _TA_STOP_M  = 3.0;   // stopstreep + "STOP"
 
     // Descriptor met center-anchor (voor platte grondmarkeringen).
@@ -6803,24 +6805,6 @@
       ctx.fillStyle = '#f5f5f5';
       const n = 6, gap = W / (n * 2 - 1);
       for (let i = 0; i < n; i++) ctx.fillRect(Math.round(i * 2 * gap), 0, Math.ceil(gap), H);
-      return cv;
-    }
-
-    // Haaientanden (B6): rij witte driehoeken die naar de kijker wijzen.
-    function _taSharkTeethCanvas() {
-      const W = Math.round(_TA_SHARK_M * _TA_PPM) * _TA_RS;
-      const H = Math.round(_TA_SHARK_M * 0.45 * _TA_PPM) * _TA_RS;
-      const cv = document.createElement('canvas');
-      cv.width = W; cv.height = H;
-      const ctx = cv.getContext('2d');
-      ctx.fillStyle = '#f5f5f5';
-      const n = 5, tw = W / n;
-      for (let i = 0; i < n; i++) {
-        const x = i * tw;
-        ctx.beginPath();
-        ctx.moveTo(x, 0); ctx.lineTo(x + tw, 0); ctx.lineTo(x + tw / 2, H);
-        ctx.closePath(); ctx.fill();
-      }
       return cv;
     }
 
@@ -6843,9 +6827,8 @@
     function _taMarkIcon(assetType) {
       const key = 'mark:' + assetType;
       if (!_taIcons[key]) {
-        const cv = assetType === 'giveWay'   ? _taSharkTeethCanvas()
-                 : assetType === 'stopSign'  ? _taStopMarkCanvas()
-                 : _taZebraCanvas();  // pedestrianCrossing (default)
+        const cv = assetType === 'stopSign' ? _taStopMarkCanvas()
+                 : _taZebraCanvas();       // pedestrianCrossing (default)
         _taIcons[key] = _taDescFlat(cv);
       }
       return _taIcons[key];
@@ -6853,8 +6836,7 @@
     // getSize = icoonHOOGTE in meters (= lengte langs de weg). De breedte volgt
     // uit de canvas-verhouding en spant de weg over (zie _taMarkAngle).
     function _taMarkSize(assetType) {
-      return assetType === 'giveWay'  ? _TA_SHARK_M * 0.45
-           : assetType === 'stopSign' ? _TA_STOP_M  * 0.70
+      return assetType === 'stopSign' ? _TA_STOP_M  * 0.70
            : _TA_ZEBRA_M * 0.75;
     }
 
@@ -6883,19 +6865,27 @@
       return bestAng;
     }
 
-     // Zet per markering de rotatie zodat de breedte-as dwars over de weg loopt.
-     // (icoon-breedte → wegloodrecht = wegrichting + 90°). Geen weg gevonden → 0.
-     function _taApplyMarkAngles(feats) {
-       for (const f of (feats || [])) {
-         const p = f.properties || (f.properties = {});
-         const c = (f.geometry && f.geometry.coordinates) || null;
-         if (!c) { p._taAngle = 0; continue; }
-         const phi = _taRoadBearingAt(c[0], c[1]);
-         p._taAngle = phi == null ? 0 : phi + 90;
+      // Zet per markering de rotatie zodat de breedte-as dwars over de weg loopt.
+      // (icoon-breedte → wegloodrecht = wegrichting + 90°). Geen weg gevonden → 0.
+       function _taApplyMarkAngles(feats) {
+         for (const f of (feats || [])) {
+           const p = f.properties || (f.properties = {});
+           const c = (f.geometry && f.geometry.coordinates) || null;
+           if (!c) { p._taAngle = 0; p._taPhi = null; continue; }
+           const phi = _taRoadBearingAt(c[0], c[1]);
+           p._taPhi = phi;
+           p._taAngle = phi == null ? 0 : phi + 90;
+           if (_DEBUG_MARKS && phi != null) {
+             console.log(
+               `[debug-marks] ${p.assetType} lon=${c[0].toFixed(5)} lat=${c[1].toFixed(5)}`,
+               `roadBearing(phi)=${phi.toFixed(1)}`,
+               `perp=${(phi+90).toFixed(1)}`
+             );
+           }
+         }
        }
-     }
 
-     // deck.gl's IconLayer (billboard:false) rotate_by_angle-shader roteert de
+      // deck.gl's IconLayer (billboard:false) rotate_by_angle-shader roteert de
      // afbeelding in een lokaal frame waarbij de bovenkant van de png (kleine
      // texture-y) intern al "gespiegeld" wordt t.o.v. wereld-noord. Empirisch
      // (via de debug-box/groene voorkant-lijn) bleek de volledige afbeelding-
@@ -7177,21 +7167,77 @@
         }));
       }
 
-      // Platte wegdekmarkeringen (voetganger/stop/voorrang) — liggen op het asfalt.
-      if (_taMarkFeatures.length) {
+      // Platte wegdekmarkeringen (voetganger/stop) — liggen op het asfalt.
+      const _iconMarkFeatures = _taMarkFeatures;
+      if (_iconMarkFeatures.length) {
         layers.push(new IconLayer({
           id:          'ta-marks-deck',
-          data:        _taMarkFeatures,
+          data:        _iconMarkFeatures,
           billboard:   false,   // plat op het wegdek, schaalt perspectivisch mee
           sizeUnits:   'meters',
           sizeScale:   1,
           getPosition: _taPosition,
-          getIcon:     f => _taMarkIcon((f.properties || {}).assetType),
+           getIcon:     f => _taMarkIcon((f.properties || {}).assetType),
           getSize:     f => _taMarkSize((f.properties || {}).assetType),
-          getAngle:    f => ((f.properties || {})._taAngle || 0) + 180,   // dwars over de weg, haaientanden juiste richting
+          getAngle:    f => (f.properties || {})._taAngle || 0,   // dwars over de weg
           pickable:    true,
           onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
         }));
+      }
+
+      // Hulplijnen voor debuggen markering-oriëntatie (alleen met ?debugMarks=1):
+      // - geel/groen lijn = hartlijn van het gekoppelde wegvak (linkId), volledige segmentgeometrie
+      // - rode lijn       = dwarsrichting (perp = phi+90), waar de markering over moet liggen
+      if (_DEBUG_MARKS && _taMarkFeatures.length) {
+        const dbgFeats = [];
+        for (const f of _taMarkFeatures) {
+          const p = f.properties || {};
+          const phi = p._taPhi;
+          if (phi == null) continue;
+          const [lng, lat] = f.geometry.coordinates;
+          const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1;
+          const mLat = 110540;
+          const roadRad = phi * Math.PI / 180;
+          const perpRad = (phi + 90) * Math.PI / 180;
+          const roadLen = 8;   // meters
+          const perpLen = 6;   // meters
+          const dLngRoad = Math.cos(roadRad) * roadLen / mLng;
+          const dLatRoad = Math.sin(roadRad) * roadLen / mLat;
+          const dLngPerp = Math.cos(perpRad) * perpLen / mLng;
+          const dLatPerp = Math.sin(perpRad) * perpLen / mLat;
+
+          // Kleuren als RGBA-arrays zodat GeoJsonLayer ze direct gebruikt.
+          const C_NEAREST = [255, 255, 0, 240];   // geel
+          const C_LINKID  = [255, 140, 0, 240];   // donkeroranje
+          const C_PERP    = [255, 0, 0, 240];     // rood
+
+          // 1) Hartlijn op basis van nearest-segment (geel)
+          dbgFeats.push({ type: 'Feature', properties: { c: C_NEAREST, w: 4 }, geometry: { type: 'LineString', coordinates: [[lng, lat], [lng + dLngRoad, lat + dLatRoad]] } });
+
+          // 2) Hartlijn van het gekoppelde linkId (oranje), als beschikbaar
+          const linkId = p.linkId;
+          if (linkId != null) {
+            const linkCoords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+            if (linkCoords && linkCoords.length >= 2) {
+              dbgFeats.push({ type: 'Feature', properties: { c: C_LINKID, w: 6 }, geometry: { type: 'LineString', coordinates: linkCoords } });
+            }
+          }
+
+          // rood: dwars op weg
+          dbgFeats.push({ type: 'Feature', properties: { c: C_PERP, w: 3 }, geometry: { type: 'LineString', coordinates: [[lng - dLngPerp, lat - dLatPerp], [lng + dLngPerp, lat + dLatPerp]] } });
+        }
+
+        if (dbgFeats.length) {
+          layers.push(new GeoJsonLayer({
+            id: 'ta-marks-debug',
+            data: { type: 'FeatureCollection', features: dbgFeats },
+            getColor: f => (f.properties || {}).c || [255,255,255,220],
+            getLineWidth: f => (f.properties || {}).w || 2,
+            lineWidthMinPixels: 2,
+            lineWidthUnits: 'pixels',
+            pickable: false,
+          }));
+        }
       }
 
        // Bushaltes (haltepaal + bordje) — billboard-composietsprite, camera-gericht.
@@ -8413,6 +8459,7 @@
 
     // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
     async function loadTrafficAssetsInView() {
+      console.debug('[TA] loadTrafficAssetsInView called', { ready: _mapReady, visible: _trafficAssetsVisible, noFile: _trafficAssetsNoFile, zoom: map.getZoom(), minzoom: _TRAFFIC_ASSET_MINZOOM });
       if (!_mapReady)            { console.debug('[TA] skip: map niet ready'); return; }
       if (!_trafficAssetsVisible){ console.debug('[TA] skip: _trafficAssetsVisible=false (checkbox/localStorage)'); return; }
       if (_trafficAssetsNoFile) { console.debug('[TA] skip: _trafficAssetsNoFile=true (eerdere 404) → fallback NDW-borden'); _loadTrafficSignsFallback(); return; }
@@ -8437,7 +8484,7 @@
           if (!line.trim()) continue;
           try { data.features.push(JSON.parse(line)); } catch (_) {}
         }
-        console.debug('[TA] features ontvangen:', data.features.length);
+        console.log('[TA] features ontvangen:', data.features.length);
       } catch (e) { console.debug('[TA] fetch exception', e); return; }
       if (!data || !Array.isArray(data.features)) { console.debug('[TA] skip: geen geldige features array'); return; }
 
@@ -8462,7 +8509,6 @@
         _taMarkFeatures      = [
           ...(byType.pedestrianCrossing || []),
           ...(byType.stopSign || []),
-          ...(byType.giveWay || []),
         ];
         _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
         // CIMLK hoogte-/constructie-objecten. belowGround-viaducten/bruggen worden
@@ -8686,6 +8732,44 @@
         speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
         linkMode: p.mode ? p.mode.toUpperCase() : null,
       });
+    }
+
+    // Focus naar eventueel in de URL gevraagde link of node. Bij beide wordt
+    // de node voorrang gegeven. Dit gebeurt nadat zowel kaart als netwerk
+    // geometrie beschikbaar zijn, en overschrijft de initiele gebieds-fit.
+    function _focusUrlLinkOrNode() {
+      if (NODE_ID_PARAM) {
+        const coord = nodeCoords.get(NODE_ID_PARAM) ?? nodeCoords.get(Number(NODE_ID_PARAM));
+        if (coord) {
+          map.easeTo({ center: coord, zoom: 18, pitch: 0, bearing: 0, essential: true });
+          return;
+        }
+        console.warn(`[focus] nodeId ${NODE_ID_PARAM} niet gevonden`);
+      }
+      if (LINK_ID_PARAM) {
+        const coords = linkGeomMap.get(LINK_ID_PARAM) ?? linkGeomMap.get(Number(LINK_ID_PARAM));
+        if (coords && coords.length >= 2) {
+          let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+          for (const [lon, lat] of coords) {
+            if (lon < minLon) minLon = lon;
+            if (lat < minLat) minLat = lat;
+            if (lon > maxLon) maxLon = lon;
+            if (lat > maxLat) maxLat = lat;
+          }
+          map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+            padding: 80, pitch: 0, bearing: 0, duration: 1000, essential: true
+          });
+          return;
+        }
+        console.warn(`[focus] linkId ${LINK_ID_PARAM} niet gevonden`);
+      }
+    }
+    if (NODE_ID_PARAM || LINK_ID_PARAM) {
+      if (map.loaded()) {
+        _focusUrlLinkOrNode();
+      } else {
+        map.once('load', _focusUrlLinkOrNode);
+      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════

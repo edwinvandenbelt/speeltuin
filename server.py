@@ -4045,6 +4045,7 @@ def ogc_collection_items(collection_id):
             "traffic_sign",  # bevat soms rvvCode (oudere data)
             "osm_id",
             "rvvCode",
+            "blackCode",
             "direction",
             "bearing",  # orientatie voor borden/lantaarns/meubilair
             "width",
