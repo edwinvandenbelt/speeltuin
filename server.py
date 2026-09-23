@@ -3558,6 +3558,41 @@ def index():
     return send_from_directory(str(STATIC_DIR), "index.html")
 
 
+_STATIC_EXTS = {
+    ".html",
+    ".js",
+    ".css",
+    ".json",
+    ".txt",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".ico",
+    ".svg",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+}
+
+
+@app.route("/<path:filename>")
+def static_asset(filename):
+    """Serveer statische bestanden uit de scriptmap (index.html, js, css, …).
+
+    Alleen bestanden met een bekende statische extensie worden served, zodat
+    OGC API-paden zoals /conformance en /collections niet worden onderschept.
+    """
+    ext = Path(filename).suffix.lower()
+    if ext not in _STATIC_EXTS:
+        abort(404)
+    p = STATIC_DIR / filename
+    if not p.is_file():
+        abort(404)
+    return send_from_directory(str(STATIC_DIR), filename)
+
+
 @app.route("/svg/<path:filename>")
 def svg_asset(filename):
     """Serveer statische SVG-iconen (o.a. de laneMarkArrow-pijlen) uit svg/."""
@@ -4657,6 +4692,224 @@ def traffic_sign_icon(code):
     resp = send_from_directory(str(icon_dir), f"{match}.png", mimetype="image/png")
     resp.headers["Cache-Control"] = "no-cache"
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Maatregelsets uit een geüploade GeoPackage (measure_set_creator)
+# ---------------------------------------------------------------------------
+# Ondersteunt het "maatregelset"-paneel in measure-set-panel.js: een GeoPackage
+# wordt geüpload en server-side geïnspecteerd (lagen + velden + waarden), en
+# kan vervolgens tegen het netwerk van een gebied worden gesneden om per
+# polygon-feature een 'adjust'-wijzigingenlijst te bouwen (via de vendored
+# gmt_calculation_lib measure_set_creator).
+
+
+def _measure_uploads_dir() -> Path:
+    """Map waar geüploade GeoPackages tijdelijk worden bewaard."""
+    d = _work_dir() / "_measure_uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _measure_upload_path(upload_id: str) -> Path:
+    if not upload_id or not _safe(upload_id):
+        abort(400, "Ongeldige upload_id")
+    return _measure_uploads_dir() / f"{upload_id}.gpkg"
+
+
+@app.route("/measure-sets/upload", methods=["POST"])
+def measure_sets_upload():
+    """Upload een .gpkg-bestand en geef de lagen (+velden) erin terug."""
+    if not _GEOPANDAS_AVAILABLE:
+        abort(503, "geopandas is vereist voor het lezen van GeoPackage-bestanden.")
+
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        abort(400, "Geen bestand ontvangen (form-veld 'file')")
+    if not f.filename.lower().endswith(".gpkg"):
+        abort(400, "Alleen .gpkg-bestanden (GeoPackage) worden ondersteund")
+
+    upload_id = uuid.uuid4().hex
+    path = _measure_upload_path(upload_id)
+    f.save(path)
+
+    try:
+        import pyogrio
+
+        layer_infos = pyogrio.list_layers(path)
+        layers = []
+        for row in layer_infos:
+            name = str(row[0])
+            geom_type = str(row[1]) if len(row) > 1 and row[1] is not None else None
+            gdf = _gpd.read_file(path, layer=name)
+            fields = [c for c in gdf.columns if c != "geometry"]
+            layers.append(
+                {
+                    "name": name,
+                    "geometryType": geom_type,
+                    "fields": fields,
+                    "featureCount": int(len(gdf)),
+                }
+            )
+    except Exception as exc:
+        path.unlink(missing_ok=True)
+        abort(400, f"Kon GeoPackage niet lezen: {exc}")
+
+    return jsonify({"uploadId": upload_id, "layers": layers})
+
+
+@app.route("/measure-sets/<upload_id>/layers/<layer>/features")
+def measure_sets_layer_features(upload_id, layer):
+    """Geef alle features van een laag terug als GeoJSON."""
+    if not _GEOPANDAS_AVAILABLE:
+        abort(503, "geopandas is vereist voor het lezen van GeoPackage-bestanden.")
+
+    path = _measure_upload_path(upload_id)
+    if not path.exists():
+        abort(404, "Upload niet gevonden (mogelijk verlopen — opnieuw uploaden)")
+
+    try:
+        gdf = _gpd.read_file(path, layer=layer)
+    except Exception as exc:
+        abort(400, f"Kon laag '{layer}' niet lezen: {exc}")
+    if gdf.crs is not None and str(gdf.crs).upper() != "EPSG:4326":
+        gdf = gdf.to_crs("EPSG:4326")
+
+    for col in gdf.columns:
+        if col == "geometry":
+            continue
+        try:
+            if not _is_json_safe_dtype(gdf[col].dtype):
+                gdf[col] = gdf[col].astype("string")
+        except Exception:
+            gdf[col] = gdf[col].astype(str)
+        if hasattr(gdf[col], "dt"):
+            gdf[col] = gdf[col].dt.strftime("%Y-%m-%dT%H:%M:%S.%f").replace("NaT", "")
+
+    return gdf.to_json()
+
+
+def _is_json_safe_dtype(dtype):
+    name = dtype.name.lower()
+    return name in (
+        "int64",
+        "int32",
+        "int16",
+        "int8",
+        "uint64",
+        "uint32",
+        "uint16",
+        "uint8",
+        "float64",
+        "float32",
+        "float16",
+        "object",
+        "string",
+        "bool",
+        "category",
+    )
+
+
+@app.route("/measure-sets/<upload_id>/layers/<layer>/values")
+def measure_sets_field_values(upload_id, layer):
+    """Geef alle unieke waarden in `field` van `layer` terug (voor de
+    veld-verkenner in het paneel: welke maatregelset-namen komen voor)."""
+    if not _GEOPANDAS_AVAILABLE:
+        abort(503, "geopandas is vereist voor het lezen van GeoPackage-bestanden.")
+
+    field = request.args.get("field", "").strip()
+    if not field:
+        abort(400, 'Parameter "field" ontbreekt')
+
+    path = _measure_upload_path(upload_id)
+    if not path.exists():
+        abort(404, "Upload niet gevonden (mogelijk verlopen — opnieuw uploaden)")
+
+    try:
+        gdf = _gpd.read_file(path, layer=layer)
+    except Exception as exc:
+        abort(400, f"Kon laag '{layer}' niet lezen: {exc}")
+    if field not in gdf.columns:
+        abort(400, f"Veld '{field}' bestaat niet in laag '{layer}'")
+
+    values = sorted({str(v) for v in gdf[field].dropna().tolist()})
+    return jsonify(
+        {"layer": layer, "field": field, "values": values, "count": len(values)}
+    )
+
+
+@app.route("/measure-sets/generate", methods=["POST"])
+def measure_sets_generate():
+    """Snijd een GeoPackage-laag met het netwerk van een gebied en bouw per
+    polygon-feature een maatregelset (adjust-wijzigingenlijst).
+
+    Body: {area_id, mode, upload_id, layer, field}
+    Retourneert: {measureSets: [{name, changes:[{linkId, capacity}, ...]}, ...]}
+    """
+    if not _GEOPANDAS_AVAILABLE:
+        abort(503, "geopandas is vereist voor het lezen van GeoPackage-bestanden.")
+
+    body = request.get_json(force=True, silent=True) or {}
+    area_id = str(body.get("area_id", "")).strip()
+    mode = str(body.get("mode", "")).strip().upper()
+    upload_id = str(body.get("upload_id", "")).strip()
+    layer = str(body.get("layer", "")).strip()
+    field = str(body.get("field", "")).strip()
+
+    if not area_id or not _safe(area_id):
+        abort(400, "Ongeldige of ontbrekende area_id")
+    if not mode or not _safe(mode):
+        abort(400, "Ongeldige of ontbrekende mode")
+    if not layer or not field:
+        abort(400, "layer en field zijn verplicht")
+
+    path = _measure_upload_path(upload_id)
+    if not path.exists():
+        abort(404, "Upload niet gevonden (mogelijk verlopen — opnieuw uploaden)")
+
+    net_path = _data_path(area_id, mode, "NETWORK")
+    if net_path is None or not net_path.exists():
+        abort(404, f"Netwerkbestand niet gevonden voor {area_id}/{mode}")
+    try:
+        network_fc = _read_geodata(net_path)
+    except Exception as exc:
+        abort(500, f"Kon netwerk niet lezen: {exc}")
+
+    try:
+        gdf = _gpd.read_file(path, layer=layer)
+    except Exception as exc:
+        abort(400, f"Kon laag '{layer}' niet lezen: {exc}")
+    if gdf.crs is not None and str(gdf.crs).upper() != "EPSG:4326":
+        gdf = gdf.to_crs("EPSG:4326")
+
+    # Standaardiseer niet-JSON-serialiseerbare eigenschappen (oa. datumvelden
+    # die GeoPackage-features kan bevatten, zoals CreationDate).
+    for col in gdf.columns:
+        if col == "geometry":
+            continue
+        try:
+            if not _is_json_safe_dtype(gdf[col].dtype):
+                gdf[col] = gdf[col].astype("string")
+        except Exception:
+            gdf[col] = gdf[col].astype(str)
+        if hasattr(gdf[col], "dt"):
+            gdf[col] = gdf[col].dt.strftime("%Y-%m-%dT%H:%M:%S.%f").replace("NaT", "")
+
+    layer_features = json.loads(gdf.to_json()).get("features", [])
+
+    try:
+        from measure_set_creator.core.measure_set_creator_core import (
+            create_measure_sets,
+        )
+    except ImportError as exc:
+        abort(503, f"measure_set_creator (gmt_calculation_lib) niet beschikbaar: {exc}")
+
+    try:
+        measure_sets = create_measure_sets(network_fc, layer_features, layer, field)
+    except Exception as exc:
+        abort(500, f"Fout bij bouwen van maatregelsets: {exc}")
+
+    return jsonify({"measureSets": measure_sets})
 
 
 @app.route("/processes")

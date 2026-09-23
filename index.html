@@ -1692,6 +1692,13 @@
                 title="Nieuw wegvak intekenen">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>
         </button>
+        <!-- Maatregelsets importeren -->
+        <button class="tb-btn" id="measureSetBtn"
+                data-i18n-title="measureSetBtnTitle" title="GeoPackage maatregelset importeren"
+                style="position:relative;display:none">
+          📦
+        </button>
+
         <!-- Wijzigingen bekijken -->
         <button class="tb-btn" id="viewChangesBtn"
                 data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
@@ -2288,6 +2295,9 @@
       <div id="fspStatus"></div>
     </div>
   </div>
+
+  <!-- ── Maatregelset-paneel (GeoPackage importeren) ─────────────────────── -->
+  <script src="measure-set-panel.js"></script>
 
   <script>
   'use strict';
@@ -3098,6 +3108,8 @@
   const _params = new URLSearchParams(window.location.search);
   let AREA_ID = _params.get('areaId');
   const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
+  window.AREA_ID = AREA_ID;
+  window.MODE    = MODE;
   const _DEBUG_MARKS = _params.get('debugMarks') === '1';  // hulplijnen voor markeringen/hoeken
   const LINK_ID_PARAM = _params.get('linkId');
   const NODE_ID_PARAM = _params.get('nodeId');
@@ -5075,6 +5087,7 @@
       // anders niet in de standaard-attributie verschijnen.
       attributionControl: { customAttribution: OSM_ATTRIBUTION },
     });
+    window.map = map;
 
     // Deel de MapLibre-instantie met de closures in de buitenste scope
     // (_startFollowMode, camera-toggle IIFE). Zonder dit verwijst `map` daar
@@ -13341,6 +13354,12 @@
     let _changesPanelReadOnly = false;   // true = geopend via ☰-knop (alleen-lezen)
     let _historicalChanges    = [];      // Properties-objecten van /collections/changes/items
 
+    // Maatregelset-paneel (extern JS-bestand) toegang geven tot deze closure-
+    // variabelen, zodat gegenereerde wijzigingen als scenario kunnen worden ingeladen.
+    window.pendingChanges = pendingChanges;
+    window._setChangesPanelReadOnly = _setChangesPanelReadOnly;
+    window.renderChangesList = renderChangesList;
+
     const overlay = new MapboxOverlay({
       interleaved: true,
       layers: [makeNetworkLayer(), makeLinkEditLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), ...makeCarLayers([...carData])],
@@ -14987,25 +15006,26 @@
       * Licht de kaartfeature op die hoort bij pendingChanges[idx].
       * Tweede klik op hetzelfde item: highlight uitzetten.
       */
-     function highlightChange(idx) {
-       if (highlightedChangeIndex === idx) { clearHighlight(); return; }
-       clearHighlight();
-       const c = pendingChanges[idx];
-       if (!c || !map.getSource(HL_SOURCE)) return;
+      function highlightChange(idx) {
+        if (highlightedChangeIndex === idx) { clearHighlight(); return; }
+        clearHighlight();
+        initHighlightLayers();  // lazy init
+        const c = pendingChanges[idx];
+        if (!c) return;
 
-       let geometry = null;
-       let center   = null;
+        let geometry = null;
+        let center   = null;
 
-        if (c._isLink || c._isLinkFlow) {
-          // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
-          const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
-          if (coords && coords.length >= 2) {
-            geometry = { type: 'LineString', coordinates: coords };
-            // Vlieg naar het middenpunt van de lijn
-            const mid = Math.floor(coords.length / 2);
-            center = coords[mid];
-          }
-        } else if (c._isLinkAdd) {
+         if (c._isLink || c._isLinkFlow) {
+           // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
+           const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
+           if (coords && coords.length >= 2) {
+             geometry = { type: 'LineString', coordinates: coords };
+             // Vlieg naar het middenpunt van de lijn
+             const mid = Math.floor(coords.length / 2);
+             center = coords[mid];
+           }
+         } else if (c._isLinkAdd) {
           // Getekende lijn
           const coords = c.geometry?.coordinates;
           if (coords && coords.length >= 2) {
@@ -15030,18 +15050,18 @@
          }
        }
 
-       if (!geometry) return;
+        if (!geometry) return;
 
-       map.getSource(HL_SOURCE).setData({
-         type: 'FeatureCollection',
-         features: [{ type: 'Feature', geometry, properties: {} }],
-       });
+        map.getSource(HL_SOURCE).setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry, properties: {} }],
+        });
 
-        if (center)
-          map.easeTo({ center, speed: 1.2, essential: true });
+         if (center)
+           map.easeTo({ center, speed: 1.2, essential: true });
 
-        highlightedChangeIndex = idx;
-      }
+         highlightedChangeIndex = idx;
+       }
 
       /**
        * Highlight voor een historisch wijzigingsitem (al toegepast).
@@ -15554,6 +15574,7 @@
       document.getElementById('diffSmileyBtn').style.display = '';
       updateDiffButtonsState();
       AREA_ID = newAreaId;
+      window.AREA_ID = AREA_ID;
       _historicalChanges = [];   // invalideer bij scenario-advance
 
       // URL bijwerken met pushState zodat de browser-history gevuld wordt
@@ -15570,6 +15591,7 @@
       const prevId = evt.state?.areaId || new URLSearchParams(window.location.search).get('areaId');
       if (prevId && prevId !== AREA_ID) {
         AREA_ID = prevId;
+        window.AREA_ID = AREA_ID;
         _historicalChanges = [];
         await loadAdjustedResult(prevId, null);
       }
