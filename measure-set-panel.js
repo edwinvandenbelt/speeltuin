@@ -54,6 +54,7 @@
   const i18n = {
     measureSetPanelTitle:       'Maatregelsets',
     measureSetBtnTitle:         'GeoPackage maatregelset importeren',
+    measureSetBtnLabel:         'Maatregelen',
     measureSetDropHint:         'Sleep een .gpkg-bestand hierheen of klik om te kiezen',
     measureSetLayerLabel:       'Laag',
     measureSetFieldLabel:       'Veld',

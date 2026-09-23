@@ -11556,8 +11556,12 @@
         })()}
       `;
       const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
-      const x = rect.left + info.x;
-      const y = rect.top + info.y;
+      // In deck.gl interleaved mode is info.x/y soms t.o.v. het hele scherm/venster
+      // en soms t.o.v. het canvas. We kiezen voor de betrouwbaarste bron: het
+      // oorspronkelijke pointer-event van de browser.
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
       _segTip.style.display = '';
       const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
       _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
@@ -11734,6 +11738,143 @@
         },
         updateTriggers: {
           getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
+          getLineWidth: [daypart, colorMetric, _fspVersion],
+        },
+      });
+    }
+
+    /**
+     * Netwerklaag voor de rechterkaart in split-view (bronscenario).
+     * Herbruikt de logica van makeNetworkLayer() maar dan op de originele
+     * data (origSegments / origGeojsonFeatures) i.p.v. het actieve scenario.
+     */
+    function makeNetworkLayer2() {
+      // Bereken min/max over het bronscenario
+      let metricMin = Infinity, metricMax = -Infinity;
+      if (!FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        for (const seg of origSegments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < metricMin) metricMin = v;
+            if (v > metricMax) metricMax = v;
+          }
+        }
+      }
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of origSegments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      const metricRange = metricMax - metricMin || 1;
+      const dpRange     = dpMax - dpMin || 1;
+
+      const data = MODE !== 'MIXED'
+        ? origGeojsonFeatures
+        : origGeojsonFeatures.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      return new GeoJsonLayer({
+        id: 'network-orig',
+        data,
+        visible: colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum',
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth: f => {
+          if (f.properties.capacity === 0) return 1;
+          const lanes = f.properties.lanes || 1;
+          const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
+          const maxW = isBike ? 1.2 : 12;
+          const baseW = isBike ? 1.2 : 3;
+          if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+            let v;
+            if (colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+              v = getMetricValue(f.properties) ?? 0;
+              const t = Math.log1p(Math.max(0, Math.min(100, v))) / Math.log1p(100);
+              return Math.max(1.5, t * lanes * maxW);
+            } else {
+              v = dpFlowOf(f.properties);
+              const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
+              return Math.max(1.5, t * lanes * maxW);
+            }
+          }
+          if (colorMetric === 'flow') {
+            const flowNorm = dpFlowOf(f.properties) / (globalMaxFlow || 1);
+            if (flowNorm < 0.04) return 1;
+            if (isBike) return Math.max(1.5, lanes * 1);
+            return Math.max(1.5, lanes * 3);
+          }
+          return Math.max(1.5, lanes * baseW);
+        },
+        getLineColor: f => {
+          if (f.properties.capacity === 0) return [210, 40, 40, 200];
+          const v = getMetricValue(f.properties);
+          if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+            if (v == null) return UNAVAILABLE_GREY_RGBA;
+            return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+          }
+          if (FLOW_SPEED_METRICS.has(colorMetric)) {
+            if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
+            if (colorMetric === 'speed_from_right') {
+              const flowNorm = (globalMaxFlow || 1) > 0 ? v / globalMaxFlow : 0;
+              return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
+            }
+            if (v === 0) return [80, 80, 100, 120];
+            const norm = metricRange > 0 ? Math.max(0, Math.min(1, (v - metricMin) / metricRange)) : 0;
+            return redOrangeRgba(norm);
+          }
+          if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+          if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+          if (colorMetric === 'priority_roads') return v ? [26, 115, 232, 230] : [80, 80, 100, 120];
+          if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+            return v === 1 ? [231, 76, 60, 230]
+                 : v === 2 ? [46, 204, 113, 230]
+                 : [80, 80, 100, 120];
+          }
+          const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
+          let norm;
+          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+              colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
+            norm = Math.max(0, Math.min(1, v / 100));
+          } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+            norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
+          } else if (colorMetric === 'capacity') {
+            norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
+          } else {
+            norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+          }
+          switch (colorMetric) {
+            case 'speed':     return speedRgba(norm);
+            case 'capacity':  return capacityRgba(norm);
+            case 'occupancy': return greenRedRgba(norm);
+            case 'coverage':  return greenRedRgba(norm);
+            default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
+          }
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [daypart, colorMetric, _fspVersion],
           getLineWidth: [daypart, colorMetric, _fspVersion],
         },
       });
