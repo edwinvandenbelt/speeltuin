@@ -163,6 +163,26 @@
     #leftMenuPanel.visible { display: flex; }
     #leftMenuPanel.collapsed { margin-left: -300px; }
 
+    /* ── Groene kop bovenin het linker menu-paneel ────────────────────── */
+    #leftMenuHeader {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      background: #00a5ab;
+      color: #ffffff;
+    }
+    #leftMenuHeader .tb-btn {
+      border-color: rgba(255,255,255,0.35);
+      background: rgba(255,255,255,0.12);
+      color: #ffffff;
+    }
+    #leftMenuHeader .tb-btn:hover { background: rgba(255,255,255,0.25); color: #ffffff; }
+    #leftMenuHeader .lmp-header-title {
+      flex: 1;
+      font-size: 14px; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
     .lmp-body {
       flex: 1;
       overflow-y: auto;
@@ -1556,14 +1576,10 @@
     <div id="newMap"></div>
   </div>
 
-  <div id="toolbar">
-    <!-- Home -->
-    <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" data-i18n-title="homeTitle" title="Terug naar overzicht">&#8962;</button>
-
-    <div class="tb-sep"></div>
-
-    <!-- Netwerknaam -->
-    <span class="tb-title" id="networkTitle">Verkeersnetwerk Rotterdam</span>
+  <div id="toolbar" style="display:none">
+    <!-- Home, netwerknaam en instellingen zijn verplaatst naar de groene
+         kop (#leftMenuHeader) bovenin het linker menu-paneel. Deze toolbar
+         blijft in de DOM (verborgen) voor overige interne state-elementen. -->
 
 
     <!-- Initiële vulmethode (verborgen, beheerd via instellingen-paneel) -->
@@ -1585,9 +1601,13 @@
     <div class="tb-sep"></div>
 
     <!-- Kleur-metriek -->
-    <select id="colorMetric" class="tb-select" data-i18n-title="metricTitle" title="Kleur-metriek">
-      <option value="flow" data-i18n="metricFlow">Intensiteit</option>
-      <option value="flow_scaled" data-i18n="metricFlowScaled">Intensiteit (geschaald)</option>
+    <!-- colorMetric-select is nu verborgen: keuzes zijn verplaatst naar het
+         'Netwerk'-blok in het linker menu-paneel als radiobuttons (lmpMetric).
+         De select blijft in de DOM omdat zeer veel code elders in dit script
+         nog rechtstreeks document.getElementById('colorMetric') gebruikt. -->
+    <select id="colorMetric" class="tb-select" data-i18n-title="metricTitle" title="Kleur-metriek" style="display:none">
+      <option value="flow" data-i18n="metricFlow" style="display:none">Intensiteit</option>
+      <option value="flow_scaled" data-i18n="metricFlowScaled" style="display:none">Intensiteit (geschaald)</option>
       <option value="occupancy" data-i18n="metricIC">I/C</option>
       <option value="occupancy_scaled" data-i18n="metricICScaled">I/C (geschaald)</option>
       <option value="coverage" data-i18n="metricOccupancy">Bezettingsgraad</option>
@@ -1622,18 +1642,14 @@
       <option value="compare" id="compareOption" data-i18n="metricCompare" style="display:none">Vergelijking tonen</option>
     </select>
 
-    <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
-    <button class="tb-btn" id="splitViewBtn" data-i18n-title="splitViewTitle"
-            title="ScenarioVergelijker" style="display:none">⧉</button>
-    <!-- Verschilplot: toont toe-/afnames per wegvak (rood/groen) -->
-    <button class="tb-btn" id="diffPlotBtn" title="Verschilplot (Δ intensiteit)" style="display:none">Δ</button>
-    <!-- Verschilplot met ongewijzigd deel: grijze kern + gekleurde rand -->
-    <button class="tb-btn" id="diffStackBtn" title="Verschilplot met ongewijzigd deel (grijs)" style="display:none">Δ▤</button>
-    <!-- Smiley-verschilplot: blije/boze smiley per wegvak bij duidelijke verbetering/verslechtering -->
-    <button class="tb-btn" id="diffSmileyBtn" title="Verschilplot met smileys (verbetering/verslechtering)" style="display:none">☺</button>
+    <!-- Scenario-vergelijker en selected-link verplaatst naar 'Analyse' in het
+         linker menu-paneel. Knoppen blijven functioneel identiek (zelfde
+         id's), alleen fysiek verhuisd in de DOM. -->
 
-    <!-- Zone-centroids weergave -->
-    <div class="tb-icon-group">
+    <!-- Zone-centroids weergave: keuzes verplaatst naar 'Zone productie/attractie'
+         in het linker menu-paneel (lmpZoneCentroid). Select blijft verborgen
+         in de DOM als interne state/event-bron voor bestaande code. -->
+    <div class="tb-icon-group" style="display:none">
       <span class="tb-icon" title="Zones">⬡</span>
       <select id="zoneCentroidSelect" class="tb-select" title="Zone-centroids">
         <option value="off">- zones onzichtbaar -</option>
@@ -1645,26 +1661,29 @@
     <!-- Gebouwen (zichtbaar zodra gebouwen geladen zijn) -->
     <div class="tb-icon-group" id="buildingGroup" style="display:none">
       <span class="tb-icon" title="Gebouwen">🏠</span>
-      <select id="buildingPurpose" class="tb-select" title="Gebouwen: motief">
+      <!-- Motief-opties verplaatst naar 'Gebouw productie/attractie' in het
+           linker menu-paneel (lmpBuildingPurpose). Select blijft verborgen
+           in de DOM als interne state/event-bron voor bestaande code. -->
+      <select id="buildingPurpose" class="tb-select" title="Gebouwen: motief" style="display:none">
         <option value="all">alles</option>
         <option value="werk">werk</option>
         <option value="onderwijs">onderwijs</option>
         <option value="winkelen">winkelen</option>
         <option value="recreatie">recreatie</option>
       </select>
-      <select id="buildingDisplay" class="tb-select" title="Gebouwen: weergave">
-        <option value="normaal">normaal</option>
+      <!-- Weergave-opties verplaatst naar 'Gebouw weergave' in het linker
+           menu-paneel (lmpBuildingDisplay). Select blijft verborgen in de
+           DOM als interne state/event-bron voor bestaande code. -->
+      <select id="buildingDisplay" class="tb-select" title="Gebouwen: weergave" style="display:none">
+        <option value="normaal">3D</option>
         <option value="geschaald">geschaald</option>
-        <option value="verborgen">verborgen</option>
         <option value="uit">uit</option>
       </select>
     </div>
 
 
-    <!-- Analyse & navigatie knoppen -->
-    <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
-    <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
-    <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
+    <!-- Voertuigteller verplaatst naar 'Analyse', wegafsluiting naar
+         'Aanpassingen' in het linker menu-paneel. Zelfde id's behouden. -->
 
     <!-- Taal (verborgen, beheerd via instellingen-paneel) -->
     <select id="langSelect" class="tb-select lang-select" style="display:none" onchange="applyLang(this.value)" data-i18n-title="langSelectTitle" title="Taal kiezen">
@@ -1676,10 +1695,7 @@
     <!-- Debug (verborgen, beheerd via instellingen-paneel) -->
     <button class="tb-btn lang-btn" id="debugBtn" style="display:none" title="Debug-paneel tonen/verbergen">DBG</button>
 
-    <div class="tb-sep"></div>
-
-    <!-- Instellingen-knop (uiterst rechts) -->
-    <button class="tb-btn" id="settingsBtn" data-i18n-title="settingsTitle" title="Instellingen">&#9881;</button>
+    <!-- Instellingen-knop verplaatst naar de groene kop (#leftMenuHeader) -->
   </div>
 
   <!-- ── Instellingen-paneel ──────────────────────────────────────────────── -->
@@ -1789,6 +1805,12 @@
 
   <!-- Linker menu-paneel (bij areaId) -->
   <div id="leftMenuPanel">
+    <!-- Groene kop: home, projectnaam, instellingen (verplaatst uit de oude toolbar) -->
+    <div id="leftMenuHeader">
+      <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" data-i18n-title="homeTitle" title="Terug naar overzicht">&#8962;</button>
+      <span class="lmp-header-title" id="networkTitle">Verkeersnetwerk Rotterdam</span>
+      <button class="tb-btn" id="settingsBtn" data-i18n-title="settingsTitle" title="Instellingen">&#9881;</button>
+    </div>
     <div class="lmp-body" id="leftMenuBody">
 
         <!-- ── Simulatie-paneel ──────────────────────────────────────────────────── -->
@@ -1915,6 +1937,33 @@
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="10" width="38" height="44" rx="4"/><path d="M22 22l3 3 5-6M32 22h10M22 34l3 3 5-6M32 34h10M22 46h20"/></svg>
               <span id="viewChangesBadge" class="tb-badge"></span>
             </button>
+            <!-- What-if wegafsluiting -->
+            <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Analyse-paneel (selected link + scenario-vergelijker) ────────────── -->
+      <div class="lmp-block collapsed" data-block="analysis">
+        <div class="lmp-block-header">
+          <span>Analyse</span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body" id="analysisPanelBody">
+          <div class="sim-row">
+            <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
+            <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
+          </div>
+          <div class="sim-row">
+            <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
+            <button class="tb-btn" id="splitViewBtn" data-i18n-title="splitViewTitle"
+                    title="ScenarioVergelijker" style="display:none">⧉</button>
+            <!-- Verschilplot: toont toe-/afnames per wegvak (rood/groen) -->
+            <button class="tb-btn" id="diffPlotBtn" title="Verschilplot (Δ intensiteit)" style="display:none">Δ</button>
+            <!-- Verschilplot met ongewijzigd deel: grijze kern + gekleurde rand -->
+            <button class="tb-btn" id="diffStackBtn" title="Verschilplot met ongewijzigd deel (grijs)" style="display:none">Δ▤</button>
+            <!-- Smiley-verschilplot: blije/boze smiley per wegvak bij duidelijke verbetering/verslechtering -->
+            <button class="tb-btn" id="diffSmileyBtn" title="Verschilplot met smileys (verbetering/verslechtering)" style="display:none">☺</button>
           </div>
         </div>
       </div>
@@ -1924,24 +1973,87 @@
           <span>Netwerk</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
-        <div class="lmp-block-body">Binnenkort beschikbaar</div>
+        <div class="lmp-block-body">
+          <span>Verkeer</span>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow" checked> <span data-i18n="metricFlow">Intensiteit</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow_scaled"> <span data-i18n="metricFlowScaled">Intensiteit (geschaald)</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="occupancy"> <span data-i18n="metricIC">I/C</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="occupancy_scaled"> <span data-i18n="metricICScaled">I/C (geschaald)</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="coverage"> <span data-i18n="metricOccupancy">Bezettingsgraad</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="coverage_scaled"> <span data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed"> <span data-i18n="metricSpeed">Snelheid</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="capacity"> <span data-i18n="metricCapacity">Capaciteit</span></label>
+          <span>Veiligheid</span>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="safety" id="lmpSafetyOption"> <span data-i18n="metricSafety">Veiligheid</span></label>
+          <span>Geluid</span>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lden"> <span data-i18n="metricNoiseLden">Geluid (Lden)</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lnight"> <span data-i18n="metricNoiseLnight">Geluid (Lnight)</span></label>
+          <span>Uitstoot</span>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_co2"> <span data-i18n="metricCo2">CO₂-uitstoot</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_nox"> <span data-i18n="metricNox">NOₓ-uitstoot</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_pm10"> <span data-i18n="metricPm10">Fijnstof (PM10)</span></label>
+          <span>Inrichting</span>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="priority_roads"> <span data-i18n="metricPriorityRoads">Voorrangswegen</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_crossings"> <span data-i18n="metricSpeedCrossings">Zebrapaden</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_cycle_crossings" style="display:none"> <span data-i18n="metricSpeedCycleCrossings">Fietsoversteek</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_intersections"> <span data-i18n="metricSpeedIntersections">Kruispunten</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_yield"> <span data-i18n="metricSpeedYield">Haaientanden/stopstrepen</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_refuge"> <span data-i18n="metricSpeedRefuge">Vluchtheuvels (midden op de weg)</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_from_right"> <span data-i18n="metricSpeedFromRight">Verkeer van rechts</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_left_turn"> <span data-i18n="metricSpeedLeftTurn">Linksaf-hinder</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_oncoming"> <span data-i18n="metricSpeedOncoming">Tegenliggerhinder</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_elevation"> <span data-i18n="metricSpeedElevation">Hellingen</span></label>
+          <span>Geen</span>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="none"> <span data-i18n="metricNone">Geen</span></label>
+        </div>
       </div>
 
       <div class="lmp-block collapsed" data-block="prodattr">
         <div class="lmp-block-header">
-          <span>Productie/attractie</span>
+          <span>Zone productie/attractie</span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body">
+          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="off" checked> <span>- zones onzichtbaar -</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="production"> <span>- productie -</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="attraction"> <span>- attractie -</span></label>
+        </div>
+      </div>
+
+      <div class="lmp-block collapsed" data-block="buildings">
+        <div class="lmp-block-header">
+          <span>Gebouw productie/attractie</span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body">
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="all" checked> <span>alles</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="werk"> <span>werk</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="onderwijs"> <span>onderwijs</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="winkelen"> <span>winkelen</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="recreatie"> <span>recreatie</span></label>
+        </div>
+      </div>
+
+      <div class="lmp-block collapsed" data-block="buildingView">
+        <div class="lmp-block-header">
+          <span>Gebouw weergave</span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body">
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="normaal" checked> <span>3D</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="geschaald"> <span>geschaald</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="uit"> <span>uit</span></label>
+        </div>
+      </div>
+
+      <div class="lmp-block collapsed" data-block="trafficObjectView">
+        <div class="lmp-block-header">
+          <span>Verkeersobjecten weergave</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">Binnenkort beschikbaar</div>
       </div>
 
-      <div class="lmp-block collapsed" data-block="buildings">
-        <div class="lmp-block-header">
-          <span>Gebouwen</span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body">Binnenkort beschikbaar</div>
-      </div>
     </div>
 
     <!-- Legend strip (onderaan het linkerpaneel) -->
@@ -4142,6 +4254,84 @@
         block.classList.toggle('collapsed');
       });
     });
+
+    // Netwerk: intensiteit-radiobuttons gekoppeld aan de bestaande colorMetric-select
+    const metricSelect = document.getElementById('colorMetric');
+    const metricRadios = panel.querySelectorAll('input[name="lmpMetric"]');
+    if (metricSelect && metricRadios.length) {
+      metricRadios.forEach(radio => {
+        radio.checked = radio.value === metricSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          metricSelect.value = radio.value;
+          metricSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      // Zorg dat de radio's meebewegen als de metriek elders wordt aangepast
+      // (bijv. via de select zelf, of automatische fallback naar 'flow').
+      metricSelect.addEventListener('change', () => {
+        metricRadios.forEach(radio => {
+          radio.checked = radio.value === metricSelect.value;
+        });
+      });
+    }
+
+    // Zone productie/attractie: radiobuttons gekoppeld aan de bestaande zoneCentroidSelect
+    const zoneSelect = document.getElementById('zoneCentroidSelect');
+    const zoneRadios = panel.querySelectorAll('input[name="lmpZoneCentroid"]');
+    if (zoneSelect && zoneRadios.length) {
+      zoneRadios.forEach(radio => {
+        radio.checked = radio.value === zoneSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          zoneSelect.value = radio.value;
+          zoneSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      zoneSelect.addEventListener('change', () => {
+        zoneRadios.forEach(radio => {
+          radio.checked = radio.value === zoneSelect.value;
+        });
+      });
+    }
+
+    // Gebouw weergave: radiobuttons gekoppeld aan de bestaande buildingDisplay-select
+    const buildingDisplaySelect = document.getElementById('buildingDisplay');
+    const buildingDisplayRadios = panel.querySelectorAll('input[name="lmpBuildingDisplay"]');
+    if (buildingDisplaySelect && buildingDisplayRadios.length) {
+      buildingDisplayRadios.forEach(radio => {
+        radio.checked = radio.value === buildingDisplaySelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          buildingDisplaySelect.value = radio.value;
+          buildingDisplaySelect.dispatchEvent(new Event('change'));
+        });
+      });
+      buildingDisplaySelect.addEventListener('change', () => {
+        buildingDisplayRadios.forEach(radio => {
+          radio.checked = radio.value === buildingDisplaySelect.value;
+        });
+      });
+    }
+
+    // Gebouw productie/attractie: radiobuttons gekoppeld aan de bestaande buildingPurpose-select
+    const buildingPurposeSelect = document.getElementById('buildingPurpose');
+    const buildingPurposeRadios = panel.querySelectorAll('input[name="lmpBuildingPurpose"]');
+    if (buildingPurposeSelect && buildingPurposeRadios.length) {
+      buildingPurposeRadios.forEach(radio => {
+        radio.checked = radio.value === buildingPurposeSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          buildingPurposeSelect.value = radio.value;
+          buildingPurposeSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      buildingPurposeSelect.addEventListener('change', () => {
+        buildingPurposeRadios.forEach(radio => {
+          radio.checked = radio.value === buildingPurposeSelect.value;
+        });
+      });
+    }
 
     // Slider-tab: paneel in-/uitklappen (naar links wegschuiven)
     const savedCollapsed = localStorage.getItem('leftMenuPanelCollapsed') === '1';
