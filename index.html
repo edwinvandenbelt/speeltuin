@@ -223,6 +223,10 @@
       width: 16px; height: 16px; margin: 0;
       accent-color: #de0058; cursor: pointer;
     }
+    .lmp-radio-row input[type=checkbox] {
+      width: 16px; height: 16px; margin: 0;
+      accent-color: #de0058; cursor: pointer;
+    }
 
     /* ── Slider-tab om paneel in/uit te klappen ───────────────────────── */
     #leftMenuPanelToggle {
@@ -1665,6 +1669,7 @@
            linker menu-paneel (lmpBuildingPurpose). Select blijft verborgen
            in de DOM als interne state/event-bron voor bestaande code. -->
       <select id="buildingPurpose" class="tb-select" title="Gebouwen: motief" style="display:none">
+        <option value="off">uit</option>
         <option value="all">alles</option>
         <option value="werk">werk</option>
         <option value="onderwijs">onderwijs</option>
@@ -1675,9 +1680,9 @@
            menu-paneel (lmpBuildingDisplay). Select blijft verborgen in de
            DOM als interne state/event-bron voor bestaande code. -->
       <select id="buildingDisplay" class="tb-select" title="Gebouwen: weergave" style="display:none">
+        <option value="uit">uit</option>
         <option value="normaal">3D</option>
         <option value="geschaald">geschaald</option>
-        <option value="uit">uit</option>
       </select>
     </div>
 
@@ -1724,25 +1729,8 @@
           <input type="checkbox" id="spDebug">
           <span data-i18n="settingsDebugLabel">Debug-uitvoer</span>
         </label>
-        <label class="sp-row">
-          <input type="checkbox" id="spTrafficAssets" checked>
-          <span data-i18n="settingsTrafficAssetsLabel">Verkeersobjecten</span>
-        </label>
-      </div>
-      <div class="sp-section">
-        <div class="sp-label" data-i18n="settingsBasemapLabel">Ondergrond</div>
-        <label class="sp-row">
-          <input type="radio" name="spBasemap" value="map">
-          <span data-i18n="settingsBasemapMap">Kaart</span>
-        </label>
-        <label class="sp-row">
-          <input type="radio" name="spBasemap" value="satellite">
-          <span data-i18n="settingsBasemapSat">Luchtfoto</span>
-        </label>
-        <label class="sp-row">
-          <input type="radio" name="spBasemap" value="none">
-          <span data-i18n="settingsBasemapNone">Geen</span>
-        </label>
+        <!-- 'Verkeersobjecten' verplaatst naar 'Verkeersobjecten weergave'
+             in het linker menu-paneel (per-categorie checkboxen). -->
       </div>
       <div class="sp-section">
         <div class="sp-label" data-i18n="settingsLangLabel">Taal</div>
@@ -1758,23 +1746,6 @@
           <input type="radio" name="spLang" value="FI">
           <span>&#127467;&#127470; FI</span>
         </label>
-      </div>
-      <div class="sp-section" id="spSpectrumSection">
-        <div class="sp-label">Spectrum — externe tiles</div>
-        <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 6px;align-items:center;font-size:11px;margin-top:4px;">
-          <span style="color:#6a757c">OS layer</span>
-          <input type="text" id="spSpectrumLayerOS"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#6a757c">mapping</span>
-          <input type="text" id="spSpectrumMappingOS" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#6a757c">AS layer</span>
-          <input type="text" id="spSpectrumLayerAS"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#6a757c">mapping</span>
-          <input type="text" id="spSpectrumMappingAS" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#6a757c">RD layer</span>
-          <input type="text" id="spSpectrumLayerRD"   class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-          <span style="color:#6a757c">mapping</span>
-          <input type="text" id="spSpectrumMappingRD" class="sp-text" placeholder="xxxxxxxx-xxxx-…">
-        </div>
       </div>
       <div class="sp-section">
         <button id="spApply" data-i18n="settingsApplyBtn">Toepassen</button>
@@ -2026,7 +1997,8 @@
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="all" checked> <span>alles</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="off" checked> <span>uit</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="all"> <span>alles</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="werk"> <span>werk</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="onderwijs"> <span>onderwijs</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="winkelen"> <span>winkelen</span></label>
@@ -2040,18 +2012,25 @@
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="normaal" checked> <span>3D</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="uit" checked> <span>uit</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="normaal"> <span>3D</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="geschaald"> <span>geschaald</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="uit"> <span>uit</span></label>
         </div>
       </div>
 
       <div class="lmp-block collapsed" data-block="trafficObjectView">
         <div class="lmp-block-header">
-          <span>Verkeersobjecten weergave</span>
+          <span>3D weergave</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
-        <div class="lmp-block-body">Binnenkort beschikbaar</div>
+        <div class="lmp-block-body">
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="signs"> <span>Borden &amp; signalen</span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="paths"> <span>Voet-/fietspaden</span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="height"> <span>Kunstwerken (viaduct/brug/tunnel)</span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="furniture"> <span>Straatmeubilair</span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="bumps"> <span>Drempels</span></label>
+          <label class="lmp-radio-row"><input type="checkbox" id="lmpVegetation"> <span>Bomen</span></label>
+        </div>
       </div>
 
     </div>
@@ -4333,6 +4312,34 @@
       });
     }
 
+    // Verkeersobjecten weergave: per-categorie checkboxen gekoppeld aan
+    // _setTrafficAssetCategory (gedefinieerd verderop in dit script).
+    const trafficAssetChecks = panel.querySelectorAll('input[name="lmpTrafficAsset"]');
+    if (trafficAssetChecks.length) {
+      trafficAssetChecks.forEach(check => {
+        check.checked = !!(window._trafficAssetCategories && window._trafficAssetCategories[check.value]);
+        check.addEventListener('change', () => {
+          if (typeof window._setTrafficAssetCategory === 'function') {
+            window._setTrafficAssetCategory(check.value, check.checked);
+          }
+        });
+      });
+    }
+
+    // Vegetatie weergave: volledig losstaande checkbox (bomen), niet
+    // gekoppeld aan verkeersobjecten.
+    const vegetationCheck = document.getElementById('lmpVegetation');
+    if (vegetationCheck) {
+      vegetationCheck.checked = typeof window._getVegetationVisible === 'function'
+        ? window._getVegetationVisible()
+        : false;
+      vegetationCheck.addEventListener('change', () => {
+        if (typeof window._setVegetationVisibility === 'function') {
+          window._setVegetationVisibility(vegetationCheck.checked);
+        }
+      });
+    }
+
     // Slider-tab: paneel in-/uitklappen (naar links wegschuiven)
     const savedCollapsed = localStorage.getItem('leftMenuPanelCollapsed') === '1';
     if (toggle) {
@@ -5870,14 +5877,29 @@
     let _buildingsGeoJson = null;
     let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
     let _trafficSignsGeoJson = null;
-    let _trafficAssetsVisible = localStorage.getItem('trafficAssetsVisible') !== 'false';
+    // Verkeersobjecten: per-categorie zichtbaarheid (standaard allemaal uit).
+    // _trafficAssetsVisible is een afgeleide master-vlag (true zodra minstens
+    // één categorie aanstaat) en blijft gebruikt door de data-laad-/hover-/
+    // rotatie-logica verderop; de losse layer-builders checken daarnaast hun
+    // eigen categorie zodat ze onafhankelijk aan/uit kunnen.
+    let _trafficAssetCategories = {
+      signs:     localStorage.getItem('ta_cat_signs')     === 'true',
+      paths:     localStorage.getItem('ta_cat_paths')     === 'true',
+      height:    localStorage.getItem('ta_cat_height')    === 'true',
+      furniture: localStorage.getItem('ta_cat_furniture') === 'true',
+      bumps:     localStorage.getItem('ta_cat_bumps')     === 'true',
+    };
+    let _trafficAssetsVisible = Object.values(_trafficAssetCategories).some(Boolean);
+    // Vegetatie (bomen) is volledig losgekoppeld van verkeersobjecten: eigen
+    // vlag, eigen checkbox, eigen data-laad-trigger. Standaard uit.
+    let _vegetationVisible = localStorage.getItem('ta_cat_vegetation') === 'true';
     let _trafficSignsReady   = false;  // fallback-laag (NDW/Overpass) is eenmalig opgezet
     let _trafficAssetsNoFile = false;  // TRAFFIC-ASSETS bestand ontbreekt → val terug op NDW
     let _signsFallbackFetching = false;
     let _lastAssetBbox       = null;   // laatst geladen bbox [w,s,e,n] (voorkomt overbodige requests)
     let _zonesForJoin     = null;   // zone-features beschikbaar voor ruimtelijke koppeling
     let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
-    let _currentPurpose   = 'all';  // actief geselecteerd motief
+    let _currentPurpose   = 'off';  // actief geselecteerd motief ('off' = grondvlak verborgen)
     let _mapReady         = false;
     let _libBldOrigColor   = null;  // originele Liberty building-3d kleur (voor herstel bij 'off')
     let _libBldOrigOpacity = null;  // originele Liberty building-3d opacity
@@ -6483,25 +6505,58 @@
       }
     }
 
-    /** Leest #buildingPurpose + #buildingDisplay en roept updateBuildingColors aan
-     *  met het gecombineerde val-formaat dat de interne logica begrijpt. */
+    /** Leest #buildingDisplay (3D-weergave) en #buildingPurpose (kleur van het
+     *  grondvlak) en past ze onafhankelijk van elkaar toe:
+     *   - buildingDisplay stuurt alleen de 3D-geometrie (Liberty building-3d
+     *     wit/semi-transparant, of onze eigen geschaalde fill-extrusion, of uit).
+     *   - buildingPurpose stuurt alleen het gekleurde 2D-grondvlak
+     *     (buildings-fill); 'off' (standaard) verbergt dit grondvlak volledig.
+     */
     function _applyBuildingDisplay() {
-      const purpose = document.getElementById('buildingPurpose')?.value ?? 'all';
+      const purpose = document.getElementById('buildingPurpose')?.value ?? 'off';
       const display = document.getElementById('buildingDisplay')?.value ?? 'normaal';
+
+      // ── 3D-weergave (onafhankelijk van productie/attractie) ────────────
       if (display === 'uit') {
-        if (map.getLayer('buildings-fill'))
-          map.setLayoutProperty('buildings-fill', 'visibility', 'none');
-        if (map.getLayer('buildings-3d'))
-          map.setLayoutProperty('buildings-3d',   'visibility', 'none');
+        if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
         try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+      } else if (display === 'geschaald') {
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+        if (map.getLayer('buildings-3d')) {
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-color',  '#ffffff');
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-height', ['coalesce', ['get', 'height_sc'], 4]);
+          map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+        }
+      } else {
+        // '3D' (normaal): Liberty building-3d wit/semi-transparant
+        if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
+        try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
+        try {
+          if (map.getLayer('building-3d')) {
+            map.setLayoutProperty('building-3d', 'visibility', 'visible');
+            map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
+            map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
+          }
+        } catch (_) {}
+      }
+
+      // ── Productie/attractie: alleen het gekleurde grondvlak (buildings-fill) ──
+      if (purpose === 'off') {
+        if (map.getLayer('buildings-fill')) map.setLayoutProperty('buildings-fill', 'visibility', 'none');
         return;
       }
-      try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
-      const val = display === 'geschaald' ? purpose + '_scaled'
-                : display === 'verborgen' ? purpose + '_hidden'
-                : purpose;
-      updateBuildingColors(val);
+      _currentPurpose = purpose;
+      _isScaledMode   = false;
+      if (_buildingsGeoJson && _NORM) {
+        _doUpdateBuildingColors(purpose, false);
+        if (map.getSource('buildings')) map.getSource('buildings').setData(_buildingsGeoJson);
+      }
+      if (map.getLayer('buildings-fill')) {
+        map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+        map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
+      }
     }
 
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
@@ -6575,13 +6630,15 @@
       // Verberg Liberty 2D building-laag (laag zoom); de 3D-laag blijft voor de vorm
       try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
 
-      // Maak Liberty building-3d semi-transparant zodat onze kleur-fill eronder zichtbaar is
+      // Maak Liberty building-3d semi-transparant zodat onze kleur-fill eronder zichtbaar is.
+      // Standaard verborgen: 'Gebouw weergave' staat standaard op 'uit'.
       if (!_libBldOrigColor && map.getLayer('building-3d')) {
         _libBldOrigColor   = map.getPaintProperty('building-3d', 'fill-extrusion-color');
         _libBldOrigOpacity = map.getPaintProperty('building-3d', 'fill-extrusion-opacity') ?? 1.0;
         map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
         map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
       }
+      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
 
       // OGC GeoJSON-source (kleuren). generateId → stabiele feature-ids voor
       // feature-state (selectie-highlight).
@@ -6592,11 +6649,15 @@
       }
 
       if (!map.getLayer('buildings-fill')) {
-        // Voeg 2D fill-laag in vóór de Liberty building-3d zodat die er transparant overheen ligt
+        // Voeg 2D fill-laag in vóór de Liberty building-3d zodat die er transparant overheen ligt.
+        // Standaard verborgen: 'Gebouw productie/attractie' staat standaard op 'uit'.
         map.addLayer({
           id:     'buildings-fill',
           type:   'fill',
           source: 'buildings',
+          layout: {
+            visibility: 'none',
+          },
           paint: {
             'fill-color':         ['get', `color_${daypart}`],
             'fill-opacity':       0.9,
@@ -7738,7 +7799,7 @@
       const active = colorMetric === 'speed_intersections';
       // De Kruispunten-laag toont verkeersdrempels altijd, ook als de losse
       // "Traffic assets"-laag is uitgeschakeld.
-      if (!_trafficAssetsVisible && !active) return null;
+      if ((!_trafficAssetsVisible || !_trafficAssetCategories.bumps) && !active) return null;
       if (!_taSpeedBumpFeatures.length) return null;
       // In normale weergave: grijze vulling. Wanneer de Kruispunten-laag actief
       // is, worden drempels geel getoond en zonder zoom-drempel.
@@ -7760,7 +7821,7 @@
     }
 
     function makeTrafficAssetLayers() {
-      if (!_trafficAssetsVisible) return [];
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.signs) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       const bucket = _taBearingBucket();
       const layers = [];
@@ -8234,7 +8295,7 @@
     // Voet-/fietspad-ribbons als platte lijnen op wegniveau. Worden ONDER de
     // netwerk-visualisatie getekend (staan vóór makeNetworkLayer in de overlay).
     function makePathRibbonLayers() {
-      if (!_trafficAssetsVisible) return [];
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.paths) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       const lineOf = f => {
         const g = f.geometry || {};
@@ -8297,7 +8358,7 @@
     }
 
     function makeHeightAssetLayers() {
-      if (!_trafficAssetsVisible) return [];
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.height) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       const layers = [];
 
@@ -8662,7 +8723,7 @@
     }
 
     function makeFurnitureLayers() {
-      if (!_trafficAssetsVisible) return [];
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.furniture) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       _taEnsureFurnMeshes();
       const layers = [];
@@ -8966,7 +9027,7 @@
     }
 
     function makeVegetationTreeLayers() {
-      if (!_trafficAssetsVisible) return [];
+      if (!_vegetationVisible) return [];
       if (map.getZoom() < _VEG_MINZOOM) return [];
       const layers = [];
       _vegEnsureMeshes();
@@ -9023,7 +9084,7 @@
     }
 
     async function loadVegetationInView() {
-      if (!_mapReady || !_trafficAssetsVisible || _vegNoFile) return;
+      if (!_mapReady || !_vegetationVisible || _vegNoFile) return;
       if (map.getZoom() < _VEG_MINZOOM) return;
       const b  = map.getBounds();
       const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
@@ -9332,8 +9393,40 @@
       _trafficAssetsVisible = vis;
       updateOverlay(true);
       if (vis) loadTrafficAssetsInView();
+    }
+
+    // Zet de zichtbaarheid van één verkeersobject-categorie (signs/paths/
+    // height/furniture/bumps), herberekent de afgeleide master-vlag en
+    // ververst de kaart. Wordt aangeroepen vanuit de checkboxen in het
+    // 'Verkeersobjecten weergave'-blok in het linker menu-paneel.
+    // Let op: vegetatie (bomen) is hier volledig los van — zie
+    // _setVegetationVisibility hieronder.
+    function _setTrafficAssetCategory(cat, vis) {
+      if (!(cat in _trafficAssetCategories)) return;
+      _trafficAssetCategories[cat] = vis;
+      localStorage.setItem(`ta_cat_${cat}`, vis ? 'true' : 'false');
+      _trafficAssetsVisible = Object.values(_trafficAssetCategories).some(Boolean);
+      window._trafficAssetCategories = _trafficAssetCategories;
+      updateOverlay(true);
+      if (_trafficAssetsVisible) {
+        loadTrafficAssetsInView();
+      }
+    }
+
+    // Vegetatie (bomen) volledig losgekoppeld van verkeersobjecten.
+    function _setVegetationVisibility(vis) {
+      _vegetationVisible = vis;
+      localStorage.setItem('ta_cat_vegetation', vis ? 'true' : 'false');
+      updateOverlay(true);
       if (vis) loadVegetationInView();
     }
+    window._setVegetationVisibility = _setVegetationVisibility;
+    window._getVegetationVisible = () => _vegetationVisible;
+
+    // Globaal beschikbaar maken zodat initLeftMenuPanel (buiten deze
+    // functie-scope) de categorieën kan lezen en wijzigen.
+    window._trafficAssetCategories = _trafficAssetCategories;
+    window._setTrafficAssetCategory = _setTrafficAssetCategory;
 
     // Herlaad bij kaartbeweging (gedebounced), maar alleen als de laag actief is.
     let _assetMoveTimer = null;
@@ -17674,7 +17767,6 @@
           const radio = settingsPanel.querySelector(`input[name="spFill"][value="${initFillMethod}"]`);
           if (radio) radio.checked = true;
           document.getElementById('spDebug').checked = !!window._debugMode;
-          document.getElementById('spTrafficAssets').checked = _trafficAssetsVisible;
           const curLang = document.getElementById('langSelect').value;
           const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
           if (langRadio) langRadio.checked = true;
@@ -17715,13 +17807,9 @@
             if (adj) adj.checked = window._debugMode;
             if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
           }
-          // Lees verkeersobjecten-instelling en pas zichtbaarheid toe
-          const newTrafficAssets = document.getElementById('spTrafficAssets').checked;
-          if (newTrafficAssets !== _trafficAssetsVisible) {
-            _trafficAssetsVisible = newTrafficAssets;
-            localStorage.setItem('trafficAssetsVisible', _trafficAssetsVisible ? 'true' : 'false');
-            _setTrafficAssetsVisibility(_trafficAssetsVisible);
-          }
+          // Verkeersobjecten-zichtbaarheid wordt nu per categorie geregeld
+          // vanuit het 'Verkeersobjecten weergave'-blok in het linker
+          // menu-paneel (zie initLeftMenuPanel / _setTrafficAssetCategory).
           // Lees nieuwe taal en pas toe als gewijzigd
           const newLang = settingsPanel.querySelector('input[name="spLang"]:checked')?.value;
           if (newLang && newLang !== document.getElementById('langSelect').value) {
