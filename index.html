@@ -1630,7 +1630,7 @@
       </optgroup>
       <optgroup label="Snelheid" data-i18n-label="metricGroupSpeedFactors">
         <option value="speed_crossings" data-i18n="metricSpeedCrossings">Zebrapaden</option>
-        <option value="speed_cycle_crossings" data-i18n="metricSpeedCycleCrossings" style="display:none">Fietsoversteek</option>
+        <!--option value="speed_cycle_crossings" data-i18n="metricSpeedCycleCrossings" style="display:none">Fietsoversteek</option-->
         <option value="speed_intersections" data-i18n="metricSpeedIntersections">Kruispunten</option>
         <option value="speed_yield" data-i18n="metricSpeedYield">Haaientanden/stopstrepen</option>
         <option value="speed_refuge" data-i18n="metricSpeedRefuge">Vluchtheuvels (midden op de weg)</option>
@@ -1966,7 +1966,7 @@
           <span>Inrichting</span>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="priority_roads"> <span data-i18n="metricPriorityRoads">Voorrangswegen</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_crossings"> <span data-i18n="metricSpeedCrossings">Zebrapaden</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_cycle_crossings" style="display:none"> <span data-i18n="metricSpeedCycleCrossings">Fietsoversteek</span></label>
+          <!--label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_cycle_crossings" style="display:none"> <span data-i18n="metricSpeedCycleCrossings">Fietsoversteek</span></label-->
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_intersections"> <span data-i18n="metricSpeedIntersections">Kruispunten</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_yield"> <span data-i18n="metricSpeedYield">Haaientanden/stopstrepen</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_refuge"> <span data-i18n="metricSpeedRefuge">Vluchtheuvels (midden op de weg)</span></label>
@@ -1985,15 +1985,15 @@
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="off" checked> <span>- zones onzichtbaar -</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="production"> <span>- productie -</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="attraction"> <span>- attractie -</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="off" checked> <span>uit</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="production"> <span>productie</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="attraction"> <span>attractie</span></label>
         </div>
       </div>
 
       <div class="lmp-block collapsed" data-block="buildings">
         <div class="lmp-block-header">
-          <span>Gebouw productie/attractie</span>
+          <span>Pand productie/attractie</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
@@ -2008,7 +2008,7 @@
 
       <div class="lmp-block collapsed" data-block="buildingView">
         <div class="lmp-block-header">
-          <span>Gebouw weergave</span>
+          <span>Pand weergave</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
@@ -2554,6 +2554,7 @@
       metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
       metricIC:'I/C', metricICScaled:'I/C (geschaald)',
       metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricPriorityRoads:'Voorrangswegen', metricNone:'Geen', metricCompare:'Vergelijking tonen',
+      metricSafety:'Veiligheid',
       metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
       metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
       metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
@@ -2826,6 +2827,7 @@
       metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
       metricIC:'V/C', metricICScaled:'V/C (scaled)',
       metricSpeed:'Speed', metricCapacity:'Capacity', metricPriorityRoads:'Priority roads', metricNone:'None', metricCompare:'Show comparison',
+      metricSafety:'Safety',
       metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
       metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
       metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
@@ -3087,6 +3089,7 @@
       metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
       metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
       metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricPriorityRoads:'Etuoikeutetut tiet', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
+      metricSafety:'Turvallisuus',
       metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
       metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
       metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
@@ -12182,6 +12185,10 @@
           // Voor de klik-op-wegvak debug ("welke assets horen bij dit wegvak"):
           // houd het gehoverde linkId bij, onafhankelijk van de tooltip-logica.
           _networkHoverLink = object ? { linkId: object.properties?.linkId } : null;
+          // hoveredLinkId is de generieke "welk wegvak staat onder de cursor"-
+          // vlag die map.on('click') gebruikt voor o.a. veiligheidsmodus,
+          // voertuigteller plaatsen, link-selectie en what-if wegafsluiting.
+          hoveredLinkId = object ? (object.properties?.linkId ?? null) : null;
           if (object) {
             _segTipLastInfo = info;
             if (_segTipVisible) {
