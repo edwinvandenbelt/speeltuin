@@ -29,7 +29,8 @@
     settingsBasemapLabel: 'Achtergronden',
     settingsBasemapMap:   'Kaart',
     settingsBasemapSat:   'Luchtfoto',
-    settingsBasemapNone:  'Geen',
+    settingsBasemapNone:  'Zwart',
+    settingsBasemapWhite: 'Wit',
   };
   function t(key) {
     let val = typeof T === 'function' ? T(key) : null;
@@ -53,6 +54,7 @@
       { value: 'map',       key: 'settingsBasemapMap' },
       { value: 'satellite', key: 'settingsBasemapSat' },
       { value: 'none',      key: 'settingsBasemapNone' },
+      { value: 'white',     key: 'settingsBasemapWhite' },
     ];
 
     const current = window._basemapStyleSafe || localStorage.getItem('basemapStyle') || 'map';
@@ -85,6 +87,7 @@
   }
 
   function install() {
+    if (!window.AREA_ID) return; // home-pagina (geen gebied gekozen): geen achtergronden-blok
     const leftMenuBody = byId('leftMenuBody');
     if (!leftMenuBody) return; // niet aanwezig (bijv. index2.html)
     if (byId('leftMenuBody').querySelector('[data-block="backgrounds"]')) return; // al geïnstalleerd

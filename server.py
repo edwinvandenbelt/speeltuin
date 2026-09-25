@@ -1272,6 +1272,7 @@ def _discover_areas_uncached() -> list:
             seen.add((area_id, mode))
             name = area_id
             src_area_id = None
+            bbox = None
             # Snel pad voor parquet: lees alleen file-level metadata (geen volledige
             # deserialise van de geometrieën).
             if f.suffix.lower() in _GEOPARQUET_EXTS and _GEOPANDAS_AVAILABLE:
@@ -1285,6 +1286,7 @@ def _discover_areas_uncached() -> list:
                     props = json.loads(gmt.decode("utf-8"))
                     name = props.get("name", area_id)
                     src_area_id = props.get("baseAreaId") or None
+                    bbox = props.get("bbox") or None
                 except Exception:
                     # Fallback: volledig lezen (o.a. voor bestanden zonder metadata)
                     try:
@@ -1292,6 +1294,7 @@ def _discover_areas_uncached() -> list:
                         props = data.get("properties", {})
                         name = props.get("name", area_id)
                         src_area_id = props.get("baseAreaId") or None
+                        bbox = props.get("bbox") or None
                     except Exception:
                         pass
             else:
@@ -1301,8 +1304,11 @@ def _discover_areas_uncached() -> list:
                     props = data.get("properties", {})
                     name = props.get("name", area_id)
                     src_area_id = props.get("baseAreaId") or None
+                    bbox = props.get("bbox") or None
                 except Exception:
                     pass
+            if not bbox:
+                bbox = _network_bbox(f)
             if not src_area_id:
                 src_id_path = subdir / ".src-area-id"
                 if src_id_path.exists():
@@ -1336,6 +1342,7 @@ def _discover_areas_uncached() -> list:
                     "hasNvpRoutes": has_nvp_routes,
                     "gmtUploaded": gmt_uploaded,
                     "isFullTwin": is_full_twin,
+                    "bbox": bbox,
                 }
             )
 
@@ -1363,11 +1370,13 @@ def _discover_areas_uncached() -> list:
             seen.add((area_id, mode))
             name = area_id
             src_area_id = None
+            bbox = None
             try:
                 data = json.loads(_s3_read_bytes(key).decode("utf-8"))
                 props = data.get("properties", {})
                 name = props.get("name", area_id)
                 src_area_id = props.get("baseAreaId") or None
+                bbox = props.get("bbox") or None
             except Exception:
                 pass
             if not src_area_id:
@@ -1393,6 +1402,7 @@ def _discover_areas_uncached() -> list:
                     "srcAreaId": src_area_id,
                     "hasNvpRoutes": has_nvp_routes,
                     "isFullTwin": is_full_twin,
+                    "bbox": bbox,
                 }
             )
 
@@ -1625,6 +1635,8 @@ def _get_area_name(area_id: str) -> str:
             continue
     return area_id
 
+
+def _find_local_file(filename: str) -> "Path | None":
     """Zoek bestand in DATA_DIR en STATIC_DIR; geeft None als niet gevonden."""
     for base in (DATA_DIR, STATIC_DIR):
         p = base / filename
@@ -2426,6 +2438,25 @@ def _network_bbox(net_path: Path) -> "list | None":
     if lons:
         return [min(lons), min(lats), max(lons), max(lats)]
     return None
+
+
+def _bbox_to_polygon(bbox: "list | None") -> "dict | None":
+    """Zet een bbox [min_lon, min_lat, max_lon, max_lat] om naar een GeoJSON Polygon."""
+    if not bbox or len(bbox) < 4:
+        return None
+    min_lon, min_lat, max_lon, max_lat = bbox[:4]
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [min_lon, min_lat],
+                [max_lon, min_lat],
+                [max_lon, max_lat],
+                [min_lon, max_lat],
+                [min_lon, min_lat],
+            ]
+        ],
+    }
 
 
 def _run_fetch_osm_job(job_id: str, area_id: str):
@@ -3700,7 +3731,12 @@ def ogc_collection_items(collection_id):
     if collection_id == "areas":
         areas = _discover_areas()
         features = [
-            {"type": "Feature", "id": a["areaId"], "geometry": None, "properties": a}
+            {
+                "type": "Feature",
+                "id": a["areaId"],
+                "geometry": _bbox_to_polygon(a.get("bbox")),
+                "properties": a,
+            }
             for a in areas
         ]
         return _ogc_items_response(
@@ -3857,7 +3893,9 @@ def ogc_collection_items(collection_id):
         filtered.params = params
 
         indexes_by_mode = resolve_indexes_by_mode(params, filtered, purpose_index)
-        result = applyIndices(filtered, indexes_by_mode)
+        # run_cleaner=False: behoud o.a. flowTemporalUnit (1 = specifiek uur, 24 = dagtotaal)
+        # zodat de client kan onderscheiden of 'flow' een uurwaarde of een dagtotaal is.
+        result = applyIndices(filtered, indexes_by_mode, run_cleaner=False)
 
         # Normaliseer naar plain dict voor OGC-envelope
         if not isinstance(result, dict):

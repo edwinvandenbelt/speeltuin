@@ -136,10 +136,49 @@
     .tb-scale-lbl { font-size: 11px; color: #6a757c; white-space: nowrap; }
     .tb-scale-lbl b { color: #232931; font-weight: 600; }
     #timeScale { width: 70px; accent-color: #00a5ab; cursor: pointer; }
-    #pauseBtn { font-size: 15px; color: #00a5ab; border-color: rgba(0,165,171,0.3); background: rgba(0,165,171,0.1); }
-    #pauseBtn:hover { background: rgba(0,165,171,0.22); color: #00a5ab; }
-    #pauseBtn.paused { background: rgba(221,122,0,0.13); color: #dd7a00; border-color: rgba(221,122,0,0.35); }
-    #pauseBtn.paused:hover { background: rgba(221,122,0,0.22); }
+    .sim-play-toggle {
+      margin-left: auto; display: flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 400; color: #4b5159; cursor: pointer;
+    }
+    .sim-play-toggle input { accent-color: #00a5ab; cursor: pointer; margin: 0; }
+    #simBlockHeader .lmp-block-arrow { margin-left: 0; }
+    /* ── Analoge simulatieklok ────────────────────────────────────────────── */
+    .sim-clock-row { display: flex; align-items: center; gap: 8px; }
+    .sim-clock {
+      flex: 0 0 80px; display: flex; align-items: center; justify-content: center;
+      cursor: grab; touch-action: none; user-select: none;
+    }
+    .dp-wedge { cursor: pointer; stroke: none; }
+    .dp-wedge-mrh { fill: rgba(255,152,0,0.35); }
+    .dp-wedge-mrh.active { fill: rgba(255,152,0,0.75); }
+    .dp-wedge-erh { fill: rgba(75,90,200,0.30); }
+    .dp-wedge-erh.active { fill: rgba(75,90,200,0.68); }
+    .dp-wedge:hover { filter: brightness(0.92); }
+    .sim-clock:active { cursor: grabbing; }
+    .sim-clock-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
+    .sim-time-box {
+      height: 26px; font-size: 11px; font-weight: 600; padding: 0 6px; border: 1px solid #e3e6ea;
+      border-radius: 6px; color: #232931; font-variant-numeric: tabular-nums;
+      display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff;
+      box-sizing: border-box;
+    }
+    .sim-time-box:hover { background: #f0f2f4; }
+    .sim-date-input { height: 26px; font-size: 11px; padding: 0 6px; border: 1px solid #e3e6ea; border-radius: 6px; color: #232931; box-sizing: border-box; }
+    .sim-row.sim-labeled-row { align-items: center; gap: 8px; }
+    .sim-subrow-label {
+      font-size: 11px; color: #6a757c; flex: 0 0 80px; white-space: nowrap;
+    }
+    .sim-btn-group { display: flex; gap: 0; flex: 1 1 auto; min-width: 0; }
+    .sim-opt-btn {
+      flex: 1 1 0; width: auto; min-width: 0; height: 28px; padding: 0;
+      border: 1px solid #e3e6ea; border-left-width: 0; border-radius: 0; background: #fff; color: #232931;
+      font-size: 14px; line-height: 1; cursor: pointer; font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .sim-btn-group .sim-opt-btn:first-child { border-left-width: 1px; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+    .sim-btn-group .sim-opt-btn:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+    .sim-opt-btn:hover { background: #f0f2f4; }
+    .sim-opt-btn.active { background: #00a5ab; color: #fff; border-color: #00a5ab; position: relative; z-index: 1; }
     /* .tb-add { border-color: #49a748; color: #49a748; background: transparent; }
     .tb-add:hover { background: #f0f2f4 !important; color: #49a748 !important; border-color: #49a748 !important; }
     .tb-add.active { background: #49a748 !important; color: #ffffff !important; border-color: #49a748 !important; } */
@@ -1107,7 +1146,7 @@
       /* display: flex; */
       flex-direction: column; gap: 7px;
     }
-    .sim-row { display: flex; align-items: center; gap: 6px; }
+    .sim-row { display: flex; align-items: center; gap: 8px; }
 
     /* ── Edit-paneel (floating, draggable, collapsible) ──────────────────── */
     #editPanel {
@@ -1788,70 +1827,117 @@
 
         <!-- ── Simulatie-paneel ──────────────────────────────────────────────────── -->
       <div class="lmp-block" data-block="simulation">
-        <div class="lmp-block-header">
+        <div class="lmp-block-header" id="simBlockHeader">
           <span>Simulatie</span>
+          <label class="sim-play-toggle" data-i18n-title="pauseTitle" title="Simulatie afspelen/pauzeren" onclick="event.stopPropagation()">
+            <input type="checkbox" id="simPlayCheckbox" checked/>
+          </label>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body" id="simPanelBody">
-          <div class="sim-row">
-            <div id="daypartBtns" style="display:flex;gap:3px;align-items:center">
-              <!-- Ochtendspits: zon boven horizon + stralen + pijl omhoog -->
-              <button class="tb-btn dpBtn" data-dp="mrh" data-i18n-title="dpMrhTitle" title="Ochtendspits">
-                <svg viewBox="0 0 28 20" width="21" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <!-- horizon -->
-                  <line x1="1" y1="15" x2="17" y2="15"/>
-                  <!-- halve zon -->
-                  <path d="M4 13a5 5 0 0 1 10 0"/>
-                  <!-- stralen: omhoog, schuin links, schuin rechts -->
-                  <line x1="9" y1="7"    x2="9"    y2="5"/>
-                  <line x1="4.5" y1="8.5" x2="3.1"  y2="7.1"/>
-                  <line x1="13.5" y1="8.5" x2="14.9" y2="7.1"/>
-                  <!-- pijl omhoog, rechts -->
-                  <line x1="23" y1="16" x2="23" y2="4"/>
-                  <polyline points="19,8 23,4 27,8"/>
-                </svg>
-              </button>
-              <!-- Avondspits: zon boven horizon + stralen + pijl omlaag -->
-              <button class="tb-btn dpBtn active" data-dp="erh" data-i18n-title="dpErhTitle" title="Avondspits">
-                <svg viewBox="0 0 28 20" width="21" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <!-- horizon -->
-                  <line x1="1" y1="15" x2="17" y2="15"/>
-                  <!-- halve zon -->
-                  <path d="M4 13a5 5 0 0 1 10 0"/>
-                  <!-- stralen: omhoog, schuin links, schuin rechts -->
-                  <line x1="9" y1="7"    x2="9"    y2="5"/>
-                  <line x1="4.5" y1="8.5" x2="3.1"  y2="7.1"/>
-                  <line x1="13.5" y1="8.5" x2="14.9" y2="7.1"/>
-                  <!-- pijl omlaag, rechts -->
-                  <line x1="23" y1="4" x2="23" y2="16"/>
-                  <polyline points="19,12 23,16 27,12"/>
-                </svg>
-              </button>
-              <!-- Restdag: zon volledig zichtbaar -->
-              <button class="tb-btn dpBtn" data-dp="rest" data-i18n-title="dpRestTitle" title="Restdag">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-                  <circle cx="12" cy="12" r="4"/>
-                  <line x1="12" y1="2"  x2="12" y2="4"/>
-                  <line x1="12" y1="20" x2="12" y2="22"/>
-                  <line x1="2"  y1="12" x2="4"  y2="12"/>
-                  <line x1="20" y1="12" x2="22" y2="12"/>
-                  <line x1="4.93" y1="4.93"  x2="6.34" y2="6.34"/>
-                  <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
-                  <line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/>
-                  <line x1="17.66" y1="6.34"  x2="19.07" y2="4.93"/>
-                </svg>
-              </button>
-              <div style="width:1px;height:16px;background:rgba(35,41,49,0.12);margin:0 2px;flex-shrink:0"></div>
-              <button class="tb-btn" id="fspBtn" data-i18n-title="fspBtnTitle" title="Flow-scaler instellen">&#9201;</button>
+          <div class="sim-row sim-clock-row">
+            <div id="simClock" class="sim-clock" data-i18n-title="simClockTitle" title="Sleep de wijzer om de tijd aan te passen">
+              <svg id="simClockSvg" viewBox="0 0 100 100" width="60" height="60">
+                <circle cx="50" cy="50" r="47" fill="#fff" stroke="#232931" stroke-width="2"/>
+                <!-- Ochtendspits (AM, rond 08:00) en avondspits (PM, rond 17:00): klikbare taartpunten -->
+                <path id="dpMrhWedge" class="dpBtn dp-wedge dp-wedge-mrh active" data-dp="mrh"
+                      data-i18n-title="dpMrhTitle" title="Ochtendspits (klik om naar 08:00 te gaan)"
+                      d="M21.07,84.47 A45,45 0 0 1 5.68,57.81 L20.46,55.21 A30,30 0 0 0 30.72,72.98 Z"/>
+                <path id="dpErhWedge" class="dpBtn dp-wedge dp-wedge-erh" data-dp="erh"
+                      data-i18n-title="dpErhTitle" title="Avondspits (klik om naar 17:00 te gaan)"
+                      d="M84.47,78.93 A45,45 0 0 1 57.81,94.32 L55.21,79.54 A30,30 0 0 0 72.98,69.28 Z"/>
+                <g stroke="#232931" stroke-width="2">
+                  <line x1="50" y1="6"  x2="50" y2="12"/>
+                  <line x1="50" y1="88" x2="50" y2="94"/>
+                  <line x1="6"  y1="50" x2="12" y2="50"/>
+                  <line x1="88" y1="50" x2="94" y2="50"/>
+                </g>
+                <line id="simClockHand" x1="50" y1="50" x2="50" y2="20" stroke="#00a5ab" stroke-width="4" stroke-linecap="round" style="transition: transform 4.7s linear"/>
+                <circle cx="50" cy="50" r="3.5" fill="#232931"/>
+              </svg>
+            </div>
+            <div class="sim-clock-info">
+              <div id="simClockDigital" class="sim-time-box" data-i18n-title="simClockToggleTitle" title="Klik om te wisselen tussen AM/PM">08:00 AM</div>
+              <input type="date" id="fspDate" class="fsp-input sim-date-input"/>
+            </div>
+          </div>
+          <div class="sim-row sim-labeled-row">
+            <span class="sim-subrow-label" data-i18n="fspTempLabel">Temperatuur</span>
+            <div class="sim-btn-group" id="simTempBtns">
+            <button class="sim-opt-btn active" data-val="High" data-i18n-title="fspTempHigh" title="Hoog">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <defs><clipPath id="clipTempHigh"><rect x="0" y="5" width="24" height="19"/></clipPath></defs>
+                <rect x="9" y="3" width="6" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <circle cx="12" cy="18" r="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <g clip-path="url(#clipTempHigh)">
+                  <rect x="9.6" y="3" width="4.8" height="13" rx="2.4" fill="#e63312"/>
+                  <circle cx="12" cy="18" r="3.3" fill="#e63312"/>
+                </g>
+              </svg>
+            </button>
+            <button class="sim-opt-btn" data-val="Medium" data-i18n-title="fspTempMedium" title="Medium">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <defs><clipPath id="clipTempMed"><rect x="0" y="9.5" width="24" height="14.5"/></clipPath></defs>
+                <rect x="9" y="3" width="6" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <circle cx="12" cy="18" r="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <g clip-path="url(#clipTempMed)">
+                  <rect x="9.6" y="3" width="4.8" height="13" rx="2.4" fill="#6ec8ff"/>
+                  <circle cx="12" cy="18" r="3.3" fill="#6ec8ff"/>
+                </g>
+              </svg>
+            </button>
+            <button class="sim-opt-btn" data-val="Low" data-i18n-title="fspTempLow" title="Laag">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <defs><clipPath id="clipTempLow"><rect x="0" y="15" width="24" height="9"/></clipPath></defs>
+                <rect x="9" y="3" width="6" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <circle cx="12" cy="18" r="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <g clip-path="url(#clipTempLow)">
+                  <rect x="9.6" y="3" width="4.8" height="13" rx="2.4" fill="#1a4b8c"/>
+                  <circle cx="12" cy="18" r="3.3" fill="#1a4b8c"/>
+                </g>
+                <g stroke="#fff" stroke-width="0.7" stroke-linecap="round">
+                  <line x1="12" y1="16.3" x2="12" y2="19.7"/>
+                  <line x1="10.5" y1="17" x2="13.5" y2="19"/>
+                  <line x1="13.5" y1="17" x2="10.5" y2="19"/>
+                </g>
+              </svg>
+            </button>
+            </div>
+          </div>
+          <div class="sim-row sim-labeled-row">
+            <span class="sim-subrow-label" data-i18n="fspWeatherLabel">Weer</span>
+            <div class="sim-btn-group" id="simWeatherBtns">
+              <button class="sim-opt-btn" data-val="sunny" data-i18n-title="fspWeatherSunny" title="Zonnig">&#9728;&#65039;</button>
+              <button class="sim-opt-btn active" data-val="cloudy" data-i18n-title="fspWeatherCloudy" title="Bewolkt">&#9729;&#65039;</button>
+              <!--button class="sim-opt-btn" data-val="dry" data-i18n-title="fspWeatherDry" title="Droog">&#127964;&#65039;</button-->
+              <button class="sim-opt-btn" data-val="rainy" data-i18n-title="fspWeatherRainy" title="Regenachtig">&#127783;&#65039;</button>
             </div>
           </div>
           <div class="sim-row">
-            <button class="tb-btn" id="pauseBtn" data-i18n-title="pauseTitle" title="Pauzeer simulatie">&#9208;</button>
-            <div class="tb-scale" data-i18n-title="timeScaleTitle" title="Tijdschaal">
-              <span class="tb-scale-lbl">&#9200; <b id="scaleVal">1&times;</b></span>
-              <input type="range" id="timeScale" min="1" max="10" value="1" step="1" data-i18n-title="timeScaleRangeTitle" title="Tijdschaal aanpassen"/>
-            </div>
+            <label class="fsp-label" for="fspPurpose" data-i18n="fspPurposeLabel">Reisdoel</label>
+            <select id="fspPurpose" class="fsp-select">
+              <option value="" data-i18n="fspPurposeAll">Alle</option>
+              <option value="work" data-i18n="fspPurposeWork">Werk</option>
+              <option value="education" data-i18n="fspPurposeEducation">Onderwijs</option>
+              <option value="shopping" data-i18n="fspPurposeShopping">Winkelen</option>
+              <option value="recreational" data-i18n="fspPurposeRecreational">Recreatie</option>
+              <option value="unknown" data-i18n="fspPurposeUnknown">Overig</option>
+            </select>
           </div>
+          <!-- Verborgen state-elementen: bewaren de bestaande flow-scaler logica -->
+          <input type="hidden" id="fspHour" value="8"/>
+          <select id="fspTemp" style="display:none">
+            <option value="High">Hoog</option>
+            <option value="Medium" selected>Medium</option>
+            <option value="Low">Laag</option>
+          </select>
+          <select id="fspWeather" style="display:none">
+            <option value="sunny">Zonnig</option>
+            <option value="cloudy" selected>Bewolkt</option>
+            <option value="dry">Droog</option>
+            <option value="rainy">Regenachtig</option>
+          </select>
+          <span id="fspStatus" style="display:none"></span>
         </div>
       </div>
 
@@ -2471,59 +2557,6 @@
          data-i18n="purposeChartNoData">Onvoldoende data</div>
   </div>
 
-  <!-- ── Flow-scaler panel ─────────────────────────────────────────────────── -->
-  <div id="flowScalerPanel">
-    <div id="fspHeader">
-      <span data-i18n="fspTitle">Flow-scaler</span>
-      <button id="fspClose" title="Sluiten">&#10005;</button>
-    </div>
-    <div id="fspBody">
-      <div class="fsp-row">
-        <label class="fsp-label" for="fspDate" data-i18n="fspDateLabel">Datum</label>
-        <input type="date" id="fspDate" class="fsp-input"/>
-      </div>
-      <div class="fsp-row">
-        <label class="fsp-label" for="fspHour" data-i18n="fspHourLabel">Uur</label>
-        <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
-          <input type="range" id="fspHour" min="0" max="23" value="8" class="fsp-slider"/>
-          <span id="fspHourVal" class="fsp-hour-val">08:00</span>
-        </div>
-      </div>
-      <div class="fsp-row">
-        <label class="fsp-label" for="fspTemp" data-i18n="fspTempLabel">Temperatuur</label>
-        <select id="fspTemp" class="fsp-select">
-          <option value="High" data-i18n="fspTempHigh">Hoog</option>
-          <option value="Medium" selected data-i18n="fspTempMedium">Medium</option>
-          <option value="Low" data-i18n="fspTempLow">Laag</option>
-        </select>
-      </div>
-      <div class="fsp-row">
-        <label class="fsp-label" for="fspWeather" data-i18n="fspWeatherLabel">Weer</label>
-        <select id="fspWeather" class="fsp-select">
-          <option value="sunny" data-i18n="fspWeatherSunny">Zonnig</option>
-          <option value="cloudy" selected data-i18n="fspWeatherCloudy">Bewolkt</option>
-          <option value="dry" data-i18n="fspWeatherDry">Droog</option>
-          <option value="rainy" data-i18n="fspWeatherRainy">Regenachtig</option>
-        </select>
-      </div>
-      <div class="fsp-row">
-        <label class="fsp-label" for="fspPurpose" data-i18n="fspPurposeLabel">Reisdoel</label>
-        <select id="fspPurpose" class="fsp-select">
-          <option value="" data-i18n="fspPurposeAll">Alle</option>
-          <option value="work" data-i18n="fspPurposeWork">Werk</option>
-          <option value="education" data-i18n="fspPurposeEducation">Onderwijs</option>
-          <option value="shopping" data-i18n="fspPurposeShopping">Winkelen</option>
-          <option value="recreational" data-i18n="fspPurposeRecreational">Recreatie</option>
-          <option value="unknown" data-i18n="fspPurposeUnknown">Overig</option>
-        </select>
-      </div>
-      <div id="fspBtns">
-        <button id="fspApply" data-i18n="fspApplyBtn">Toepassen</button>
-        <button id="fspReset" data-i18n="fspResetBtn" disabled>Wis</button>
-      </div>
-      <div id="fspStatus"></div>
-    </div>
-  </div>
 
   <!-- ── Maatregelset-paneel (GeoPackage importeren) ─────────────────────── -->
   <script src="measure-set-panel.js"></script>
@@ -2542,12 +2575,14 @@
       fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
       fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
       settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
-      settingsBasemapLabel:'Achtergronden', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Geen',
+      settingsBasemapLabel:'Achtergronden', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Zwart', settingsBasemapWhite:'Wit',
       settingsTrafficAssetsLabel:'Verkeersobjecten',
       spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
       timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
       pauseTitle:'Pauzeer simulatie',
+      simClockTitle:'Sleep de wijzer om de tijd aan te passen',
+      simClockToggleTitle:'Klik om te wisselen tussen AM/PM',
       nodeEditTitle:'Productie/attractie per knoop wijzigen',
       linkEditTitle:'Capaciteit per wegvak wijzigen',
       linkFlowEditTitle:'Flow per wegvak wijzigen',
@@ -2712,7 +2747,7 @@
       fspWeatherLabel:'Weer',
       fspWeatherSunny:'Zonnig', fspWeatherCloudy:'Bewolkt',
       fspWeatherDry:'Droog', fspWeatherRainy:'Regenachtig',
-      fspPurposeLabel:'Reisdoel',
+      fspPurposeLabel:'Motief',
       fspPurposeAll:'Alle', fspPurposeWork:'Werk', fspPurposeEducation:'Onderwijs',
       fspPurposeShopping:'Winkelen', fspPurposeRecreational:'Recreatie', fspPurposeUnknown:'Overig',
       fspRegioLabel:'Regio (vakantie)',
@@ -2816,12 +2851,14 @@
       fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
       settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
-      settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'None',
+      settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'Black', settingsBasemapWhite:'White',
       settingsTrafficAssetsLabel:'Traffic assets',
       spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
       metricTitle:'Color metric',
       timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
       pauseTitle:'Pause simulation',
+      simClockTitle:'Drag the hand to change the time',
+      simClockToggleTitle:'Click to toggle AM/PM',
       nodeEditTitle:'Edit production/attraction per node',
       linkEditTitle:'Edit capacity per road link',
       linkFlowEditTitle:'Edit flow per road link',
@@ -3079,12 +3116,14 @@
       fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
       settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
-      settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Ei mitään',
+      settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Musta', settingsBasemapWhite:'Valkoinen',
       settingsTrafficAssetsLabel:'Liikenneobjektit',
       spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
       timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
       pauseTitle:'Pys\xe4yt\xe4 simulaatio',
+      simClockTitle:'Ved\u00e4 viisaria aikaa muuttaaksesi',
+      simClockToggleTitle:'Vaihda AM/PM napauttamalla',
       nodeEditTitle:'Muokkaa solmupisteen tuotantoa/houkuttelevuutta',
       linkEditTitle:'Muokkaa tiejakson kapasiteettia',
       addWegvakTitle:'Lis\xe4\xe4 tiejakso (ei viel\xe4 saatavilla)',
@@ -3840,16 +3879,64 @@
     document.getElementById('mapContainer').style.height = _vpHeight + 'px';
   }
 
-  // ── Geen areaId: toon keuzescherm ─────────────────────────────────────────
+  // ── Geen areaId: toon keuzescherm (menu-paneel + kaart, zoals bij een gebied) ──
   if (!AREA_ID) {
-    const loader = document.getElementById('loader');
-    loader.innerHTML = `
-      <div style="font-family:'Segoe UI',sans-serif;color:#232931;width:500px;max-width:96vw;padding:24px">
-        <h2 style="color:#00a5ab;margin:0 0 8px;font-size:20px;text-align:center">${T('areaTitle')}</h2>
-        <p style="color:#6a757c;font-size:13px;margin:0 0 16px;text-align:center">${T('areaSubtitle')}</p>
-        <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px"></div>
-        <p id="areaError" style="display:none;color:#e63312;font-size:13px;margin-top:16px;text-align:center"></p>
+    document.getElementById('loader').style.display = 'none';
+
+    // Linker menu-paneel tonen in "geen gebied gekozen"-stand: toggle en
+    // instellingen-knop zijn hier dode knoppen (hun handlers worden pas
+    // verderop in dit script gekoppeld, wat wordt overgeslagen zonder areaId).
+    const homePanel = document.getElementById('leftMenuPanel');
+    homePanel.classList.add('visible');
+    const homeToggle = document.getElementById('leftMenuPanelToggle');
+    if (homeToggle) homeToggle.style.display = 'none';
+    const homeSettingsBtn = document.getElementById('settingsBtn');
+    if (homeSettingsBtn) homeSettingsBtn.style.display = 'none';
+    const homeLegendStrip = document.getElementById('legendStrip');
+    if (homeLegendStrip) homeLegendStrip.style.display = 'none';
+    document.getElementById('networkTitle').textContent = T('areaTitle');
+
+    const homeBody = document.getElementById('leftMenuBody');
+    homeBody.innerHTML = `
+      <div class="lmp-block">
+        <div style="padding:14px">
+          <p style="color:#6a757c;font-size:13px;margin:0 0 12px">${T('areaSubtitle')}</p>
+          <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px"></div>
+          <p id="areaError" style="display:none;color:#e63312;font-size:13px;margin-top:16px;text-align:center"></p>
+        </div>
       </div>`;
+
+    // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
+    const homeMap = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      center: [5.2913, 52.1326],
+      zoom: 7,
+    });
+    const HOME_BBOX_SOURCE = 'home-bbox-src';
+    const HOME_BBOX_LAYER  = 'home-bbox-layer';
+    function bboxArrToGeoJSON(b) {
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [b[0], b[1]],
+          ]],
+        },
+      };
+    }
+    homeMap.on('load', () => {
+      homeMap.addSource(HOME_BBOX_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      homeMap.addLayer({
+        id: HOME_BBOX_LAYER, type: 'fill', source: HOME_BBOX_SOURCE,
+        paint: { 'fill-color': '#00a5ab', 'fill-opacity': 0.15 },
+      });
+      homeMap.addLayer({
+        id: HOME_BBOX_LAYER + '-outline', type: 'line', source: HOME_BBOX_SOURCE,
+        paint: { 'line-color': '#00a5ab', 'line-width': 2 },
+      });
+    });
 
     fetch('/collections/areas/items')
       .then(r => r.json())
@@ -3905,7 +3992,7 @@
             arrowBtn.style.cssText = `
               flex-shrink:0;width:20px;height:20px;padding:0;
               background:none;border:none;
-              color:${hasKids ? '#5a6272' : 'transparent'};
+              color:${hasKids ? '#6a757c' : 'transparent'};
               pointer-events:${hasKids ? 'auto' : 'none'};
               font-size:9px;display:flex;align-items:center;justify-content:center;
               transition:color .15s;margin-left:${depth * 20}px`;
@@ -3916,14 +4003,23 @@
             btn.textContent = `${area.name}  —  ${area.mode}`;
             btn.style.cssText = `
               flex:1;min-width:0;
-              background:#1a2233;color:#c9d6e8;
-              border:1px solid rgba(126,200,227,0.25);
+              background:#ffffff;color:#232931;
+              border:1px solid #e3e6ea;
               border-radius:7px;padding:9px 14px;font-size:13px;
               cursor:pointer;text-align:left;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
               transition:background .15s`;
-            btn.onmouseenter = () => btn.style.background = 'rgba(126,200,227,0.12)';
-            btn.onmouseleave = () => btn.style.background = '#1a2233';
+            btn.onmouseenter = () => {
+              btn.style.background = 'rgba(0,165,171,0.08)';
+              if (area.bbox && area.bbox.length === 4) {
+                homeMap.getSource(HOME_BBOX_SOURCE)?.setData(bboxArrToGeoJSON(area.bbox));
+                homeMap.fitBounds(
+                  [[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]],
+                  { padding: 60, duration: 500 }
+                );
+              }
+            };
+            btn.onmouseleave = () => btn.style.background = '#ffffff';
             btn.onclick = () => {
               window.location.href =
                 `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
@@ -3934,40 +4030,40 @@
             menuBtn.textContent = '···';
             menuBtn.title = 'Opties';
             menuBtn.style.cssText = `
-              flex-shrink:0;background:transparent;color:#5a6272;
-              border:1px solid rgba(255,255,255,0.1);
+              flex-shrink:0;background:transparent;color:#6a757c;
+              border:1px solid #e3e6ea;
               border-radius:7px;padding:9px 12px;font-size:13px;letter-spacing:1px;
               cursor:pointer;transition:background .15s,color .15s`;
             menuBtn.onmouseenter = () => {
-              menuBtn.style.background = 'rgba(126,200,227,0.08)';
-              menuBtn.style.color      = '#c9d6e8';
+              menuBtn.style.background = 'rgba(0,165,171,0.08)';
+              menuBtn.style.color      = '#00a5ab';
             };
             menuBtn.onmouseleave = () => {
               menuBtn.style.background = 'transparent';
-              menuBtn.style.color      = '#5a6272';
+              menuBtn.style.color      = '#6a757c';
             };
 
             // Dropdown
             const dropdown = document.createElement('div');
             dropdown.style.cssText = `
               display:none;position:absolute;right:0;top:calc(100% + 4px);
-              background:#1a2233;border:1px solid rgba(126,200,227,0.2);
+              background:#ffffff;border:1px solid #e3e6ea;
               border-radius:8px;min-width:160px;z-index:999;
-              box-shadow:0 4px 16px rgba(0,0,0,0.4);overflow:hidden`;
+              box-shadow:0 4px 16px rgba(35,41,49,0.15);overflow:hidden`;
 
             const mkItem = (label, icon, disabled, danger) => {
               const item = document.createElement('button');
               item.style.cssText = `
                 display:flex;align-items:center;gap:9px;width:100%;
                 background:transparent;border:none;
-                color:${disabled ? '#3a4455' : danger ? '#ff6b6b' : '#c9d6e8'};
+                color:${disabled ? '#b7bcc2' : danger ? '#de0058' : '#232931'};
                 padding:10px 14px;font-size:13px;font-family:inherit;
                 text-align:left;cursor:${disabled ? 'default' : 'pointer'};
                 transition:background .12s;`;
               item.innerHTML = `<span style="opacity:${disabled?0.4:1}">${icon}</span><span>${label}</span>`;
               if (!disabled) {
                 item.onmouseenter = () => item.style.background = danger
-                  ? 'rgba(255,80,80,0.1)' : 'rgba(126,200,227,0.08)';
+                  ? 'rgba(222,0,88,0.08)' : 'rgba(0,165,171,0.08)';
                 item.onmouseleave = () => item.style.background = 'transparent';
               }
               return item;
@@ -4188,10 +4284,10 @@
                 saveCollapsed();
                 kidsWrap.style.display  = wasCollapsed ? 'block' : 'none';
                 arrowBtn.textContent    = wasCollapsed ? '▼' : '▶';
-                arrowBtn.style.color    = '#5a6272';
+                arrowBtn.style.color    = '#6a757c';
               };
-              arrowBtn.onmouseenter = () => arrowBtn.style.color = '#7ec8e3';
-              arrowBtn.onmouseleave = () => arrowBtn.style.color = '#5a6272';
+              arrowBtn.onmouseenter = () => arrowBtn.style.color = '#00a5ab';
+              arrowBtn.onmouseleave = () => arrowBtn.style.color = '#6a757c';
             }
 
             return nodeEl;
@@ -4204,11 +4300,11 @@
         const newBtn = document.createElement('button');
         newBtn.textContent = T('newAreaBtn');
         newBtn.style.cssText = `
-          background:transparent;color:#7ec8e3;
-          border:1px dashed rgba(126,200,227,0.4);
+          background:transparent;color:#00a5ab;
+          border:1px dashed rgba(0,165,171,0.4);
           border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
           transition:background .15s;width:100%;margin-top:6px`;
-        newBtn.onmouseenter = () => newBtn.style.background = 'rgba(126,200,227,0.07)';
+        newBtn.onmouseenter = () => newBtn.style.background = 'rgba(0,165,171,0.07)';
         newBtn.onmouseleave = () => newBtn.style.background = 'transparent';
         newBtn.onclick = () => openNewScreen();
         container.appendChild(newBtn);
@@ -4462,8 +4558,9 @@
     newDebugEl.onchange = e => { window._debugMode = e.target.checked; };
 
     document.getElementById('newCancelBtn').onclick = () => {
+      // Geen loader herstellen: het keuzescherm (menu-paneel + kaart) staat
+      // hieronder nog gewoon, #newScreen lag er alleen full-screen overheen.
       document.getElementById('newScreen').classList.remove('visible');
-      document.getElementById('loader').style.display = 'flex';
       newMap.remove();
     };
 
@@ -5390,28 +5487,18 @@
      * en past MapLibre belichting en hemelkleur aan.
      */
     let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
-    let daypart         = 'erh'; // idem
+    let daypart         = 'mrh'; // idem — moet overeenkomen met de startklok (08:00)
     let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
     function updateSunLight() {
       if (!map || !map.isStyleLoaded()) return;
 
       let hour, month;
-      const fspPanel  = document.getElementById('flowScalerPanel');
-      const panelOpen = fspPanel?.classList.contains('fsp-visible');
-
-      if (_fspActiveLabel || panelOpen) {
-        // Flow-scaler actief of paneel open: gebruik datum + uur van de sliders
-        const dateVal = document.getElementById('fspDate').value;
-        hour  = parseInt(document.getElementById('fspHour').value, 10);
-        month = dateVal
-          ? new Date(dateVal + 'T12:00:00').getMonth() + 1
-          : new Date().getMonth() + 1;
-      } else {
-        // Geen flow-scaler: huidige dag + representatief uur per dagdeel
-        const now = new Date();
-        month = now.getMonth() + 1;
-        hour  = daypart === 'mrh' ? 8 : daypart === 'erh' ? 17 : 12;
-      }
+      // De analoge simulatieklok is altijd actief: gebruik datum + uur daarvan.
+      const dateVal = document.getElementById('fspDate').value;
+      hour  = parseInt(document.getElementById('fspHour').value, 10);
+      month = dateVal
+        ? new Date(dateVal + 'T12:00:00').getMonth() + 1
+        : new Date().getMonth() + 1;
 
       const sun = _getSunState(month, hour);
 
@@ -6446,7 +6533,7 @@
       recreatie: new Set(['residential','recreation','transport','other']),
     };
 
-    function _doUpdateBuildingColors(purpose, scaled = false) {
+    function _doUpdateBuildingColors(purpose, scaled = false, forceGrayColor = false) {
       if (!_buildingsGeoJson || !_NORM) return;
       const norm         = _NORM[purpose] || 1;
       const relevantTypes = _PURPOSE_RELEVANT_TYPES[purpose] ?? null;
@@ -6497,7 +6584,7 @@
           } else {
             score = dir * 0.5;       // relevant maar geen m² bekend → halve intensiteit
           }
-          p['color_' + dp] = buildingColor(score);
+          p['color_' + dp] = buildingColor(forceGrayColor ? 0 : score);
 
           // Geschaalde hoogte per productie/attractie-richting (per dagdeel,
           // want de richting van een gebouwtype kan per dagdeel omslaan).
@@ -6614,55 +6701,57 @@
       const isScaledDisplay = display === 'geschaald_totaal'
                            || display === 'geschaald_productie'
                            || display === 'geschaald_attractie';
+      const is3D = display === 'normaal' || isScaledDisplay;
 
-      // ── 3D-weergave (onafhankelijk van productie/attractie) ────────────
-      if (display === 'uit') {
-        if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
-        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
-        try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
-      } else if (isScaledDisplay) {
-        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
-        try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
-        if (map.getLayer('buildings-3d')) {
-          map.setPaintProperty('buildings-3d', 'fill-extrusion-color',  '#ffffff');
-          map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
-          // Hoogte wordt hieronder (na de kleur-/cap-herberekening) gezet,
-          // zodat de height_sc_*-velden al vers zijn.
-        }
-      } else {
-        // '3D' (normaal): Liberty building-3d wit/semi-transparant
-        if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
-        try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
-        try {
-          if (map.getLayer('building-3d')) {
-            map.setLayoutProperty('building-3d', 'visibility', 'visible');
-            map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
-            map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
-          }
-        } catch (_) {}
-      }
-
-      // ── Productie/attractie: het gekleurde grondvlak (buildings-fill) ──
-      // Zonder gekozen motief ('off', standaard) blijft het grondvlak verborgen,
-      // maar de geschaalde 3D-hoogte gebruikt dan 'all' als motief zodat de
-      // hoogte altijd reageert, ook als er geen grondvlak-kleur getoond wordt.
-      if (map.getLayer('buildings-fill')) {
-        map.setLayoutProperty('buildings-fill', 'visibility', purpose === 'off' ? 'none' : 'visible');
-      }
-      const heightPurpose = purpose === 'off' ? 'all' : purpose;
+      // ── Kleuren altijd verversen zodra er iets in 3D getoond wordt (of het
+      // grondvlak zichtbaar is), zodat de 3D-extrusie straks dezelfde
+      // color_${daypart}-waarden kan hergebruiken als het grondvlak.
+      // Zonder gekozen motief ('off', standaard) valt de hoogteberekening terug
+      // op 'all' (zodat de geschaalde 3D-hoogte altijd blijft reageren), maar de
+      // kleur wordt in dat geval geforceerd naar grijs (score 0), ongeacht dagdeel.
+      const colorPurpose = purpose === 'off' ? 'all' : purpose;
       _currentPurpose = purpose;
       _isScaledMode = isScaledDisplay;
-      if (isScaledDisplay || purpose !== 'off') {
+      if (is3D || purpose !== 'off') {
         if (_buildingsGeoJson && _NORM) {
-          _doUpdateBuildingColors(isScaledDisplay ? heightPurpose : purpose, isScaledDisplay);
+          _doUpdateBuildingColors(colorPurpose, isScaledDisplay, purpose === 'off');
           if (map.getSource('buildings')) map.getSource('buildings').setData(_buildingsGeoJson);
         }
       }
+
+      // ── 3D-weergave (onafhankelijk van productie/attractie) ────────────
+      // Liberty's eigen 'building'/'building-3d' lagen worden nooit meer gebruikt
+      // voor de 3D-extrusie: onze eigen 'buildings-3d'-laag toont zowel de
+      // normale (werkelijke hoogte) als de geschaalde weergave, altijd gekleurd
+      // volgens hetzelfde color_${daypart} als het onderliggende grondvlak (dat
+      // bij 'Gebouw productie/attractie' = uit hierboven al op grijs staat).
+      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+      try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+
+      if (display === 'uit') {
+        if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
+      } else if (map.getLayer('buildings-3d')) {
+        map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
+        map.setPaintProperty('buildings-3d', 'fill-extrusion-opacity', isScaledDisplay ? 0.85 : 0.55);
+        map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+        if (isScaledDisplay) {
+          // Hoogte wordt hieronder (na de kleur-/cap-herberekening) gezet,
+          // zodat de height_sc_*-velden al vers zijn.
+          _applyScaledBuildingHeight(display);
+        } else {
+          // Normale 3D-weergave: werkelijke gebouwhoogte (OSM), fallback 4 m.
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-height', ['coalesce', ['get', 'height'], 4]);
+        }
+      }
+
+
+      // ── Productie/attractie: het gekleurde grondvlak (buildings-fill) ──
+      // Zonder gekozen motief ('off', standaard) blijft het grondvlak verborgen.
+      if (map.getLayer('buildings-fill')) {
+        map.setLayoutProperty('buildings-fill', 'visibility', purpose === 'off' ? 'none' : 'visible');
+      }
       if (purpose !== 'off' && map.getLayer('buildings-fill')) {
         map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
-      }
-      if (isScaledDisplay) {
-        _applyScaledBuildingHeight(display);
       }
     }
 
@@ -6676,8 +6765,12 @@
       document.querySelectorAll('input[name="spBasemap"], input[name="lmpBasemap"]').forEach(r => {
         r.checked = r.value === style;
       });
-      const isSat  = style === 'satellite';
-      const isNone = style === 'none';
+      const isSat   = style === 'satellite';
+      const isNone  = style === 'none';
+      const isWhite = style === 'white';
+      // 'none' (zwart) en 'white' (wit) verbergen allebei de Liberty-kaartlagen;
+      // alleen de achtergrondkleur van de container verschilt.
+      const hideMap = isNone || isWhite;
 
       // Helper: past de basemap-stijl toe op één MapLibre-instantie.
       // Voegt de satelliet-source/laag toe indien die nog ontbreekt.
@@ -6700,15 +6793,18 @@
           }, firstLayerId);
         }
         try { m.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none'); } catch (_) {}
-        // Liberty lagen aan/uit
+        // Liberty lagen aan/uit. De Liberty-gebouwlagen ('building'/'building-3d') worden
+        // hier bewust overgeslagen: hun zichtbaarheid wordt uitsluitend bepaald door de
+        // 'Gebouw weergave'-radio (zie _applyBuildingDisplay), niet door de achtergrondkeuze.
         if (_libertyAllLayerIds) {
           for (const id of _libertyAllLayerIds) {
-            try { m.setLayoutProperty(id, 'visibility', isNone ? 'none' : 'visible'); } catch (_) {}
+            if (id === 'building' || id === 'building-3d') continue;
+            try { m.setLayoutProperty(id, 'visibility', hideMap ? 'none' : 'visible'); } catch (_) {}
           }
         }
-        m.getContainer().style.backgroundColor = isNone ? '#000000' : '';
+        m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
         // Satelliet: verberg ook de Liberty fill/background lagen
-        if (!isNone && _libertyFillLayerIds) {
+        if (!hideMap && _libertyFillLayerIds) {
           for (const id of _libertyFillLayerIds) {
             try { m.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
           }
@@ -6717,6 +6813,12 @@
 
       _applyToMap(map);
       if (map2) _applyToMap(map2);
+
+      // Herstel de gebouw-zichtbaarheid volgens de huidige 'Gebouw weergave'-radio:
+      // de generieke Liberty-toggle hierboven laat 'building'/'building-3d' met rust,
+      // maar bij het (opnieuw) tonen van de kaart-stijl moeten die twee lagen alsnog
+      // expliciet gesynchroniseerd worden met de radio-status.
+      if (typeof _applyBuildingDisplay === 'function') _applyBuildingDisplay();
     }
     // Globaal beschikbaar maken zodat panelen buiten deze functie-scope
     // (bijv. initLeftMenuPanel) hem ook kunnen aanroepen.
@@ -14278,6 +14380,12 @@
     let lastT  = null;
     let paused = false;
 
+    /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus. */
+    function _setSimPausedUI(isPaused) {
+      const cb = document.getElementById('simPlayCheckbox');
+      if (cb) cb.checked = !isPaused;
+    }
+
     // ── Kruispunt rechts-voor-links parameters ────────────────────────────
     const YIELD_ZONE      = 25;   // meter: afstand tot kruispunt waarbinnen rechts-voorrang geldt
     const DEADLOCK_WAIT_S =  3.0; // seconden: maximale wachttijd voor patstelling-doorbraak
@@ -14750,8 +14858,8 @@
         }, firstLayerId);
       }
 
-      // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite' of 'none' had gekozen)
-      if (basemapStyle === 'satellite' || basemapStyle === 'none') _applyBasemapStyle(basemapStyle);
+      // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite', 'none' of 'white' had gekozen)
+      if (basemapStyle !== 'map') _applyBasemapStyle(basemapStyle);
     }
 
     map.on('load', _onMapStyleLoad);
@@ -17239,9 +17347,7 @@
         cars   = [];
         carData = [];
         updateOverlay(false);
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.add('paused');
-        pauseBtn.innerHTML = '&#9654;';
+        _setSimPausedUI(true);
         map.once('idle', addNodeLayer);
         // Toon selectiemodus popup; reset naar klik-modus
         nodeSelectMode = 'click';
@@ -17261,9 +17367,7 @@
         map.getCanvas().style.cursor = '';
         // Hervat animatie
         paused = false;
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.remove('paused');
-        pauseBtn.innerHTML = '&#9208;';
+        _setSimPausedUI(false);
         rebuildCars();
       }
     });
@@ -17286,9 +17390,7 @@
         cars   = [];
         carData = [];
         updateOverlay(false);
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.add('paused');
-        pauseBtn.innerHTML = '&#9654;';
+        _setSimPausedUI(true);
         map.once('idle', addLinkLayer);
         // Toon selectiemodus popup; reset naar klik-modus
         linkSelectMode = 'click';
@@ -17307,9 +17409,7 @@
         linkSelectMode = 'click';
         map.getCanvas().style.cursor = '';
         paused = false;
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.remove('paused');
-        pauseBtn.innerHTML = '&#9208;';
+        _setSimPausedUI(false);
         updateOverlay(false);
         rebuildCars();
       }
@@ -17333,18 +17433,14 @@
         cars   = [];
         carData = [];
         updateOverlay(false);
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.add('paused');
-        pauseBtn.innerHTML = '&#9654;';
+        _setSimPausedUI(true);
         map.once('idle', addLinkLayer);
       } else {
         removeLinkLayer();
         closeLinkFlowDialog();
         map.getCanvas().style.cursor = '';
         paused = false;
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.remove('paused');
-        pauseBtn.innerHTML = '&#9208;';
+        _setSimPausedUI(false);
         updateOverlay(false);
         rebuildCars();
       }
@@ -17365,9 +17461,7 @@
       if (linkAddActive) {
         paused = true; cars = []; carData = [];
         updateOverlay(false);
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.add('paused');
-        pauseBtn.innerHTML = '&#9654;';
+        _setSimPausedUI(true);
         map.once('idle', () => {
           initLinkAddLayers();
           clearLinkAddDraw();
@@ -17385,9 +17479,7 @@
         document.getElementById('linkAddHintEl').style.display      = 'none';
         document.getElementById('linkAddDialog').style.display      = 'none';
         paused = false;
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.classList.remove('paused');
-        pauseBtn.innerHTML = '&#9208;';
+        _setSimPausedUI(false);
         updateOverlay(false);
         rebuildCars();
       }
@@ -17740,10 +17832,7 @@
       }
     });
 
-    document.getElementById('timeScale').addEventListener('input', e => {
-      timeScale = +e.target.value;
-      document.getElementById('scaleVal').textContent = timeScale + '×';
-    });
+    // (De tijdschaal-slider is vervangen door de analoge simulatieklok; zie verderop.)
 
     // ── Wegenscan-knophandlers ────────────────────────────────────────────────
 
@@ -17783,42 +17872,40 @@
       if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
     });
 
-    document.getElementById('pauseBtn').addEventListener('click', () => {
-      paused = !paused;
-      const btn = document.getElementById('pauseBtn');
-      btn.classList.toggle('paused', paused);
-      btn.innerHTML = paused ? '&#9654;' : '&#9208;';
+    document.getElementById('simPlayCheckbox').addEventListener('change', e => {
+      paused = !e.target.checked;
+      // Auto's tonen/verbergen: bij pauze verdwijnen de auto's uit beeld.
+      updateOverlay(!paused);
     });
 
     document.getElementById('viewChangesBtn').addEventListener('click', () => {
       _setChangesPanelReadOnly(!_changesPanelReadOnly);
     });
 
-     document.getElementById('daypartBtns').addEventListener('click', e => {
-       const btn = e.target.closest('.dpBtn');
-       if (!btn) return;
-       daypart = btn.dataset.dp;
-       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b === btn));
+     /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …). */
+     function applyDaypartSideEffects(dp) {
+       daypart = dp;
+       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === dp));
        updateLegend();
        rebuildLinkFlowMap();
        calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
        // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
        // in segment-modus bepaalt het de flow-drempel per segment.
        rebuildCars();
-       updateOverlay(true);
-        updateDebugPanel();
-       // Gebouwkleur synchroniseren met het geselecteerde dagdeel
+       updateOverlay(!paused);
+       updateDebugPanel();
+       // Gebouwkleur (grondvlak én 3D-extrusie) synchroniseren met het geselecteerde dagdeel.
+       // De color_${daypart}-eigenschap is door _applyBuildingDisplay al op grijs
+       // gezet voor alle dagdelen wanneer 'Gebouw productie/attractie' = uit staat,
+       // dus hier hoeft niet apart op de motief-status gecontroleerd te worden.
+       const _bdDisplay = document.getElementById('buildingDisplay')?.value;
        if (map.getLayer('buildings-fill')) {
          map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
        }
-       // In geschaalde 3D-weergave blijft de kleur wit (zie _applyBuildingDisplay);
-       // alleen de hoogte is per dagdeel anders voor productie/attractie.
-       const _bdDisplay = document.getElementById('buildingDisplay')?.value;
        if (map.getLayer('buildings-3d')) {
+         map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
          if (_bdDisplay === 'geschaald_productie' || _bdDisplay === 'geschaald_attractie' || _bdDisplay === 'geschaald_totaal') {
            _applyScaledBuildingHeight(_bdDisplay);
-         } else {
-           map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
          }
        }
        updateSunLight();
@@ -17826,7 +17913,12 @@
        if (colorMetric === 'spectrum') {
          updateSpectrumLayer();
        }
-      });
+     }
+
+     // Snelkoppelingen: zet de simulatieklok direct op 08:00 resp. 17:00.
+     // Klikbare taartpunten op de klok: springen direct naar 08:00 resp. 17:00.
+     document.getElementById('dpMrhWedge').addEventListener('click', () => setSimHour(8));
+     document.getElementById('dpErhWedge').addEventListener('click', () => setSimHour(17));
 
     // ── Modi aan/uit (MIXED-modus) ────────────────────────────────────────
     if (MODE === 'MIXED') {
@@ -18012,25 +18104,155 @@
 
     document.getElementById('cpClose').addEventListener('click', _closeCounterPanel);
 
-    // ── Flow-scaler knoppen ──────────────────────────────────────────────────
+    // ── Analoge simulatieklok ─────────────────────────────────────────────────
 
     // Standaard datum = vandaag
     document.getElementById('fspDate').value = new Date().toISOString().split('T')[0];
 
-    // Uur-slider live-display
-    document.getElementById('fspHour').addEventListener('input', e => {
-      document.getElementById('fspHourVal').textContent =
-        String(e.target.value).padStart(2, '0') + ':00';
+    let simHour = 8;           // fractionele klokstand (0–24), start op 08:00
+    let _simApplyTimer = null; // debounce-timer voor het toepassen van de flow-scaler
+    const SIM_TICK_MS         = 5000;  // elke 5 seconden een stapje
+    const SIM_HOURS_PER_TICK  = 1 / 12; // 12 stappen × 5s = 1 simulatie-uur per echte minuut (5 sim-minuten per stap)
+
+    /** Bepaal het dagdeel (mrh/erh/rest) dat bij een klokuur hoort. */
+    function daypartForHour(h) {
+      if (h >= 6  && h < 10) return 'mrh';
+      if (h >= 15 && h < 19) return 'erh';
+      return 'rest';
+    }
+
+    /** Werk de wijzerplaat, het digitale label en het uur-inputveld bij. */
+    function updateClockUI(instant) {
+      const hand = document.getElementById('simClockHand');
+      hand.style.transition = instant ? 'none' : '';
+      const angle = (simHour % 12) * 30; // 30° per uur op een 12-uurs wijzerplaat (vloeiend, ook binnen het uur)
+      hand.setAttribute('transform', `rotate(${angle} 50 50)`);
+      const wholeHour = Math.floor(simHour) % 24;
+      const minutes   = Math.floor((simHour % 1) * 60);
+      const ampm = wholeHour < 12 ? 'AM' : 'PM';
+      const h12  = (wholeHour % 12 === 0) ? 12 : (wholeHour % 12);
+      document.getElementById('simClockDigital').textContent =
+        String(h12).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ' ' + ampm;
+      document.getElementById('fspHour').value = wholeHour;
+    }
+
+    /** Verwerk de nevenwerkingen wanneer de klok een nieuw heel uur bereikt. */
+    function _onWholeHourChanged(prevSimHour) {
+      const prevWhole = Math.floor(prevSimHour) % 24;
+      const newWhole  = Math.floor(simHour) % 24;
+      if (newWhole === prevWhole) return false;
+      const dp = daypartForHour(newWhole);
+      if (dp !== daypart) applyDaypartSideEffects(dp);
       updateSunLight();
+      return true;
+    }
+
+    /** Zet de simulatieklok op een specifiek (heel) uur en pas de scaling direct toe. */
+    function setSimHour(h, { immediate = true } = {}) {
+      const prev = simHour;
+      simHour = (((h % 24) + 24) % 24);
+      updateClockUI(true);
+      _onWholeHourChanged(prev);
+      updateSunLight();
+      if (immediate) scheduleSimApply();
+    }
+
+    /** Debounce: voorkomt overmatig fetch-verkeer bij het slepen van de wijzer. */
+    function scheduleSimApply() {
+      if (_simApplyTimer) clearTimeout(_simApplyTimer);
+      _simApplyTimer = setTimeout(() => { applyFlowScaler(); }, 300);
+    }
+
+    updateClockUI();
+
+    // Wijzer verslepen (muis + touch) om het uur handmatig te verzetten.
+    (function initClockDrag() {
+      const svg  = document.getElementById('simClockSvg');
+      let dragging = false;
+
+      function angleToHour(clientX, clientY) {
+        const rect = svg.getBoundingClientRect();
+        const cx = rect.left + rect.width  / 2;
+        const cy = rect.top  + rect.height / 2;
+        const dx = clientX - cx, dy = clientY - cy;
+        let deg = Math.atan2(dx, -dy) * 180 / Math.PI; // 0° = boven (12 uur)
+        if (deg < 0) deg += 360;
+        const h12 = Math.round(deg / 30) % 12;
+        // Behoud AM/PM van het huidige uur (klok toont enkel 12 uur per omwenteling)
+        const isPM = simHour >= 12;
+        return isPM ? (h12 === 0 ? 12 : h12) + 12 : (h12 === 12 ? 0 : h12);
+      }
+
+      function onMove(e) {
+        if (!dragging) return;
+        const pt = e.touches ? e.touches[0] : e;
+        setSimHour(angleToHour(pt.clientX, pt.clientY));
+      }
+      function onUp() {
+        dragging = false;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
+      }
+      document.getElementById('simClock').addEventListener('mousedown', e => {
+        if (e.target.closest('.dp-wedge')) return;
+        dragging = true;
+        onMove(e);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+      document.getElementById('simClock').addEventListener('touchstart', e => {
+        if (e.target.closest('.dp-wedge')) return;
+        dragging = true;
+        onMove(e);
+        window.addEventListener('touchmove', onMove, { passive: true });
+        window.addEventListener('touchend', onUp);
+      }, { passive: true });
+    })();
+
+    // Klik op de digitale tijd: wissel tussen AM en PM (±12 uur), zelfde minuutstand.
+    document.getElementById('simClockDigital').addEventListener('click', () => {
+      setSimHour(simHour + 12);
     });
-    document.getElementById('fspDate').addEventListener('change', updateSunLight);
+
+    // Datum-, temperatuur-, weer- en reisdoel-wijzigingen passen de simulatie direct toe.
+    document.getElementById('fspDate').addEventListener('change', () => { updateSunLight(); scheduleSimApply(); });
+    document.getElementById('fspPurpose').addEventListener('change', scheduleSimApply);
+
+    function _wireOptButtonGroup(containerIds, hiddenSelectId) {
+      const btns = containerIds.flatMap(id => Array.from(document.querySelectorAll(`#${id} .sim-opt-btn`)));
+      btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          btns.forEach(b => b.classList.toggle('active', b === btn));
+          document.getElementById(hiddenSelectId).value = btn.dataset.val;
+          scheduleSimApply();
+        });
+      });
+    }
+    _wireOptButtonGroup(['simTempBtns'], 'fspTemp');
+    _wireOptButtonGroup(['simWeatherBtns'], 'fspWeather');
+
+    // Simulatielus: elke 10 seconden schuift de wijzer een stukje op (1 simulatie-uur per echte minuut).
+    setInterval(() => {
+      if (paused) return;
+      const prev = simHour;
+      let next = simHour + SIM_HOURS_PER_TICK;
+      if (next >= 24) {
+        next -= 24;
+        const d = new Date((document.getElementById('fspDate').value || new Date().toISOString().split('T')[0]) + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        document.getElementById('fspDate').value = d.toISOString().split('T')[0];
+      }
+      simHour = next;
+      updateClockUI();
+
+      if (_onWholeHourChanged(prev)) scheduleSimApply();
+
+    }, SIM_TICK_MS);
 
     /** Vraag de backend om geschaalde flows en patch de in-memory segmenten. */
     async function applyFlowScaler() {
-      const fspApplyBtn  = document.getElementById('fspApply');
-      const fspResetBtn  = document.getElementById('fspReset');
-      const fspStatusEl  = document.getElementById('fspStatus');
-
       const dateVal    = document.getElementById('fspDate').value || null;
       const hour       = String(document.getElementById('fspHour').value).padStart(2, '0');
       const dateTime   = dateVal ? `${dateVal}T${hour}:00:00` : null;
@@ -18039,10 +18261,6 @@
       const purposeVal = document.getElementById('fspPurpose').value || null;
       // Regio uit netwerk-properties — fallback naar 'midden'
       const regioVal   = geojson.properties?.regio || 'midden';
-
-      fspApplyBtn.disabled = true;
-      fspStatusEl.className = '';
-      fspStatusEl.textContent = T('fspLoading');
 
       try {
         const _fspParams = new URLSearchParams({
@@ -18122,75 +18340,12 @@
 
         rebuildCars();
         updateLegend();
-        updateOverlay(true);
-
-        fspStatusEl.className = '';
-        fspStatusEl.textContent = T('fspDone');
-        fspResetBtn.disabled = false;
-        document.getElementById('fspBtn').classList.add('active');
+        updateOverlay(!paused);
 
       } catch (err) {
-        fspStatusEl.className = 'fsp-error';
-        fspStatusEl.textContent = T('fspError', err.message);
-      } finally {
-        fspApplyBtn.disabled = false;
+        console.error('[flow-scaler] toepassen mislukt:', err);
       }
     }
-
-    /** Herstel de originele flow-waarden en verwijder de flow-scaler overlay. */
-    function resetFlowScaler() {
-      if (!_fspOriginal) return;
-      for (const seg of segments) {
-        const orig = _fspOriginal.get(String(seg.props.linkId));
-        if (!orig) continue;
-        seg.props.flow            = orig.flow;
-        seg.props.flow24hrs       = orig.flow24hrs;
-        seg.props.flowsPerDaypart = orig.flowsPerDaypart;
-      }
-      _fspOriginal    = null;
-      _fspMaxFlow     = null;
-      _fspActiveLabel = null;
-      _fspVersion++;
-
-      // Zet active-class terug op het huidige dagdeel
-      document.querySelectorAll('.dpBtn').forEach(b => {
-        b.classList.toggle('active', b.dataset.dp === daypart);
-      });
-
-      rebuildLinkFlowMap();
-      rebuildCars();
-      updateLegend();
-      updateOverlay(true);
-
-      document.getElementById('fspReset').disabled = true;
-      document.getElementById('fspStatus').textContent = '';
-      document.getElementById('fspBtn').classList.remove('active');
-      updateSunLight();
-    }
-
-    document.getElementById('fspApply').addEventListener('click', applyFlowScaler);
-    document.getElementById('fspReset').addEventListener('click', resetFlowScaler);
-    document.getElementById('fspClose').addEventListener('click', () => {
-      document.getElementById('flowScalerPanel').classList.remove('fsp-visible');
-      document.querySelectorAll('.dpBtn').forEach(b => b.disabled = false);
-      if (!_fspOriginal) document.getElementById('fspBtn').classList.remove('active');
-      updateSunLight();
-    });
-    document.getElementById('fspBtn').addEventListener('click', () => {
-      const panel  = document.getElementById('flowScalerPanel');
-      const isOpen = panel.classList.toggle('fsp-visible');
-      document.querySelectorAll('.dpBtn').forEach(b => b.disabled = isOpen);
-      if (isOpen) {
-        // Positioneer het paneel recht onder de fspBtn
-        const r = document.getElementById('fspBtn').getBoundingClientRect();
-        panel.style.top  = (r.bottom + 6) + 'px';
-        panel.style.left = Math.min(r.left, window.innerWidth - 316) + 'px';
-      }
-      if (!isOpen && !_fspOriginal) {
-        document.getElementById('fspBtn').classList.remove('active');
-      }
-      updateSunLight();
-    });
 
   })().catch(err => {
     console.error('[init] Kritieke fout bij laden:', err);
