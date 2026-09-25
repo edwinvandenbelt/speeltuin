@@ -1682,7 +1682,9 @@
       <select id="buildingDisplay" class="tb-select" title="Gebouwen: weergave" style="display:none">
         <option value="uit">uit</option>
         <option value="normaal">3D</option>
-        <option value="geschaald">geschaald</option>
+        <option value="geschaald_totaal">geschaald (totaal)</option>
+        <option value="geschaald_productie">geschaald (productie)</option>
+        <option value="geschaald_attractie">geschaald (attractie)</option>
       </select>
     </div>
 
@@ -2014,7 +2016,9 @@
         <div class="lmp-block-body">
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="uit" checked> <span>uit</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="normaal"> <span>3D</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="geschaald"> <span>geschaald</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="geschaald_totaal"> <span>geschaald (totaal)</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="geschaald_productie"> <span>geschaald (productie)</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingDisplay" value="geschaald_attractie"> <span>geschaald (attractie)</span></label>
         </div>
       </div>
 
@@ -6024,9 +6028,14 @@
     const _BUILDING_SCORES = {
       residential: { mrh: -1.0, erh:  1.0, rest:  0.3 },  // restdag: lichte attractie (thuiskomen/thuis zijn)
       office:      { mrh:  1.0, erh: -1.0, rest:  0.3 },
-      commercial:  { mrh:  0.3, erh:  1.0, rest:  0.5 },
-      education:   { mrh:  1.0, erh: -0.5, rest: -0.3 },  // restdag: lichte productie (naar huis/activiteit)
-      industrial:  { mrh:  0.3, erh: -0.3, rest:  0   },
+      commercial:  { mrh:  0.2, erh: -0.6, rest: -0.2 },  // klein beetje attractie in mrh (personeel+wat publiek);
+                                                            // in erh verlaat het personeel het pand (productie);
+                                                            // restdag: lichte productie (winkelend publiek vertrekt weer)
+      education:   { mrh:  1.0, erh: -0.1, rest: -0.5 },  // mrh: enorme attractie (leerlingen komen aan);
+                                                            // erh: vrijwel opgelost (school is al leeg);
+                                                            // restdag: productie (naar huis/activiteit)
+      industrial:  { mrh:  0.6, erh: -0.6, rest:  0   },  // mrh: attractie (werknemers komen aan);
+                                                            // erh: productie (werknemers vertrekken)
       parking:     { mrh:  0,   erh:  0,   rest:  0   },  // neutraal: context ontbreekt (zie herclassificatie in _tryZoneJoin)
       transport:   { mrh:  0.8, erh:  0.8, rest:  0.5 },  // OV-hub: altijd attractief
       recreation:  { mrh:  0,   erh:  0.7, rest:  0.8 },  // recreatie na werk/school
@@ -6351,12 +6360,6 @@
         const p         = f.properties;
         const type      = p._btype || 'other';
         const zp        = p._bzoneProps;
-        p._cap = {};
-        for (const pur of purposes) {
-          const rel   = _PURPOSE_RELEVANT_TYPES[pur];
-          const isRel = rel == null || rel.has(type);
-          p._cap[pur] = (isRel && p._floorArea > 0) ? p._floorArea : 0;
-        }
         p.color_mrh = p.color_erh = p.color_rest = '#888888';
 
         // Demografie-toewijzing voor de tooltip: kies aggregaat + functiegroep.
@@ -6389,6 +6392,24 @@
         p._demoShare   = demoShare;
         // _areaShare blijft het aandeel binnen dezelfde functiegroep (voor de tooltip)
         p._areaShare   = demoShare;
+
+        // Geschat aantal personen voor dit pand (inwoners/arbeidsplaatsen/
+        // leerlingen), naar rato van vloeroppervlak-aandeel binnen de zone×
+        // functiegroep. Dit is de primaire maat voor kleur-intensiteit en
+        // geschaalde hoogte (zodat bv. 0.9 vs. 1.8 inwoners echt een ander
+        // pand oplevert, i.p.v. alleen het vloeroppervlak). Panden zonder
+        // passend demografie-aggregaat (recreatie/overig) vallen terug op
+        // het vloeroppervlak zelf.
+        const demoCount = zoneVal * demoShare;
+        p._demoCount = demoCount;
+
+        p._cap = {};
+        for (const pur of purposes) {
+          const rel   = _PURPOSE_RELEVANT_TYPES[pur];
+          const isRel = rel == null || rel.has(type);
+          if (!isRel) { p._cap[pur] = 0; continue; }
+          p._cap[pur] = demoCount > 0 ? demoCount : p._floorArea;
+        }
       }
 
       _buildingsGeoJson = _buildingsRaw;
@@ -6430,10 +6451,40 @@
       const norm         = _NORM[purpose] || 1;
       const relevantTypes = _PURPOSE_RELEVANT_TYPES[purpose] ?? null;
 
+      // ── Geschaalde hoogte: schaal t.o.v. het pand met de HOOGSTE productie-
+      // resp. attractie-waarde (per dagdeel), niet t.o.v. de mediaan. Het
+      // pand met de hoogste waarde krijgt zo de volledige hoogte (100%); een
+      // pand met bv. 1/10 van die waarde krijgt ook echt 1/10 van de hoogte.
+      // Eerste doorloop: bepaal de max. ruwe productie/attractie-waarde
+      // (= cap × |richting|) per dagdeel, over alle relevante panden.
+      const maxProd = { mrh: 0, erh: 0, rest: 0 };
+      const maxAttr = { mrh: 0, erh: 0, rest: 0 };
+      let maxCap = 0;
+      if (scaled) {
+        for (const f of _buildingsGeoJson.features) {
+          const p    = f.properties;
+          const type = p._btype || 'other';
+          const cap  = p._cap?.[purpose] ?? 0;
+          const isRelevant = relevantTypes === null || relevantTypes.has(type);
+          if (!isRelevant || cap <= 0) continue;
+          if (cap > maxCap) maxCap = cap;
+          for (const dp of ['mrh', 'erh', 'rest']) {
+            const dir = _getBuildingDir(type, purpose, dp);
+            if (dir < 0) {
+              const v = cap * Math.abs(dir);
+              if (v > maxProd[dp]) maxProd[dp] = v;
+            } else if (dir > 0) {
+              const v = cap * dir;
+              if (v > maxAttr[dp]) maxAttr[dp] = v;
+            }
+          }
+        }
+      }
+
       for (const f of _buildingsGeoJson.features) {
         const p    = f.properties;
         const type = p._btype || 'other';
-        const cap  = p._cap?.[purpose] ?? 0;   // = vloeroppervlak (0 als type niet relevant)
+        const cap  = p._cap?.[purpose] ?? 0;   // = geschat aantal (inwoners/arbeidsplaatsen/leerlingen), of vloeroppervlak als fallback
         const isRelevant = relevantTypes === null || relevantTypes.has(type);
 
         for (const dp of ['mrh', 'erh', 'rest']) {
@@ -6442,16 +6493,37 @@
           if (!isRelevant || dir === 0) {
             score = 0;               // niet relevant of neutrale functie → grijs
           } else if (cap > 0) {
-            score = dir * Math.min(1, cap / norm);   // richting × vloeroppervlak-intensiteit
+            score = dir * Math.min(1, cap / norm);   // richting × intensiteit (kleur blijft mediaan-genormaliseerd)
           } else {
             score = dir * 0.5;       // relevant maar geen m² bekend → halve intensiteit
           }
           p['color_' + dp] = buildingColor(score);
+
+          // Geschaalde hoogte per productie/attractie-richting (per dagdeel,
+          // want de richting van een gebouwtype kan per dagdeel omslaan).
+          // Conventie (zie _BUILDING_SCORES hierboven): dir < 0 = productie
+          // (mensen VERLATEN het pand), dir > 0 = attractie (mensen KOMEN aan).
+          if (scaled) {
+            let prodFrac = 0, attrFrac = 0;
+            if (isRelevant && cap > 0 && dir < 0 && maxProd[dp] > 0) {
+              prodFrac = (cap * Math.abs(dir)) / maxProd[dp];
+            } else if (isRelevant && cap <= 0 && dir < 0) {
+              prodFrac = 0.5;   // relevant maar geen data bekend → halve hoogte
+            }
+            if (isRelevant && cap > 0 && dir > 0 && maxAttr[dp] > 0) {
+              attrFrac = (cap * dir) / maxAttr[dp];
+            } else if (isRelevant && cap <= 0 && dir > 0) {
+              attrFrac = 0.5;
+            }
+            p['height_sc_prod_' + dp] = 2 + prodFrac * 98;
+            p['height_sc_attr_' + dp] = 2 + attrFrac * 98;
+          }
         }
-        // Geschaalde hoogte: 2m basis + tot 60m extra naar rato van vloeroppervlak
+        // Geschaalde hoogte (totaal): schaal t.o.v. het pand met de hoogste
+        // waarde voor dit motief (ongeacht productie/attractie-richting).
         if (scaled) {
-          const capNorm = Math.min(1, cap / norm);
-          p.height_sc = 2 + capNorm * 60;
+          const totalFrac = (cap > 0 && maxCap > 0) ? Math.min(1, cap / maxCap) : 0;
+          p.height_sc = 2 + totalFrac * 98;
         }
       }
 
@@ -6508,29 +6580,54 @@
       }
     }
 
+    /** Past de fill-extrusion-height van 'buildings-3d' toe voor de gekozen
+     *  geschaalde sub-modus (totaal/productie/attractie), voor het huidige
+     *  dagdeel. Productie/attractie-hoogtes zijn per dagdeel berekend omdat
+     *  de productie/attractie-richting van een gebouwtype per dagdeel kan
+     *  omslaan (zie _doUpdateBuildingColors). */
+    function _applyScaledBuildingHeight(display) {
+      if (!map.getLayer('buildings-3d')) return;
+      let expr;
+      if (display === 'geschaald_productie') {
+        expr = ['coalesce', ['get', `height_sc_prod_${daypart}`], 2];
+      } else if (display === 'geschaald_attractie') {
+        expr = ['coalesce', ['get', `height_sc_attr_${daypart}`], 2];
+      } else {
+        expr = ['coalesce', ['get', 'height_sc'], 4];
+      }
+      map.setPaintProperty('buildings-3d', 'fill-extrusion-height', expr);
+    }
+
     /** Leest #buildingDisplay (3D-weergave) en #buildingPurpose (kleur van het
      *  grondvlak) en past ze onafhankelijk van elkaar toe:
      *   - buildingDisplay stuurt alleen de 3D-geometrie (Liberty building-3d
      *     wit/semi-transparant, of onze eigen geschaalde fill-extrusion, of uit).
      *   - buildingPurpose stuurt alleen het gekleurde 2D-grondvlak
      *     (buildings-fill); 'off' (standaard) verbergt dit grondvlak volledig.
+     *   - De geschaalde 3D-hoogte (totaal/productie/attractie) is afhankelijk
+     *     van de gekozen productie/attractie ('buildingPurpose'), want de
+     *     hoogte schaalt met het vloeroppervlak voor dat motief.
      */
     function _applyBuildingDisplay() {
       const purpose = document.getElementById('buildingPurpose')?.value ?? 'off';
       const display = document.getElementById('buildingDisplay')?.value ?? 'normaal';
+      const isScaledDisplay = display === 'geschaald_totaal'
+                           || display === 'geschaald_productie'
+                           || display === 'geschaald_attractie';
 
       // ── 3D-weergave (onafhankelijk van productie/attractie) ────────────
       if (display === 'uit') {
         if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
         try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
-      } else if (display === 'geschaald') {
+      } else if (isScaledDisplay) {
         try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
         try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
         if (map.getLayer('buildings-3d')) {
           map.setPaintProperty('buildings-3d', 'fill-extrusion-color',  '#ffffff');
-          map.setPaintProperty('buildings-3d', 'fill-extrusion-height', ['coalesce', ['get', 'height_sc'], 4]);
           map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+          // Hoogte wordt hieronder (na de kleur-/cap-herberekening) gezet,
+          // zodat de height_sc_*-velden al vers zijn.
         }
       } else {
         // '3D' (normaal): Liberty building-3d wit/semi-transparant
@@ -6545,20 +6642,27 @@
         } catch (_) {}
       }
 
-      // ── Productie/attractie: alleen het gekleurde grondvlak (buildings-fill) ──
-      if (purpose === 'off') {
-        if (map.getLayer('buildings-fill')) map.setLayoutProperty('buildings-fill', 'visibility', 'none');
-        return;
-      }
-      _currentPurpose = purpose;
-      _isScaledMode   = false;
-      if (_buildingsGeoJson && _NORM) {
-        _doUpdateBuildingColors(purpose, false);
-        if (map.getSource('buildings')) map.getSource('buildings').setData(_buildingsGeoJson);
-      }
+      // ── Productie/attractie: het gekleurde grondvlak (buildings-fill) ──
+      // Zonder gekozen motief ('off', standaard) blijft het grondvlak verborgen,
+      // maar de geschaalde 3D-hoogte gebruikt dan 'all' als motief zodat de
+      // hoogte altijd reageert, ook als er geen grondvlak-kleur getoond wordt.
       if (map.getLayer('buildings-fill')) {
+        map.setLayoutProperty('buildings-fill', 'visibility', purpose === 'off' ? 'none' : 'visible');
+      }
+      const heightPurpose = purpose === 'off' ? 'all' : purpose;
+      _currentPurpose = purpose;
+      _isScaledMode = isScaledDisplay;
+      if (isScaledDisplay || purpose !== 'off') {
+        if (_buildingsGeoJson && _NORM) {
+          _doUpdateBuildingColors(isScaledDisplay ? heightPurpose : purpose, isScaledDisplay);
+          if (map.getSource('buildings')) map.getSource('buildings').setData(_buildingsGeoJson);
+        }
+      }
+      if (purpose !== 'off' && map.getLayer('buildings-fill')) {
         map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
-        map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
+      }
+      if (isScaledDisplay) {
+        _applyScaledBuildingHeight(display);
       }
     }
 
@@ -17707,8 +17811,16 @@
        if (map.getLayer('buildings-fill')) {
          map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
        }
-       if (map.getLayer('buildings-3d'))
-         map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
+       // In geschaalde 3D-weergave blijft de kleur wit (zie _applyBuildingDisplay);
+       // alleen de hoogte is per dagdeel anders voor productie/attractie.
+       const _bdDisplay = document.getElementById('buildingDisplay')?.value;
+       if (map.getLayer('buildings-3d')) {
+         if (_bdDisplay === 'geschaald_productie' || _bdDisplay === 'geschaald_attractie' || _bdDisplay === 'geschaald_totaal') {
+           _applyScaledBuildingHeight(_bdDisplay);
+         } else {
+           map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
+         }
+       }
        updateSunLight();
        // Spectrum: update laag bij dagdeel-wissel
        if (colorMetric === 'spectrum') {
