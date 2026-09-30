@@ -11677,6 +11677,12 @@
       document.getElementById('odEditBtn').classList.remove('active');
       document.getElementById('odEditPanel').style.display = 'none';
       map.getCanvas().style.cursor = '';
+      // Zone productie/attractie-weergave weer uitzetten
+      if (zoneCentroidMode !== 'off') {
+        document.getElementById('zoneCentroidSelect').value = 'off';
+        document.getElementById('zoneCentroidSelect').dispatchEvent(new Event('change'));
+      }
+      updateOverlay(true);
     }
 
     /** Toon het OD-edit paneel in stap-1 (herkomst kiezen) toestand. */
@@ -11763,11 +11769,13 @@
       // Sla originProduction op als data-attribuut voor later gebruik
       document.getElementById('odEditTripsInput').dataset.originProd = String(originProd);
 
-      // Bouw motief-grid
+      // Bouw motief-grid: altijd alle (standaard-)motieven tonen, ook als er
+      // (nog) geen trips voor zijn, zodat je die alsnog een aandeel kunt geven.
+      // Onbekende motieven uit de data zelf blijven ook meegenomen.
       const grid = document.getElementById('odEditMotifGrid');
       grid.innerHTML = '';
-      const motifKeys = Object.keys(motifAgg).length ? Object.keys(motifAgg)
-        : ['work','shopping','recreational','school','hospital','parking','other','unclassified'];
+      const _baseMotifKeys = ['work','shopping','recreational','school','hospital','parking','other','unclassified'];
+      const motifKeys = [...new Set([..._baseMotifKeys, ...Object.keys(motifAgg)])];
 
       for (const key of motifKeys) {
         if (key === 'house' || key === 'unknown') continue;
@@ -11842,12 +11850,8 @@
       pendingChanges.push(change);
       renderChangesList();
 
-      // Reset voor volgend OD-paar (herkomst nog behouden voor snelle serie-invoer)
-      odEditToZone = null;
-      odEditStep   = 'to';
-      window._odEditRouteData = null;
-      _odEditUpdateStepDisplay();
-      updateOverlay(true);
+      // Paneel sluiten na het toevoegen aan de wijzigingen
+      deactivateOdEdit();
     }
 
     // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
@@ -13015,6 +13019,13 @@
           getFillColor:   d => [30, 120, 255, d.alpha],
           getLineColor:   d => [30,  80, 200, Math.min(d.alpha + 40, 255)],
           getLineWidth:   1.5,
+          onHover: ({ object }) => {
+            const newId = object?.zoneId ?? null;
+            const changed = newId !== hoveredZoneId;
+            hoveredZoneId = newId;
+            map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
+            if (changed) updatePurposeChart();
+          },
           updateTriggers: { getFillColor: [odEditFromZone?.zoneId, daypart],
                             getLineColor: [odEditFromZone?.zoneId, daypart],
                             getRadius:    [odEditFromZone?.zoneId, daypart] },
@@ -14236,7 +14247,7 @@
       // OD-edit zone-selectie (hogere prioriteit dan gewone zone-selectie)
       if (odEditActive) {
         const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === hoveredZoneId);
-        const label = zFeat?.properties?.name ?? String(hoveredZoneId);
+        const label = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(hoveredZoneId);
         if (odEditStep === 'from') {
           odEditFromZone = { zoneId: hoveredZoneId, label };
           odEditStep     = 'to';
