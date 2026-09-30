@@ -948,18 +948,15 @@
     .compare-btn:hover { background: #f0f2f4; }
     .compare-btn.active { background: #49a748; border-color: #49a748; color: #ffffff; }
 
-    /* ── Node-selectiemodus popup ─────────────────────────────────────────── */
+    /* ── Node-selectiemodus sub-paneel (inline onder de aanpassing-knoppen) ── */
     #nodeSelectPopup {
       display: none;
-      position: fixed; left: 16px; top: 70px;
-      z-index: 50;
-      background: #ffffff;
+      background: #f4f6f8;
       border: 1px solid #e3e6ea;
-      border-radius: 12px;
-      padding: 14px 16px; width: 200px;
+      border-radius: 10px;
+      padding: 10px 12px; width: auto;
+      margin: 2px 0 4px 0;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
     }
     #nodeSelectPopup h4 {
       margin: 0 0 10px;
@@ -978,7 +975,7 @@
       font-size: 10px; color: #6a757c;
       margin-top: 8px; line-height: 1.5;
       padding: 6px 8px;
-      background: #f4f6f8; border-radius: 6px;
+      background: #ffffff; border-radius: 6px;
     }
     .poly-ctrl-btn {
       display: none; width: 100%;
@@ -993,7 +990,7 @@
     }
     #polygonFinishBtn:hover { background: #c96800; }
     #polygonClearBtn {
-      background: #f4f6f8; color: #232931;
+      background: #ffffff; color: #232931;
       border: 1px solid #e3e6ea;
     }
     #polygonClearBtn:hover { background: #e8ecf0; color: #232931; }
@@ -1999,6 +1996,22 @@
             <!-- What-if wegafsluiting -->
             <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
           </div>
+
+          <!-- ── Node-selectiemodus sub-paneel (tijdelijk, alleen tijdens zone-aanpassing) ── -->
+          <div id="nodeSelectPopup">
+            <h4 data-i18n="nodeSelectTitle">Selectiemodus</h4>
+            <label class="nsm-option">
+              <input type="radio" name="nodeSelectMode" value="click" checked/>
+              <span data-i18n="nodeSelectClick">Klik op een knoop</span>
+            </label>
+            <label class="nsm-option">
+              <input type="radio" name="nodeSelectMode" value="polygon"/>
+              <span data-i18n="nodeSelectPolygon">Polygon tekenen</span>
+            </label>
+            <div id="polygonHint" data-i18n="polygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
+            <button class="poly-ctrl-btn" id="polygonFinishBtn" data-i18n="polygonFinishBtn">&#10003; Polygon afsluiten</button>
+            <button class="poly-ctrl-btn" id="polygonClearBtn" data-i18n="polygonClearBtn">&#10005; Wis polygon</button>
+          </div>
         </div>
       </div>
 
@@ -2410,22 +2423,6 @@
       <button id="nodeDialogCancel" data-i18n="dialogCancel">Annuleren</button>
       <button id="nodeDialogOk" data-i18n="dialogOk">OK</button>
     </div>
-  </div>
-
-  <!-- ── Node-selectiemodus popup ─────────────────────────────────────────── -->
-  <div id="nodeSelectPopup">
-    <h4 data-i18n="nodeSelectTitle">Selectiemodus</h4>
-    <label class="nsm-option">
-      <input type="radio" name="nodeSelectMode" value="click" checked/>
-      <span data-i18n="nodeSelectClick">Klik op een knoop</span>
-    </label>
-    <label class="nsm-option">
-      <input type="radio" name="nodeSelectMode" value="polygon"/>
-      <span data-i18n="nodeSelectPolygon">Polygon tekenen</span>
-    </label>
-    <div id="polygonHint" data-i18n="polygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
-    <button class="poly-ctrl-btn" id="polygonFinishBtn" data-i18n="polygonFinishBtn">&#10003; Polygon afsluiten</button>
-    <button class="poly-ctrl-btn" id="polygonClearBtn" data-i18n="polygonClearBtn">&#10005; Wis polygon</button>
   </div>
 
   <!-- ── Polygon aanpassing dialoog ──────────────────────────────────────── -->
@@ -17275,8 +17272,8 @@
       deactivateWhatifRc();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
-      document.getElementById('nodeEditBtn').innerHTML =
-        nodeEditActive ? '✕' : 'ZONE';
+      document.getElementById('nodeEditBtn').innerHTML = nodeEditActive ? '✕'
+        : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><polygon points="12,3 21,8.5 21,15.5 12,21 3,15.5 3,8.5"/></svg>';
 
       if (nodeEditActive) {
         // Stop animatie en verwijder voertuigen uit beeld
