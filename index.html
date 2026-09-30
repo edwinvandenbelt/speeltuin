@@ -473,6 +473,19 @@
       border-color: #de0058  !important;
       color: #ffffff !important;
     }
+    /* Groepeer de aanpassing-modusknoppen dicht tegen elkaar (segmented control,
+       vergelijkbaar met de temperatuur-/weerknoppen). */
+    .edit-btn-group { display: flex; gap: 0; flex-shrink: 0; }
+    .edit-btn-group .edit-btn {
+      border-radius: 0; border-left-width: 0;
+    }
+    .edit-btn-group .edit-btn:first-child {
+      border-left-width: 1px; border-top-left-radius: 6px; border-bottom-left-radius: 6px;
+    }
+    .edit-btn-group .edit-btn:last-child {
+      border-top-right-radius: 6px; border-bottom-right-radius: 6px;
+    }
+    .edit-btn-group .edit-btn.active { position: relative; z-index: 1; }
 
     /* ── Node-dialoog ─────────────────────────────────────────────────── */
     #nodeDialog, #linkDialog, #linkFlowDialog {
@@ -707,7 +720,6 @@
       pointer-events: none; line-height: 1;
     }
     .tb-badge:empty { display: none; }
-    #viewChangesBtn { padding-right: 16px; }
 
     /* ── Motiefverdeling paneel ───────────────────────────────────────── */
     #purposeChartPanel {
@@ -1942,7 +1954,7 @@
         </div>
         <div class="lmp-block-body" id="editPanelBody">
           <div class="sim-row">
-            <!-- Productie/attractie per knoop wijzigen -->
+            <div class="edit-btn-group">
             <!-- Productie/attractie per knoop wijzigen -->
             <button class="tb-btn edit-btn" id="nodeEditBtn"
                     data-i18n-title="nodeEditTitle"
@@ -1975,6 +1987,7 @@
                     title="Nieuw wegvak intekenen">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>
             </button>
+            </div>
             <!-- Maatregelsets importeren -->
             <button class="tb-btn" id="measureSetBtn"
                     data-i18n-title="measureSetBtnTitle" title="GeoPackage maatregelset importeren"
@@ -10540,7 +10553,6 @@
       buildLinkRouteMap();
       console.log('[perf] buildLinkRouteMap:', (performance.now() - _tBlrm).toFixed(0), 'ms | routes:', routeList.length);
       if (routeMode) {
-        document.getElementById('whatifRcBtn').style.display = '';
         document.getElementById('odEditBtn').style.display   = '';
       }
     } catch (e) {
@@ -14838,6 +14850,8 @@
     const HL_SOURCE     = 'highlight-src';
     const HL_LINE_LAYER = 'highlight-line';
     const HL_POINT_LAYER= 'highlight-point';
+    const HL_ARROW_LAYER= 'highlight-arrow';
+    const HL_ARROW_ICON = 'hl-arrow';
 
     // Nieuw-wegvak teken-lagen
     const LINK_ADD_SOURCE    = 'link-add-src';
@@ -14983,14 +14997,30 @@
          initSpeedSignLayer();
        }
 
+      /** Teken een rechtswijzende rode pijlpunt als ImageData (voor OD-paar-highlight). */
+      function createArrowIcon(size = 48) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#e83333';
+        ctx.beginPath();
+        ctx.moveTo(size * 0.05, size * 0.12);
+        ctx.lineTo(size * 0.95, size * 0.5);
+        ctx.lineTo(size * 0.05, size * 0.88);
+        ctx.closePath();
+        ctx.fill();
+        return ctx.getImageData(0, 0, size, size);
+      }
+
       /** Initialiseer MapLibre-lagen voor wijziging-highlight (idempotent). */
       function initHighlightLayers() {
         if (map.getSource(HL_SOURCE)) return;
+        if (!map.hasImage(HL_ARROW_ICON)) map.addImage(HL_ARROW_ICON, createArrowIcon(48), { pixelRatio: 2 });
         map.addSource(HL_SOURCE, {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
         });
-        // Lijn-highlight (voor wegvakken): rode glow via gestapelde lijnen
+        // Lijn-highlight (voor wegvakken en OD-paren): rode glow via gestapelde lijnen
         map.addLayer({
           id: HL_LINE_LAYER + '-glow', type: 'line', source: HL_SOURCE,
           filter: ['==', '$type', 'LineString'],
@@ -15007,6 +15037,19 @@
             'line-color': '#e83333',
             'line-width': 5,
             'line-opacity': 0.95,
+          },
+        });
+        // Richtingspijl op de highlight-lijn van een OD-paar (herkomst → bestemming)
+        map.addLayer({
+          id: HL_ARROW_LAYER, type: 'symbol', source: HL_SOURCE,
+          filter: ['all', ['==', '$type', 'LineString'], ['==', ['get', '_isOd'], true]],
+          layout: {
+            'icon-image': HL_ARROW_ICON,
+            'icon-size': 0.7,
+            'symbol-placement': 'line-center',
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
           },
         });
         // Punt-highlight (voor knopen): rode glow via gestapelde cirkels
@@ -15758,6 +15801,20 @@
 
      // ── Highlight vanuit wijzigingslijst ────────────────────────────────────
 
+      /** Zoek het centroid-coördinaat van een zone/knoop (zoneFeaturesRaw eerst, dan nodeCoords). */
+      function _zoneCentroidCoord(zoneId) {
+        let coord = null;
+        const zf = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(zoneId));
+        if (zf) {
+          const p = zf.properties;
+          const lon = p.centroidLon ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[1] : null);
+          if (lon != null) coord = [lon, lat];
+        }
+        if (!coord) coord = nodeCoords.get(Number(zoneId)) ?? nodeCoords.get(zoneId);
+        return coord;
+      }
+
       function clearHighlight() {
         highlightedChangeIndex = null;
         if (map.getSource(HL_SOURCE))
@@ -15796,18 +15853,17 @@
             geometry = { type: 'LineString', coordinates: coords };
             center = coords[Math.floor(coords.length / 2)];
           }
+        } else if (c._isOd) {
+          // OD-paar: pijl van herkomst- naar bestemmingscentroid
+          const fromCoord = _zoneCentroidCoord(c.fromZoneId);
+          const toCoord   = _zoneCentroidCoord(c.toZoneId);
+          if (fromCoord && toCoord) {
+            geometry = { type: 'LineString', coordinates: [fromCoord, toCoord] };
+            center   = [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2];
+          }
         } else {
          // Knoop: zoek eerst in zoneFeaturesRaw, dan in nodeCoords
-         const zoneId = c.zoneId ?? c.nodeId;
-         let coord = null;
-         const zf = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(zoneId));
-         if (zf) {
-           const p = zf.properties;
-           const lon = p.centroidLon ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[0] : null);
-           const lat = p.centroidLat ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[1] : null);
-           if (lon != null) coord = [lon, lat];
-         }
-         if (!coord) coord = nodeCoords.get(Number(zoneId)) ?? nodeCoords.get(zoneId);
+         const coord = _zoneCentroidCoord(c.zoneId ?? c.nodeId);
          if (coord) {
            geometry = { type: 'Point', coordinates: coord };
            center   = coord;
@@ -15818,7 +15874,7 @@
 
         map.getSource(HL_SOURCE).setData({
           type: 'FeatureCollection',
-          features: [{ type: 'Feature', geometry, properties: {} }],
+          features: [{ type: 'Feature', geometry, properties: { _isOd: !!c._isOd } }],
         });
 
          if (center)
@@ -15842,23 +15898,24 @@
         let geometry = null;
         let center   = null;
 
-        if (h.linkId != null) {
+        const isOdHist = h.fromZoneId != null && h.toZoneId != null;
+
+        if (isOdHist) {
+          // OD-paar: pijl van herkomst- naar bestemmingscentroid
+          const fromCoord = _zoneCentroidCoord(h.fromZoneId);
+          const toCoord   = _zoneCentroidCoord(h.toZoneId);
+          if (fromCoord && toCoord) {
+            geometry = { type: 'LineString', coordinates: [fromCoord, toCoord] };
+            center   = [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2];
+          }
+        } else if (h.linkId != null) {
           const coords = linkGeomMap.get(h.linkId) ?? linkGeomMap.get(Number(h.linkId));
           if (coords && coords.length >= 2) {
             geometry = { type: 'LineString', coordinates: coords };
             center   = coords[Math.floor(coords.length / 2)];
           }
         } else {
-          const zoneId = h.zoneId ?? h.nodeId;
-          let coord = null;
-          const zf = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(zoneId));
-          if (zf) {
-            const p   = zf.properties;
-            const lon = p.centroidLon ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[0] : null);
-            const lat = p.centroidLat ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[1] : null);
-            if (lon != null) coord = [lon, lat];
-          }
-          if (!coord) coord = nodeCoords.get(Number(zoneId)) ?? nodeCoords.get(zoneId);
+          const coord = _zoneCentroidCoord(h.zoneId ?? h.nodeId);
           if (coord) {
             geometry = { type: 'Point', coordinates: coord };
             center   = coord;
@@ -15868,7 +15925,7 @@
         if (!geometry || !map.getSource(HL_SOURCE)) return;
         map.getSource(HL_SOURCE).setData({
           type: 'FeatureCollection',
-          features: [{ type: 'Feature', geometry, properties: {} }],
+          features: [{ type: 'Feature', geometry, properties: { _isOd: isOdHist } }],
         });
         if (center) map.easeTo({ center, speed: 1.2, essential: true });
         el.classList.add('highlighted');
@@ -16289,7 +16346,6 @@
         buildLinkRouteMap();
         calibrateRouteProductions();  // herkalibreren tegen vers geladen netwerk/routes
         if (routeMode) {
-          document.getElementById('whatifRcBtn').style.display = '';
           document.getElementById('odEditBtn').style.display   = '';
         }
       } catch (e) { console.warn('Routes herlaad mislukt:', e); }
