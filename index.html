@@ -13232,7 +13232,9 @@
       }
 
       // ── Selected Link: toon alle routes die door het geselecteerde wegvak lopen ──
-      if (selectedLinkId) {
+      // (alleen als die modus ook echt actief is — anders kan een oude
+      // selectedLinkId blijven "doorschemeren" en de zone-weergave overschaduwen)
+      if (selectedLinkActive && selectedLinkId) {
         // Links met capaciteit 0 kunnen nooit in routes zitten → geen routes tonen
         const _numKey0 = Number(selectedLinkId);
         const _feat0 = geojson.features.find(f => f.properties?.linkId === _numKey0 || f.properties?.linkId === selectedLinkId);
@@ -13294,23 +13296,61 @@
 
       const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
       const isProduction = zoneCentroidMode === 'production';
+      const baseColor = isProduction ? [255, 120, 0] : [0, 220, 255];
+
+      // Flow-verdeling per wegvak is sterk scheef (de meeste wegvakken dragen
+      // maar een fractie van wat het drukste voedingswegvak bij de zone draagt).
+      // Eén kanaal (breedte) alleen geeft dan weinig contrast, omdat de meeste
+      // wegvakken tegen de minimumbreedte aanlopen. Daarom ook de dekking laten
+      // meeschalen (sqrt zodat lage waarden nog zichtbaar blijven i.p.v. bijna
+      // transparant) — samen geven breedte + dekking een veel duidelijker
+      // verloop van dichtbij (dik/vol) naar verderop (dun/vaag).
+      const norm = d => Math.max(0, Math.min(1, d.flow / maxFlow));
 
       return new PathLayer({
         id:             'zone-routes',
         data:           pathData,
-        pickable:       false,
+        pickable:       true,
         widthUnits:     'pixels',
-        widthMinPixels: 1.5,
-        widthMaxPixels: 10,
+        widthMinPixels: 1,
+        widthMaxPixels: 14,
         getPath:        d => d.coords,
-        getWidth:       d => Math.max(1.5, (d.flow / maxFlow) * 10),
-        getColor:       isProduction ? [255, 120, 0, 240] : [0, 220, 255, 240],
-        updateTriggers: { getColor: [zoneCentroidMode], getPath: [selectedZoneId, zoneCentroidMode, daypart] },
+        getWidth:       d => Math.max(1, norm(d) * 14),
+        getColor:       d => [...baseColor, Math.round(50 + 190 * Math.sqrt(norm(d)))],
+        updateTriggers: {
+          getColor: [zoneCentroidMode, selectedZoneId, daypart],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart],
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart],
+        },
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _zoneRouteTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _zoneRouteTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
       });
     }
 
     /** Bereken routes + flows voor de geselecteerde zone.
-     *  Gedeeld door makeZoneRoutesLayer en makeZoneCentroidLayer. */
+     *  Gedeeld door makeZoneRoutesLayer en makeZoneCentroidLayer.
+     *
+     *  pathData bevat één entry per fysiek wegvak (niet per route): de flow
+     *  van alle routes van/naar de zone die dat wegvak gebruiken wordt
+     *  gesommeerd, zodat gedeelde wegvakken (waar meerdere routes overlappen)
+     *  hun werkelijke totale belasting tonen i.p.v. de flow van één route. */
     function computeZoneRouteData() {
       const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
       const relevant = routeList.filter(r =>
@@ -13318,19 +13358,56 @@
       );
 
       const flowByZone = new Map();  // counterpartZoneId → totale flow [veh/hr]
-      const pathData   = [];
+      const flowByLink = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
 
       for (const route of relevant) {
-        const flow         = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
-        const counterpart  = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
+        const flow        = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        const counterpart = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
         flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
 
-        const coords = _linkIdsToCoords(route.linkIds);
-        if (coords.length >= 2) pathData.push({ coords, flow });
+        for (const linkId of route.linkIds ?? []) {
+          flowByLink.set(linkId, (flowByLink.get(linkId) ?? 0) + flow);
+        }
+      }
+
+      const pathData = [];
+      for (const [linkId, flow] of flowByLink) {
+        const coords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+        if (coords && coords.length >= 2) pathData.push({ coords, flow, linkId });
       }
 
       return { pathData, flowByZone };
     }
+
+    /** Tooltip voor het hoveren over een wegvak in de geselecteerde-zone-laag:
+     *  toont de flow vanuit/naar de geselecteerde zone op dit wegvak en het
+     *  aandeel daarvan in de totale (gemeten) flow van het wegvak. */
+    const _zoneRouteTipRender = (info, sourceMap) => {
+      const d = info?.object;
+      if (!d) { _segTip.style.display = 'none'; return; }
+      const isProduction = zoneCentroidMode === 'production';
+      const zFeat  = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const zName  = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(selectedZoneId);
+      const totalFlow = linkFlowMap.get(d.linkId) ?? linkFlowMap.get(Number(d.linkId)) ?? 0;
+      const share = totalFlow > 0 ? Math.min(100, (d.flow / totalFlow) * 100) : null;
+      _segTip.innerHTML = `
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', d.linkId)}
+        </div>
+        <div><span style="color:#6a757c">${isProduction ? 'Herkomstzone' : 'Bestemmingszone'}: </span><b>${zName}</b></div>
+        <div><span style="color:#6a757c">Flow ${isProduction ? 'vanuit' : 'naar'} zone: </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">Totale flow (dagdeel): </span><b>${totalFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">Aandeel van totaal: </span><b>${share != null ? share.toFixed(0) + '%' : '–'}</b></div>
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
 
 
     /** Bouw linkRouteMap: linkId → route[] na het vullen van routeList. */

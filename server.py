@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import urllib.request as _urllib_req
 import uuid
@@ -151,6 +152,9 @@ try:
 except ImportError as _e:
     _resolve_or_download_pbf = None  # type: ignore[assignment]
     _is_within_netherlands = None  # type: ignore[assignment]
+    _OSM_PBF_ENV_VAR = "OSM_PBF_PATH"
+    _OSM_PBF_CACHE_DIR_ENV_VAR = "OSM_PBF_CACHE_DIR"
+    _DEFAULT_PBF_CACHE_DIR = Path(tempfile.gettempdir()) / "geofabrik_pbf"
     _GEOFABRIK_PBF_AVAILABLE = False
     print(f"[server] WAARSCHUWING: geofabrik_pbf helper niet beschikbaar — {_e}")
 

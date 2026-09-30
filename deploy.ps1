@@ -70,7 +70,8 @@ $directories = @(
     "buildings_fetcher",
     "traffic_signs_fetcher",
     "vegetation_fetcher",   # server.py importeert vegetation_fetcher.core
-    "svg"                   # pictogrammen die server.py en index.html opvragen
+    "svg",                  # pictogrammen die server.py en index.html opvragen
+    "scripts"               # server.py importeert scripts.geofabrik_pbf (PBF-resolver)
 )
 
 # ── Alles samenvoegen en controleren ─────────────────────────────────────────
