@@ -3062,9 +3062,19 @@ def _run_adjust_with_inserts_job(
         ]
 
         modified_network_fc, report = _insert_links(network_fc, insert_changes)
-        n_new = len(report.get("inserted_links", []))
-        n_split = len(report.get("split_links", []))
+        # network_link_inserter's report gebruikt "inserted"/"links_added" (int-tellers,
+        # geen "inserted_links"/"split_links" lijsten) — splits zijn alleen af te leiden
+        # uit de per-wijziging outcomes (start/end_snapped met method "split").
+        n_new = report.get("inserted", 0)
+        n_split = sum(
+            1
+            for ch in report.get("changes", [])
+            for key in ("start_snapped", "end_snapped")
+            if isinstance(ch.get(key), dict) and ch[key].get("method") == "split"
+        )
         log(f"Ingevoegd: {n_new} nieuwe wegvakken, {n_split} bestaande gesplitst")
+        for _w in report.get("warnings", []):
+            log(f"Waarschuwing: {_w}")
 
         # ── 3. Schrijf gewijzigd NETWORK naar outputmap ──────────────────────
         log("Gewijzigd netwerk opslaan…")

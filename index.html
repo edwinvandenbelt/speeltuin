@@ -5881,17 +5881,20 @@
     // één categorie aanstaat) en blijft gebruikt door de data-laad-/hover-/
     // rotatie-logica verderop; de losse layer-builders checken daarnaast hun
     // eigen categorie zodat ze onafhankelijk aan/uit kunnen.
+    // Bewust NIET uit localStorage gelezen: deze 3D-weergaveopties moeten bij
+    // elk binnenkomen van een scenario altijd UIT staan, ook als een vorige
+    // sessie (in een ander scenario) ze had aangezet.
     let _trafficAssetCategories = {
-      signs:     localStorage.getItem('ta_cat_signs')     === 'true',
-      paths:     localStorage.getItem('ta_cat_paths')     === 'true',
-      height:    localStorage.getItem('ta_cat_height')    === 'true',
-      furniture: localStorage.getItem('ta_cat_furniture') === 'true',
-      bumps:     localStorage.getItem('ta_cat_bumps')     === 'true',
+      signs:     false,
+      paths:     false,
+      height:    false,
+      furniture: false,
+      bumps:     false,
     };
-    let _trafficAssetsVisible = Object.values(_trafficAssetCategories).some(Boolean);
+    let _trafficAssetsVisible = false;
     // Vegetatie (bomen) is volledig losgekoppeld van verkeersobjecten: eigen
     // vlag, eigen checkbox, eigen data-laad-trigger. Standaard uit.
-    let _vegetationVisible = localStorage.getItem('ta_cat_vegetation') === 'true';
+    let _vegetationVisible = false;
     let _trafficSignsReady   = false;  // fallback-laag (NDW/Overpass) is eenmalig opgezet
     let _trafficAssetsNoFile = false;  // TRAFFIC-ASSETS bestand ontbreekt → val terug op NDW
     let _signsFallbackFetching = false;
@@ -9548,7 +9551,6 @@
     function _setTrafficAssetCategory(cat, vis) {
       if (!(cat in _trafficAssetCategories)) return;
       _trafficAssetCategories[cat] = vis;
-      localStorage.setItem(`ta_cat_${cat}`, vis ? 'true' : 'false');
       _trafficAssetsVisible = Object.values(_trafficAssetCategories).some(Boolean);
       window._trafficAssetCategories = _trafficAssetCategories;
       updateOverlay(true);
@@ -9560,7 +9562,6 @@
     // Vegetatie (bomen) volledig losgekoppeld van verkeersobjecten.
     function _setVegetationVisibility(vis) {
       _vegetationVisible = vis;
-      localStorage.setItem('ta_cat_vegetation', vis ? 'true' : 'false');
       updateOverlay(true);
       if (vis) loadVegetationInView();
     }
@@ -9571,6 +9572,49 @@
     // functie-scope) de categorieën kan lezen en wijzigen.
     window._trafficAssetCategories = _trafficAssetCategories;
     window._setTrafficAssetCategory = _setTrafficAssetCategory;
+
+    /**
+     * Zet alle 3D-weergaveopties (gebouwen, verkeersobjecten, bomen) terug op
+     * hun standaard UIT-stand. Wordt aangeroepen bij het binnenkomen van een
+     * (nieuw of aangepast) scenario, zodat een keuze uit een vorig scenario
+     * niet blijft "doorlekken" naar het volgende.
+     */
+    function _resetSceneryDisplayDefaults() {
+      // Pand weergave / Pand productie-attractie
+      const buildingDisplaySel = document.getElementById('buildingDisplay');
+      if (buildingDisplaySel && buildingDisplaySel.value !== 'uit') {
+        buildingDisplaySel.value = 'uit';
+        buildingDisplaySel.dispatchEvent(new Event('change'));
+      }
+      const buildingPurposeSel = document.getElementById('buildingPurpose');
+      if (buildingPurposeSel && buildingPurposeSel.value !== 'off') {
+        buildingPurposeSel.value = 'off';
+        buildingPurposeSel.dispatchEvent(new Event('change'));
+      }
+      // Verkeersobjecten (borden, paden, kunstwerken, straatmeubilair, drempels)
+      for (const cat of Object.keys(_trafficAssetCategories)) {
+        _setTrafficAssetCategory(cat, false);
+      }
+      document.querySelectorAll('input[name="lmpTrafficAsset"]').forEach(chk => {
+        chk.checked = false;
+      });
+      // Bomen
+      _setVegetationVisibility(false);
+      const vegetationCheck = document.getElementById('lmpVegetation');
+      if (vegetationCheck) vegetationCheck.checked = false;
+      // Auto/fiets/voetganger-lagen (alleen relevant in MIXED-modus; in andere
+      // modi bestaat er geen toggle voor en moet visibleModes gevuld blijven).
+      if (MODE === 'MIXED') {
+        document.querySelectorAll('.modeBtn').forEach(btn => {
+          btn.classList.remove('active');
+          visibleModes.delete(btn.dataset.mode);
+        });
+        rebuildCars();
+        updateOverlay(true);
+        updateLegend();
+      }
+    }
+    window._resetSceneryDisplayDefaults = _resetSceneryDisplayDefaults;
 
     // Herlaad bij kaartbeweging (gedebounced), maar alleen als de laag actief is.
     let _assetMoveTimer = null;
@@ -16235,6 +16279,10 @@
     });
 
     async function loadAdjustedResult(newAreaId, compareUrl) {
+      // Nieuw scenario binnenkomen: 3D-weergaveopties altijd terug op UIT,
+      // ongeacht wat er in het vorige scenario/sessie aanstond.
+      _resetSceneryDisplayDefaults();
+
       // Herlaad netwerk, routes en zones in-place zonder de kaartpositie te wijzigen.
       const mkUrl = (type) => {
         const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
@@ -17925,15 +17973,17 @@
       );
       // Toon alleen de knopjes waarvan de modus in het netwerk zit;
       // verberg de rest en verwijder ze ook uit visibleModes.
+      // Standaard staan alle modi UIT bij het binnenkomen van het scenario
+      // (ook al zijn ze in het netwerk aanwezig) — de gebruiker zet ze zelf aan.
       document.querySelectorAll('.modeBtn').forEach(btn => {
         const m = btn.dataset.mode;
-        if (networkModes.has(m)) {
-          btn.style.display = '';
-        } else {
-          btn.style.display = 'none';
-          visibleModes.delete(m);
-        }
+        btn.classList.remove('active');
+        visibleModes.delete(m);
+        btn.style.display = networkModes.has(m) ? '' : 'none';
       });
+      rebuildCars();
+      updateOverlay(true);
+      updateLegend();
       document.getElementById('modeBtns').style.display = 'flex';
       document.getElementById('modeBtns').addEventListener('click', e => {
         const btn = e.target.closest('.modeBtn');
