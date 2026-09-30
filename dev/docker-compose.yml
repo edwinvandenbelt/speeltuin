@@ -1,0 +1,56 @@
+# Lokale FusionAuth voor de GMT-apps (speeltuin + gmt-planner).
+#
+# Bewust los van de compose van otn-analytics-backend: die start ook OpenSearch
+# (2 GB heap), MinIO, DynamoDB en MailHog, en dat hebben we hier niet nodig.
+#
+#   docker compose -f dev/docker-compose.yml up -d
+#   docker compose -f dev/docker-compose.yml down     (stoppen, data bewaren)
+#   docker compose -f dev/docker-compose.yml down -v  (ook wissen; kickstart draait
+#                                                      alleen op een lege database)
+
+services:
+  fusionauth-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - fa-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [gmt-dev]
+
+  fusionauth:
+    image: fusionauth/fusionauth-app:1.60.1
+    depends_on:
+      fusionauth-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: jdbc:postgresql://fusionauth-db:5432/fusionauth
+      DATABASE_ROOT_USERNAME: postgres
+      DATABASE_ROOT_PASSWORD: postgres
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      FUSIONAUTH_APP_RUNTIME_MODE: development
+      # Niet http://fusionauth:9011 zoals in de OTN-compose: onze Flask-apps draaien
+      # buiten Docker en moeten dezelfde issuer-URL zien als de browser.
+      FUSIONAUTH_APP_URL: http://localhost:9011
+      FUSIONAUTH_APP_KICKSTART_FILE: /usr/local/fusionauth/kickstart/kickstart-gmt.json
+      SEARCH_TYPE: database
+    ports:
+      - "9011:9011"
+    volumes:
+      - fa-config:/usr/local/fusionauth/config
+      - ./fusionauth:/usr/local/fusionauth/kickstart
+    restart: unless-stopped
+    networks: [gmt-dev]
+
+volumes:
+  fa-db:
+  fa-config:
+
+networks:
+  gmt-dev:

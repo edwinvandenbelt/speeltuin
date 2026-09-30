@@ -1,0 +1,186 @@
+{
+  "variables": {
+    "kickstartApiKey": "ibYyqjZhkkZEiHavBHa2icM-DrgmuWzxB6H_umTF6d5VOCxoXldOdw",
+
+    "adminEmail": "admin@gmt.local",
+    "adminPassword": "GmtAdmin#1",
+
+    "signingKeyId": "aa000000-0000-4000-8000-000000000001",
+    "jwtPopulateLambdaId": "aa000000-0000-4000-8000-000000000002",
+    "tenantId": "11111111-1111-1111-1111-111111111111",
+    "gmtApplicationId": "22222222-2222-2222-2222-222222222222",
+    "gmtClientSecret": "-cVGLS13YXqu-NCEm4FxwT1SgxtqxO6-3I_mWWM5zBg",
+
+    "edwinUserId": "00000000-0000-0000-0000-00000000ed01",
+    "edwinEmail": "evdbelt@dat.nl",
+    "edwinPassword": "GmtLokaal#1",
+
+    "testUserId": "00000000-0000-0000-0000-000000000001",
+    "testUserEmail": "test@dat.nl",
+    "testUserPassword": "TestPass#1"
+  },
+
+  "apiKeys": [
+    {
+      "key": "#{kickstartApiKey}",
+      "description": "GMT KickStart API Key",
+      "keyManager": true
+    }
+  ],
+
+  "requests": [
+    {
+      "comment": "Beheerder van FusionAuth zelf (http://localhost:9011/admin)",
+      "method": "POST",
+      "url": "/api/user/registration",
+      "body": {
+        "user": {
+          "email": "#{adminEmail}",
+          "password": "#{adminPassword}",
+          "fullName": "GMT beheerder"
+        },
+        "registration": {
+          "applicationId": "#{FUSIONAUTH_APPLICATION_ID}",
+          "roles": ["admin"]
+        }
+      }
+    },
+
+    {
+      "comment": "Tokenondertekening; issuer moet gelijk zijn aan FUSIONAUTH_APP_URL",
+      "method": "POST",
+      "url": "/api/key/generate/#{signingKeyId}",
+      "body": {
+        "key": {
+          "algorithm": "RS256",
+          "name": "GMT token signing key",
+          "issuer": "localhost:9011",
+          "length": 2048
+        }
+      }
+    },
+
+    {
+      "comment": "Zet rollen en naam in access- en id-token",
+      "method": "POST",
+      "url": "/api/lambda/#{jwtPopulateLambdaId}",
+      "body": {
+        "lambda": {
+          "body": "@{lambdas/gmt-populate-jwt.js}",
+          "debug": false,
+          "engineType": "GraalJS",
+          "name": "GMT populate JWT",
+          "type": "JWTPopulate"
+        }
+      }
+    },
+
+    {
+      "method": "POST",
+      "url": "/api/tenant/#{tenantId}",
+      "body": {
+        "tenant": {
+          "name": "GMT",
+          "issuer": "localhost:9011",
+          "passwordValidationRules": {
+            "minLength": 8,
+            "requireMixedCase": true,
+            "requireNonAlpha": true,
+            "requireNumber": true
+          },
+          "httpSessionMaxInactiveInterval": 36000,
+          "jwtConfiguration": {
+            "timeToLiveInSeconds": 3600,
+            "accessTokenKeyId": "#{signingKeyId}",
+            "idTokenKeyId": "#{signingKeyId}",
+            "refreshTokenTimeToLiveInMinutes": 600,
+            "refreshTokenExpirationPolicy": "SlidingWindow",
+            "refreshTokenUsagePolicy": "Reusable"
+          }
+        }
+      }
+    },
+
+    {
+      "comment": "Eén gedeelde applicatie voor speeltuin (:5000) en gmt-planner (:5100)",
+      "method": "POST",
+      "url": "/api/application/#{gmtApplicationId}",
+      "tenantId": "#{tenantId}",
+      "body": {
+        "application": {
+          "name": "GMT",
+          "oauthConfiguration": {
+            "authorizedOriginURLs": [
+              "http://localhost:5000",
+              "http://localhost:5100"
+            ],
+            "authorizedRedirectURLs": [
+              "http://localhost:5000/auth/callback",
+              "http://localhost:5100/auth/callback",
+              "http://localhost:5000/",
+              "http://localhost:5100/"
+            ],
+            "logoutURL": "http://localhost:5100/",
+            "enabledGrants": ["authorization_code", "refresh_token"],
+            "proofKeyForCodeExchangePolicy": "Required",
+            "consentMode": "NeverPrompt",
+            "clientSecret": "#{gmtClientSecret}",
+            "generateRefreshTokens": true,
+            "requireRegistration": true,
+            "scopeHandlingPolicy": "Compatibility"
+          },
+          "loginConfiguration": {
+            "generateRefreshTokens": true
+          },
+          "lambdaConfiguration": {
+            "accessTokenPopulateId": "#{jwtPopulateLambdaId}",
+            "idTokenPopulateId": "#{jwtPopulateLambdaId}"
+          },
+          "roles": [
+            { "name": "viewer", "description": "Kijken: kaart, netwerk, plannen lezen", "isDefault": true },
+            { "name": "editor", "description": "Plannen opslaan, uploaden, doorrekenen" },
+            { "name": "admin",  "description": "Verwijderen en overige beheeracties" }
+          ]
+        }
+      }
+    },
+
+    {
+      "comment": "Eigen account — inloggen als jezelf",
+      "method": "POST",
+      "url": "/api/user/registration/#{edwinUserId}",
+      "tenantId": "#{tenantId}",
+      "body": {
+        "user": {
+          "email": "#{edwinEmail}",
+          "password": "#{edwinPassword}",
+          "fullName": "Edwin van den Belt",
+          "verified": true
+        },
+        "registration": {
+          "applicationId": "#{gmtApplicationId}",
+          "roles": ["viewer", "editor", "admin"]
+        }
+      }
+    },
+
+    {
+      "comment": "Testaccount met alleen leesrechten — voor het testen van rolcontroles",
+      "method": "POST",
+      "url": "/api/user/registration/#{testUserId}",
+      "tenantId": "#{tenantId}",
+      "body": {
+        "user": {
+          "email": "#{testUserEmail}",
+          "password": "#{testUserPassword}",
+          "fullName": "GMT Testgebruiker",
+          "verified": true
+        },
+        "registration": {
+          "applicationId": "#{gmtApplicationId}",
+          "roles": ["viewer"]
+        }
+      }
+    }
+  ]
+}
