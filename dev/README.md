@@ -48,6 +48,14 @@ geen URL — net als in de OTN-kickstart. De basis-URL voor de endpoints
 je de `iss`-claim vergelijkt (`GMT_AUTH_EXPECTED_ISS=localhost:9011`). Op
 productie zijn ze wél gelijk (`https://sso.dat.nl`).
 
+**`localhost` en `127.0.0.1` zijn voor FusionAuth twee verschillende hosts.**
+De apps leiden hun `redirect_uri` af uit de host in de adresbalk, dus beide
+varianten staan als Authorized Redirect URL geregistreerd. Open je de app op een
+derde adres (je machinenaam, een LAN-IP), dan krijg je
+`invalid_redirect_uri` — voeg dat adres dan toe aan de applicatie, of zet
+`GMT_AUTH_REDIRECT_URI` vast. Let op dat de sessiecookie per host geldt: wissel je
+halverwege van `localhost` naar `127.0.0.1`, dan moet je opnieuw inloggen.
+
 **De discovery op de hoofd-URL hoort bij de standaardtenant** en geeft
 `issuer: acme.com`. De onze staat op
 `/.well-known/openid-configuration/11111111-1111-1111-1111-111111111111`.
