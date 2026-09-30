@@ -37,6 +37,17 @@ import urllib.request as _urllib_req
 import uuid
 from pathlib import Path
 
+# Console-uitvoer naar UTF-8 forceren. Zonder dit loopt elke print met een
+# Unicode-teken (→, …) stuk zodra de uitvoer niet naar een echte console gaat
+# maar naar een bestand of pipe met een cp1252-codepage. Dat trof onder meer
+# _sse_put(), waardoor élk SSE-event een HTTP 500 opleverde en de maquette
+# stilviel zonder zichtbare oorzaak.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+except Exception:
+    pass
+
 import requests
 from flask import (
     Flask,
@@ -1040,6 +1051,27 @@ _sse_listeners_lock = threading.Lock()
 _maquette_process: "subprocess.Popen | None" = None
 _maquette_process_lock = threading.Lock()
 _maquette_area_id: str = ""  # area_id waarvoor de camera loopt (voor heartbeat SSE)
+
+# --- Camerabeeld-relais (preview tijdens calibratie) -------------------------
+# maquette_camera.py pusht JPEG-frames hierheen; browsers halen ze op als
+# MJPEG-stream. Eén "laatste frame"-slot in plaats van een queue per client:
+# een trage browser slaat frames over en kan de bron nooit afremmen of het
+# geheugen laten vollopen.
+_mjpeg_cond = threading.Condition()
+_mjpeg_frame: "bytes | None" = None
+_mjpeg_seq: int = 0
+_mjpeg_meta: dict = {"width": 0, "height": 0, "ts": 0.0}
+_mjpeg_clients: int = 0
+# De browser houdt per origin maar 6 HTTP/1.1-verbindingen aan, en de
+# SSE-stream bezet er al één. Meer dan een paar tegelijk is altijd een lek.
+_MJPEG_MAX_CLIENTS = 4
+
+# --- Cursorpositie voor de virtuele maquette-modus (cameraId=-1) -------------
+# De browser kent de cursor in kaartcoördinaten; die posten is exact en maakt
+# het uitlezen van de Windows-cursor (met alle DPI- en vensterrand-ellende)
+# overbodig.
+_cursor_lock = threading.Lock()
+_cursor_slot: "dict | None" = None
 
 # ---------------------------------------------------------------------------
 # NDW-achtergronddownload (verkeersborden NL)
@@ -5104,6 +5136,30 @@ def maquette_preview():
     return jsonify({"ok": True})
 
 
+@app.route("/maquette/detections", methods=["POST"])
+def maquette_detections():
+    """Relais de zwarte vlakken die de camera ziet naar de browsers via SSE.
+
+    Body (JSON): { "area_id": "...", "detections": [ {lon, lat, outline, …} ] }
+
+    Puur ter controle: hiermee tekent de kaart live wat de camera detecteert,
+    zonder dat er iets wordt afgesloten. Ligt het vlak op de kaart ergens anders
+    dan het blokje op de maquette, dan is de calibratie scheef.
+    """
+    body = request.get_json(silent=True) or {}
+    payload = json.dumps(
+        {
+            "detections": body.get("detections", []),
+            "camera_view": body.get("camera_view"),
+        }
+    )
+    with _sse_listeners_lock:
+        all_ids = list(_sse_listeners.keys())
+    for aid in all_ids:
+        _sse_put(aid, "maquette_detections", payload)
+    return jsonify({"ok": True})
+
+
 @app.route("/maquette/heartbeat", methods=["POST"])
 def maquette_heartbeat():
     """Ontvang een heartbeat van maquette_camera.py en stuur het als SSE-event
@@ -5126,6 +5182,165 @@ def maquette_heartbeat():
     for aid in all_ids:
         _sse_put(aid, "camera_status", payload)
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Camerabeeld-relais: maquette_camera.py → browser
+# ---------------------------------------------------------------------------
+
+
+@app.route("/maquette/frame", methods=["POST"])
+def maquette_post_frame():
+    """Ontvang één JPEG-frame van maquette_camera.py (body = ruwe JPEG).
+
+    Query: ?w=<breedte>&h=<hoogte> — de werkelijke cameraresolutie, die de
+    browser nodig heeft om de calibratie in camerapixels uit te drukken.
+    """
+    global _mjpeg_frame, _mjpeg_seq, _mjpeg_meta
+    data = request.get_data(cache=False)
+    if not data:
+        return jsonify({"error": "leeg frame"}), 400
+    try:
+        width = int(request.args.get("w", 0))
+        height = int(request.args.get("h", 0))
+    except ValueError:
+        width = height = 0
+    with _mjpeg_cond:
+        _mjpeg_frame = data
+        _mjpeg_seq += 1
+        _mjpeg_meta = {"width": width, "height": height, "ts": time.time()}
+        clients = _mjpeg_clients
+        _mjpeg_cond.notify_all()
+    return jsonify({"ok": True, "clients": clients})
+
+
+@app.route("/maquette/stream.mjpg")
+def maquette_stream():
+    """Live camerabeeld als MJPEG (multipart/x-mixed-replace).
+
+    Elke client leest altijd het *actuele* frame; wie te traag consumeert slaat
+    frames over in plaats van een wachtrij te laten vollopen.
+    """
+    global _mjpeg_clients
+    with _mjpeg_cond:
+        if _mjpeg_clients >= _MJPEG_MAX_CLIENTS:
+            return jsonify({"error": "te veel gelijktijdige kijkers"}), 503
+        _mjpeg_clients += 1
+
+    def _gen():
+        global _mjpeg_clients
+        last = -1
+        try:
+            while True:
+                with _mjpeg_cond:
+                    if not _mjpeg_cond.wait_for(
+                        lambda: _mjpeg_seq != last and _mjpeg_frame is not None,
+                        timeout=5.0,
+                    ):
+                        # Time-out: een lege boundary houdt de verbinding levend
+                        # en laat een verbroken socket alsnog blijken.
+                        yield b"--frame\r\n\r\n"
+                        continue
+                    frame = _mjpeg_frame
+                    last = _mjpeg_seq
+                yield (
+                    b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                    + str(len(frame)).encode()
+                    + b"\r\n\r\n"
+                    + frame
+                    + b"\r\n"
+                )
+        finally:
+            with _mjpeg_cond:
+                _mjpeg_clients -= 1
+
+    return Response(
+        _gen(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.route("/maquette/frame.jpg")
+def maquette_frame_jpg():
+    """Het laatste frame als los plaatje — terugval als MJPEG niet werkt."""
+    with _mjpeg_cond:
+        frame = _mjpeg_frame
+    if frame is None:
+        abort(404)
+    return Response(
+        frame,
+        mimetype="image/jpeg",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.route("/maquette/stream-info")
+def maquette_stream_info():
+    """Status van het camerabeeld: resolutie, ouderdom en aantal kijkers."""
+    with _mjpeg_cond:
+        meta = dict(_mjpeg_meta)
+        seq = _mjpeg_seq
+        clients = _mjpeg_clients
+        have = _mjpeg_frame is not None
+    age = (time.time() - meta.get("ts", 0.0)) if have else None
+    return jsonify(
+        {
+            "available": have,
+            "width": meta.get("width", 0),
+            "height": meta.get("height", 0),
+            "seq": seq,
+            "age": age,
+            "clients": clients,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cursorpositie voor de virtuele maquette-modus
+# ---------------------------------------------------------------------------
+
+
+@app.route("/maquette/cursor", methods=["POST"])
+def maquette_post_cursor():
+    """Ontvang de cursorpositie van de browser (virtuele maquette-modus).
+
+    Body (JSON): { "x": 123.0, "y": 456.0, "lon": 6.17, "lat": 52.25 }
+    x/y zijn CSS-pixels t.o.v. de kaartcontainer, lon/lat de ge-unprojecte
+    positie. De browser rekent zelf om: die kent de kaartweergave exact, terwijl
+    de Windows-cursor uitlezen een DPI- en vensterrandcorrectie zou vergen.
+    """
+    global _cursor_slot
+    body = request.get_json(silent=True) or {}
+    try:
+        slot = {
+            "x": float(body["x"]),
+            "y": float(body["y"]),
+            "lon": float(body["lon"]),
+            "lat": float(body["lat"]),
+            "ts": time.time(),
+        }
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "x, y, lon en lat vereist"}), 400
+    with _cursor_lock:
+        _cursor_slot = slot
+    return jsonify({"ok": True})
+
+
+@app.route("/maquette/cursor", methods=["GET"])
+def maquette_get_cursor():
+    """Geef de laatst ontvangen cursorpositie terug, met de ouderdom erbij."""
+    with _cursor_lock:
+        slot = dict(_cursor_slot) if _cursor_slot else None
+    if slot is None:
+        return jsonify({"available": False})
+    slot["age"] = time.time() - slot["ts"]
+    slot["available"] = True
+    return jsonify(slot)
 
 
 def _calibration_path(area_id: str) -> Path:
@@ -5173,27 +5388,6 @@ def maquette_post_calibration():
     return jsonify({"ok": True})
 
 
-@app.route("/maquette/calibration-progress", methods=["POST"])
-def maquette_calibration_progress():
-    """Relais calibratie-voortgang van maquette_camera.py naar de browsers via SSE.
-
-    Body (JSON): { "area_id": "...", "corner": "bl"|"tr", "state": "...", "seconds": 1.2 }
-    """
-    body = request.get_json(silent=True) or {}
-    payload = json.dumps(
-        {
-            "corner": body.get("corner", ""),
-            "state": body.get("state", ""),
-            "seconds": body.get("seconds", 0),
-        }
-    )
-    with _sse_listeners_lock:
-        all_ids = list(_sse_listeners.keys())
-    for aid in all_ids:
-        _sse_put(aid, "calibration_progress", payload)
-    return jsonify({"ok": True})
-
-
 def _stop_maquette_process() -> None:
     """Beëindig het lopende maquette-camera proces (thread-safe)."""
     global _maquette_process, _maquette_area_id
@@ -5213,18 +5407,20 @@ def _stop_maquette_process() -> None:
 
 @app.route("/maquette/start", methods=["POST"])
 def maquette_start():
-    """Start maquette_camera.py als subprocess met de viewport van de browser.
+    """Start maquette_camera.py als subprocess.
 
     Body (JSON):
     {
       "area_id":   "...",
       "mode":      "CAR",
       "camera_id": -1,
-      "viewport": {
-        "west": 6.12, "north": 52.26, "east": 6.21, "south": 52.21,
-        "width": 1280, "height": 720
-      }
+      "preview":   false,
+      "viewport":  { "width": 1280, "height": 720 }
     }
+
+    `viewport` geeft alleen nog de gewenste camera-resolutie door. De koppeling
+    tussen camerapixels en kaart komt uit het calibratiebestand, dat de browser
+    schrijft; geo-grenzen zijn daarvoor niet meer nodig.
     """
     global _maquette_process, _maquette_area_id
 
@@ -5233,31 +5429,13 @@ def maquette_start():
     mode = str(body.get("mode", "CAR")).upper()
     camera_id = int(body.get("camera_id", -1))
     vp = body.get("viewport") or {}
-    calibrate = bool(body.get("calibrate", False))
-    corners = body.get("corners") or {}
+    preview = bool(body.get("preview", False))
 
     if not area_id:
         return jsonify({"error": "area_id vereist"}), 400
 
-    required = ("west", "north", "east", "south", "width", "height")
-    if not all(k in vp for k in required):
-        return jsonify({"error": f"viewport vereist: {required}"}), 400
-
-    # Bij calibratie zijn de vier scherm-uitgelijnde geo-hoeken vereist; de
-    # camera koppelt de twee opgemeten pixelhoeken hieraan (bilineair). De
-    # --viewport-* grenzen dienen alleen als fallback/logging.
-    if calibrate:
-        if not all(k in corners for k in ("bl", "br", "tr", "tl")):
-            return jsonify(
-                {"error": "corners vereist bij calibratie: bl, br, tr, tl"}
-            ), 400
-
-    vp_geo = {
-        "west": vp["west"],
-        "north": vp["north"],
-        "east": vp["east"],
-        "south": vp["south"],
-    }
+    if not all(k in vp for k in ("width", "height")):
+        return jsonify({"error": "viewport vereist: ('width', 'height')"}), 400
 
     # Stop eventueel lopend proces
     _stop_maquette_process()
@@ -5267,38 +5445,25 @@ def maquette_start():
         sys.executable,
         str(script),
         "--server",
-        f"http://localhost:{request.host.split(':')[-1]}",
+        # Bewust 127.0.0.1 en niet localhost: een DNS-lookup van localhost kost
+        # op deze machines ~2 s, wat de frame-push tot stilstand zou brengen.
+        f"http://127.0.0.1:{request.host.split(':')[-1]}",
         "--area-id",
         area_id,
         "--mode",
         mode,
         "--camera-id",
         str(camera_id),
-        "--viewport-west",
-        str(vp_geo["west"]),
-        "--viewport-north",
-        str(vp_geo["north"]),
-        "--viewport-east",
-        str(vp_geo["east"]),
-        "--viewport-south",
-        str(vp_geo["south"]),
         "--width",
         str(int(vp["width"])),
         "--height",
         str(int(vp["height"])),
     ]
 
-    if calibrate:
-        cmd.append("--calibrate")
-        view = body.get("view")
-        if isinstance(view, dict):
-            cmd += ["--view-json", json.dumps(view)]
-        corners = body.get("corners")
-        if isinstance(corners, dict):
-            cmd += ["--corners-json", json.dumps(corners)]
-        pixels = body.get("pixels")
-        if isinstance(pixels, dict):
-            cmd += ["--pixels-json", json.dumps(pixels)]
+    # Preview-stand: alleen camerabeeld doorgeven, geen detectie. Wordt gebruikt
+    # terwijl de gebruiker in de browser de calibratie-vierhoek versleept.
+    if preview:
+        cmd.append("--preview")
 
     print(f"[maquette] starten: {' '.join(cmd)}")
     proc = subprocess.Popen(cmd, cwd=str(Path(__file__).parent))
@@ -5424,4 +5589,10 @@ if __name__ == "__main__":
     print(f"Server      : http://localhost:{args.port}")
     _threaded = not args.no_threaded
     print(f"threading   : {'multi-threaded' if _threaded else 'single-threaded'}")
+    if not _threaded:
+        print(
+            "WAARSCHUWING : single-threaded — het camerabeeld van de maquette "
+            "(/maquette/stream.mjpg) blokkeert dan de hele server. Gebruik de "
+            "maquette-calibratie alleen multi-threaded."
+        )
     app.run(host="0.0.0.0", port=args.port, debug=True, threaded=_threaded)

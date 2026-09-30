@@ -5,29 +5,62 @@ maquette_camera.py — Fysieke maquette koppeling via camera-detectie
 Detecteert een zwart blokje op de maquette en sluit de dichtstbijzijnde weg
 af via de adjust-pipeline zodra het blokje ≥ STABLE_SECONDS stilstaat.
 
+Dit script **calibreert niet zelf**. De camera staat doorgaans schuin boven de
+maquette, zodat het beeld perspectivisch vervormd is. Die vervorming wordt in de
+browser vastgelegd (`maquette-calibration.js`): daar ligt het live camerabeeld
+half-transparant over de kaart en sleept de gebruiker vier hoekpunten tot beide
+samenvallen. Het resultaat is een 3x3 homografie in
+`work/<area>/<area>-CALIBRATION.json`, die dit script alleen nog inleest.
+
+Die calibratie legt ook het **werkgebied** vast: de vierhoek in het camerabeeld
+die de maquette voorstelt: de vierhoek die je bij het calibreren hebt aangewezen.
+Alleen dat stuk wordt uitgesneden en aan de detector gevoerd (zie `_roi_polygon`
+/ `_apply_roi`). Wat de camera daarbuiten ziet — tafelrand, vloer, muur, de
+gebruiker — is donker en zou anders meedingen naar de titel "zwart blokje".
+
+Pas op met het onderscheid tussen die aangewezen vierhoek en het *geprojecteerde
+vlak*: de markers liggen met hun inzet binnen de projectie, dus het geprojecteerde
+vlak is groter (bij 6% inzet 1,3x, bij 25% ruim 4x in oppervlak). Het werkgebied
+is standaard de aangewezen vierhoek; `--mask-region projection` neemt de hele
+projectie.
+
+Het "blokje" is in de praktijk een mobieltje op zo'n 1,2-1,5 m van de camera, en
+dus een fors vlak: 3.000 tot 27.000 px², afhankelijk van resolutie en afstand.
+Er is daarom geen bovengrens aan de objectgrootte. De ondergrens wordt als
+*percentage van het gecalibreerde vlak* opgegeven (`--min-object-area`) en niet
+in pixels, omdat pixels met resolutie en afstand meeschalen en een percentage
+niet — zie `_area_thresholds`.
+
+Twee standen:
+
+* ``--preview``  — stuurt alleen camerabeeld naar de server, geen detectie.
+  Draait terwijl de gebruiker in de browser calibreert.
+* standaard      — detectie met de opgeslagen calibratie.
+
 Gebruik:
     python maquette_camera.py \\
-        --server http://localhost:8080 \\
+        --server http://127.0.0.1:5000 \\
         --area-id <uuid> \\
         --mode CAR \\
-        [--camera-id 0] [--stable-seconds 3.0] [--cooldown 10] [--show-video]
+        --width 1920 --height 1080 \\
+        [--camera-id 0] [--preview] [--anchor bottom] [--show-video]
 
-De viewport-bounds worden automatisch afgeleid uit de bbox van het netwerk.
-De pixelafmetingen worden afgeleid uit de werkelijke camera-resolutie.
+Bij ``--camera-id -1`` (virtuele modus) is er geen camera: de browser post dan
+zijn cursorpositie, inclusief de ge-unprojecte lon/lat, naar /maquette/cursor.
 
 Afhankelijkheden (naast standaard-bibliotheek en opencv/shapely/requests):
-    C:\\sources\\GMP\\kien-maquette\\kien-camera-maquette\\  (detection + tracking)
+    detection.py + tracking.py uit het kien-camera-maquette project. Waar die
+    vandaan komen bepaalt `_find_kien_dir`.
 """
 
 import argparse
-import ctypes
 import json
-import ctypes.wintypes
 import math
+import os
 import sys
 import threading
 import time
-import webbrowser
+from pathlib import Path
 
 # Console-uitvoer naar UTF-8 forceren zodat Unicode-tekens (→, …) niet crashen
 # op Windows-consoles met een cp1252-codepage.
@@ -38,183 +71,65 @@ except Exception:
     pass
 
 import cv2
+import numpy as np
 import requests
 
 # ---------------------------------------------------------------------------
 # Importeer detectie/tracking-modules uit het kien-camera-maquette project.
 # De modules gebruiken een `config` module op datzelfde pad.
 # ---------------------------------------------------------------------------
-_KIEN_DIR = r"C:\sources\GMP\kien-maquette\kien-camera-maquette"
+
+# Het ontwikkelpad op de bouwmachine. Als terugval, niet als aanname: op een
+# gedeployde PC bestaat deze map niet.
+_KIEN_DEV_DIR = r"C:\sources\GMP\kien-maquette\kien-camera-maquette"
+
+
+def _find_kien_dir() -> str:
+    """Zoek de map met `detection.py` en `tracking.py`.
+
+    Drie plekken, in deze volgorde:
+
+    1. ``$KIEN_CAMERA_DIR`` — expliciet ingesteld, wint altijd.
+    2. ``kien-camera-maquette/`` naast dit script — zo zit het in de deploy-ZIP.
+    3. Het ontwikkelpad hierboven.
+
+    Een hardgecodeerd pad alléén werkte alleen op de machine waar het gebouwd
+    is; elders viel het script om met een kale ImportError zonder aanwijzing
+    waaróm.
+    """
+    here = Path(__file__).resolve().parent
+    candidates = [
+        os.environ.get("KIEN_CAMERA_DIR"),
+        here / "kien-camera-maquette",
+        _KIEN_DEV_DIR,
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if (path / "detection.py").is_file() and (path / "tracking.py").is_file():
+            return str(path)
+
+    sys.exit(
+        "[camera] FOUT: de detectiemodules (detection.py, tracking.py) zijn niet\n"
+        "         gevonden. Gezocht in:\n"
+        + "".join(f"           - {c}\n" for c in candidates if c)
+        + "         Zet KIEN_CAMERA_DIR naar de map van het kien-camera-maquette\n"
+        "         project, of plaats die map als 'kien-camera-maquette' naast\n"
+        f"         {Path(__file__).name}."
+    )
+
+
+_KIEN_DIR = _find_kien_dir()
 if _KIEN_DIR not in sys.path:
     sys.path.insert(0, _KIEN_DIR)
 
 from detection import BlackObjectDetector  # noqa: E402
 from tracking import DetectionTracker  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Coordinate helpers
-# ---------------------------------------------------------------------------
-
-
-def _merc(lat_deg: float) -> float:
-    """Web-Mercator Y voor een breedtegraad (zelfde formule als MapLibre)."""
-    lat_rad = math.radians(lat_deg)
-    return math.log(math.tan(math.pi / 4 + lat_rad / 2))
-
-
-def _merc_inv(y: float) -> float:
-    """Inverse Web-Mercator Y → breedtegraad in graden."""
-    return math.degrees(2 * math.atan(math.exp(y)) - math.pi / 2)
-
-
-def pixel_to_wgs84(
-    cx: float,
-    cy: float,
-    west: float,
-    north: float,
-    east: float,
-    south: float,
-    width: int,
-    height: int,
-) -> tuple[float, float]:
-    """
-    Camera-pixel (cx, cy) → (lon, lat) WGS84.
-
-    Aanname: camera is exact loodrecht boven de maquette gemonteerd en de
-    beamer projecteert exact hetzelfde gebied → pixel-coördinaten zijn lineair
-    gemapt op de viewport-bounds die ook in index.html gebruikt worden.
-
-    west=x=0, north=y=0 zijn gegarandeerd door de JS-implementatie.
-    """
-    lon = west + (cx / width) * (east - west)
-    merc_n = _merc(north)
-    merc_s = _merc(south)
-    merc_y = merc_n + (cy / height) * (merc_s - merc_n)
-    lat = _merc_inv(merc_y)
-    return lon, lat
-
-
-# Kaartweergave (center/zoom/bearing/pitch) die de browser tijdens calibratie
-# had. Wordt via --view-json meegegeven en in het calibratiebestand opgeslagen,
-# zodat de kaart bij heropenen exact hersteld kan worden.
-_CALIB_VIEW: "dict | None" = None
-
-
-class Calibration:
-    """Pixel→WGS84 mapping op basis van een scherm-uitgelijnde rechthoek.
-
-    De browser tekent een rechthoek die *rechtop staat t.o.v. het scherm* (niet
-    noord-zuid). De vier schermhoeken worden ge-unproject naar geo-coördinaten,
-    wat een (bij kaartrotatie) geroteerde vierhoek in geo-ruimte oplevert:
-
-        corners = { bl, br, tr, tl }   (elk (lon, lat))
-
-    Fysiek/virtueel worden twee tegenoverliggende hoeken opgemeten:
-        bottom_left-pixel  ↔  corners['bl']
-        top_right-pixel    ↔  corners['tr']
-
-    Een willekeurige pixel wordt via de fractie (fx, fy) t.o.v. die twee
-    opgemeten hoeken *bilineair* over de vier geo-hoeken geïnterpoleerd, zodat
-    kaartrotatie correct wordt meegenomen.
-    """
-
-    def __init__(
-        self,
-        corners: dict,
-        px_bl: float,
-        py_bl: float,
-        px_tr: float,
-        py_tr: float,
-    ):
-        # corners: {'bl':[lon,lat], 'br':[lon,lat], 'tr':[lon,lat], 'tl':[lon,lat]}
-        self.corners = corners
-        self.px_bl = px_bl
-        self.py_bl = py_bl
-        self.px_tr = px_tr
-        self.py_tr = py_tr
-
-    def pixel_to_wgs84(self, px: float, py: float) -> tuple[float, float]:
-        """Camera-/cursorpixel (px, py) → (lon, lat) via bilineaire interpolatie."""
-        dx = self.px_tr - self.px_bl
-        dy = self.py_tr - self.py_bl
-        fx = (px - self.px_bl) / dx if dx else 0.0
-        fy = (py - self.py_bl) / dy if dy else 0.0
-
-        bl = self.corners["bl"]
-        br = self.corners["br"]
-        tr = self.corners["tr"]
-        tl = self.corners["tl"]
-
-        def _bilerp(v_bl, v_br, v_tr, v_tl):
-            # fx: bl→br (langs onder) / tl→tr (langs boven); fy: bl→tl / br→tr
-            return (
-                (1 - fx) * (1 - fy) * v_bl
-                + fx * (1 - fy) * v_br
-                + fx * fy * v_tr
-                + (1 - fx) * fy * v_tl
-            )
-
-        lon = _bilerp(bl[0], br[0], tr[0], tl[0])
-        merc_y = _bilerp(_merc(bl[1]), _merc(br[1]), _merc(tr[1]), _merc(tl[1]))
-        lat = _merc_inv(merc_y)
-        return lon, lat
-
-    def to_dict(self, mode: str, camera_id: int, frame_w: int, frame_h: int) -> dict:
-        d = {
-            "mode": mode,
-            "camera_id": camera_id,
-            "corners": {
-                "bl": list(self.corners["bl"]),
-                "br": list(self.corners["br"]),
-                "tr": list(self.corners["tr"]),
-                "tl": list(self.corners["tl"]),
-            },
-            "pixels": {
-                "bottom_left": [self.px_bl, self.py_bl],
-                "top_right": [self.px_tr, self.py_tr],
-            },
-            "frame": {"width": frame_w, "height": frame_h},
-            "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        if _CALIB_VIEW:
-            d["view"] = _CALIB_VIEW
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "Calibration | None":
-        try:
-            p = d["pixels"]
-            bl_px = p["bottom_left"]
-            tr_px = p["top_right"]
-            if "corners" in d:
-                c = d["corners"]
-                corners = {
-                    "bl": [float(c["bl"][0]), float(c["bl"][1])],
-                    "br": [float(c["br"][0]), float(c["br"][1])],
-                    "tr": [float(c["tr"][0]), float(c["tr"][1])],
-                    "tl": [float(c["tl"][0]), float(c["tl"][1])],
-                }
-            else:
-                # Terugval op oud bbox-formaat (noord-uitgelijnd)
-                b = d["bounds"]
-                w, s = float(b["west"]), float(b["south"])
-                e, n = float(b["east"]), float(b["north"])
-                corners = {
-                    "bl": [w, s],
-                    "br": [e, s],
-                    "tr": [e, n],
-                    "tl": [w, n],
-                }
-            return cls(
-                corners=corners,
-                px_bl=float(bl_px[0]),
-                py_bl=float(bl_px[1]),
-                px_tr=float(tr_px[0]),
-                py_tr=float(tr_px[1]),
-            )
-        except (KeyError, TypeError, ValueError, IndexError):
-            return None
-
+# Coördinaten- en calibratiewiskunde staat in een eigen module zonder
+# afhankelijkheden, zodat ze zonder camera-opstelling te testen is.
+from maquette_calibration import load_calibration  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Network laden en dichtstbijzijnde link vinden
@@ -233,22 +148,6 @@ def load_network_features(server_url: str, area_id: str, mode: str) -> list:
     features = resp.json().get("features", [])
     print(f"[camera] {len(features)} features geladen.")
     return features
-
-
-def bbox_from_features(features: list) -> tuple[float, float, float, float]:
-    """
-    Bereken de bounding box (west, south, east, north) uit alle feature-coördinaten.
-    """
-    lons, lats = [], []
-    for feat in features:
-        geom = feat.get("geometry", {})
-        coords = _extract_coords(geom)
-        for lon, lat in coords:
-            lons.append(lon)
-            lats.append(lat)
-    if not lons:
-        raise ValueError("Geen coördinaten gevonden in network-features.")
-    return min(lons), min(lats), max(lons), max(lats)
 
 
 def _extract_coords(geom: dict) -> list[tuple[float, float]]:
@@ -427,27 +326,6 @@ class _AdjustRunner:
 _HEARTBEAT_INTERVAL = 5  # seconden tussen heartbeats
 
 
-def _build_browser_url(
-    server_url: str,
-    area_id: str,
-    mode: str,
-    west: float,
-    south: float,
-    east: float,
-    north: float,
-) -> str:
-    """Bouw de URL op waarmee de browser de kaart opent in maquette+follow modus.
-
-    De bbox-parameter zorgt dat de kaart exact hetzelfde gebied toont als de
-    coördinaten die de camera-script gebruikt voor de pixel→WGS84 mapping.
-    """
-    bbox = f"{west},{south},{east},{north}"
-    return (
-        f"{server_url}/?areaId={area_id}&mode={mode}"
-        f"&follow=true&maquette=true&bbox={bbox}"
-    )
-
-
 def _send_heartbeat(server_url: str, area_id: str, active: bool) -> None:
     """Stuur één heartbeat naar de server (best-effort, nooit exception)."""
     try:
@@ -461,6 +339,74 @@ def _send_heartbeat(server_url: str, area_id: str, active: bool) -> None:
 
 
 _PREVIEW_DELAY = 2.0  # seconden tussen oplichten en starten van de berekening
+
+# Hoe vaak de gevonden zwarte vlakken naar de browser gaan. 5x per seconde is
+# vloeiend genoeg om een blokje te volgen en belast de server nauwelijks.
+_DETECTIONS_INTERVAL = 0.2
+
+
+class _DetectionSender:
+    """Stuurt de gevonden zwarte vlakken naar de browser, buiten de framelus om.
+
+    Hiermee kun je op de kaart zien wát de camera ziet en wáár ze denkt dat het
+    ligt — zonder dat er iets wordt afgesloten. Dat is het enige middel om een
+    scheve calibratie te herkennen: ligt het vlak op de kaart ergens anders dan
+    het blokje op de maquette, dan klopt de calibratie niet.
+
+    Eén slot met "laatste wint", net als bij de preview-beelden: een trage of
+    even bezette server mag de detectie nooit laten haperen.
+    """
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self._pending: "tuple[str, str, dict] | None" = None
+        self._thread: "threading.Thread | None" = None
+
+    def send(self, server_url: str, area_id: str, payload: dict) -> None:
+        with self._cond:
+            self._pending = (server_url, area_id, payload)
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._loop, daemon=True)
+                self._thread.start()
+            self._cond.notify()
+
+    def _loop(self) -> None:
+        session = requests.Session()
+        while True:
+            with self._cond:
+                while self._pending is None:
+                    self._cond.wait()
+                server_url, area_id, payload = self._pending
+                self._pending = None
+            try:
+                session.post(
+                    f"{server_url}/maquette/detections",
+                    json={"area_id": area_id, **payload},
+                    timeout=2,
+                )
+            except Exception:
+                pass  # een gemiste controleweergave is niet erg
+
+
+_detection_sender = _DetectionSender()
+
+
+def _send_detections(
+    server_url: str,
+    area_id: str,
+    detections: list,
+    camera_view: "list | None" = None,
+) -> None:
+    """Zie _DetectionSender — niet-blokkerend.
+
+    `camera_view` zijn de vier hoeken van het camerabeeld in (lon, lat). Daarmee
+    kan de kaart tonen hoe ver de camera kijkt — doorgaans een stuk ruimer dan
+    wat de beamer projecteert, en precies daar zit de verwarring.
+    """
+    payload: dict = {"detections": detections}
+    if camera_view:
+        payload["camera_view"] = camera_view
+    _detection_sender.send(server_url, area_id, payload)
 
 
 def _send_preview(server_url: str, area_id: str, link_ids: list[int]) -> None:
@@ -480,14 +426,14 @@ def _send_preview(server_url: str, area_id: str, link_ids: list[int]) -> None:
 # Calibratie: server-communicatie
 # ---------------------------------------------------------------------------
 
-_CALIB_STABLE_SECONDS = 3.0  # seconden stilstand per hoek tijdens calibratie
-_CALIB_MOVE_AWAY_PX = 40  # pixels die het blokje moet wegbewegen tussen hoek 1 en 2
 
+def _fetch_calibration(server_url: str, area_id: str, mode: str):
+    """Haal de calibratie op van de server. None als er geen is.
 
-def _fetch_calibration(
-    server_url: str, area_id: str, mode: str
-) -> "Calibration | None":
-    """Haal een bestaande calibratie op van de server. None als niet aanwezig."""
+    Calibreren gebeurt volledig in de browser (`maquette-calibration.js`): daar
+    wordt het camerabeeld over de kaart gelegd en met vier sleeppunten passend
+    gemaakt. Dit script leest het resultaat alleen.
+    """
     try:
         resp = requests.get(
             f"{server_url}/maquette/calibration",
@@ -497,48 +443,10 @@ def _fetch_calibration(
         resp.raise_for_status()
         data = resp.json()
         if data.get("exists") and data.get("calibration"):
-            return Calibration.from_dict(data["calibration"])
-    except Exception:
-        pass
-    return None
-
-
-def _post_calibration(server_url: str, area_id: str, payload: dict) -> bool:
-    """Schrijf een calibratie weg via de server. Geeft True bij succes."""
-    try:
-        resp = requests.post(
-            f"{server_url}/maquette/calibration",
-            json={"area_id": area_id, "calibration": payload},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        return True
+            return load_calibration(data["calibration"])
     except Exception as exc:
-        print(f"[camera] Calibratie wegschrijven mislukt: {exc}")
-        return False
-
-
-def _send_calib_progress(
-    server_url: str, area_id: str, corner: str, state: str, seconds: float = 0.0
-) -> None:
-    """Stuur calibratie-voortgang naar de browser (best-effort).
-
-    corner: "bl" (linksonder) of "tr" (rechtsboven)
-    state:  "waiting" | "counting" | "recorded" | "done" | "failed"
-    """
-    try:
-        requests.post(
-            f"{server_url}/maquette/calibration-progress",
-            json={
-                "area_id": area_id,
-                "corner": corner,
-                "state": state,
-                "seconds": round(seconds, 1),
-            },
-            timeout=3,
-        )
-    except Exception:
-        pass
+        print(f"[camera] Calibratie ophalen mislukt: {exc}")
+    return None
 
 
 def _start_heartbeat_thread(
@@ -559,250 +467,37 @@ def _start_heartbeat_thread(
 
 
 # ---------------------------------------------------------------------------
-# Virtuele camera: cursor-tracking via het browser-venster (camera_id == -1)
+# Virtuele camera: cursorpositie uit de browser (camera_id == -1)
 # ---------------------------------------------------------------------------
 
 # Stabilititeitsdrempel in pixels: cursor mag dit veel bewegen en telt nog als
 # "stilstaand" (zelfde semantiek als STABILITY_POSITION_THRESHOLD in tracking.py)
 _VIRTUAL_STABILITY_PX = 10
 
-
-def _get_cursor_pos() -> tuple[int, int]:
-    """Geeft de huidige cursor-positie terug in schermcoördinaten (Windows)."""
-    pt = ctypes.wintypes.POINT()
-    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-    return pt.x, pt.y
+# Een cursorsample ouder dan dit betekent: muis staat stil buiten de kaart, of
+# de browser is weg. In beide gevallen mag er niets getriggerd worden.
+_CURSOR_MAX_AGE = 0.4
 
 
-def _find_browser_window(
-    server_url: str,
-    want_w: int = 0,
-    want_h: int = 0,
-) -> tuple[int, int, int, int] | None:
+def _fetch_cursor(session: requests.Session, server_url: str) -> "dict | None":
+    """Haal de laatst gemelde cursorpositie op, of None als die er niet (meer) is.
+
+    De browser post zijn cursor inclusief de ge-unprojecte lon/lat. Dat is exact:
+    de browser kent de kaartweergave, terwijl het uitlezen van de Windows-cursor
+    een DPI-correctie en een correctie voor de browserbalken zou vergen (de
+    client-area van het venster bevat namelijk ook tabbladen en adresbalk).
     """
-    Zoekt het browser-venster dat de kaartpagina toont.
-
-    Er kunnen meerdere kandidaat-vensters zijn (bv. een kleine popup naast het
-    echte kaartvenster). We kiezen niet op titel-prioriteit maar op de client-
-    area die het best past bij de doorgegeven browser-viewport (want_w×want_h);
-    zonder hint kiezen we simpelweg het grootste venster. Zo wordt het echte
-    kaartvenster gekozen i.p.v. een kleiner/foutief venster.
-
-    Geeft (left, top, width, height) terug, of None als niets gevonden is.
-    """
-    host = server_url.split("//")[-1].split("/")[0].split(":")[0].lower()
-    keywords = [host, "maquette", "chrome", "firefox", "edge", "msedge"]
-
-    found: list[tuple[int, int, int, int]] = []  # (left, top, w, h)
-
-    WNDENUMPROC = ctypes.WINFUNCTYPE(
-        ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
-    )
-
-    def _enum_cb(hwnd, _lParam):
-        if not ctypes.windll.user32.IsWindowVisible(hwnd):
-            return True
-        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
-        if length == 0:
-            return True
-        buf = ctypes.create_unicode_buffer(length + 1)
-        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
-        title = buf.value.lower()
-        if not any(kw in title for kw in keywords):
-            return True
-        # Gebruik GetClientRect + ClientToScreen zodat de afmetingen
-        # overeenkomen met window.innerWidth/Height uit de browser.
-        # GetWindowRect zou de outer bounds (inclusief titelregel en
-        # randen) teruggeven, wat een systematische offset geeft.
-        client_rect = ctypes.wintypes.RECT()
-        ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(client_rect))
-        w = client_rect.right
-        h = client_rect.bottom
-        if w > 200 and h > 200:
-            pt = ctypes.wintypes.POINT()  # (0,0) = linkerbovenhoek client area
-            ctypes.windll.user32.ClientToScreen(hwnd, ctypes.byref(pt))
-            found.append((pt.x, pt.y, w, h))
-        return True
-
-    ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enum_cb), 0)
-
-    if not found:
-        return None
-
-    if want_w > 0 and want_h > 0:
-        # Kies het venster met de kleinste afwijking t.o.v. de gevraagde viewport.
-        def _score(win):
-            _, _, w, h = win
-            return abs(w - want_w) + abs(h - want_h)
-
-        best = min(found, key=_score)
-    else:
-        # Geen hint: kies het grootste venster (grootste client-area).
-        best = max(found, key=lambda win: win[2] * win[3])
-
-    left, top, w, h = best
-    return left, top, w, h
-
-
-# ---------------------------------------------------------------------------
-# Calibratie: gedeelde hoek-collector (werkt op elke pixel-bron)
-# ---------------------------------------------------------------------------
-
-
-def _calibrate_collect_corner(
-    server_url: str,
-    area_id: str,
-    corner: str,
-    get_pixel,
-    stable_px: float,
-    require_away_from: tuple[float, float] | None = None,
-    move_away_px: float = 0.0,
-) -> tuple[float, float] | None:
-    """Wacht tot de pixel-bron `_CALIB_STABLE_SECONDS` stabiel op één plek staat
-    en geef die pixelpositie terug.
-
-    get_pixel() geeft (px, py) of None (geen blokje/cursor beschikbaar).
-    Voor de tweede hoek moet het blokje eerst `move_away_px` van hoek 1 weg zijn
-    voordat een nieuwe stabiele positie geaccepteerd wordt.
-    Geeft None terug bij KeyboardInterrupt.
-    """
-    INTERVAL = 1 / 30
-    stable_pos: tuple[float, float] | None = None
-    stable_since = 0.0
-    last_reported = -1
-    moved_away = require_away_from is None
-    last_waiting_sent = 0.0
-
-    def _send_waiting():
-        # Throttle "waiting" naar ~2x/sec zodat de server niet volloopt.
-        nonlocal last_waiting_sent
-        now_ = time.time()
-        if now_ - last_waiting_sent >= 0.5:
-            last_waiting_sent = now_
-            _send_calib_progress(server_url, area_id, corner, "waiting")
-
     try:
-        last_dbg = 0.0
-
-        def _dbg(msg: str):
-            nonlocal last_dbg
-            t = time.time()
-            if t - last_dbg >= 0.7:
-                last_dbg = t
-                print(f"[camera] calib[{corner}] {msg}")
-
-        while True:
-            t0 = time.time()
-            px = get_pixel()
-            now = time.time()
-
-            if px is None:
-                stable_pos = None
-                _send_waiting()
-                _dbg("geen blokje/cursor gedetecteerd — wachten")
-                time.sleep(INTERVAL)
-                continue
-
-            cx, cy = px
-
-            # Voor hoek 2: eerst voldoende wegbewegen van hoek 1
-            if not moved_away and require_away_from is not None:
-                dist = math.hypot(cx - require_away_from[0], cy - require_away_from[1])
-                if dist >= move_away_px:
-                    moved_away = True
-                    print(
-                        f"[camera] calib[{corner}] weg van hoek 1 ({dist:.0f}px) — meten kan starten"
-                    )
-                else:
-                    stable_pos = None
-                    _send_waiting()
-                    _dbg(
-                        f"nog te dicht bij hoek 1 ({dist:.0f}<{move_away_px}px) — beweeg blokje verder weg"
-                    )
-                    time.sleep(INTERVAL)
-                    continue
-
-            if stable_pos is None:
-                stable_pos = (cx, cy)
-                stable_since = now
-            elif math.hypot(cx - stable_pos[0], cy - stable_pos[1]) > stable_px:
-                stable_pos = (cx, cy)
-                stable_since = now
-
-            duration = now - stable_since
-            _dbg(f"blokje op ({cx:.0f},{cy:.0f}) stabiel {duration:.1f}s")
-            cur = int(duration)
-            if cur != last_reported:
-                last_reported = cur
-                _send_calib_progress(server_url, area_id, corner, "counting", duration)
-
-            if duration >= _CALIB_STABLE_SECONDS:
-                _send_calib_progress(server_url, area_id, corner, "recorded", duration)
-                return stable_pos
-
-            elapsed = time.time() - t0
-            time.sleep(max(0.0, INTERVAL - elapsed))
-    except KeyboardInterrupt:
+        resp = session.get(f"{server_url}/maquette/cursor", timeout=2)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
         return None
-
-
-def _calibrate_virtual(
-    server_url: str,
-    area_id: str,
-    mode: str,
-    corners: dict,
-    win_left: int,
-    win_top: int,
-    win_w: int,
-    win_h: int,
-) -> "Calibration | None":
-    """Calibreer de virtuele (cursor) camera door twee hoeken op te meten.
-
-    De browser projecteert een rode stip op resp. de linksonder- (corners['bl'])
-    en rechtsboven-hoek (corners['tr']) van het scherm-uitgelijnde vierkant. De
-    gebruiker beweegt de cursor naar de stip en houdt stil; de bijbehorende
-    pixelpositie wordt vastgelegd.
-    """
-    print(
-        "[camera] Calibratie (virtueel): beweeg cursor naar de rode stip en houd stil."
-    )
-
-    def get_pixel() -> tuple[float, float] | None:
-        cx, cy = _get_cursor_pos()
-        rel_x = cx - win_left
-        rel_y = cy - win_top
-        if 0 <= rel_x < win_w and 0 <= rel_y < win_h:
-            return (float(rel_x), float(rel_y))
+    if not data.get("available"):
         return None
-
-    bl = _calibrate_collect_corner(
-        server_url, area_id, "bl", get_pixel, stable_px=_VIRTUAL_STABILITY_PX
-    )
-    if bl is None:
+    if float(data.get("age", 999)) > _CURSOR_MAX_AGE:
         return None
-    tr = _calibrate_collect_corner(
-        server_url,
-        area_id,
-        "tr",
-        get_pixel,
-        stable_px=_VIRTUAL_STABILITY_PX,
-        require_away_from=bl,
-        move_away_px=_CALIB_MOVE_AWAY_PX,
-    )
-    if tr is None:
-        return None
-
-    calib = Calibration(
-        corners=corners,
-        px_bl=bl[0],
-        py_bl=bl[1],
-        px_tr=tr[0],
-        py_tr=tr[1],
-    )
-    _post_calibration(server_url, area_id, calib.to_dict(mode, -1, win_w, win_h))
-    _send_calib_progress(server_url, area_id, "tr", "done")
-    print(f"[camera] Calibratie klaar: bl-px={bl}  tr-px={tr}  corners={corners}")
-    return calib
+    return data
 
 
 def _run_virtual(
@@ -810,81 +505,29 @@ def _run_virtual(
     area_id: str,
     mode: str,
     features: list,
-    west: float,
-    north: float,
-    east: float,
-    south: float,
     stable_seconds: float,
     cooldown_seconds: float,
     runner: "_AdjustRunner",
-    width: int = 0,
-    height: int = 0,
-    calibrate: bool = False,
-    calibration: "Calibration | None" = None,
-    corners: "dict | None" = None,
-    pixels: "dict | None" = None,
 ) -> None:
     """
-    Cursor-tracking loop voor virtuele camera-modus (camera_id == -1).
+    Cursor-tracking voor de virtuele camera-modus (camera_id == -1).
 
     De cursor stelt het zwarte blokje voor (al ingesteld door ?maquette=true).
     Na `stable_seconds` zonder beweging wordt de dichtstbijzijnde weg afgesloten.
+
+    Er is hier geen calibratie nodig: de browser levert de positie al in
+    kaartcoordinaten aan.
     """
-    print("[camera] Virtuele camera: cursor wordt als blokje gebruikt.")
+    print("[camera] Virtuele camera: cursor uit de browser wordt als blokje gebruikt.")
 
-    win = _find_browser_window(server_url, width, height)
-    if win:
-        win_left, win_top, win_w, win_h = win
-        print(
-            f"[camera] Browser-venster gevonden op "
-            f"({win_left},{win_top}) {win_w}x{win_h}px"
-        )
-    else:
-        print(
-            "[camera] WAARSCHUWING: browser-venster niet gevonden. "
-            "Schermresolutie wordt gebruikt als fallback."
-        )
-        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
-        screen_h = ctypes.windll.user32.GetSystemMetrics(1)
-        win_left, win_top, win_w, win_h = 0, 0, screen_w, screen_h
-
-    # --- Calibratie uitvoeren indien gevraagd en nog niet aanwezig ---
-    if calibrate and calibration is None:
-        if not corners:
-            print(
-                "[camera] FOUT: geen hoek-coördinaten (corners) ontvangen voor calibratie."
-            )
-            return
-        # Virtuele modus: we meten de twee hoeken op met de cursor. Zolang
-        # calibratie én runtime beide GetCursorPos - win_origin in HETZELFDE
-        # venster gebruiken, is de bilineaire mapping self-consistent —
-        # ongeacht venster-offset of DPI-schaling.
-        calibration = _calibrate_virtual(
-            server_url,
-            area_id,
-            mode,
-            corners,
-            win_left,
-            win_top,
-            win_w,
-            win_h,
-        )
-        if calibration is None:
-            print("[camera] Calibratie afgebroken.")
-            return
-
-    def _to_wgs84(px: float, py: float) -> tuple[float, float]:
-        if calibration is not None:
-            return calibration.pixel_to_wgs84(px, py)
-        return pixel_to_wgs84(px, py, west, north, east, south, win_w, win_h)
-
+    session = requests.Session()
     triggered_links: set[int] = set()
     cooldown_until: float = 0.0
 
-    # Cursor-stability state
-    stable_pos: tuple[int, int] | None = None  # positie waar stabiliteit begon
+    stable_pos: "tuple[float, float] | None" = None  # positie waar stabiliteit begon
     stable_since: float = 0.0
     last_log_second: int = -1
+    warned_no_cursor = False
 
     print(
         f"[camera] Cursor-tracking gestart. Stabiel na {stable_seconds}s, "
@@ -892,34 +535,38 @@ def _run_virtual(
     )
     print("[camera] Druk op Ctrl+C om te stoppen.")
 
-    INTERVAL = 1 / 30  # ~30 polls per seconde
+    INTERVAL = 1 / 20  # 20 polls per seconde is ruim voor een handbeweging
 
     try:
         while True:
             t0 = time.time()
-            cx, cy = _get_cursor_pos()
+            cursor = _fetch_cursor(session, server_url)
 
-            # Cursor buiten browser-venster? → reset stabiliteit
-            rel_x = cx - win_left
-            rel_y = cy - win_top
-            if not (0 <= rel_x < win_w and 0 <= rel_y < win_h):
+            if cursor is None:
+                # Geen verse cursor: stabiliteit resetten, niet triggeren.
+                if not warned_no_cursor:
+                    print(
+                        "[camera] Wachten op cursorpositie uit de browser "
+                        "(staat de kaart open met ?maquette=true&follow=true?)"
+                    )
+                    warned_no_cursor = True
                 stable_pos = None
                 time.sleep(INTERVAL)
                 continue
+            warned_no_cursor = False
 
+            cx, cy = float(cursor["x"]), float(cursor["y"])
+            lon, lat = float(cursor["lon"]), float(cursor["lat"])
             now = time.time()
 
-            # Stabiliteitscheck
+            # Stabiliteitscheck op schermpixels: een drempel in pixels is
+            # betekenisvol, een drempel in graden niet (die hangt van de zoom af).
             if stable_pos is None:
                 stable_pos = (cx, cy)
                 stable_since = now
-            else:
-                dx = cx - stable_pos[0]
-                dy = cy - stable_pos[1]
-                moved = math.sqrt(dx * dx + dy * dy)
-                if moved > _VIRTUAL_STABILITY_PX:
-                    stable_pos = (cx, cy)
-                    stable_since = now
+            elif math.hypot(cx - stable_pos[0], cy - stable_pos[1]) > _VIRTUAL_STABILITY_PX:
+                stable_pos = (cx, cy)
+                stable_since = now
 
             duration = now - stable_since
 
@@ -927,20 +574,18 @@ def _run_virtual(
             cur_second = int(duration)
             if cur_second != last_log_second and cur_second > 0:
                 last_log_second = cur_second
-                lon, lat = _to_wgs84(rel_x, rel_y)
                 print(
                     f"[camera] Cursor stabiel {duration:.1f}s  "
-                    f"px=({rel_x},{rel_y})  "
+                    f"px=({cx:.0f},{cy:.0f})  "
                     f"wgs84=({lon:.6f},{lat:.6f})"
                 )
-            else:
-                last_log_second = cur_second if cur_second == 0 else last_log_second
+            elif cur_second == 0:
+                last_log_second = 0
 
             in_cooldown = now < cooldown_until
             adjust_busy = runner.is_busy()
 
             if duration >= stable_seconds and not in_cooldown and not adjust_busy:
-                lon, lat = _to_wgs84(rel_x, rel_y)
                 link_ids = find_nearest_link(lon, lat, features)
 
                 if link_ids is None:
@@ -950,8 +595,8 @@ def _run_virtual(
                 else:
                     print(
                         f"[camera] Cursor {stable_seconds}s stabiel op "
-                        f"({lon:.6f}, {lat:.6f}) → links {link_ids} oplichten, "
-                        f"berekening over {_PREVIEW_DELAY}s …"
+                        f"({lon:.6f}, {lat:.6f}) -> links {link_ids} oplichten, "
+                        f"berekening over {_PREVIEW_DELAY}s ..."
                     )
                     triggered_links.update(link_ids)
                     cooldown_until = now + cooldown_seconds
@@ -959,19 +604,16 @@ def _run_virtual(
                     time.sleep(_PREVIEW_DELAY)
                     _adjust_done = threading.Event()
                     runner.trigger(link_ids, on_done=_adjust_done.set)
-                    print("[camera] Eén berekening gestart — wachten op afronding …")
+                    print("[camera] Een berekening gestart - wachten op afronding ...")
                     _adjust_done.wait()
                     print(
-                        "[camera] Berekening klaar — camera wordt uitgeschakeld. "
+                        "[camera] Berekening klaar - camera wordt uitgeschakeld. "
                         "Zet 'm handmatig weer aan voor een volgende meting."
                     )
                     return
-            elif in_cooldown and duration >= stable_seconds:
-                pass  # cooldown-melding alleen tonen als net overschreden
 
             elapsed = time.time() - t0
-            sleep_time = max(0.0, INTERVAL - elapsed)
-            time.sleep(sleep_time)
+            time.sleep(max(0.0, INTERVAL - elapsed))
 
     except KeyboardInterrupt:
         print("\n[camera] Gestopt.")
@@ -982,121 +624,362 @@ def _run_virtual(
 # ---------------------------------------------------------------------------
 
 
-def _calibrate_physical(
-    server_url: str,
-    area_id: str,
-    mode: str,
-    corners: dict,
-    cap,
-    detector,
-    tracker,
-    frame_w: int,
-    frame_h: int,
-) -> "Calibration | None":
-    """Calibreer de fysieke camera door twee hoeken op te meten.
+class _PreviewPublisher:
+    """Stuurt camerabeelden naar de server zodat de browser kan calibreren.
 
-    De browser projecteert een rode stip op de linksonder- (corners['bl']) en
-    daarna rechtsboven-hoek (corners['tr']) van het scherm-uitgelijnde vierkant.
-    De gebruiker legt het blokje op de stip en houdt het stil; het gedetecteerde
-    centrum (framecoördinaten) wordt vastgelegd.
+    Draait als daemon-thread met een slot voor precies een frame: staat er al
+    een frame klaar dat nog niet verstuurd is, dan wordt dat overschreven. Zo
+    kan een trage POST de camera-uitleeslus nooit ophouden.
     """
-    print("[camera] Calibratie (fysiek): leg blokje op de rode stip en houd stil.")
 
-    def get_pixel() -> tuple[float, float] | None:
-        ret, frame = cap.read()
-        if not ret:
-            return None
-        dets = detector.detect_black_objects(frame)
-        stable = tracker.update(dets)
-        if not stable:
-            return None
-        cx, cy = stable[0]["center"]
-        return (float(cx), float(cy))
+    # 12 fps is ruim genoeg om een vierhoek op zijn plaats te slepen, en houdt
+    # de JPEG-encodering en de netwerklast bescheiden.
+    INTERVAL = 1 / 12
 
-    bl = _calibrate_collect_corner(server_url, area_id, "bl", get_pixel, stable_px=10.0)
-    if bl is None:
+    def __init__(self, server_url: str):
+        self.server_url = server_url
+        self._cond = threading.Condition()
+        self._pending: "tuple[bytes, int, int] | None" = None
+        self._stop = False
+        self._last_offer = 0.0
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def offer(self, frame) -> None:
+        """Bied een frame aan (niet-blokkerend, throttled, laatste wint)."""
+        now = time.time()
+        if now - self._last_offer < self.INTERVAL:
+            return
+        self._last_offer = now
+        try:
+            ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+        except Exception:
+            return
+        if not ok:
+            return
+        height, width = frame.shape[:2]
+        with self._cond:
+            self._pending = (buf.tobytes(), width, height)
+            self._cond.notify()
+
+    def stop(self) -> None:
+        with self._cond:
+            self._stop = True
+            self._cond.notify()
+
+    def _loop(self) -> None:
+        session = requests.Session()
+        while True:
+            with self._cond:
+                while self._pending is None and not self._stop:
+                    self._cond.wait()
+                if self._stop:
+                    return
+                data, width, height = self._pending
+                self._pending = None
+            try:
+                session.post(
+                    f"{self.server_url}/maquette/frame",
+                    params={"w": width, "h": height},
+                    data=data,
+                    headers={"Content-Type": "image/jpeg"},
+                    timeout=5,
+                )
+            except Exception:
+                pass  # een gemist previewframe is niet erg
+
+
+def run_preview(server_url: str, camera_id: int, width: int, height: int) -> None:
+    """Preview-stand: alleen camerabeeld doorgeven, geen detectie.
+
+    Wordt gebruikt terwijl de gebruiker in de browser het camerabeeld over de
+    kaart legt en de vier hoekpunten versleept.
+    """
+    if camera_id < 0:
+        print("[camera] Preview-stand vereist een fysieke camera (--camera-id >= 0).")
+        return
+
+    cap = _open_camera(camera_id, width, height)
+    if cap is None:
+        sys.exit(1)
+
+    publisher = _PreviewPublisher(server_url)
+    frame_h, frame_w = 0, 0
+    print("[camera] Preview gestart - calibreer nu in de browser. Ctrl+C stopt.")
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                time.sleep(0.05)
+                continue
+            if not frame_w:
+                frame_h, frame_w = frame.shape[:2]
+                print(f"[camera] Previewresolutie: {frame_w}x{frame_h}")
+            publisher.offer(frame)
+    except KeyboardInterrupt:
+        print("\n[camera] Preview gestopt.")
+    finally:
+        publisher.stop()
+        cap.release()
+
+
+def _open_camera(camera_id: int, width: int, height: int):
+    """Open een fysieke camera. Geeft None als dat niet lukt."""
+    print(f"[camera] Camera {camera_id} openen ...")
+    cap = cv2.VideoCapture(camera_id, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(camera_id)
+    if not cap.isOpened():
+        print(f"[camera] FOUT: camera {camera_id} kon niet geopend worden.")
         return None
-    tr = _calibrate_collect_corner(
-        server_url,
-        area_id,
-        "tr",
-        get_pixel,
-        stable_px=10.0,
-        require_away_from=bl,
-        move_away_px=_CALIB_MOVE_AWAY_PX,
-    )
-    if tr is None:
-        return None
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    return cap
 
-    calib = Calibration(
-        corners=corners,
-        px_bl=bl[0],
-        py_bl=bl[1],
-        px_tr=tr[0],
-        py_tr=tr[1],
+
+# ---------------------------------------------------------------------------
+# Uitsnede: alleen het gecalibreerde vlak aan de detector voeren
+# ---------------------------------------------------------------------------
+#
+# De camera ziet meer dan de maquette: tafelrand, vloer, muur, kabels, de
+# gebruiker. Dat is allemaal donker en de detector zoekt nu juist naar donkere
+# vlakken. Zonder uitsnede concurreert de halve kamer met het blokje.
+#
+# De calibratie kent de omtrek van het geprojecteerde vlak in camerapixels
+# (`projection_polygon`). Alles daarbuiten wordt vóór de detectie vervangen door
+# de gemiddelde kleur van wat er binnen ligt.
+#
+# Waarom die gemiddelde kleur, en niet zwart of wit: de detector bepaalt
+# "donkerder dan de omgeving" met een sterk vervaagde kopie van het beeld als
+# achtergrond (GaussianBlur, sigma 51). Een harde zwarte rand zou langs de hele
+# omtrek een schijnbaar donker gebied opleveren, een harde witte rand zou de
+# binnenkant net langs de rand donker laten lijken. Een neutrale vulling laat de
+# achtergrondschatting vlak doorlopen, zodat de rand zelf niets oplevert.
+
+
+def _roi_polygon(
+    calibration, margin: float, region: str = "picked"
+) -> "list[list[float]] | None":
+    """De uit te snijden vierhoek in camerapixels, of None als die er niet is.
+
+    `region` bepaalt wat het werkgebied is:
+
+    * ``picked`` (default) — de vierhoek die je tijdens het calibreren hebt
+      aangewezen. Dát is wat je hebt afgebakend als maquette.
+    * ``projection`` — het hele vlak dat de beamer projecteert. Dat is groter:
+      de markers liggen met hun inzet erbinnen, dus bij 6% inzet 1,3x en bij
+      25% ruim 4x in oppervlak. Alleen zinvol als de maquette echt tot aan de
+      rand van de projectie doorloopt.
+
+    Legacy-calibraties (bilineair) kennen geen vlak; dan blijft het hele beeld
+    in gebruik, zoals voorheen.
+    """
+    getter = getattr(
+        calibration,
+        "projection_polygon" if region == "projection" else "picked_polygon",
+        None,
     )
-    _post_calibration(server_url, area_id, calib.to_dict(mode, 0, frame_w, frame_h))
-    _send_calib_progress(server_url, area_id, "tr", "done")
-    print(f"[camera] Calibratie klaar: bl-px={bl}  tr-px={tr}  corners={corners}")
-    return calib
+    if getter is None:
+        return None
+    try:
+        polygon = getter(margin)
+    except ValueError:
+        return None
+    if not polygon or len(polygon) != 4:
+        return None
+    # Een bijna-ontaarde homografie kan hoekpunten op de horizon leggen; die
+    # zouden als astronomisch grote coördinaten terugkomen. Afkappen op een ruim
+    # veelvoud van het beeld houdt fillPoly werkbaar.
+    limit = 1e5
+    if any(not math.isfinite(v) or abs(v) > limit for p in polygon for v in p):
+        return None
+    return [[float(p[0]), float(p[1])] for p in polygon]
+
+
+def _roi_mask(frame_shape, polygon: "list[list[float]]"):
+    """Binair masker (255 binnen de vierhoek) ter grootte van het frame.
+
+    Geeft None als de vierhoek geen enkele pixel van het beeld raakt — dan is er
+    niets uit te snijden en klopt de calibratie niet bij deze camerastand.
+    """
+    height, width = frame_shape[:2]
+    mask = np.zeros((height, width), dtype=np.uint8)
+    pts = np.round(np.array(polygon, dtype=np.float64)).astype(np.int32)
+    cv2.fillPoly(mask, [pts], 255)
+    covered = int(cv2.countNonZero(mask))
+    if covered == 0:
+        return None
+    return mask
+
+
+def _apply_roi(frame, mask):
+    """Vervang alles buiten het masker door de gemiddelde kleur binnen."""
+    fill = cv2.mean(frame, mask=mask)[:3]
+    out = np.empty_like(frame)
+    out[:] = [int(round(c)) for c in fill]
+    cv2.copyTo(frame, mask, out)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Objectgrootte: hoe klein mag een zwart vlak zijn om nog te tellen
+# ---------------------------------------------------------------------------
+#
+# Alleen een ondergrens, om ruis en losse schaduwrandjes te weren. Een bovengrens
+# is er niet: het object is een mobieltje, geen blokje, en hoe groot het in beeld
+# staat hangt volledig af van resolutie en afstand.
+#
+# Die ondergrens in vaste pixels uitdrukken is een slechte maat, om dezelfde
+# reden: een mobieltje van 15x7,5 cm beslaat op 1,2 m bij 1920 px ruim
+# 26.000 px², op 1,5 m bij 1280 px nog maar 7.500 px². Als *fractie van het
+# gecalibreerde vlak* is dat getal wél stabiel — object en geprojecteerd vlak
+# schalen samen mee — en komt een mobieltje consequent rond 0,5-5% uit.
+
+# Alleen een ondergrens, laag genoeg om ruis en losse schaduwrandjes te weren.
+# Er is bewust géén bovengrens: hoe groot het zwarte vlak is doet er niet toe.
+# Wat te groot is om het object te zijn valt af op de uitsnede
+# (ROI_MIN_BLOCK_COVERAGE) of op de vierhoek-fit, niet op een getal — een
+# plafond kostte eerder juist de detectie die we zochten.
+_DEFAULT_MIN_OBJECT_AREA_PCT = 0.1
+
+
+def _area_thresholds(
+    roi_area_px: float,
+    min_pct: float,
+    min_override: "float | None",
+    max_override: "float | None",
+) -> tuple[float, float]:
+    """Reken het percentage om naar een contouroppervlak in pixels.
+
+    De bovengrens is oneindig tenzij er expliciet één is meegegeven.
+    """
+    min_area = max(1.0, roi_area_px * min_pct / 100.0)
+    if min_override is not None:
+        min_area = float(min_override)
+    max_area = math.inf if max_override is None else float(max_override)
+    return min_area, max_area
+
+
+def _format_area_range(min_area: float, max_area: float) -> str:
+    """De toegestane grootte, leesbaar — ook als er geen bovengrens is."""
+    if math.isinf(max_area):
+        return f"vanaf {min_area:.0f} px², geen bovengrens"
+    return f"{min_area:.0f}-{max_area:.0f} px²"
+
+
+# Niet vaker dan dit een samenvatting van afgewezen vlakken tonen.
+_REJECT_LOG_INTERVAL = 3.0
+
+
+def _is_reportable_rejection(evaluation: dict) -> bool:
+    """Is deze afwijzing het melden waard?
+
+    `outside_roi` is dat niet. Die vlakken liggen buiten het afgebakende gebied
+    en zijn daarmee geen bijna-detectie maar ruis: de tafelrand, een kabel, een
+    stoel. Ze in beeld of in de log tonen wekt precies de verkeerde indruk —
+    namelijk dat ze meetellen.
+    """
+    return not evaluation.get("accepted") and evaluation.get("reason") != "outside_roi"
+
+
+def _log_rejections(evaluations: list, min_area: float, max_area: float) -> None:
+    """Vertel waaróm er niets gevonden is.
+
+    Zonder dit is een verkeerde drempel onzichtbaar: de detector zwijgt even
+    hard bij "niets in beeld" als bij "het mobieltje is vier keer te groot
+    bevonden". De reden en het gemeten oppervlak maken dat verschil zichtbaar.
+    """
+    rejected = [e for e in evaluations if _is_reportable_rejection(e)]
+    if not rejected:
+        return
+    by_reason: dict[str, list[float]] = {}
+    for item in rejected:
+        by_reason.setdefault(item.get("reason", "onbekend"), []).append(
+            float(item.get("raw_area", 0.0))
+        )
+    parts = []
+    for reason, areas in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
+        parts.append(f"{reason}x{len(areas)} (grootste {max(areas):.0f} px²)")
+    print(
+        f"[camera] Niets geaccepteerd; toegestaan "
+        f"{_format_area_range(min_area, max_area)}. " + ", ".join(parts[:3])
+    )
+
+
+def _detection_report(det: dict, anchor: str, to_wgs84, calibration=None) -> dict:
+    """Vertaal één detectie naar iets dat de browser kan tekenen.
+
+    Naast het ankerpunt (waarop de wegvak-keuze wordt gebaseerd) gaat ook de
+    omtrek mee, plus de positie binnen het geprojecteerde vlak. Zie je op de
+    kaart een vlak van de verkeerde grootte of op de verkeerde plek staan, dan
+    weet je meteen of het aan de detectie of aan de calibratie ligt.
+    """
+    ax, ay = _detection_point(det, anchor)
+    lon, lat = to_wgs84(ax, ay)
+    report = {
+        "lon": lon,
+        "lat": lat,
+        "px": round(ax, 1),
+        "py": round(ay, 1),
+        "area": det.get("area"),
+        "track_id": det.get("track_id"),
+        "in_range": True,
+    }
+    bbox = det.get("bbox")
+    if bbox and len(bbox) >= 4:
+        x1, y1, x2, y2 = (float(v) for v in bbox[:4])
+        report["outline"] = [
+            list(to_wgs84(x, y))
+            for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
+        ]
+    if calibration is not None and hasattr(calibration, "pixel_to_screen"):
+        uv = calibration.pixel_to_screen(ax, ay)
+        if uv is not None:
+            report["u"], report["v"] = round(uv[0], 4), round(uv[1], 4)
+            report["in_range"] = calibration.is_in_projection(ax, ay)
+    return report
+
+
+def _detection_point(det: dict, anchor: str) -> tuple[float, float]:
+    """Het punt van een detectie dat als positie op de maquette telt.
+
+    `center` is het zwaartepunt van het silhouet en ligt dus op ongeveer halve
+    blokhoogte. Bij een schuin opgestelde camera valt dat punt naast de
+    voetafdruk van het blokje: de verschuiving is ruwweg (h/2)*tan(kijkhoek).
+    `bottom` gebruikt het midden van de onderrand, dat wel op het grondvlak
+    ligt - de homografie is immers voor het grondvlak bepaald.
+    """
+    if anchor == "bottom":
+        bbox = det.get("bbox")
+        if bbox and len(bbox) >= 4:
+            return (float(bbox[0]) + float(bbox[2])) * 0.5, float(bbox[3])
+    cx, cy = det["center"]
+    return float(cx), float(cy)
 
 
 def run(
     server_url: str,
     area_id: str,
     mode: str,
-    viewport_west: float,
-    viewport_north: float,
-    viewport_east: float,
-    viewport_south: float,
     width: int,
     height: int,
     camera_id: int = -1,
     stable_seconds: float = 3.0,
     cooldown_seconds: float = 10.0,
     show_video: bool = False,
-    calibrate: bool = False,
-    corners: "dict | None" = None,
-    pixels: "dict | None" = None,
+    anchor: str = "center",
+    mask_margin: float = 0.0,
+    mask_region: str = "picked",
+    min_object_area_pct: float = _DEFAULT_MIN_OBJECT_AREA_PCT,
+    min_area: "float | None" = None,
+    max_area: "float | None" = None,
 ) -> None:
-    # --- DPI-awareness: zorg dat GetCursorPos/GetClientRect in fysieke pixels
-    # rekenen, zodat cursor- en venstercoördinaten in dezelfde ruimte liggen. ---
-    if sys.platform == "win32":
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PER_MONITOR_AWARE
-        except Exception:
-            try:
-                ctypes.windll.user32.SetProcessDPIAware()
-            except Exception:
-                pass
-
-    # --- Netwerk laden (alleen voor road-lookup, niet meer voor viewport) ---
+    # --- Netwerk laden (voor de road-lookup) ---
     features = load_network_features(server_url, area_id, mode)
     if not features:
         print("[camera] FOUT: geen features geladen. Controleer area_id en mode.")
         sys.exit(1)
-
-    west, north, east, south = (
-        viewport_west,
-        viewport_north,
-        viewport_east,
-        viewport_south,
-    )
-    print(
-        f"[camera] Viewport (browser): west={west:.6f} north={north:.6f} "
-        f"east={east:.6f} south={south:.6f}  {width}x{height}px"
-    )
-
-    # --- Calibratie: bestaande ophalen tenzij (her)calibratie gevraagd is ---
-    calibration: "Calibration | None" = None
-    if calibrate:
-        print("[camera] Calibratiemodus actief — bestaande calibratie wordt genegeerd.")
-    else:
-        calibration = _fetch_calibration(server_url, area_id, mode)
-        if calibration is not None:
-            print("[camera] Bestaande calibratie geladen.")
-        else:
-            print("[camera] Geen calibratie gevonden — viewport-mapping als fallback.")
 
     # --- Adjust-runner (gedeeld door beide modi) ---
     runner = _AdjustRunner(server_url=server_url, mode=mode)
@@ -1109,7 +992,7 @@ def run(
 
     try:
         # -----------------------------------------------------------------------
-        # Modus -1: virtuele camera — cursor tracken vanuit browser-venster
+        # Modus -1: virtuele camera - cursorpositie komt uit de browser
         # -----------------------------------------------------------------------
         if camera_id == -1:
             _run_virtual(
@@ -1117,86 +1000,115 @@ def run(
                 area_id=area_id,
                 mode=mode,
                 features=features,
-                west=west,
-                north=north,
-                east=east,
-                south=south,
                 stable_seconds=stable_seconds,
                 cooldown_seconds=cooldown_seconds,
                 runner=runner,
-                width=width,
-                height=height,
-                calibrate=calibrate,
-                calibration=calibration,
-                corners=corners,
-                pixels=pixels,
             )
             return
 
         # -----------------------------------------------------------------------
-        # Modus ≥ 0: fysieke camera
+        # Modus >= 0: fysieke camera
         # -----------------------------------------------------------------------
+        calibration = _fetch_calibration(server_url, area_id, mode)
+        if calibration is None:
+            print(
+                "[camera] FOUT: geen calibratie gevonden voor dit gebied.\n"
+                "         Open de kaart met &calibrate=true en leg het camerabeeld\n"
+                "         eerst over de kaart. Zonder calibratie zou elke gemeten\n"
+                "         positie er stelselmatig naast liggen."
+            )
+            return
+        print("[camera] Calibratie geladen.")
 
-        # --- Camera openen ---
-        print(f"[camera] Camera {camera_id} openen …")
-        cap = cv2.VideoCapture(camera_id, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            cap = cv2.VideoCapture(camera_id)
-        if not cap.isOpened():
-            print(f"[camera] FOUT: camera {camera_id} kon niet geopend worden.")
+        cap = _open_camera(camera_id, width, height)
+        if cap is None:
             sys.exit(1)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-
-        # Gebruik de opgegeven viewport-afmetingen als camera-resolutie
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         ret, probe = cap.read()
         if not ret:
             print("[camera] FOUT: kon geen frame lezen van camera.")
             sys.exit(1)
         frame_h, frame_w = probe.shape[:2]
         print(f"[camera] Camera actief: {frame_w}x{frame_h}")
-        # Voor de coördinaat-mapping gebruiken we de opgegeven viewport-dimensies
-        # (gelijk aan de browser-resolutie), niet de camera-resolutie.
-        # Als de camera een andere resolutie heeft, schaalt de transform mee.
-        map_w, map_h = width, height
+
+        # Levert de camera een andere resolutie dan tijdens het calibreren, dan
+        # blijft het beeldveld gelijk en hoeft alleen de pixelschaal mee.
+        calib_frame_w = getattr(calibration, "frame_w", 0)
+        calib_frame_h = getattr(calibration, "frame_h", 0)
+        if (
+            calib_frame_w
+            and calib_frame_h
+            and (calib_frame_w, calib_frame_h) != (frame_w, frame_h)
+        ):
+            print(
+                f"[camera] Let op: gecalibreerd op {calib_frame_w}x{calib_frame_h}, "
+                f"camera levert {frame_w}x{frame_h} - calibratie wordt meegeschaald."
+            )
+            calibration = calibration.rescaled(frame_w, frame_h)
+
+        # --- Uitsnede van het gecalibreerde vlak ---
+        roi_polygon = _roi_polygon(calibration, mask_margin, mask_region)
+        roi_mask = _roi_mask(probe.shape, roi_polygon) if roi_polygon else None
+        if roi_mask is not None:
+            coverage = cv2.countNonZero(roi_mask) / float(frame_w * frame_h)
+            corners = ", ".join(f"({p[0]:.0f},{p[1]:.0f})" for p in roi_polygon)
+            what = (
+                "het geprojecteerde vlak"
+                if mask_region == "projection"
+                else "het bij het calibreren aangewezen vierkant"
+            )
+            print(
+                f"[camera] Uitsnede actief ({what}): {corners} — "
+                f"{coverage * 100:.0f}% van het beeld. Alles daarbuiten telt niet mee."
+            )
+        elif roi_polygon:
+            print(
+                "[camera] FOUT: het gecalibreerde vlak valt volledig buiten het "
+                "camerabeeld. Staat de camera nog zoals tijdens het calibreren?"
+            )
+            return
+        else:
+            print(
+                "[camera] Let op: deze calibratie kent geen vlak (oud formaat) — "
+                "er wordt op het hele camerabeeld gedetecteerd."
+            )
+
+        # --- Toegestane objectgrootte, afgeleid van de uitsnede ---
+        roi_area_px = (
+            float(cv2.countNonZero(roi_mask))
+            if roi_mask is not None
+            else float(frame_w * frame_h)
+        )
+        area_min, area_max = _area_thresholds(
+            roi_area_px, min_object_area_pct, min_area, max_area
+        )
+        print(
+            f"[camera] Objectgrootte: {_format_area_range(area_min, area_max)} "
+            f"(ondergrens = {min_object_area_pct:g}% van het vlak)."
+        )
 
         # --- Detector / tracker ---
-        detector = BlackObjectDetector()
+        # De vierhoek gaat óók als detection_area mee: het masker houdt de
+        # omgeving buiten beeld, deze controle gooit blobs weg die nog over de
+        # rand heen steken (config.ROI_MIN_BLOCK_COVERAGE).
+        detector = BlackObjectDetector(detection_area=roi_polygon)
         tracker = DetectionTracker(
             stability_frames=5, position_threshold=10, max_allowed_distance=80
         )
 
-        # --- Calibratie uitvoeren indien gevraagd en nog niet aanwezig ---
-        if calibrate and calibration is None:
-            if not corners:
-                print(
-                    "[camera] FOUT: geen hoek-coördinaten (corners) ontvangen voor calibratie."
-                )
-                return
-            calibration = _calibrate_physical(
-                server_url,
-                area_id,
-                mode,
-                corners,
-                cap,
-                detector,
-                tracker,
-                frame_w,
-                frame_h,
-            )
-            if calibration is None:
-                print("[camera] Calibratie afgebroken.")
-                return
-
         def _to_wgs84(px: float, py: float) -> tuple[float, float]:
-            if calibration is not None:
-                return calibration.pixel_to_wgs84(px, py)
-            return pixel_to_wgs84(px, py, west, north, east, south, frame_w, frame_h)
+            return calibration.pixel_to_wgs84(px, py)
 
         # --- State ---
         # track_id → timestamp waarop dit track voor het eerst als stabiel gemarkeerd werd
         stable_since: dict[int, float] = {}
+        last_detections_sent: float = 0.0
+        last_reject_log: float = 0.0
+        # Hoeken van het camerabeeld op de kaart: verandert niet, dus eenmalig.
+        camera_view = (
+            calibration.projection_corners_wgs84()
+            if hasattr(calibration, "projection_corners_wgs84")
+            else None
+        )
         # link_ids die al zijn afgesloten in deze sessie (geen heractivatie)
         triggered_links: set[int] = set()
         cooldown_until: float = 0.0
@@ -1215,9 +1127,40 @@ def run(
 
             now = time.time()
 
-            # --- Detectie + tracking ---
-            detections = detector.detect_black_objects(frame)
+            # --- Detectie + tracking, uitsluitend op het gecalibreerde vlak ---
+            frame_roi = _apply_roi(frame, roi_mask) if roi_mask is not None else frame
+            # `analyze_…` levert dezelfde detecties als `detect_black_objects`,
+            # plus de afgewezen contouren met hun reden. Dat kost niets extra —
+            # detect_black_objects filtert precies deze lijst — en maakt een
+            # verkeerd afgestelde drempel meteen zichtbaar.
+            evaluations = detector.analyze_black_object_contours(
+                frame_roi, min_area=area_min, max_area=area_max
+            )
+            detections = [
+                e["detection"]
+                for e in evaluations
+                if e.get("accepted") and e.get("detection") is not None
+            ]
             stable_dets = tracker.update(detections)
+
+            if not detections and now - last_reject_log >= _REJECT_LOG_INTERVAL:
+                last_reject_log = now
+                _log_rejections(evaluations, area_min, area_max)
+
+            # --- Alles wat de camera ziet naar de kaart sturen ---
+            # Bewust de ruwe detecties, niet alleen de stabiele: je wilt ook
+            # zien wanneer de camera iets ánders zwart vindt dan jouw blokje.
+            if now - last_detections_sent >= _DETECTIONS_INTERVAL:
+                last_detections_sent = now
+                _send_detections(
+                    server_url,
+                    runner.get_area_id(),
+                    [
+                        _detection_report(d, anchor, _to_wgs84, calibration)
+                        for d in detections
+                    ],
+                    camera_view=camera_view,
+                )
 
             # --- Bijhouden welke track-ids momenteel stabiel zijn ---
             stable_ids_this_frame = {d["track_id"] for d in stable_dets}
@@ -1242,7 +1185,7 @@ def run(
 
                 # Progress-feedback elke seconde
                 if int(duration) != int(duration - 0.033):  # ~30fps ticks
-                    cx, cy = det["center"]
+                    cx, cy = _detection_point(det, anchor)
                     lon, lat = _to_wgs84(cx, cy)
                     print(
                         f"[camera] Blokje stabiel {duration:.1f}s  "
@@ -1259,7 +1202,20 @@ def run(
                     continue
 
                 # Pixel → WGS84
-                cx, cy = det["center"]
+                cx, cy = _detection_point(det, anchor)
+
+                # De camera ziet méér dan de beamer projecteert. Ligt het blokje
+                # buiten dat vlak, dan staat er geen kaart onder en zou
+                # find_nearest_link een wegvak kiezen dat niet eens in beeld is.
+                if not calibration.is_in_projection(cx, cy):
+                    uv = calibration.pixel_to_screen(cx, cy)
+                    where = f"  (positie in het vlak: {uv[0]:.2f}, {uv[1]:.2f})" if uv else ""
+                    print(
+                        f"[camera] Blokje op px=({cx:.0f},{cy:.0f}) ligt BUITEN het "
+                        f"geprojecteerde gebied - genegeerd.{where}"
+                    )
+                    continue
+
                 lon, lat = _to_wgs84(cx, cy)
 
                 # Dichtstbijzijnde link
@@ -1296,7 +1252,35 @@ def run(
 
             # --- Optioneel: debug-video ---
             if show_video:
-                display = frame.copy()
+                # Bewust het uitgesneden beeld: dan zie je letterlijk waar de
+                # detector naar kijkt, en niet wat de camera toevallig ook ziet.
+                display = frame_roi.copy()
+                if roi_polygon:
+                    cv2.polylines(
+                        display,
+                        [np.round(np.array(roi_polygon)).astype(np.int32)],
+                        True,
+                        (255, 224, 0),
+                        2,
+                    )
+                # Afgewezen contouren grijs, met reden en oppervlak. Zo zie je
+                # meteen of het mobieltje wél gevonden maar afgekeurd is. Wat
+                # buiten de uitsnede ligt blijft weg: dat telt niet mee en hoort
+                # dus ook niet in het beeld dat laat zien wát meetelt.
+                for item in evaluations:
+                    if not _is_reportable_rejection(item):
+                        continue
+                    bx1, by1, bx2, by2 = (int(v) for v in item["bbox"])
+                    cv2.rectangle(display, (bx1, by1), (bx2, by2), (150, 150, 150), 1)
+                    cv2.putText(
+                        display,
+                        f"{item.get('reason', '?')} {item.get('raw_area', 0):.0f}",
+                        (bx1, max(12, by1 - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4,
+                        (150, 150, 150),
+                        1,
+                    )
                 # Teken stabiele detecties groen, onstabiel rood
                 all_stable, all_unstable = tracker.get_visualization_detections()
                 for d in all_unstable:
@@ -1340,28 +1324,21 @@ def run(
 
 def _parse_args():
     p = argparse.ArgumentParser(
-        description="Maquette camera — detecteert zwart blokje en sluit wegvak af."
+        description="Maquette camera - detecteert zwart blokje en sluit wegvak af."
     )
-    p.add_argument("--server", default="http://localhost:8080", help="Server base URL")
+    p.add_argument(
+        "--server",
+        default="http://127.0.0.1:8080",
+        help="Server base URL (gebruik 127.0.0.1, niet localhost: een "
+        "DNS-lookup van localhost kost op sommige machines seconden)",
+    )
     p.add_argument("--area-id", required=True, help="Initieel area_id (UUID)")
     p.add_argument("--mode", default="CAR", help="Transportmodus (CAR/BIKE/PEDESTRIAN)")
     p.add_argument(
-        "--viewport-west", type=float, required=True, help="Viewport west-grens (lon)"
+        "--width", type=int, required=True, help="Gewenste camerabreedte in pixels"
     )
     p.add_argument(
-        "--viewport-north", type=float, required=True, help="Viewport noord-grens (lat)"
-    )
-    p.add_argument(
-        "--viewport-east", type=float, required=True, help="Viewport oost-grens (lon)"
-    )
-    p.add_argument(
-        "--viewport-south", type=float, required=True, help="Viewport zuid-grens (lat)"
-    )
-    p.add_argument(
-        "--width", type=int, required=True, help="Viewport breedte in pixels"
-    )
-    p.add_argument(
-        "--height", type=int, required=True, help="Viewport hoogte in pixels"
+        "--height", type=int, required=True, help="Gewenste camerahoogte in pixels"
     )
     p.add_argument(
         "--camera-id",
@@ -1387,62 +1364,90 @@ def _parse_args():
         help="Toon live camera-feed met detectie-overlay (debug, alleen fysieke camera)",
     )
     p.add_argument(
-        "--calibrate",
+        "--preview",
         action="store_true",
-        help="Start in calibratiemodus: meet twee hoeken op en negeer bestaande calibratie",
+        help="Preview-stand: stuur alleen camerabeeld naar de browser (voor "
+        "de calibratie), zonder detectie",
     )
     p.add_argument(
-        "--view-json",
-        default="",
-        help="JSON met kaartweergave (center/zoom/bearing/pitch) om in de calibratie op te slaan",
+        "--mask-margin",
+        type=float,
+        default=0.0,
+        help="Speling op de uitsnede, als fractie van het gecalibreerde vlak. "
+        "0 (default) snijdt precies op het vlak; 0.05 laat 5%% extra staan aan "
+        "elke kant, voor het geval de camera iets verschoven is",
     )
     p.add_argument(
-        "--corners-json",
-        default="",
-        help="JSON met de 4 geo-hoeken {bl,br,tr,tl} van het scherm-uitgelijnde vierkant",
+        "--mask-region",
+        choices=("picked", "projection"),
+        default="picked",
+        help="Wat het werkgebied is. 'picked' (default) is de vierhoek die je "
+        "bij het calibreren hebt aangewezen; 'projection' is het hele vlak dat "
+        "de beamer projecteert, en dat is groter — de markers liggen met hun "
+        "inzet erbinnen (bij 25%% inzet ruim 4x in oppervlak)",
     )
     p.add_argument(
-        "--pixels-json",
-        default="",
-        help="JSON met scherm-pixelhoeken {bl:[x,y],tr:[x,y]} (virtuele modus: directe calibratie)",
+        "--min-object-area",
+        type=float,
+        metavar="PCT",
+        default=_DEFAULT_MIN_OBJECT_AREA_PCT,
+        help="Ondergrens voor de objectgrootte, als percentage van het "
+        "gecalibreerde vlak (default: %(default)s). Een percentage in plaats van "
+        "pixels, omdat pixels met de cameraresolutie en de afstand meeschalen en "
+        "een percentage niet. Er is geen bovengrens",
+    )
+    p.add_argument(
+        "--min-area",
+        type=float,
+        default=None,
+        help="Ondergrens in pixels, overschrijft --min-object-area (voor "
+        "fijnregelen aan de hand van wat --show-video toont)",
+    )
+    p.add_argument(
+        "--max-area",
+        type=float,
+        default=None,
+        help="Bovengrens in pixels. Standaard is er géén bovengrens; geef deze "
+        "alleen op als iets groots in beeld structureel voor het object "
+        "aangezien wordt",
+    )
+    p.add_argument(
+        "--anchor",
+        choices=("center", "bottom"),
+        default="center",
+        help="Welk punt van het blokje telt als positie: 'center' is het "
+        "zwaartepunt van het silhouet, 'bottom' het midden van de onderrand. "
+        "Bij een schuin opgestelde camera ligt alleen 'bottom' op het grondvlak "
+        "waarvoor de calibratie geldt (default: center)",
     )
     return p.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    if args.view_json:
-        try:
-            _CALIB_VIEW = json.loads(args.view_json)
-        except (ValueError, TypeError):
-            _CALIB_VIEW = None
-    _corners = None
-    if args.corners_json:
-        try:
-            _corners = json.loads(args.corners_json)
-        except (ValueError, TypeError):
-            _corners = None
-    _pixels = None
-    if args.pixels_json:
-        try:
-            _pixels = json.loads(args.pixels_json)
-        except (ValueError, TypeError):
-            _pixels = None
-    run(
-        server_url=args.server.rstrip("/"),
-        area_id=args.area_id,
-        mode=args.mode,
-        viewport_west=args.viewport_west,
-        viewport_north=args.viewport_north,
-        viewport_east=args.viewport_east,
-        viewport_south=args.viewport_south,
-        width=args.width,
-        height=args.height,
-        camera_id=args.camera_id,
-        stable_seconds=args.stable_seconds,
-        cooldown_seconds=args.cooldown,
-        show_video=args.show_video,
-        calibrate=args.calibrate,
-        corners=_corners,
-        pixels=_pixels,
-    )
+
+    if args.preview:
+        run_preview(
+            server_url=args.server,
+            camera_id=args.camera_id,
+            width=args.width,
+            height=args.height,
+        )
+    else:
+        run(
+            server_url=args.server,
+            area_id=args.area_id,
+            mode=args.mode,
+            width=args.width,
+            height=args.height,
+            camera_id=args.camera_id,
+            stable_seconds=args.stable_seconds,
+            cooldown_seconds=args.cooldown,
+            show_video=args.show_video,
+            anchor=args.anchor,
+            mask_margin=args.mask_margin,
+            mask_region=args.mask_region,
+            min_object_area_pct=args.min_object_area,
+            min_area=args.min_area,
+            max_area=args.max_area,
+        )
