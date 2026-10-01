@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Verkeersnetwerk 3D — Rotterdam</title>
+  <title>GMT Speeltuin</title>
 
   <!-- MapLibre GL voor achtergrondkaart + 3D gebouwen -->
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
@@ -1826,7 +1826,7 @@
     <!-- Groene kop: home, projectnaam, instellingen (verplaatst uit de oude toolbar) -->
     <div id="leftMenuHeader">
       <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" data-i18n-title="homeTitle" title="Terug naar overzicht">&#8962;</button>
-      <span class="lmp-header-title" id="networkTitle">Verkeersnetwerk Rotterdam</span>
+      <span class="lmp-header-title" id="networkTitle">GMT Speeltuin</span>
       <button class="tb-btn" id="settingsBtn" data-i18n-title="settingsTitle" title="Instellingen">&#9881;</button>
     </div>
     <div class="lmp-body" id="leftMenuBody">
@@ -2615,7 +2615,7 @@
       loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
       loaderZones:'Zones laden\u2026', loaderRoutes:'Routes laden\u2026', loaderMap:'Kaart laden\u2026',
       // Gebiedskeuze
-      areaTitle:'Verkeersnetwerk-visualisatie', areaSubtitle:'Kies een gebied om te laden:',
+      areaTitle:'Netwerk-visualisatie', areaSubtitle:'Kies een gebied om te laden:',
       areaNotFound:'Geen gebieden gevonden. Start de server met --data <map>.',
       areaConnError:'Verbinding met server mislukt.',
       areaDelTitle: n => `Verwijder ${n}`,
@@ -2791,7 +2791,7 @@
       motifLabel_other:'Overig', motifLabel_unclassified:'Niet geclassificeerd',
       motifLabel_unknown:'Onbekend',
       // Netwerktitel
-      networkTitle: n => `Verkeersnetwerk ${n}`, pageTitle: n => `Verkeersnetwerk ${n}`,
+      networkTitle: n => `${n}`, pageTitle: n => `${n}`,
       // ScenarioVergelijker
       splitViewTitle:'ScenarioVergelijker: berekend ↔ bron',
       badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',

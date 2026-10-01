@@ -4703,6 +4703,22 @@ def ogc_collection_items(collection_id):
             abort(503, str(exc))
         _geodata_cache_set(path, data)
 
+    # properties.name van het NETWORK-bestand volgt altijd de expliciete
+    # scenarionaam uit .area-name (zie _discover_areas_uncached): het brondata-
+    # bestand zelf (vaak GeoParquet) wordt bij het aanmaken van een scenario niet
+    # altijd met de nieuwe naam gepatcht (_patch_geojson_properties kent alleen
+    # .geojson). Zonder deze override tonen tabtitel en linkerbalk de naam van
+    # het basisscenario in plaats van het eigen scenario.
+    if file_type == "NETWORK" and isinstance(data, dict):
+        area_name_path = _find_area_dir(area_id) / ".area-name"
+        if area_name_path.exists():
+            try:
+                override_name = area_name_path.read_text(encoding="utf-8").strip()
+            except Exception:
+                override_name = ""
+            if override_name:
+                data.setdefault("properties", {})["name"] = override_name
+
     # NDJSON / GeoJSONL-streaming (alleen routes): één JSON-object per regel.
     # Regel 1 = header-object met metadata; daarna één feature per regel. Zo
     # hoeft de client geen monolithische JSON.parse te doen en kan progressief
