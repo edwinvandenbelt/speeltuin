@@ -1639,7 +1639,8 @@
 
     <div class="tb-sep"></div>
 
-    <!-- Modi aan/uit (alleen zichtbaar in MIXED-modus) -->
+    <!-- Modi aan/uit: knopjes tonen/verbergen welke modi in het netwerk zitten
+         (default UIT bij binnenkomen van een scenario, zie de scenario-init-code) -->
     <div id="modeBtns" style="display:none; gap:3px; align-items:center">
       <button class="tb-btn modeBtn active" data-mode="CAR"        title="Auto-laag tonen/verbergen">🚗</button>
       <button class="tb-btn modeBtn active" data-mode="BIKE"       title="Fiets-laag tonen/verbergen">🚲</button>
@@ -1835,7 +1836,7 @@
         <div class="lmp-block-header" id="simBlockHeader">
           <span>Simulatie</span>
           <label class="sim-play-toggle" data-i18n-title="pauseTitle" title="Simulatie afspelen/pauzeren" onclick="event.stopPropagation()">
-            <input type="checkbox" id="simPlayCheckbox" checked/>
+            <input type="checkbox" id="simPlayCheckbox"/>
           </label>
           <span class="lmp-block-arrow">▾</span>
         </div>
@@ -9602,17 +9603,17 @@
       _setVegetationVisibility(false);
       const vegetationCheck = document.getElementById('lmpVegetation');
       if (vegetationCheck) vegetationCheck.checked = false;
-      // Auto/fiets/voetganger-lagen (alleen relevant in MIXED-modus; in andere
-      // modi bestaat er geen toggle voor en moet visibleModes gevuld blijven).
-      if (MODE === 'MIXED') {
-        document.querySelectorAll('.modeBtn').forEach(btn => {
-          btn.classList.remove('active');
-          visibleModes.delete(btn.dataset.mode);
-        });
-        rebuildCars();
-        updateOverlay(true);
-        updateLegend();
-      }
+      // Auto/fiets/voetganger-lagen: ook buiten MIXED-modus standaard UIT bij
+      // binnenkomen van een scenario. De netwerklaag zelf blijft zichtbaar
+      // (die filtert niet op visibleModes buiten MIXED-modus); alleen het
+      // plaatsen van auto's wordt uitgesteld tot de gebruiker het vinkje aanzet.
+      document.querySelectorAll('.modeBtn').forEach(btn => {
+        btn.classList.remove('active');
+        visibleModes.delete(btn.dataset.mode);
+      });
+      rebuildCars();
+      updateOverlay(true);
+      updateLegend();
     }
     window._resetSceneryDisplayDefaults = _resetSceneryDisplayDefaults;
 
@@ -18042,8 +18043,13 @@
      document.getElementById('dpMrhWedge').addEventListener('click', () => setSimHour(8));
      document.getElementById('dpErhWedge').addEventListener('click', () => setSimHour(17));
 
-    // ── Modi aan/uit (MIXED-modus) ────────────────────────────────────────
-    if (MODE === 'MIXED') {
+    // ── Modi aan/uit (auto/fiets/voetganger-lagen) ──────────────────────────
+    // Ook buiten MIXED-modus: het vinkje bepaalt of auto's daadwerkelijk
+    // geplaatst worden. De netwerklaag zelf blijft altijd zichtbaar (die
+    // filtert niet op visibleModes buiten MIXED-modus, zie de GeoJsonLayer's
+    // "MODE !== 'MIXED' ? geojson.features : …filter(...)"); alleen
+    // buildCarList/spawnProductionCar respecteren visibleModes in elke modus.
+    {
       // Bepaal welke modi daadwerkelijk in het netwerk aanwezig zijn.
       const networkModes = new Set(
         segments.map(s => (s.props.mode ?? 'CAR').toUpperCase())

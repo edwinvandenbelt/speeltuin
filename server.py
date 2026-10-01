@@ -1445,6 +1445,50 @@ def _discover_areas_uncached() -> list:
     return areas
 
 
+def _work_dir_has_network_file(directory: Path) -> bool:
+    """Controleer of de map een NETWORK-bestand bevat, ongeacht area-id-prefix."""
+    if any(directory.glob("*-NETWORK-*.geojson")):
+        return True
+    if _GEOPANDAS_AVAILABLE:
+        for ext in _GEOPARQUET_EXTS:
+            if any(directory.glob(f"*-NETWORK-*{ext}")):
+                return True
+    return False
+
+
+def _cleanup_work_dir():
+    """Ruim verweesde scenario-mappen en overbodige losse .json-bestanden op in work/.
+
+    Wordt eenmalig uitgevoerd bij het opstarten van de server, vóór app.run(). Een
+    scenario-map zonder NETWORK-bestand kan op dat moment nooit een nog-lopende job
+    van dit proces zijn (die mappen worden pas aangemaakt ná het starten van de
+    server) en is dus altijd het resultaat van een eerder afgebroken job. Mappen die
+    beginnen met '_' zijn systeemmappen (bv. _measure_uploads) en worden overgeslagen.
+    """
+    work = _work_dir()
+    for sub in sorted(work.iterdir()):
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        if _work_dir_has_network_file(sub):
+            continue
+        try:
+            shutil.rmtree(str(sub))
+            print(f"[cleanup] verweesde scenario-map verwijderd: {sub.name}")
+        except Exception as _e:
+            print(f"[cleanup] verwijderen van map {sub.name} mislukt: {_e}")
+
+    for f in sorted(work.glob("*.json")):
+        if f.name == "areas-cache.json":
+            continue
+        try:
+            f.unlink()
+            print(f"[cleanup] overbodig bestand verwijderd: {f.name}")
+        except Exception as _e:
+            print(f"[cleanup] verwijderen van bestand {f.name} mislukt: {_e}")
+
+    _areas_cache_invalidate()
+
+
 def _discover_constituent_modes(area_id: str, src_dir: Path) -> list:
     """Geef de per-modus namen terug waarvoor een ROUTES-bestand bestaat (niet MIXED zelf).
 
@@ -5591,6 +5635,9 @@ def _timing_end(response):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        print("work opschonen...")
+        _cleanup_work_dir()
     print(f"Data-map    : {DATA_DIR}")
     print(
         f"prepare     : {'beschikbaar' if _PREPARE_AVAILABLE else 'NIET beschikbaar'}"
