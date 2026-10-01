@@ -18356,6 +18356,18 @@
 
     document.getElementById('simPlayCheckbox').addEventListener('change', e => {
       paused = !e.target.checked;
+      if (e.target.checked) {
+        // Eén vinkje moet volstaan: bij afspelen meteen alle in dit netwerk
+        // aanwezige modi aanzetten, i.p.v. ook nog apart een modus-knopje
+        // (🚗/🚲/🚶) te moeten aanklikken om auto's te zien.
+        document.querySelectorAll('.modeBtn').forEach(btn => {
+          if (btn.style.display === 'none') return;
+          btn.classList.add('active');
+          visibleModes.add(btn.dataset.mode);
+        });
+        rebuildCars();
+        updateLegend();
+      }
       // Auto's tonen/verbergen: bij pauze verdwijnen de auto's uit beeld.
       updateOverlay(!paused);
     });
