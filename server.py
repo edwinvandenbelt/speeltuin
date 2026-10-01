@@ -25,6 +25,7 @@ import contextlib
 import datetime as _dt
 import io
 import json
+from collections import OrderedDict
 import os
 import queue
 import time
@@ -526,6 +527,27 @@ def _geodata_cache_set(path: Path, data: dict):
             _GEODATA_CACHE.pop(k, None)
 
 
+_JSON_FILE_CACHE: dict = {}  # (path_str, mtime_ms) → geparste waarde
+_JSON_FILE_CACHE_LOCK = threading.Lock()
+
+
+def _json_file_cache_get(path: Path):
+    """Geeft de gecachede waarde voor ``path`` terug (mtime-gekeyed), anders None."""
+    mtime_ms = int(path.stat().st_mtime * 1000)
+    with _JSON_FILE_CACHE_LOCK:
+        return _JSON_FILE_CACHE.get((str(path), mtime_ms))
+
+
+def _json_file_cache_set(path: Path, value):
+    """Sla ``value`` op voor ``path``; verwijder verouderde entries voor hetzelfde pad."""
+    mtime_ms = int(path.stat().st_mtime * 1000)
+    key = (str(path), mtime_ms)
+    with _JSON_FILE_CACHE_LOCK:
+        _JSON_FILE_CACHE[key] = value
+        for k in [k for k in _JSON_FILE_CACHE if k[0] == str(path) and k != key]:
+            _JSON_FILE_CACHE.pop(k, None)
+
+
 _NETWORK_DERIVED_CACHE: dict = {}  # (path_str, mtime_ms, kind) → volledige verrijkte FC
 # Versietag voor de afgeleide lagen (geluid/emissie); verhoog dit als de
 # output-properties wijzigen zodat client-side HTTP-caches (ETag) ongeldig worden.
@@ -541,6 +563,27 @@ _NOISE_PROPS = (
     "noiseSourceType",
 )
 _EMISSION_PROPS = ("co2Kg", "noxKg", "pm10Kg", "pm25Kg", "vehicleKm", "length")
+
+
+_FLOWS_RESULT_CACHE: "OrderedDict" = OrderedDict()  # key -> resultaat-dict
+_FLOWS_RESULT_CACHE_LOCK = threading.Lock()
+_FLOWS_RESULT_CACHE_MAX = 64  # LRU-cap: voorkomt onbegrensde groei over veel param-combinaties
+
+
+def _flows_result_cache_get(key):
+    with _FLOWS_RESULT_CACHE_LOCK:
+        value = _FLOWS_RESULT_CACHE.get(key)
+        if value is not None:
+            _FLOWS_RESULT_CACHE.move_to_end(key)
+        return value
+
+
+def _flows_result_cache_set(key, value):
+    with _FLOWS_RESULT_CACHE_LOCK:
+        _FLOWS_RESULT_CACHE[key] = value
+        _FLOWS_RESULT_CACHE.move_to_end(key)
+        while len(_FLOWS_RESULT_CACHE) > _FLOWS_RESULT_CACHE_MAX:
+            _FLOWS_RESULT_CACHE.popitem(last=False)
 
 
 def _network_derived_fc(path: Path, kind: str) -> dict:
@@ -1151,26 +1194,48 @@ def _safe(value) -> bool:
     return bool(value and _SAFE_RE.match(value))
 
 
+_AREA_DIR_CACHE: dict = {}  # area_id -> Path
+_AREA_DIR_CACHE_LOCK = threading.Lock()
+
+
 def _find_area_dir(area_id: str) -> Path:
     """Zoek de work-submap die de bestanden voor area_id bevat.
 
     Als het gebied lokaal niet gevonden wordt én S3 geconfigureerd is, wordt het
     automatisch van S3 gedownload naar de lokale cache-map.
+
+    Het resultaat wordt in-memory gecached per area_id, zodat niet bij elke
+    aanvraag opnieuw alle submappen van work/ doorzocht hoeven te worden
+    (linear scan + glob per map). Een cache-hit wordt gevalideerd (map bestaat
+    nog en bevat nog het networkbestand) voordat hij wordt teruggegeven.
     """
+    with _AREA_DIR_CACHE_LOCK:
+        cached = _AREA_DIR_CACHE.get(area_id)
+    if cached is not None and cached.is_dir() and _has_network_file(cached, area_id):
+        return cached
+
     work = _work_dir()
     direct = work / area_id
+    found: "Path | None" = None
     if direct.is_dir() and _has_network_file(direct, area_id):
-        return direct
-    for subdir in work.iterdir():
-        if subdir.is_dir() and _has_network_file(subdir, area_id):
-            return subdir
+        found = direct
+    else:
+        for subdir in work.iterdir():
+            if subdir.is_dir() and _has_network_file(subdir, area_id):
+                found = subdir
+                break
 
-    # S3 fallback: download het volledige gebied naar lokale cache
-    if _s3_enabled():
+    if found is None and _s3_enabled():
+        # S3 fallback: download het volledige gebied naar lokale cache
         if _s3_sync_from(area_id, direct):
-            return direct
+            found = direct
 
-    return direct  # fallback (leidt tot 404 downstream)
+    if found is None:
+        found = direct  # fallback (leidt tot 404 downstream)
+    else:
+        with _AREA_DIR_CACHE_LOCK:
+            _AREA_DIR_CACHE[area_id] = found
+    return found
 
 
 def _geojson_path(area_id: str, mode: str, file_type: str) -> Path:
@@ -3932,20 +3997,29 @@ def ogc_collection_items(collection_id):
         purpose_index_path = _find_local_file("purpose_index.json")
         if purpose_index_path is None:
             abort(503, "purpose_index.json niet gevonden")
-        with open(purpose_index_path, encoding="utf-8") as fh:
-            purpose_index_raw = json.load(fh)
-        purpose_index = load_purpose_index(purpose_index_raw)
+        # Statisch bestand (~5.7MB / ~49k entries): parse + load_purpose_index()
+        # (~130ms) hoeft niet bij elke aanvraag herhaald te worden.
+        purpose_index = _json_file_cache_get(purpose_index_path)
+        if purpose_index is None:
+            with open(purpose_index_path, encoding="utf-8") as fh:
+                purpose_index_raw = json.load(fh)
+            purpose_index = load_purpose_index(purpose_index_raw)
+            _json_file_cache_set(purpose_index_path, purpose_index)
 
         daylight_raw = []
         daylight_path = _find_local_file("daylight.json")
         if daylight_path is not None:
-            try:
-                with open(daylight_path, encoding="utf-8") as fh:
-                    daylight_raw = json.load(fh)
-            except Exception as exc:
-                print(
-                    f"[server] daylight.json laden mislukt, wordt overgeslagen: {exc}"
-                )
+            daylight_raw = _json_file_cache_get(daylight_path)
+            if daylight_raw is None:
+                try:
+                    with open(daylight_path, encoding="utf-8") as fh:
+                        daylight_raw = json.load(fh)
+                    _json_file_cache_set(daylight_path, daylight_raw)
+                except Exception as exc:
+                    daylight_raw = []
+                    print(
+                        f"[server] daylight.json laden mislukt, wordt overgeslagen: {exc}"
+                    )
 
         date_str = request.args.get("date") or None
         raw_temp = request.args.get("temperature", "Medium")
@@ -3961,38 +4035,65 @@ def ogc_collection_items(collection_id):
         holiday_path = _find_local_file("holiday_indices.csv")
         holiday_index = str(holiday_path) if holiday_path is not None else ""
 
-        params = FlowScalerParams(
-            mode=mode,
-            dt=dt,
-            temperature=temperature,
-            weather=weather,
-            regio=regio,
-            purpose=purpose,
-            holiday_index=holiday_index,
+        # Resultaat is volledig deterministisch voor deze parametercombinatie
+        # zolang het netwerkbestand en purpose_index.json niet wijzigen. De
+        # sim-klok in de client herhaalt dezelfde combinatie typisch ~60s lang,
+        # dus een LRU-cache voorkomt dat filterNetwork/resolve_indexes_by_mode/
+        # applyIndices (deepcopy + scaling van alle features) telkens opnieuw
+        # draaien. dt.date()+dt.hour volstaat: de index wordt alleen op dagtype
+        # en uur gezocht, niet op minuut/seconde.
+        network_mtime_ms = int(network_path.stat().st_mtime * 1000)
+        purpose_index_mtime_ms = int(purpose_index_path.stat().st_mtime * 1000)
+        cache_key = (
+            area_id,
+            mode,
+            str(network_path),
+            network_mtime_ms,
+            str(purpose_index_path),
+            purpose_index_mtime_ms,
+            regio,
+            purpose,
+            temperature,
+            weather,
+            dt.date().isoformat() if dt is not None else None,
+            dt.hour if dt is not None else None,
         )
+        result = _flows_result_cache_get(cache_key)
+        if result is None:
+            params = FlowScalerParams(
+                mode=mode,
+                dt=dt,
+                temperature=temperature,
+                weather=weather,
+                regio=regio,
+                purpose=purpose,
+                holiday_index=holiday_index,
+            )
 
-        try:
-            network_fc = _read_geodata(network_path)
-        except ImportError as exc:
-            abort(503, str(exc))
-
-        n_features = len(network_fc.get("features", []))
-        filtered = filterNetwork(
-            network_fc, bbox=None, offset=0, limit=max(n_features, 1)
-        )
-        filtered.params = params
-
-        indexes_by_mode = resolve_indexes_by_mode(params, filtered, purpose_index)
-        # run_cleaner=False: behoud o.a. flowTemporalUnit (1 = specifiek uur, 24 = dagtotaal)
-        # zodat de client kan onderscheiden of 'flow' een uurwaarde of een dagtotaal is.
-        result = applyIndices(filtered, indexes_by_mode, run_cleaner=False)
-
-        # Normaliseer naar plain dict voor OGC-envelope
-        if not isinstance(result, dict):
             try:
-                result = dict(result)
-            except Exception:
-                result = {"type": "FeatureCollection", "features": []}
+                network_fc = _read_geodata(network_path)
+            except ImportError as exc:
+                abort(503, str(exc))
+
+            n_features = len(network_fc.get("features", []))
+            filtered = filterNetwork(
+                network_fc, bbox=None, offset=0, limit=max(n_features, 1)
+            )
+            filtered.params = params
+
+            indexes_by_mode = resolve_indexes_by_mode(params, filtered, purpose_index)
+            # run_cleaner=False: behoud o.a. flowTemporalUnit (1 = specifiek uur, 24 = dagtotaal)
+            # zodat de client kan onderscheiden of 'flow' een uurwaarde of een dagtotaal is.
+            result = applyIndices(filtered, indexes_by_mode, run_cleaner=False)
+
+            # Normaliseer naar plain dict voor OGC-envelope
+            if not isinstance(result, dict):
+                try:
+                    result = dict(result)
+                except Exception:
+                    result = {"type": "FeatureCollection", "features": []}
+
+            _flows_result_cache_set(cache_key, result)
 
         return _ogc_items_response("flows", result, self_url)
 
