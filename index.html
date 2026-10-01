@@ -10639,6 +10639,8 @@
      let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
      let selectedZoneId   = null;    // zoneId van geselecteerde zone (voor route-highlight)
      let hoveredZoneId    = null;    // zoneId onder de cursor (bijgehouden via onHover)
+     let hoveredOdArrowZoneId   = null; // counterpartId van de OD-pijl onder de cursor (via onHover)
+     let highlightedOdZoneId   = null; // counterpartId van de "vastgeklikte" OD-pijl: dimt overige pijlen/routes
     // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
     const _tRlfm = performance.now();
@@ -12985,6 +12987,30 @@
       });
     }
 
+    // Achtergrond-netwerk bij 'Zone productie/attractie': zodra een zone is
+    // geselecteerd verdwijnt de normale (gekleurde) netwerklaag (zie
+    // makeNetworkLayer, visible: ... && !selectedZoneId), zodat alleen de
+    // routes van/naar die zone overblijven. Toon dan het volledige netwerk
+    // als dunne, lichtgrijze context-laag eronder.
+    function makeZoneNetworkBackdropLayer() {
+      if (zoneCentroidMode === 'off' || !selectedZoneId)
+        return new GeoJsonLayer({ id: 'zone-network-backdrop', data: [] });
+
+      return new GeoJsonLayer({
+        id: 'zone-network-backdrop',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        pickable: false,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 1,
+        getLineWidth: 1,
+        getLineColor: [170, 170, 170, 90],
+      });
+    }
+
     // Toon zone-grenzen als gestippelde lijn (PathLayer) wanneer modus niet 'off' is.
     // Altijd zwart, onafhankelijk van productie/attractie-modus.
     // BOUNDARY- en NODE-klassen worden overgeslagen (te groot of geen polygoon).
@@ -13348,7 +13374,7 @@
         return new PathLayer({ id: 'zone-routes', data: [] });
       }
 
-      const { pathData } = computeZoneRouteData();
+      const { pathData, linkIdsByZone } = computeZoneRouteData();
       if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
 
       const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
@@ -13364,6 +13390,13 @@
       // verloop van dichtbij (dik/vol) naar verderop (dun/vaag).
       const norm = d => Math.max(0, Math.min(1, d.flow / maxFlow));
 
+      // Bij een vastgeklikte OD-pijl (highlightedOdZoneId): alleen de wegvakken
+      // van dát OD-paar in volle kleur, de rest gedimd.
+      const highlightLinkIds = highlightedOdZoneId !== null
+        ? (linkIdsByZone.get(highlightedOdZoneId) ?? new Set())
+        : null;
+      const isDimmedLink = d => highlightLinkIds !== null && !highlightLinkIds.has(d.linkId);
+
       return new PathLayer({
         id:             'zone-routes',
         data:           pathData,
@@ -13372,11 +13405,17 @@
         widthMinPixels: 1,
         widthMaxPixels: 14,
         getPath:        d => d.coords,
-        getWidth:       d => Math.max(1, norm(d) * 14),
-        getColor:       d => [...baseColor, Math.round(50 + 190 * Math.sqrt(norm(d)))],
+        getWidth:       d => {
+          const w = Math.max(1, norm(d) * 14);
+          return isDimmedLink(d) ? Math.max(0.5, w * 0.3) : w;
+        },
+        getColor:       d => {
+          const a = Math.round(50 + 190 * Math.sqrt(norm(d)));
+          return isDimmedLink(d) ? [...baseColor, Math.round(a * 0.15)] : [...baseColor, a];
+        },
         updateTriggers: {
-          getColor: [zoneCentroidMode, selectedZoneId, daypart],
-          getWidth: [selectedZoneId, zoneCentroidMode, daypart],
+          getColor: [zoneCentroidMode, selectedZoneId, daypart, highlightedOdZoneId],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, highlightedOdZoneId],
           getPath:  [selectedZoneId, zoneCentroidMode, daypart],
         },
         onHover: info => {
@@ -13417,6 +13456,7 @@
       const flowByZone  = new Map();  // counterpartZoneId → totale flow [veh/hr]
       const flowByLink  = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
       const routeCountByZone = new Map(); // counterpartZoneId → aantal route-objecten (diagnose)
+      const linkIdsByZone = new Map(); // counterpartZoneId → Set van linkIds van routes naar/van die zone (voor OD-pijl-isolatie)
 
       for (const route of relevant) {
         const flow        = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
@@ -13424,8 +13464,12 @@
         flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
         routeCountByZone.set(counterpart, (routeCountByZone.get(counterpart) ?? 0) + 1);
 
+        if (!linkIdsByZone.has(counterpart)) linkIdsByZone.set(counterpart, new Set());
+        const cpLinkIds = linkIdsByZone.get(counterpart);
+
         for (const linkId of route.linkIds ?? []) {
           flowByLink.set(linkId, (flowByLink.get(linkId) ?? 0) + flow);
+          cpLinkIds.add(linkId);
         }
       }
 
@@ -13444,7 +13488,7 @@
         if (hasGeom) zonesWithPath.add(zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId);
       }
 
-      return { pathData, flowByZone, routeCountByZone, zonesWithPath };
+      return { pathData, flowByZone, routeCountByZone, zonesWithPath, linkIdsByZone };
     }
 
     /** Centroïd (lon/lat) van een zone opzoeken op zoneId, met dezelfde fallback-
@@ -13525,15 +13569,18 @@
         const flowNorm  = Math.max(0, Math.min(1, flow / maxFlow));
         const hasPath   = zonesWithPath.has(counterpartId);
         const routeCount = routeCountByZone.get(counterpartId) ?? 0;
+        // Is er een vastgeklikte OD-pijl (highlightedOdZoneId) en is dit 'm niet?
+        // Dan dimmen we deze pijl, zodat de geselecteerde pijl/route opvalt.
+        const isDimmed = highlightedOdZoneId !== null && counterpartId !== highlightedOdZoneId;
 
-        shafts.push({ coords: [from, to], flow, flowNorm, counterpartId, hasPath, routeCount });
+        shafts.push({ coords: [from, to], flow, flowNorm, counterpartId, hasPath, routeCount, isDimmed });
 
         // Pijlkop op 60% van de lijn, wijzend in de richting from → to.
         const tLon = from[0] + (to[0] - from[0]) * 0.6;
         const tLat = from[1] + (to[1] - from[1]) * 0.6;
         heads.push({
           polygon: _buildArrowHead(tLon, tLat, to[0] - from[0], to[1] - from[1], 40, 22),
-          flowNorm, counterpartId, flow, hasPath, routeCount,
+          flowNorm, counterpartId, flow, hasPath, routeCount, isDimmed,
         });
       }
 
@@ -13542,16 +13589,27 @@
         data:           shafts,
         pickable:       true,
         widthUnits:     'pixels',
-        widthMinPixels: 2,
-        widthMaxPixels: 10,
+        widthMinPixels: 1,
+        widthMaxPixels: 12,
         getPath:        d => d.coords,
-        getWidth:       d => Math.max(2, Math.sqrt(d.flowNorm) * 10),
-        getColor:       d => [...ZONE_OD_ARROW_COLOR, Math.round(150 + 105 * Math.sqrt(d.flowNorm))],
+        getWidth:       d => {
+          const w = Math.max(2, Math.sqrt(d.flowNorm) * 10);
+          return d.isDimmed ? Math.max(1, w * 0.4) : w;
+        },
+        getColor:       d => {
+          const a = Math.round(150 + 105 * Math.sqrt(d.flowNorm));
+          return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
+        },
         updateTriggers: {
           getPath:  [selectedZoneId, zoneCentroidMode, daypart],
-          getWidth: [selectedZoneId, zoneCentroidMode, daypart],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, highlightedOdZoneId],
+          getColor: [highlightedOdZoneId],
         },
-        onHover: info => _zoneOdArrowTipRender(info, map2),
+        onHover: info => {
+          hoveredOdArrowZoneId = info?.object?.counterpartId ?? null;
+          map.getCanvas().style.cursor = hoveredOdArrowZoneId ? 'pointer' : '';
+          _zoneOdArrowTipRender(info, map2);
+        },
       });
 
       const headLayer = new PolygonLayer({
@@ -13561,9 +13619,16 @@
         stroked:        false,
         filled:         true,
         getPolygon:     d => d.polygon,
-        getFillColor:   d => [...ZONE_OD_ARROW_COLOR, Math.round(190 + 65 * Math.sqrt(d.flowNorm))],
-        updateTriggers: { getPolygon: [selectedZoneId, zoneCentroidMode, daypart] },
-        onHover: info => _zoneOdArrowTipRender(info, map2),
+        getFillColor:   d => {
+          const a = Math.round(190 + 65 * Math.sqrt(d.flowNorm));
+          return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
+        },
+        updateTriggers: { getPolygon: [selectedZoneId, zoneCentroidMode, daypart], getFillColor: [highlightedOdZoneId] },
+        onHover: info => {
+          hoveredOdArrowZoneId = info?.object?.counterpartId ?? null;
+          map.getCanvas().style.cursor = hoveredOdArrowZoneId ? 'pointer' : '';
+          _zoneOdArrowTipRender(info, map2);
+        },
       });
 
       return [shaftLayer, headLayer];
@@ -14521,7 +14586,7 @@
 
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers: [makeNetworkLayer(), makeLinkEditLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
+      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
@@ -14564,6 +14629,17 @@
     // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
     // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
     map.on('click', (e) => {
+      // OD-pijl isolatie: klik op een pijl isoleert dat OD-paar (dimt de rest);
+      // nogmaals op dezelfde pijl, of ergens anders klikken, zet het weer terug.
+      if (hoveredOdArrowZoneId) {
+        highlightedOdZoneId = (highlightedOdZoneId === hoveredOdArrowZoneId) ? null : hoveredOdArrowZoneId;
+        updateOverlay(true);
+        return;
+      } else if (highlightedOdZoneId !== null) {
+        highlightedOdZoneId = null;
+        updateOverlay(true);
+        // Geen return: een eventuele andere klik-actie (zone selecteren, etc.) mag doorgaan.
+      }
       // Nieuw wegvak intekenen: voeg vertex toe
       if (linkAddActive) {
         const coord = [e.lngLat.lng, e.lngLat.lat];
@@ -14695,6 +14771,7 @@
            ...makePathRibbonLayers(),
            makeSpeedBumpLayer(),
           makeNetworkLayer(),
+          makeZoneNetworkBackdropLayer(),
           makeDiffLayer(),
           ...makeDiffStackLayer(),
           makeSmileyLayer(),
@@ -18467,6 +18544,7 @@
      document.getElementById('zoneCentroidSelect').addEventListener('change', e => {
        zoneCentroidMode = e.target.value;
        if (zoneCentroidMode === 'off') selectedZoneId = null;
+       highlightedOdZoneId = null;
        updateOverlay(true);
      });
 
