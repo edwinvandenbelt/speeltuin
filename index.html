@@ -154,6 +154,16 @@
     .dp-wedge-erh { fill: rgba(75,90,200,0.30); }
     .dp-wedge-erh.active { fill: rgba(75,90,200,0.68); }
     .dp-wedge:hover { filter: brightness(0.92); }
+    /* Tijdvak-indicator op de gepauzeerde klok: ronde pijl i.p.v. de wijzer. */
+    .sim-dp-arc { display: none; pointer-events: none; fill: none; stroke: #00a5ab; stroke-width: 3; stroke-linecap: round; }
+    .sim-dp-arrow { display: none; pointer-events: none; fill: #00a5ab; }
+    .sim-clock-paused #simClockHand { display: none; }
+    .sim-clock-paused .sim-dp-arc, .sim-clock-paused .sim-dp-arrow { display: block; }
+    /* Laad-indicator tijdens een dagdeel-/simulatie-overgang (wachten op de backend). */
+    .sim-clock-spinner { display: none; opacity: 0.85; transform-origin: 50px 50px; animation: simClockSpin 0.8s linear infinite; }
+    .sim-clock-busy .sim-clock-spinner { display: block; }
+    .sim-clock-busy #simClockHand, .sim-clock-busy .sim-dp-arc, .sim-clock-busy .sim-dp-arrow { opacity: 0.35; }
+    @keyframes simClockSpin { to { transform: rotate(360deg); } }
     .sim-clock:active { cursor: grabbing; }
     .sim-clock-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
     .sim-time-box {
@@ -1858,8 +1868,17 @@
                   <line x1="6"  y1="50" x2="12" y2="50"/>
                   <line x1="88" y1="50" x2="94" y2="50"/>
                 </g>
+                <!-- Tijdvak-indicator (alleen zichtbaar tijdens pauze): ronde pijl langs de
+                     buitenrand i.p.v. de wijzer; geometrie wordt per selectie door JS gezet. -->
+                <path id="simDpArc" class="sim-dp-arc"/>
+                <path id="simDpArrow" class="sim-dp-arrow" d="M0,-2.6 L0,2.6 L4.2,0 Z"/>
                 <line id="simClockHand" x1="50" y1="50" x2="50" y2="20" stroke="#00a5ab" stroke-width="4" stroke-linecap="round" style="transition: transform 4.7s linear"/>
                 <circle cx="50" cy="50" r="3.5" fill="#232931"/>
+                <!-- Laad-indicator: draaiend boogje, zichtbaar zolang een dagdeel-/simulatie-
+                     overgang op de backend wacht (zie _setSimClockBusy). -->
+                <circle id="simClockSpinner" class="sim-clock-spinner" cx="50" cy="50" r="17"
+                        fill="none" stroke="#00a5ab" stroke-width="3" stroke-linecap="round"
+                        stroke-dasharray="27 80"/>
               </svg>
             </div>
             <div class="sim-clock-info">
@@ -2590,6 +2609,7 @@
       pauseTitle:'Pauzeer simulatie',
       simClockTitle:'Sleep de wijzer om de tijd aan te passen',
       simClockToggleTitle:'Klik om te wisselen tussen AM/PM',
+      simClockCycleTitle:'Klik om te wisselen tussen 24 uur / ochtendspits / restdag / avondspits',
       nodeEditTitle:'Productie/attractie per knoop wijzigen',
       linkEditTitle:'Capaciteit per wegvak wijzigen',
       linkFlowEditTitle:'Flow per wegvak wijzigen',
@@ -2781,7 +2801,7 @@
       tooltipZoneFloorEducation:'Onderwijs', tooltipZoneFloorRecreation:'Recreatie',
       tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Overig',
       tooltipZoneFloorUnit:'m²',
-      dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
+      dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag', dpLabelEtmaal:'24 uur',
       // Motiefverdeling (purposeChart)
       purposeChartTitle:'Motiefverdeling',
       purposeChartEstimated:'(geschat)', purposeChartNoData:'Onvoldoende data',
@@ -2866,6 +2886,7 @@
       pauseTitle:'Pause simulation',
       simClockTitle:'Drag the hand to change the time',
       simClockToggleTitle:'Click to toggle AM/PM',
+      simClockCycleTitle:'Click to cycle through 24 hours / morning peak / off-peak / evening peak',
       nodeEditTitle:'Edit production/attraction per node',
       linkEditTitle:'Edit capacity per road link',
       linkFlowEditTitle:'Edit flow per road link',
@@ -3047,7 +3068,7 @@
       tooltipZoneFloorEducation:'Education', tooltipZoneFloorRecreation:'Recreation',
       tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Other',
       tooltipZoneFloorUnit:'m²',
-      dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
+      dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak', dpLabelEtmaal:'24 hours',
       // Purpose chart
       purposeChartTitle:'Trip purposes',
       purposeChartEstimated:'(estimated)', purposeChartNoData:'Insufficient data',
@@ -3131,6 +3152,7 @@
       pauseTitle:'Pys\xe4yt\xe4 simulaatio',
       simClockTitle:'Ved\u00e4 viisaria aikaa muuttaaksesi',
       simClockToggleTitle:'Vaihda AM/PM napauttamalla',
+      simClockCycleTitle:'Napauta vaihtaaksesi 24 tuntia / aamuruuhka / muu aika / iltaruuhka',
       nodeEditTitle:'Muokkaa solmupisteen tuotantoa/houkuttelevuutta',
       linkEditTitle:'Muokkaa tiejakson kapasiteettia',
       addWegvakTitle:'Lis\xe4\xe4 tiejakso (ei viel\xe4 saatavilla)',
@@ -3264,7 +3286,7 @@
       tooltipZoneProd:'Tuotanto', tooltipZoneProdUnit:'ajon/vrk',
       tooltipZoneAttr:'Houkuttelevuus', tooltipZoneAttrUnit:'ajon/vrk',
       tooltipZoneRoute:'Matkavirta', tooltipZoneRouteUnit:'ajon/h',
-      dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika',
+      dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika', dpLabelEtmaal:'24 tuntia',
       networkTitle: n => `Liikenneverkko ${n}`, pageTitle: n => `Liikenneverkko ${n}`,
       // Skenaariovertailija
       splitViewTitle:'Skenaariovertailija: laskettu ↔ lähde',
@@ -5238,6 +5260,11 @@
   // Globaal maximum flow — toegankelijk voor flowToRgba() die buiten de async IIFE staat
   let globalMaxFlow     = 1;
   let globalMaxFlowBike = 1;  // idem, alleen voor fietslinks (MIXED-modus)
+  // Plafonds voor het ongeschaalde etmaaltotaal (flowDaypart === 'etmaal'), apart van
+  // bovenstaande omdat een etmaaltotaal een heel andere orde van grootte heeft dan een
+  // per-dagdeel uurintensiteit — anders verzadigt de kleur-/breedteschaal in die stand.
+  let globalMax24hFlow     = 1;
+  let globalMax24hFlowBike = 1;
 
   /** Welke transportmodi zichtbaar zijn. Alleen relevant in MIXED-modus. */
   const visibleModes = new Set(['CAR', 'BIKE', 'PEDESTRIAN']);
@@ -5407,6 +5434,10 @@
      */
     let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
     let daypart         = 'mrh'; // idem — moet overeenkomen met de startklok (08:00)
+    // Stuurt verkeersintensiteiten aan (dpFlowOf, routeproductie, PARK_RATIOS, …).
+    // Gelijk aan `daypart` tijdens afspelen; kan tijdens pauze afwijken (incl. 'etmaal',
+    // een waarde die `daypart` zelf nooit aanneemt — gebouwen blijven dan op 'rest' staan).
+    let flowDaypart     = 'mrh';
     let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
     let _sunIsDay       = true;  // idem — laatst berekende dag/nacht-status (updateSunLight)
     function updateSunLight() {
@@ -5689,7 +5720,7 @@
       document.getElementById('legendDiffSmiley').style.display = 'none';
       const unit = T('legendUnit');
       // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
-      const bp = Math.max(2, Math.round(25 / (globalMaxFlow || 1) * 100));
+      const bp = Math.max(2, Math.round(25 / (currentFlowCeiling(false) || 1) * 100));
       const flowGradient = `linear-gradient(to right, #1450dc, #00e676 ${bp}%, #ffea00 55%, #ff1744)`;
       // Vaste 3-bands gradient voor grenswaarde-lagen: groen (toegestaan) →
       // geel/oranje (grijs gebied) → rood (overschrijding). De legenda-uiteinden
@@ -5793,10 +5824,10 @@
       if (colorMetric === 'flow' || colorMetric === 'flow_scaled' || colorMetric === 'speed_from_right') {
         // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
         document.getElementById('legendMin').textContent = fmt(0);
-        document.getElementById('legendMax').textContent = fmt(globalMaxFlow);
+        document.getElementById('legendMax').textContent = fmt(currentFlowCeiling(false));
         if (showBike) {
           document.getElementById('legendMinBike').textContent = fmt(0);
-          document.getElementById('legendMaxBike').textContent = fmt(globalMaxFlowBike);
+          document.getElementById('legendMaxBike').textContent = fmt(currentFlowCeiling(true));
         }
       } else if (colorMetric === 'capacity') {
         // Vaste schaal 0–4000, onafhankelijk van de data
@@ -10423,7 +10454,7 @@
 
       // ── Aggregeer motifRatio van matching routes ────────────────────────────
       const purposeFlow = new Map();
-      const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
 
       for (const route of routeList) {
         if (!selectedZones.has(route.fromZoneId)) continue;
@@ -10490,7 +10521,7 @@
 
       // ── Bouw paden voor één richting ────────────────────────────────────────
       function buildPaths(scores, selected, prev, anchorNode, flowKey, color, flowByZone, reverseOrder = false) {
-        const dpFrac   = DP_FRACTION[daypart] ?? (1 / 14.4);
+        const dpFrac   = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
         const maxW     = scores[0]?.weight ?? 1;
         let count = 0;
         for (const z of scores) {
@@ -10876,7 +10907,7 @@
         `routes: <b>${routeList.length}</b> &mdash; ${routeMode
           ? `route-modus, gewicht: <b>${Math.round(totalRouteWeight)}</b>`
           : `<b>segment-modus</b>`}<br>` +
-        `globalMaxFlow: <b>${Math.round(globalMaxFlow)}</b> vtg/u`;
+        `globalMaxFlow: <b>${Math.round(currentFlowCeiling(false))}</b> vtg/u &mdash; flowDaypart: <b>${flowDaypart}</b>`;
       document.getElementById('dbgSim').innerHTML =
         `auto's: <b>${cars.length}</b> totaal &nbsp; (Little's Law: <b>${Math.round(
           segments.reduce((s, sg) => {
@@ -10895,14 +10926,25 @@
     window._updateDebugPanel = updateDebugPanel;
     setInterval(updateDebugPanel, 300);
 
-    /** Uurintensiteit voor het actieve dagdeel.
-     *  Als dp[daypart] gevuld (>0): direct teruggeven.
+    /** Uurintensiteit voor het actieve dagdeel (stuurt op flowDaypart, niet op daypart —
+     *  zie de 'etmaal'-selectie op de gepauzeerde klok, die gebouwen op 'rest' laat staan
+     *  maar de écht ongeschaalde etmaalwaarde voor verkeer teruggeeft).
+     *  Als dp[flowDaypart] gevuld (>0): direct teruggeven.
      *  Anders (bijv. Tampere: dp=0 maar flow24hrs gevuld): fractie van flow24hrs. */
     function dpFlowOf(props) {
+      if (flowDaypart === 'etmaal') return props.flow24hrs ?? props.flow ?? 0;
       const dp = props.flowsPerDaypart;
-      if (dp && dp[daypart]) return dp[daypart];
+      if (dp && dp[flowDaypart]) return dp[flowDaypart];
       const base = props.flow24hrs ?? props.flow ?? 0;
-      return base * (DP_FRACTION[daypart] ?? (1/14.4));
+      return base * (DP_FRACTION[flowDaypart] ?? (1/14.4));
+    }
+
+    /** Schaalplafond voor kleur-/breedtenormalisatie: het ongeschaalde etmaaltotaal
+     *  (flowDaypart === 'etmaal') zit op een heel andere grootte-orde dan een
+     *  per-dagdeel uurintensiteit, dus die twee plafonds nooit door elkaar gebruiken. */
+    function currentFlowCeiling(isBike) {
+      if (flowDaypart === 'etmaal') return isBike ? globalMax24hFlowBike : globalMax24hFlow;
+      return isBike ? globalMaxFlowBike : globalMaxFlow;
     }
 
     /** Flow voor het actieve dagdeel (segment-modus) */
@@ -10940,6 +10982,28 @@
             : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
           if (v > mx) mx = v;
         }
+      }
+      return mx || 1;
+    })();
+
+    /** Zelfde als globalMaxFlow, maar dan voor het ongeschaalde etmaaltotaal
+     *  ('24 uur'-selectie op de gepauzeerde klok) — geen DP_FRACTION-deling. */
+    globalMax24hFlow = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        const v = seg.props.flow24hrs ?? seg.props.flow ?? 0;
+        if (v > mx) mx = v;
+      }
+      return mx || 1;
+    })();
+
+    /** Zelfde als globalMaxFlowBike, maar dan voor het ongeschaalde etmaaltotaal. */
+    globalMax24hFlowBike = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        if ((seg.props.mode ?? '').toUpperCase() !== 'BIKE') continue;
+        const v = seg.props.flow24hrs ?? seg.props.flow ?? 0;
+        if (v > mx) mx = v;
       }
       return mx || 1;
     })();
@@ -11342,7 +11406,7 @@
           const key = `${rp.route.vehicleMode ?? MODE}:${rp.route.fromZoneId}→${rp.route.toZoneId}`;
           if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
           const g            = odGroups.get(key);
-          const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[daypart] ?? (1 / 14.4));
+          const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[flowDaypart] ?? (1 / 14.4));
           g.totalFlow += productionDp * rp.route.weight * (rp.route.calib ?? 1);
           g.paths.push(rp);
         }
@@ -11371,7 +11435,7 @@
           // ── Methode LD: Linkdichtheid ───────────────────────────────────────
           // k = q/v → N_link = flow [veh/u] × linkLength [m] / (speedMs [m/s] × 3600)
           // linkFlowMap is al dagdeel-geschaald (via rebuildLinkFlowMap).
-          const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
+          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
           let totalLd = 0;
           for (const [linkId, entries] of innerLinkRouteMap) {
             if (totalLd >= MAX_VEHICLES) break;
@@ -11432,7 +11496,7 @@
           // safeSpacingM = speedKmh/2 × 1.1 = speedMs × 3.6/2 × 1.1 = speedMs × 1.98
           // occupancy    = flow / capacity  (gecapped op 1.0)
           // n_s          = round(linkLength / safeSpacingM × occupancy)
-          const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
+          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
           let totalCb = 0;
           for (const [linkId, entries] of innerLinkRouteMap) {
             if (totalCb >= MAX_VEHICLES) break;
@@ -11510,7 +11574,7 @@
           // dubbel geteld. N uit Stap 2 blijft het anker voor het totale voertuigaantal.
           for (const rp of routePaths) {
             const odFlowVehHr = (rp.route.originProduction ?? 0)
-                              * (DP_FRACTION[daypart] ?? (1 / 14.4))
+                              * (DP_FRACTION[flowDaypart] ?? (1 / 14.4))
                               * (rp.route.weight ?? 0)
                               * (rp.route.calib ?? 1);
             let travelTime = 0;
@@ -11527,7 +11591,7 @@
             const routeN = N * share;
             rp.count = Math.floor(routeN) + (Math.random() < (routeN % 1) ? 1 : 0);
           }
-          const parkRatio = PARK_RATIOS[daypart] ?? 0.35;
+          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
 
           for (const rp of routePaths) {
             const count = rp.count;
@@ -12096,7 +12160,7 @@
     const _segTipRender = (info, sourceMap) => {
       const p = info?.object?.properties;
       if (!p) { _segTip.style.display = 'none'; return; }
-      const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+      const dpLabels = { etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
       const dpFlow = dpFlowOf(p);
       const occ = p.capacity > 0 ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
       // Fysieke bezettingsgraad (zelfde model als de 'coverage'-metric)
@@ -12107,7 +12171,7 @@
         return (0.1 * dpFlow * occLen / (p.speed * lanes)).toFixed(0) + '%';
       })();
       const loc = T('numberLocale');
-      const contextLabel = _fspActiveLabel ?? dpLabels[daypart];
+      const contextLabel = _fspActiveLabel ?? dpLabels[flowDaypart];
       const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
       _segTip.innerHTML = `
         <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
@@ -12315,7 +12379,7 @@
           }
           if (colorMetric === 'flow') {
              // Intensiteit-view: smal voor wegen met vrijwel geen flow
-             const flowNorm = dpFlowOf(f.properties) / (globalMaxFlow || 1);
+             const flowNorm = dpFlowOf(f.properties) / (currentFlowCeiling(isBike) || 1);
              if (flowNorm < 0.04) return 1;   // nauwelijks gebruik: minimaal lijntje
              if (isBike) return Math.max(1.5, lanes * 1);
              const speed = f.properties.speed ?? 999;
@@ -12345,7 +12409,8 @@
               // speed_from_right gebruikt de gewone intensiteitskleuren (flowGradient)
               // zodat de kaart er identiek uitziet als de intensiteiten-laag.
               if (colorMetric === 'speed_from_right') {
-                const flowNorm = (globalMaxFlow || 1) > 0 ? v / globalMaxFlow : 0;
+                const _ceil = currentFlowCeiling(false);
+                const flowNorm = (_ceil || 1) > 0 ? v / _ceil : 0;
                 return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
               }
               if (v === 0) return [80, 80, 100, 120];
@@ -12384,7 +12449,7 @@
                colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
              norm = Math.max(0, Math.min(1, v / 100));
            } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-             norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
+             norm = Math.max(0, Math.min(1, v / (currentFlowCeiling(isMultimodalBike) || 1)));
            } else if (colorMetric === 'capacity') {
              // Vaste schaal 0–4000 met sqrt-schaling
              norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
@@ -12427,8 +12492,8 @@
           }
         },
         updateTriggers: {
-          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
-          getLineWidth: [daypart, colorMetric, _fspVersion],
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
         },
       });
     }
@@ -12490,7 +12555,7 @@
             }
           }
           if (colorMetric === 'flow') {
-            const flowNorm = dpFlowOf(f.properties) / (globalMaxFlow || 1);
+            const flowNorm = dpFlowOf(f.properties) / (currentFlowCeiling(isBike) || 1);
             if (flowNorm < 0.04) return 1;
             if (isBike) return Math.max(1.5, lanes * 1);
             return Math.max(1.5, lanes * 3);
@@ -12507,7 +12572,8 @@
           if (FLOW_SPEED_METRICS.has(colorMetric)) {
             if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
             if (colorMetric === 'speed_from_right') {
-              const flowNorm = (globalMaxFlow || 1) > 0 ? v / globalMaxFlow : 0;
+              const _ceil = currentFlowCeiling(false);
+              const flowNorm = (_ceil || 1) > 0 ? v / _ceil : 0;
               return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
             }
             if (v === 0) return [80, 80, 100, 120];
@@ -12529,7 +12595,7 @@
               colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
             norm = Math.max(0, Math.min(1, v / 100));
           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
-            norm = Math.max(0, Math.min(1, v / (isMultimodalBike ? globalMaxFlowBike : globalMaxFlow)));
+            norm = Math.max(0, Math.min(1, v / (currentFlowCeiling(isMultimodalBike) || 1)));
           } else if (colorMetric === 'capacity') {
             norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
           } else {
@@ -12564,8 +12630,8 @@
           }
         },
         updateTriggers: {
-          getLineColor: [daypart, colorMetric, _fspVersion],
-          getLineWidth: [daypart, colorMetric, _fspVersion],
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
         },
       });
     }
@@ -12664,8 +12730,8 @@
           }
         },
         updateTriggers: {
-          getLineColor: [diffByLinkId.size, daypart, diffMetric, diffVersion],
-          getLineWidth: [diffByLinkId.size, daypart, diffMetric, diffVersion],
+          getLineColor: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getLineWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
         },
       });
     }
@@ -12788,9 +12854,9 @@
         pickable: true,
         onHover: commonHover,
         updateTriggers: {
-          getColor: [diffByLinkId.size, daypart, diffMetric, diffVersion],
-          getWidth: [diffByLinkId.size, daypart, diffMetric, diffVersion],
-          getPath:  [diffByLinkId.size, daypart, diffMetric, diffVersion],
+          getColor: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getPath:  [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
         },
       });
 
@@ -12816,7 +12882,7 @@
         pickable: true,
         onHover: commonHover,
         updateTriggers: {
-          getLineWidth: [diffByLinkId.size, daypart, diffMetric, diffVersion],
+          getLineWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
         },
       });
 
@@ -12952,8 +13018,8 @@
           }
         },
         updateTriggers: {
-          getIcon:     [diffByLinkId.size, daypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
-          getPosition: [diffByLinkId.size, daypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+          getIcon:     [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+          getPosition: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
         },
       });
     }
@@ -13165,9 +13231,9 @@
             map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
             if (changed) updatePurposeChart();
           },
-          updateTriggers: { getFillColor: [odEditFromZone?.zoneId, daypart],
-                            getLineColor: [odEditFromZone?.zoneId, daypart],
-                            getRadius:    [odEditFromZone?.zoneId, daypart] },
+          updateTriggers: { getFillColor: [odEditFromZone?.zoneId, daypart, flowDaypart],
+                            getLineColor: [odEditFromZone?.zoneId, daypart, flowDaypart],
+                            getRadius:    [odEditFromZone?.zoneId, daypart, flowDaypart] },
         });
       }
 
@@ -13276,10 +13342,10 @@
           if (changed) updatePurposeChart();
         },
         updateTriggers: {
-          getFillColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
-          getLineColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
+          getFillColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+          getLineColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
           getLineWidth: [selectedZoneId, selectedLinkId],
-          getRadius:    [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart],
+          getRadius:    [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
         },
       });
     }
@@ -13288,7 +13354,7 @@
     function makeZoneRoutesLayer() {
       // ── OD-edit: toon routes van het geselecteerde OD-paar ────────────────
       if (odEditActive && window._odEditRouteData?.length) {
-        const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+        const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
         const pathData = [];
         for (const route of window._odEditRouteData) {
           const coords = _linkIdsToCoords(route.linkIds);
@@ -13308,7 +13374,7 @@
             getPath:        d => d.coords,
             getWidth:       d => Math.max(1.5, (d.flow / maxFlow) * 10),
             getColor:       [100, 200, 255, 220],
-            updateTriggers: { getPath: [odEditFromZone?.zoneId, odEditToZone?.zoneId, daypart] },
+            updateTriggers: { getPath: [odEditFromZone?.zoneId, odEditToZone?.zoneId, daypart, flowDaypart] },
           });
         }
         return new PathLayer({ id: 'zone-routes', data: [] });
@@ -13343,8 +13409,8 @@
           getWidth:       d => Math.max(1, (d.flow / maxFlow) * 8),
           getColor:       d => d.color ?? defaultColor,
         updateTriggers: {
-          getLineColor: [daypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
-          getLineWidth: [daypart, colorMetric, _fspVersion],
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
         },
         pickable: true,
         onHover: info => {
@@ -13414,9 +13480,9 @@
           return isDimmedLink(d) ? [...baseColor, Math.round(a * 0.15)] : [...baseColor, a];
         },
         updateTriggers: {
-          getColor: [zoneCentroidMode, selectedZoneId, daypart, highlightedOdZoneId],
-          getWidth: [selectedZoneId, zoneCentroidMode, daypart, highlightedOdZoneId],
-          getPath:  [selectedZoneId, zoneCentroidMode, daypart],
+          getColor: [zoneCentroidMode, selectedZoneId, daypart, flowDaypart, highlightedOdZoneId],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart, highlightedOdZoneId],
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
         },
         onHover: info => {
           const { object } = info;
@@ -13448,7 +13514,7 @@
      *  gesommeerd, zodat gedeelde wegvakken (waar meerdere routes overlappen)
      *  hun werkelijke totale belasting tonen i.p.v. de flow van één route. */
     function computeZoneRouteData() {
-      const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
       const relevant = routeList.filter(r =>
         zoneCentroidMode === 'production' ? r.fromZoneId === selectedZoneId : r.toZoneId === selectedZoneId
       );
@@ -13604,8 +13670,8 @@
           return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
         },
         updateTriggers: {
-          getPath:  [selectedZoneId, zoneCentroidMode, daypart],
-          getWidth: [selectedZoneId, zoneCentroidMode, daypart, highlightedOdZoneId],
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart, highlightedOdZoneId],
           getColor: [highlightedOdZoneId],
         },
         onHover: info => {
@@ -13626,7 +13692,7 @@
           const a = Math.round(190 + 65 * Math.sqrt(d.flowNorm));
           return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
         },
-        updateTriggers: { getPolygon: [selectedZoneId, zoneCentroidMode, daypart], getFillColor: [highlightedOdZoneId] },
+        updateTriggers: { getPolygon: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart], getFillColor: [highlightedOdZoneId] },
         onHover: info => {
           hoveredOdArrowZoneId = info?.object?.counterpartId ?? null;
           map.getCanvas().style.cursor = hoveredOdArrowZoneId ? 'pointer' : '';
@@ -13786,7 +13852,7 @@
       const DBG = /[?&]debug\b/.test(location.search);
       if (!routeList.length) return;
 
-      const dpFrac = DP_FRACTION[daypart] ?? (1 / 14.4);
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
 
       // Init calib
       for (const route of routeList) {
@@ -13874,7 +13940,7 @@
             factor: mB > 0 ? +(mAfter / mB).toFixed(2) : null,
           });
         }
-        console.log(`[calibrateRouteProductions] daypart=${daypart}, links=${targetF.size}, routes=${routeMeasuredLinks.size}`);
+        console.log(`[calibrateRouteProductions] daypart=${daypart}, flowDaypart=${flowDaypart}, links=${targetF.size}, routes=${routeMeasuredLinks.size}`);
         console.table(rows);
       }
     }
@@ -13882,7 +13948,7 @@
     /** Aggregeer herkomst/bestemmings-flows voor het geselecteerde wegvak.
      *  Geeft { flowByFromZone, flowByToZone, pathData } terug. */
     function computeLinkRouteData() {
-      const dpFrac   = DP_FRACTION[daypart] ?? (1 / 14.4);
+      const dpFrac   = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
       // Verdedigende lookup: probeer zowel het originele type als Number()-conversie
       const numKey   = Number(selectedLinkId);
       const relevant = linkRouteMap.get(numKey)
@@ -14511,9 +14577,9 @@
            BOUNDARY:  T('tooltipZoneClassBoundary'),
            CBS:       T('tooltipZoneClassCbs'),
          })[d.zoneClass] ?? d.zoneClass;
-         const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+         const dpLabels = { etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
          const flowRow = d.flow > 0
-           ? `<div><span style="color:#6a757c">${T('tooltipZoneRoute')} (${dpLabels[daypart]}): </span>
+           ? `<div><span style="color:#6a757c">${T('tooltipZoneRoute')} (${dpLabels[flowDaypart]}): </span>
                 <b>${d.flow.toFixed(0)}\u202f${T('tooltipZoneRouteUnit')}</b></div>`
            : '';
 
@@ -14805,6 +14871,10 @@
     // ── 7. Animatielus ──────────────────────────────────────────────────────
     let lastT  = null;
     let paused = false;
+    // Welk tijdvak is gekozen op de klok terwijl gepauzeerd ('etmaal'|'mrh'|'rest'|'erh');
+    // null = niet gepauzeerd / geen selectie-modus actief.
+    let simPausedSelection = null;
+    const SIM_DP_CYCLE = ['etmaal', 'mrh', 'rest', 'erh'];
 
     /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus. */
     function _setSimPausedUI(isPaused) {
@@ -18367,6 +18437,9 @@
         });
         rebuildCars();
         updateLegend();
+        _exitSimPaused();
+      } else {
+        _enterSimPaused();
       }
       // Auto's tonen/verbergen: bij pauze verdwijnen de auto's uit beeld.
       updateOverlay(!paused);
@@ -18376,9 +18449,12 @@
       _setChangesPanelReadOnly(!_changesPanelReadOnly);
     });
 
-     /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …). */
-     function applyDaypartSideEffects(dp) {
+     /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …).
+      *  `flowDp` stuurt verkeersintensiteiten aan en kan tijdens pauze afwijken van `dp`
+      *  (incl. 'etmaal', dat `dp`/gebouwen zelf nooit aannemen — zie simPausedSelection). */
+     function applyDaypartSideEffects(dp, flowDp = dp) {
        daypart = dp;
+       flowDaypart = flowDp;
        document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === dp));
        updateLegend();
        rebuildLinkFlowMap();
@@ -18409,10 +18485,18 @@
        }
      }
 
-     // Snelkoppelingen: zet de simulatieklok direct op 08:00 resp. 17:00.
-     // Klikbare taartpunten op de klok: springen direct naar 08:00 resp. 17:00.
-     document.getElementById('dpMrhWedge').addEventListener('click', () => setSimHour(8));
-     document.getElementById('dpErhWedge').addEventListener('click', () => setSimHour(17));
+     // Snelkoppelingen: zet de simulatieklok direct op 08:00 resp. 17:00 (spelend),
+     // of kies meteen dat tijdvak (gepauzeerd — zelfde als die stap in de cyclus).
+     document.getElementById('dpMrhWedge').addEventListener('click', () => {
+       if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
+       if (paused) { simPausedSelection = 'mrh'; _applySimPausedSelection(); }
+       else setSimHour(8);
+     });
+     document.getElementById('dpErhWedge').addEventListener('click', () => {
+       if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
+       if (paused) { simPausedSelection = 'erh'; _applySimPausedSelection(); }
+       else setSimHour(17);
+     });
 
     // ── Modi aan/uit (auto/fiets/voetganger-lagen) ──────────────────────────
     // Ook buiten MIXED-modus: het vinkje bepaalt of auto's daadwerkelijk
@@ -18665,6 +18749,103 @@
       _simApplyTimer = setTimeout(() => { applyFlowScaler(); }, 300);
     }
 
+    // ── Laad-indicator tijdens een dagdeel-/simulatie-overgang ──────────────────
+    // Tellertje i.p.v. boolean: applyFlowScaler-aanroepen kunnen overlappen
+    // (bv. snel doorklikken), dan moet de spinner pas verdwijnen na de laatste.
+    let _simClockBusyCount = 0;
+    function _setSimClockBusy(isBusy) {
+      _simClockBusyCount = Math.max(0, _simClockBusyCount + (isBusy ? 1 : -1));
+      document.getElementById('simClockSvg')?.classList.toggle('sim-clock-busy', _simClockBusyCount > 0);
+    }
+
+    // ── Tijdvak-indicator op de gepauzeerde klok ────────────────────────────────
+    // Hoeken (0°=12 uur, met de klok mee) gemeten op de bestaande taartpunten
+    // #dpMrhWedge/#dpErhWedge: elk is een 40°-accentboogje rond resp. 08:00 en 17:00.
+    // 'rest' vult het korte stuk ertussen (van het einde van de avondspits-boog
+    // naar het begin van de ochtendspits-boog); 'etmaal' is de volle cirkel.
+    const SIM_DP_ANGLES = { mrh: [220, 260], erh: [130, 170], rest: [170, 220] };
+
+    function _simPolarPoint(deg, r) {
+      const rad = deg * Math.PI / 180;
+      return [50 + r * Math.sin(rad), 50 - r * Math.cos(rad)];
+    }
+
+    /** Teken de ronde-pijl-indicator (boog + pijlpunt) voor de huidige simPausedSelection. */
+    function _updateSimDpIndicator() {
+      const arc   = document.getElementById('simDpArc');
+      const arrow = document.getElementById('simDpArrow');
+      if (!simPausedSelection) return;
+      const R = 45;
+      let endDeg;
+      if (simPausedSelection === 'etmaal') {
+        const [x0, y0]     = _simPolarPoint(0, R);
+        const [x180, y180] = _simPolarPoint(180, R);
+        // Eén boogcommando kan geen volle 360° tekenen (start/eind vallen samen);
+        // daarom in twee 180°-stukken splitsen.
+        arc.setAttribute('d', `M${x0},${y0} A${R},${R} 0 0 1 ${x180},${y180} A${R},${R} 0 0 1 ${x0},${y0} Z`);
+        endDeg = 0; // geen echt 'leidend' uiteinde op een volle cirkel; vaste referentie boven.
+      } else {
+        const [startDeg, deg2] = SIM_DP_ANGLES[simPausedSelection];
+        endDeg = deg2;
+        const [x1, y1] = _simPolarPoint(startDeg, R);
+        const [x2, y2] = _simPolarPoint(deg2, R);
+        const largeArc = (deg2 - startDeg) > 180 ? 1 : 0;
+        arc.setAttribute('d', `M${x1},${y1} A${R},${R} 0 ${largeArc} 1 ${x2},${y2}`);
+      }
+      // Pijlpuntje: getekend wijzend naar +x (= tangentieel "met de klok mee" op 0°),
+      // dus positioneren (translate) vóórdat om het middelpunt geroteerd wordt.
+      arrow.setAttribute('transform', `rotate(${endDeg} 50 50) translate(50 ${50 - R})`);
+    }
+
+    /** Pas de gekozen gepauzeerde tijdvak-selectie toe: label, boog, gebouwen (altijd 'rest') en flows. */
+    function _applySimPausedSelection() {
+      const dig = document.getElementById('simClockDigital');
+      dig.textContent = {
+        etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), rest: T('dpLabelRest'), erh: T('dpLabelErh'),
+      }[simPausedSelection];
+      if (simPausedSelection === 'mrh') {
+        document.getElementById('fspHour').value = 8;
+        applyDaypartSideEffects('rest', 'mrh');
+        scheduleSimApply();
+      } else if (simPausedSelection === 'erh') {
+        document.getElementById('fspHour').value = 17;
+        applyDaypartSideEffects('rest', 'erh');
+        scheduleSimApply();
+      } else if (simPausedSelection === 'rest') {
+        applyDaypartSideEffects('rest', 'rest');
+        applyFlowScaler({ omitDate: true });
+      } else { // 'etmaal'
+        applyDaypartSideEffects('rest', 'etmaal');
+        applyFlowScaler({ omitDate: true });
+      }
+      // Taartpunten alsnog highlighten voor mrh/erh (applyDaypartSideEffects zet dit
+      // terug op 'rest', wat geen van beide taartpunten matcht).
+      document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === simPausedSelection));
+      _updateSimDpIndicator();
+    }
+
+    /** Simulatie gepauzeerd: wijzer verbergen, tijdvak-indicator tonen, standaard op '24 uur'. */
+    function _enterSimPaused() {
+      simPausedSelection = 'etmaal';
+      document.getElementById('simClockSvg').classList.add('sim-clock-paused');
+      const dig = document.getElementById('simClockDigital');
+      dig.dataset.i18nTitle = 'simClockCycleTitle';
+      dig.title = T('simClockCycleTitle');
+      _applySimPausedSelection();
+    }
+
+    /** Simulatie hervat: wijzer terug, klok weer uurgedreven. */
+    function _exitSimPaused() {
+      simPausedSelection = null;
+      document.getElementById('simClockSvg').classList.remove('sim-clock-paused');
+      const dig = document.getElementById('simClockDigital');
+      dig.dataset.i18nTitle = 'simClockToggleTitle';
+      dig.title = T('simClockToggleTitle');
+      applyDaypartSideEffects(daypartForHour(simHour));
+      updateClockUI(true);
+      scheduleSimApply();
+    }
+
     updateClockUI();
 
     // Wijzer verslepen (muis + touch) om het uur handmatig te verzetten.
@@ -18698,14 +18879,14 @@
         window.removeEventListener('touchend', onUp);
       }
       document.getElementById('simClock').addEventListener('mousedown', e => {
-        if (e.target.closest('.dp-wedge')) return;
+        if (paused || e.target.closest('.dp-wedge')) return;
         dragging = true;
         onMove(e);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
       });
       document.getElementById('simClock').addEventListener('touchstart', e => {
-        if (e.target.closest('.dp-wedge')) return;
+        if (paused || e.target.closest('.dp-wedge')) return;
         dragging = true;
         onMove(e);
         window.addEventListener('touchmove', onMove, { passive: true });
@@ -18713,9 +18894,17 @@
       }, { passive: true });
     })();
 
-    // Klik op de digitale tijd: wissel tussen AM en PM (±12 uur), zelfde minuutstand.
+    // Klik op de digitale tijd: gepauzeerd doorloopt dit de tijdvak-cyclus
+    // (24 uur → ochtendspits → restdag → avondspits → …); spelend wisselt het AM/PM.
     document.getElementById('simClockDigital').addEventListener('click', () => {
-      setSimHour(simHour + 12);
+      if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
+      if (paused) {
+        const idx = SIM_DP_CYCLE.indexOf(simPausedSelection);
+        simPausedSelection = SIM_DP_CYCLE[(idx + 1) % SIM_DP_CYCLE.length];
+        _applySimPausedSelection();
+      } else {
+        setSimHour(simHour + 12);
+      }
     });
 
     // Datum-, temperatuur-, weer- en reisdoel-wijzigingen passen de simulatie direct toe.
@@ -18753,17 +18942,20 @@
 
     }, SIM_TICK_MS);
 
-    /** Vraag de backend om geschaalde flows en patch de in-memory segmenten. */
-    async function applyFlowScaler() {
+    /** Vraag de backend om geschaalde flows en patch de in-memory segmenten.
+     *  `omitDate`: sla de datum/uur-parameter over zodat de backend het ongeschaalde
+     *  etmaaltotaal teruggeeft (gebruikt door de 'restdag'/'24 uur'-selectie tijdens pauze). */
+    async function applyFlowScaler({ omitDate = false } = {}) {
       const dateVal    = document.getElementById('fspDate').value || null;
       const hour       = String(document.getElementById('fspHour').value).padStart(2, '0');
-      const dateTime   = dateVal ? `${dateVal}T${hour}:00:00` : null;
+      const dateTime   = (!omitDate && dateVal) ? `${dateVal}T${hour}:00:00` : null;
       const tempVal    = document.getElementById('fspTemp').value;
       const weatherVal = document.getElementById('fspWeather').value;
       const purposeVal = document.getElementById('fspPurpose').value || null;
       // Regio uit netwerk-properties — fallback naar 'midden'
       const regioVal   = geojson.properties?.regio || 'midden';
 
+      _setSimClockBusy(true);
       try {
         const _fspParams = new URLSearchParams({
           areaId:      AREA_ID,
@@ -18846,6 +19038,8 @@
 
       } catch (err) {
         console.error('[flow-scaler] toepassen mislukt:', err);
+      } finally {
+        _setSimClockBusy(false);
       }
     }
 
