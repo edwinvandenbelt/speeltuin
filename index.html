@@ -13454,6 +13454,7 @@
       );
 
       const flowByZone  = new Map();  // counterpartZoneId → totale flow [veh/hr]
+      const dailyFlowByZone = new Map(); // counterpartZoneId → totale flow [veh/dag], dagdeel-onafhankelijk
       const flowByLink  = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
       const routeCountByZone = new Map(); // counterpartZoneId → aantal route-objecten (diagnose)
       const linkIdsByZone = new Map(); // counterpartZoneId → Set van linkIds van routes naar/van die zone (voor OD-pijl-isolatie)
@@ -13462,6 +13463,7 @@
         const flow        = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
         const counterpart = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
         flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
+        dailyFlowByZone.set(counterpart, (dailyFlowByZone.get(counterpart) ?? 0) + (route.originProduction ?? 0) * (route.weight ?? 0));
         routeCountByZone.set(counterpart, (routeCountByZone.get(counterpart) ?? 0) + 1);
 
         if (!linkIdsByZone.has(counterpart)) linkIdsByZone.set(counterpart, new Set());
@@ -13488,7 +13490,7 @@
         if (hasGeom) zonesWithPath.add(zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId);
       }
 
-      return { pathData, flowByZone, routeCountByZone, zonesWithPath, linkIdsByZone };
+      return { pathData, flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath, linkIdsByZone };
     }
 
     /** Centroïd (lon/lat) van een zone opzoeken op zoneId, met dezelfde fallback-
@@ -13548,7 +13550,7 @@
       ];
       if (!selectedZoneId || zoneCentroidMode === 'off' || !zoneFeaturesRaw.length) return empty();
 
-      const { flowByZone, routeCountByZone, zonesWithPath } = computeZoneRouteData();
+      const { flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath } = computeZoneRouteData();
       const originCoord = _zoneCentroidLonLat(selectedZoneId);
       if (!originCoord || !flowByZone.size) return empty();
 
@@ -13569,18 +13571,19 @@
         const flowNorm  = Math.max(0, Math.min(1, flow / maxFlow));
         const hasPath   = zonesWithPath.has(counterpartId);
         const routeCount = routeCountByZone.get(counterpartId) ?? 0;
+        const dailyFlow = dailyFlowByZone.get(counterpartId) ?? 0;
         // Is er een vastgeklikte OD-pijl (highlightedOdZoneId) en is dit 'm niet?
         // Dan dimmen we deze pijl, zodat de geselecteerde pijl/route opvalt.
         const isDimmed = highlightedOdZoneId !== null && counterpartId !== highlightedOdZoneId;
 
-        shafts.push({ coords: [from, to], flow, flowNorm, counterpartId, hasPath, routeCount, isDimmed });
+        shafts.push({ coords: [from, to], flow, dailyFlow, flowNorm, counterpartId, hasPath, routeCount, isDimmed });
 
         // Pijlkop op 60% van de lijn, wijzend in de richting from → to.
         const tLon = from[0] + (to[0] - from[0]) * 0.6;
         const tLat = from[1] + (to[1] - from[1]) * 0.6;
         heads.push({
           polygon: _buildArrowHead(tLon, tLat, to[0] - from[0], to[1] - from[1], 40, 22),
-          flowNorm, counterpartId, flow, hasPath, routeCount, isDimmed,
+          flowNorm, counterpartId, flow, dailyFlow, hasPath, routeCount, isDimmed,
         });
       }
 
@@ -13656,6 +13659,7 @@
         <div><span style="color:#6a757c">Herkomst: </span><b>${fromName}</b></div>
         <div><span style="color:#6a757c">Bestemming: </span><b>${toName}</b></div>
         <div><span style="color:#6a757c">Flow (dagdeel): </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('odEditTripsLabel')}: </span><b>${d.dailyFlow.toLocaleString(T('numberLocale'), {maximumFractionDigits:1})} ${T('tooltipZoneProdUnit')}</b></div>
         <div><span style="color:#6a757c">Route op het wegennet: </span>${pathNote}</div>
       `;
       const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
