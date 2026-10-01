@@ -4574,7 +4574,7 @@
 }
 
   function apiUrl(type) {
-    const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+    const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', FEEDLINK: 'feedlinks', COMPARE: 'comparison' };
     const coll = collMap[type] || type.toLowerCase();
     return `/collections/${coll}/items?areaId=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`;
   }
@@ -5311,6 +5311,7 @@
       return r.json();
     });
     const _zFetch  = fetch(apiUrl('ZONE')).then(r => r.ok ? r.json() : null).catch(() => null);
+    const _flFetch = fetch(apiUrl('FEEDLINK')).then(r => r.ok ? r.json() : null).catch(() => null);
     // Routes progressief laden via NDJSON (?format=ndjson): één JSON-object per
     // regel (header + features). Vermijdt één grote blokkerende JSON.parse en
     // geeft voortgang. Valt terug op gewone GeoJSON bij fouten/oude caches.
@@ -10194,6 +10195,34 @@
       }
     } catch (e) { console.info('Zone-bestand niet beschikbaar:', e.message); }
 
+    // Voedingslinks laden: de authoritative connector tussen zone-centroïde en
+    // het echte wegennet (apart FEEDLINK-bestand — niet af te leiden uit
+    // route.linkIds, want voedingslink-IDs zitten niet in het NETWERK-bestand
+    // en dus ook niet in linkGeomMap). Per zone max. 1 productie- + 1 attractie-
+    // richting; welke is welke wordt bepaald via capacity-match met de zone's
+    // eigen productie/attractie-waarde (zie gmt_network_core.feedlink_fetcher).
+    const feedLinkByZone = new Map();  // zoneId → { production: coords|null, attraction: coords|null }
+    try {
+      const feedData = await _flFetch;
+      if (feedData?.features?.length) {
+        const zonePropsById = new Map(zoneFeaturesRaw.map(f => [f.properties?.zoneId, f.properties]));
+        for (const f of feedData.features) {
+          const p = f.properties || {};
+          const zId = p.zoneId;
+          if (!zId || f.geometry?.type !== 'LineString' || !f.geometry.coordinates?.length) continue;
+          const zp = zonePropsById.get(zId);
+          const cap = p.capacity ?? 0;
+          const isProduction = zp
+            ? Math.abs(cap - (zp.production ?? 0)) <= Math.abs(cap - (zp.attraction ?? 0))
+            : true;
+          const entry = feedLinkByZone.get(zId) ?? { production: null, attraction: null };
+          entry[isProduction ? 'production' : 'attraction'] = f.geometry.coordinates;
+          feedLinkByZone.set(zId, entry);
+        }
+        console.info(`Voedingslinks geladen: ${feedLinkByZone.size} zones`);
+      }
+    } catch (e) { console.info('Voedingslinken-bestand niet beschikbaar:', e.message); }
+
     // Koppel gebouwen aan zones zodra zone-geometrie beschikbaar is
     _zonesForJoin = zoneFeaturesRaw;
     _tryZoneJoin();
@@ -13002,6 +13031,33 @@
       });
     }
 
+    // Lichte fill voor de geometrie van de geselecteerde zone (geen grens-/
+    // knoop-zone, die hebben toch geen bruikbare polygoon). Kleur volgt de
+    // actieve 'Zone productie/attractie'-modus: oranje = productie, blauw = attractie.
+    function makeZoneSelectedFillLayer() {
+      if (!selectedZoneId || zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new GeoJsonLayer({ id: 'zone-selected-fill', data: [] });
+
+      const feat = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const cl   = feat?.properties?.zoneClass;
+      if (!feat || cl === 'BOUNDARY' || cl === 'NODE' ||
+          (feat.geometry?.type !== 'Polygon' && feat.geometry?.type !== 'MultiPolygon'))
+        return new GeoJsonLayer({ id: 'zone-selected-fill', data: [] });
+
+      const isProduction = zoneCentroidMode === 'production';
+      const fillColor = isProduction ? [255, 140, 0, 60] : [30, 120, 255, 60];
+
+      return new GeoJsonLayer({
+        id:           'zone-selected-fill',
+        data:         [feat],
+        pickable:     false,
+        stroked:      false,
+        filled:       true,
+        getFillColor: fillColor,
+        updateTriggers: { getFillColor: [zoneCentroidMode, selectedZoneId] },
+      });
+    }
+
     function makeZoneCentroidLayer() {
       // Zones verbergen als: mode=off EN geen zone/link geselecteerd, OF geen data
       const showForLinkSel  = selectedLinkId !== null && zoneFeaturesRaw.length > 0 && (() => {
@@ -13145,10 +13201,10 @@
           alpha = 220;                                          // geselecteerde zone: vaste hoge alpha
           sizeNorm = globalMax > 0 ? ownVal / globalMax : 0;    // grootte blijft magnitude tonen
         } else if (flowByZone) {
+          if (!flowByZone.has(p.zoneId)) continue;             // geen enkele route naar/van deze zone: overslaan
           flow = flowByZone.get(p.zoneId) ?? 0;
-          if (flow <= 0) continue;                             // tegenpool zonder flow: overslaan
           sizeNorm = flow / maxCounterpartFlow;
-          alpha = normAlpha(sizeNorm);
+          alpha = flow > 0 ? normAlpha(sizeNorm) : 40;         // flow 0: dun/dim bolletje i.p.v. onzichtbaar
         } else {
           if (ownVal <= 0) continue;
           sizeNorm = ownVal / globalMax;
@@ -13358,13 +13414,15 @@
         zoneCentroidMode === 'production' ? r.fromZoneId === selectedZoneId : r.toZoneId === selectedZoneId
       );
 
-      const flowByZone = new Map();  // counterpartZoneId → totale flow [veh/hr]
-      const flowByLink = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
+      const flowByZone  = new Map();  // counterpartZoneId → totale flow [veh/hr]
+      const flowByLink  = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
+      const routeCountByZone = new Map(); // counterpartZoneId → aantal route-objecten (diagnose)
 
       for (const route of relevant) {
         const flow        = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
         const counterpart = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
         flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
+        routeCountByZone.set(counterpart, (routeCountByZone.get(counterpart) ?? 0) + 1);
 
         for (const linkId of route.linkIds ?? []) {
           flowByLink.set(linkId, (flowByLink.get(linkId) ?? 0) + flow);
@@ -13377,7 +13435,224 @@
         if (coords && coords.length >= 2) pathData.push({ coords, flow, linkId });
       }
 
-      return { pathData, flowByZone };
+      // Welke tegenpool-zones hebben daadwerkelijk minstens één wegvak met
+      // geometrie in pathData? (diagnose voor "pijl zonder zichtbare route")
+      const linkIdsWithGeom = new Set(pathData.map(pd => pd.linkId));
+      const zonesWithPath = new Set();
+      for (const route of relevant) {
+        const hasGeom = (route.linkIds ?? []).some(id => linkIdsWithGeom.has(id));
+        if (hasGeom) zonesWithPath.add(zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId);
+      }
+
+      return { pathData, flowByZone, routeCountByZone, zonesWithPath };
+    }
+
+    /** Centroïd (lon/lat) van een zone opzoeken op zoneId, met dezelfde fallback-
+     *  volgorde (centroidLon/Lat → Point-geometrie → Polygon-gemiddelde) als
+     *  elders in de zone-weergave. Retourneert null als geen centroïd te bepalen is. */
+    function _zoneCentroidLonLat(zoneId) {
+      const f = zoneFeaturesRaw.find(ft => ft.properties?.zoneId === zoneId);
+      if (!f) return null;
+      const p = f.properties || {};
+      let lon = p.centroidLon ?? null;
+      let lat = p.centroidLat ?? null;
+      if (lon == null && f.geometry?.type === 'Point') {
+        [lon, lat] = f.geometry.coordinates;
+      } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+        const ring = f.geometry.coordinates[0];
+        lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+        lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+      }
+      if (lon == null || lat == null) return null;
+      return [lon, lat];
+    }
+
+    /** Bouw een pijlkop (driehoek, 3 punten) op [lon, lat], wijzend in de richting
+     *  (dLon, dLat). lengthM/widthM zijn bij benadering in meters; analoog aan
+     *  _taBuildDirectionArrow maar met instelbare afmeting. */
+    function _buildArrowHead(lon, lat, dLon, dLat, lengthM, widthM) {
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      const vx = dLon * mLng, vy = dLat * mLat;
+      const vlen = Math.hypot(vx, vy) || 1;
+      const ux = vx / vlen, uy = vy / vlen;
+      const px = -uy, py = ux;
+      const tip  = [lon + (ux * lengthM / 2) / mLng, lat + (uy * lengthM / 2) / mLat];
+      const back = [lon - (ux * lengthM / 2) / mLng, lat - (uy * lengthM / 2) / mLat];
+      const left  = [back[0] + (px * widthM / 2) / mLng, back[1] + (py * widthM / 2) / mLat];
+      const right = [back[0] - (px * widthM / 2) / mLng, back[1] - (py * widthM / 2) / mLat];
+      return [tip, left, right];
+    }
+
+    /** Rechte "verbindingspijlen" tussen de geselecteerde zone en elke tegenpool-
+     *  zone (herkomst of bestemming, afhankelijk van productie/attractie-modus).
+     *  Breedte/dekking schalen met de totale flow (productie × som(tripFractie))
+     *  voor dat OD-paar, met een zichtbare minimumbreedte ook bij flow 0.
+     *
+     *  In tegenstelling tot makeZoneRoutesLayer (die over het wegennetwerk loopt
+     *  en dus afhankelijk is van succesvolle padreconstructie per wegvak) volgt
+     *  deze laag geen netwerkgeometrie, maar verbindt simpelweg de centroïden.
+     *  Zo blijft de OD-relatie zichtbaar ook als er geen (volledig) pad kon
+     *  worden gereconstrueerd. */
+    // Felle, van de route-paden (oranje/cyaan) en de voedingslinks (groen)
+    // onderscheidbare kleur voor de schematische OD-pijlen.
+    const ZONE_OD_ARROW_COLOR = [255, 214, 0];
+
+    function makeZoneOdArrowLayers() {
+      const empty = () => [
+        new PathLayer({ id: 'zone-od-arrow-shafts', data: [] }),
+        new PolygonLayer({ id: 'zone-od-arrow-heads', data: [] }),
+      ];
+      if (!selectedZoneId || zoneCentroidMode === 'off' || !zoneFeaturesRaw.length) return empty();
+
+      const { flowByZone, routeCountByZone, zonesWithPath } = computeZoneRouteData();
+      const originCoord = _zoneCentroidLonLat(selectedZoneId);
+      if (!originCoord || !flowByZone.size) return empty();
+
+      const isProduction = zoneCentroidMode === 'production';
+      const maxFlow = Math.max(...flowByZone.values(), 1e-9);
+
+      const shafts = [];
+      const heads  = [];
+      for (const [counterpartId, flow] of flowByZone) {
+        if (counterpartId === selectedZoneId) continue;
+        const destCoord = _zoneCentroidLonLat(counterpartId);
+        if (!destCoord) continue;
+
+        // Productie: pijl van geselecteerde zone náár bestemming.
+        // Attractie: pijl van herkomst náár geselecteerde zone.
+        const from = isProduction ? originCoord : destCoord;
+        const to   = isProduction ? destCoord   : originCoord;
+        const flowNorm  = Math.max(0, Math.min(1, flow / maxFlow));
+        const hasPath   = zonesWithPath.has(counterpartId);
+        const routeCount = routeCountByZone.get(counterpartId) ?? 0;
+
+        shafts.push({ coords: [from, to], flow, flowNorm, counterpartId, hasPath, routeCount });
+
+        // Pijlkop op 60% van de lijn, wijzend in de richting from → to.
+        const tLon = from[0] + (to[0] - from[0]) * 0.6;
+        const tLat = from[1] + (to[1] - from[1]) * 0.6;
+        heads.push({
+          polygon: _buildArrowHead(tLon, tLat, to[0] - from[0], to[1] - from[1], 40, 22),
+          flowNorm, counterpartId, flow, hasPath, routeCount,
+        });
+      }
+
+      const shaftLayer = new PathLayer({
+        id:             'zone-od-arrow-shafts',
+        data:           shafts,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 2,
+        widthMaxPixels: 10,
+        getPath:        d => d.coords,
+        getWidth:       d => Math.max(2, Math.sqrt(d.flowNorm) * 10),
+        getColor:       d => [...ZONE_OD_ARROW_COLOR, Math.round(150 + 105 * Math.sqrt(d.flowNorm))],
+        updateTriggers: {
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart],
+        },
+        onHover: info => _zoneOdArrowTipRender(info, map2),
+      });
+
+      const headLayer = new PolygonLayer({
+        id:             'zone-od-arrow-heads',
+        data:           heads,
+        pickable:       true,
+        stroked:        false,
+        filled:         true,
+        getPolygon:     d => d.polygon,
+        getFillColor:   d => [...ZONE_OD_ARROW_COLOR, Math.round(190 + 65 * Math.sqrt(d.flowNorm))],
+        updateTriggers: { getPolygon: [selectedZoneId, zoneCentroidMode, daypart] },
+        onHover: info => _zoneOdArrowTipRender(info, map2),
+      });
+
+      return [shaftLayer, headLayer];
+    }
+
+    /** Tooltip voor het hoveren over een OD-pijl (makeZoneOdArrowLayers): toont
+     *  de tegenpool-zone, de flow en — als diagnose voor "pijl zonder route" —
+     *  of er daadwerkelijk minstens één wegvak met geometrie achter deze
+     *  verbinding zit. */
+    const _zoneOdArrowTipRender = (info, sourceMap) => {
+      const d = info?.object;
+      if (!d) { _segTip.style.display = 'none'; return; }
+      const isProduction = zoneCentroidMode === 'production';
+      const selFeat   = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const cpFeat    = zoneFeaturesRaw.find(f => f.properties?.zoneId === d.counterpartId);
+      const selName   = selFeat?.properties?.zoneName || selFeat?.properties?.name || String(selectedZoneId);
+      const cpName    = cpFeat?.properties?.zoneName  || cpFeat?.properties?.name  || String(d.counterpartId);
+      const fromName  = isProduction ? selName : cpName;
+      const toName    = isProduction ? cpName  : selName;
+      const pathNote  = d.hasPath
+        ? `<span style="color:#3ecf5f">Ja (${d.routeCount} route${d.routeCount === 1 ? '' : 's'})</span>`
+        : `<span style="color:#e83333">Nee — geen wegvak-geometrie gevonden</span>`;
+      _segTip.innerHTML = `
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">OD-verbinding</div>
+        <div><span style="color:#6a757c">Herkomst: </span><b>${fromName}</b></div>
+        <div><span style="color:#6a757c">Bestemming: </span><b>${toName}</b></div>
+        <div><span style="color:#6a757c">Flow (dagdeel): </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">Route op het wegennet: </span>${pathNote}</div>
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    /** Diagnostische laag: toont de voedingslinks van ALLE zones in het groen —
+     *  authoritative connector-geometrie uit het FEEDLINK-bestand (feedLinkByZone),
+     *  niet afgeleid uit route.linkIds. Per zone de richting die bij de actieve
+     *  modus hoort (productie: zone → netwerk, attractie: netwerk → zone). De
+     *  voedingslink van de geselecteerde zone wordt dikker/feller uitgelicht. */
+    function makeZoneFeedLinksLayer() {
+      if (zoneCentroidMode === 'off' || !feedLinkByZone.size) return new PathLayer({ id: 'zone-feed-links', data: [] });
+
+      const feedLinkData = [];
+      for (const [zoneId, entry] of feedLinkByZone) {
+        const coords = entry[zoneCentroidMode];
+        if (coords?.length >= 2) feedLinkData.push({ coords, zoneId, isSelected: zoneId === selectedZoneId });
+      }
+      if (!feedLinkData.length) return new PathLayer({ id: 'zone-feed-links', data: [] });
+
+      return new PathLayer({
+        id:             'zone-feed-links',
+        data:           feedLinkData,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 1.5,
+        widthMaxPixels: 4,
+        getPath:        d => d.coords,
+        getWidth:       d => d.isSelected ? 4 : 1.5,
+        getColor:       d => d.isSelected ? [60, 255, 110, 255] : [40, 200, 90, 160],
+        updateTriggers: {
+          getWidth: [selectedZoneId],
+          getColor: [selectedZoneId],
+          getPath:  [zoneCentroidMode],
+        },
+        onHover: info => {
+          const d = info?.object;
+          if (!d) { _segTip.style.display = 'none'; return; }
+          const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === d.zoneId);
+          const zName = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(d.zoneId);
+          _segTip.innerHTML = `
+            <div style="color:#28dc5a;font-weight:600;margin-bottom:6px">Voedingslink</div>
+            <div><span style="color:#6a757c">Zone: </span><b>${zName}</b></div>
+            <div><span style="color:#6a757c">Richting: </span><b>${zoneCentroidMode === 'production' ? 'productie (zone → netwerk)' : 'attractie (netwerk → zone)'}</b></div>
+          `;
+          const rect = map.getCanvas().getBoundingClientRect();
+          const ev = info.srcEvent;
+          const x = ev ? ev.clientX : (rect.left + info.x);
+          const y = ev ? ev.clientY : (rect.top + info.y);
+          _segTip.style.display = '';
+          const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+          _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+          _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+        },
+      });
     }
 
     /** Tooltip voor het hoveren over een wegvak in de geselecteerde-zone-laag:
@@ -14246,7 +14521,7 @@
 
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers: [makeNetworkLayer(), makeLinkEditLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), ...makeCarLayers([...carData])],
+      layers: [makeNetworkLayer(), makeLinkEditLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
@@ -14426,9 +14701,12 @@
           makeLinkEditLayer(),
           ...makeSelectedLinkHighlightLayers(),
           makeWhatifRcHighlightLayer(),
+          makeZoneSelectedFillLayer(),
           makeZoneBoundaryLayer(),
           makeZoneCentroidLayer(),
           makeZoneRoutesLayer(),
+          makeZoneFeedLinksLayer(),
+          ...makeZoneOdArrowLayers(),
           makeCounterLayer(),
           ...makeCarLayers(withCars ? [...carData] : []),
           ...makeTrafficAssetLayers(),
