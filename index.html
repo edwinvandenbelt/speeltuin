@@ -148,31 +148,27 @@
       flex: 0 0 80px; display: flex; align-items: center; justify-content: center;
       cursor: grab; touch-action: none; user-select: none;
     }
-    .dp-wedge { cursor: pointer; stroke: none; }
-    .dp-wedge-mrh { fill: rgba(255,152,0,0.35); }
-    .dp-wedge-mrh.active { fill: rgba(255,152,0,0.75); }
-    .dp-wedge-erh { fill: rgba(75,90,200,0.30); }
-    .dp-wedge-erh.active { fill: rgba(75,90,200,0.68); }
-    .dp-wedge:hover { filter: brightness(0.92); }
     /* Tijdvak-indicator op de gepauzeerde klok: ronde pijl i.p.v. de wijzer. */
-    .sim-dp-arc { display: none; pointer-events: none; fill: none; stroke: #00a5ab; stroke-width: 3; stroke-linecap: round; }
+    .sim-dp-arc { display: none; pointer-events: none; fill: none; stroke: #00a5ab; stroke-width: 5; stroke-linecap: round; }
     .sim-dp-arrow { display: none; pointer-events: none; fill: #00a5ab; }
     .sim-clock-paused #simClockHand { display: none; }
     .sim-clock-paused .sim-dp-arc, .sim-clock-paused .sim-dp-arrow { display: block; }
-    /* Laad-indicator tijdens een dagdeel-/simulatie-overgang (wachten op de backend). */
-    .sim-clock-spinner { display: none; opacity: 0.85; transform-origin: 50px 50px; animation: simClockSpin 0.8s linear infinite; }
-    .sim-clock-busy .sim-clock-spinner { display: block; }
-    .sim-clock-busy #simClockHand, .sim-clock-busy .sim-dp-arc, .sim-clock-busy .sim-dp-arrow { opacity: 0.35; }
-    @keyframes simClockSpin { to { transform: rotate(360deg); } }
     .sim-clock:active { cursor: grabbing; }
     .sim-clock-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
     .sim-time-box {
-      height: 26px; font-size: 11px; font-weight: 600; padding: 0 6px; border: 1px solid #e3e6ea;
+      height: 26px; font-size: 11px; font-weight: 600; padding: 0 4px 0 6px; border: 1px solid #e3e6ea;
       border-radius: 6px; color: #232931; font-variant-numeric: tabular-nums;
-      display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff;
+      display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff;
       box-sizing: border-box;
     }
-    .sim-time-box:hover { background: #f0f2f4; }
+    #simClockTimeText { flex: 1 1 auto; text-align: center; }
+    .sim-clock-mode-btn {
+      flex: 0 0 auto; height: 18px; min-width: 20px; padding: 0 4px; margin: 0;
+      border: 1px solid #e3e6ea; border-radius: 4px; background: #eef1f3; color: #4b5159;
+      font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer;
+      font-family: inherit; box-sizing: border-box;
+    }
+    .sim-clock-mode-btn:hover { background: #dde2e6; color: #232931; }
     .sim-date-input { height: 26px; font-size: 11px; padding: 0 6px; border: 1px solid #e3e6ea; border-radius: 6px; color: #232931; box-sizing: border-box; }
     .sim-row.sim-labeled-row { align-items: center; gap: 8px; }
     .sim-subrow-label {
@@ -460,6 +456,20 @@
       gap: 16px;
     }
     #calcOverlay p { color: #00a5ab; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
+    /* Laad-indicator over de kaart tijdens een dagdeel-/simulatie-overgang op de
+       achtergrond (klok-klik, AM/PM-knop, afspelen/pauzeren) — niet-blokkerend,
+       alleen zichtbaar rechts van het linker menu-paneel. */
+    #simBusyOverlay {
+      position: fixed; top: 0; left: 300px; right: 0; bottom: 0; z-index: 15;
+      display: none; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    #simBusyOverlay.visible { display: flex; }
+    #simBusyOverlay .spinner-chip {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: transparent; box-shadow: none;
+      display: flex; align-items: center; justify-content: center;
+    }
 
     .dpBtn  { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
     .dpBtn.active  { background: #de0058 !important; color: #ffffff !important; border-color: #de0058 !important; }
@@ -1273,6 +1283,11 @@
       outline: none; border-color: #00a5ab;
     }
     .fsp-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+    .fsp-input:disabled, .fsp-select:disabled, .sim-opt-btn:disabled {
+      opacity: 0.4; cursor: not-allowed;
+    }
+    .sim-opt-btn:disabled:hover { background: none; }
+    .sim-btn-group .sim-opt-btn.active:disabled { background: #00a5ab; color: #fff; }
     .fsp-slider {
       flex: 1; min-width: 0; height: 4px; cursor: pointer;
       accent-color: #00a5ab;
@@ -1570,6 +1585,10 @@
     <p id="calcOverlayMsg"></p>
   </div>
 
+  <div id="simBusyOverlay">
+    <div class="spinner-chip"><div class="spinner"></div></div>
+  </div>
+
   <div id="mapContainer">
     <div id="map"></div>
     <div id="map-splitter" title="Sleep om verdeling aan te passen"></div>
@@ -1855,13 +1874,6 @@
             <div id="simClock" class="sim-clock" data-i18n-title="simClockTitle" title="Sleep de wijzer om de tijd aan te passen">
               <svg id="simClockSvg" viewBox="0 0 100 100" width="60" height="60">
                 <circle cx="50" cy="50" r="47" fill="#fff" stroke="#232931" stroke-width="2"/>
-                <!-- Ochtendspits (AM, rond 08:00) en avondspits (PM, rond 17:00): klikbare taartpunten -->
-                <path id="dpMrhWedge" class="dpBtn dp-wedge dp-wedge-mrh active" data-dp="mrh"
-                      data-i18n-title="dpMrhTitle" title="Ochtendspits (klik om naar 08:00 te gaan)"
-                      d="M21.07,84.47 A45,45 0 0 1 5.68,57.81 L20.46,55.21 A30,30 0 0 0 30.72,72.98 Z"/>
-                <path id="dpErhWedge" class="dpBtn dp-wedge dp-wedge-erh" data-dp="erh"
-                      data-i18n-title="dpErhTitle" title="Avondspits (klik om naar 17:00 te gaan)"
-                      d="M84.47,78.93 A45,45 0 0 1 57.81,94.32 L55.21,79.54 A30,30 0 0 0 72.98,69.28 Z"/>
                 <g stroke="#232931" stroke-width="2">
                   <line x1="50" y1="6"  x2="50" y2="12"/>
                   <line x1="50" y1="88" x2="50" y2="94"/>
@@ -1871,18 +1883,17 @@
                 <!-- Tijdvak-indicator (alleen zichtbaar tijdens pauze): ronde pijl langs de
                      buitenrand i.p.v. de wijzer; geometrie wordt per selectie door JS gezet. -->
                 <path id="simDpArc" class="sim-dp-arc"/>
-                <path id="simDpArrow" class="sim-dp-arrow" d="M0,-2.6 L0,2.6 L4.2,0 Z"/>
+                <path id="simDpArrow" class="sim-dp-arrow" d="M0,-4 L0,4 L6.4,0 Z"/>
                 <line id="simClockHand" x1="50" y1="50" x2="50" y2="20" stroke="#00a5ab" stroke-width="4" stroke-linecap="round" style="transition: transform 4.7s linear"/>
                 <circle cx="50" cy="50" r="3.5" fill="#232931"/>
-                <!-- Laad-indicator: draaiend boogje, zichtbaar zolang een dagdeel-/simulatie-
-                     overgang op de backend wacht (zie _setSimClockBusy). -->
-                <circle id="simClockSpinner" class="sim-clock-spinner" cx="50" cy="50" r="17"
-                        fill="none" stroke="#00a5ab" stroke-width="3" stroke-linecap="round"
-                        stroke-dasharray="27 80"/>
               </svg>
             </div>
             <div class="sim-clock-info">
-              <div id="simClockDigital" class="sim-time-box" data-i18n-title="simClockToggleTitle" title="Klik om te wisselen tussen AM/PM">08:00 AM</div>
+              <div id="simClockDigital" class="sim-time-box">
+                <span id="simClockTimeText">08:00</span>
+                <button type="button" id="simClockModeBtn" class="sim-clock-mode-btn"
+                        data-i18n-title="simClockToggleTitle" title="Klik om te wisselen tussen AM/PM">AM</button>
+              </div>
               <input type="date" id="fspDate" class="fsp-input sim-date-input"/>
             </div>
           </div>
@@ -14836,6 +14847,11 @@
     }
 
       function updateOverlay(withCars = true) {
+         // Gepauzeerd betekent altijd "geen auto's in beeld", ongeacht wat de
+         // aanroeper meegeeft — anders duikt de bevroren auto-positie weer op
+         // zodra een ongerelateerde update (camera, assets, …) hier met de
+         // standaardwaarde `true` doorheen loopt.
+         const showCars = withCars && !paused;
          overlay.setProps({ layers: [
            ...makeSunkenLayers(),
            ...makePathRibbonLayers(),
@@ -14855,7 +14871,7 @@
           makeZoneFeedLinksLayer(),
           ...makeZoneOdArrowLayers(),
           makeCounterLayer(),
-          ...makeCarLayers(withCars ? [...carData] : []),
+          ...makeCarLayers(showCars ? [...carData] : []),
           ...makeTrafficAssetLayers(),
           ...makeHeightAssetLayers(),
           ...makeFurnitureLayers(),
@@ -14880,6 +14896,12 @@
     function _setSimPausedUI(isPaused) {
       const cb = document.getElementById('simPlayCheckbox');
       if (cb) cb.checked = !isPaused;
+      // Datum, temperatuur, weer en motief (reisdoel) hebben alleen betekenis
+      // terwijl de simulatie speelt; zolang ze gepauzeerd staat, gedisabled.
+      document.getElementById('fspDate').disabled = isPaused;
+      document.getElementById('fspPurpose').disabled = isPaused;
+      document.querySelectorAll('#simTempBtns .sim-opt-btn, #simWeatherBtns .sim-opt-btn')
+        .forEach(btn => { btn.disabled = isPaused; });
     }
 
     // ── Kruispunt rechts-voor-links parameters ────────────────────────────
@@ -18424,25 +18446,40 @@
       if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
     });
 
-    document.getElementById('simPlayCheckbox').addEventListener('change', e => {
-      paused = !e.target.checked;
-      if (e.target.checked) {
-        // Eén vinkje moet volstaan: bij afspelen meteen alle in dit netwerk
-        // aanwezige modi aanzetten, i.p.v. ook nog apart een modus-knopje
-        // (🚗/🚲/🚶) te moeten aanklikken om auto's te zien.
-        document.querySelectorAll('.modeBtn').forEach(btn => {
-          if (btn.style.display === 'none') return;
-          btn.classList.add('active');
-          visibleModes.add(btn.dataset.mode);
-        });
-        rebuildCars();
-        updateLegend();
-        _exitSimPaused();
-      } else {
-        _enterSimPaused();
+    document.getElementById('simPlayCheckbox').addEventListener('change', async e => {
+      // Spinner blijft staan vanaf het omzetten van het vinkje tot alle lagen
+      // (flow-scaler, auto's, overlay) volledig zijn bijgewerkt — vandaar de
+      // extra busy-markering hier, los van de interne markeringen van
+      // scheduleSimApply/applyFlowScaler die pas later in de keten starten.
+      // Eerst laten schilderen, pas dán het (zware, synchrone) werk starten —
+      // anders verschijnt de spinner pas ná die blokkerende rebuilds.
+      _setSimClockBusy(true);
+      await _yieldToPaint();
+      try {
+        paused = !e.target.checked;
+        _setSimPausedUI(paused);
+        let pending;
+        if (e.target.checked) {
+          // Eén vinkje moet volstaan: bij afspelen meteen alle in dit netwerk
+          // aanwezige modi aanzetten, i.p.v. ook nog apart een modus-knopje
+          // (🚗/🚲/🚶) te moeten aanklikken om auto's te zien.
+          document.querySelectorAll('.modeBtn').forEach(btn => {
+            if (btn.style.display === 'none') return;
+            btn.classList.add('active');
+            visibleModes.add(btn.dataset.mode);
+          });
+          rebuildCars();
+          updateLegend();
+          pending = _exitSimPaused();
+        } else {
+          pending = _enterSimPaused();
+        }
+        // Auto's tonen/verbergen: bij pauze verdwijnen de auto's uit beeld.
+        updateOverlay(!paused);
+        await pending;
+      } finally {
+        _setSimClockBusy(false);
       }
-      // Auto's tonen/verbergen: bij pauze verdwijnen de auto's uit beeld.
-      updateOverlay(!paused);
     });
 
     document.getElementById('viewChangesBtn').addEventListener('click', () => {
@@ -18484,19 +18521,6 @@
          updateSpectrumLayer();
        }
      }
-
-     // Snelkoppelingen: zet de simulatieklok direct op 08:00 resp. 17:00 (spelend),
-     // of kies meteen dat tijdvak (gepauzeerd — zelfde als die stap in de cyclus).
-     document.getElementById('dpMrhWedge').addEventListener('click', () => {
-       if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
-       if (paused) { simPausedSelection = 'mrh'; _applySimPausedSelection(); }
-       else setSimHour(8);
-     });
-     document.getElementById('dpErhWedge').addEventListener('click', () => {
-       if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
-       if (paused) { simPausedSelection = 'erh'; _applySimPausedSelection(); }
-       else setSimHour(17);
-     });
 
     // ── Modi aan/uit (auto/fiets/voetganger-lagen) ──────────────────────────
     // Ook buiten MIXED-modus: het vinkje bepaalt of auto's daadwerkelijk
@@ -18717,8 +18741,9 @@
       const minutes   = Math.floor((simHour % 1) * 60);
       const ampm = wholeHour < 12 ? 'AM' : 'PM';
       const h12  = (wholeHour % 12 === 0) ? 12 : (wholeHour % 12);
-      document.getElementById('simClockDigital').textContent =
-        String(h12).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ' ' + ampm;
+      document.getElementById('simClockTimeText').textContent =
+        String(h12).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+      document.getElementById('simClockModeBtn').textContent = ampm;
       document.getElementById('fspHour').value = wholeHour;
     }
 
@@ -18740,30 +18765,70 @@
       updateClockUI(true);
       _onWholeHourChanged(prev);
       updateSunLight();
-      if (immediate) scheduleSimApply();
-    }
-
-    /** Debounce: voorkomt overmatig fetch-verkeer bij het slepen van de wijzer. */
-    function scheduleSimApply() {
-      if (_simApplyTimer) clearTimeout(_simApplyTimer);
-      _simApplyTimer = setTimeout(() => { applyFlowScaler(); }, 300);
+      return immediate ? scheduleSimApply() : Promise.resolve();
     }
 
     // ── Laad-indicator tijdens een dagdeel-/simulatie-overgang ──────────────────
     // Tellertje i.p.v. boolean: applyFlowScaler-aanroepen kunnen overlappen
     // (bv. snel doorklikken), dan moet de spinner pas verdwijnen na de laatste.
     let _simClockBusyCount = 0;
+    // Minimale zichtbare duur voor de kaart-spinner: een (deels) gecachte backend-
+    // aanroep kan binnen enkele milliseconden terugkomen, dan knippert de overlay te
+    // snel om op te merken. Daarom blijft hij, eenmaal getoond, minstens dit lang staan.
+    const SIM_BUSY_OVERLAY_MIN_MS = 350;
+    let _simBusyOverlayShownAt = 0;
+    let _simBusyOverlayHideTimer = null;
     function _setSimClockBusy(isBusy) {
       _simClockBusyCount = Math.max(0, _simClockBusyCount + (isBusy ? 1 : -1));
-      document.getElementById('simClockSvg')?.classList.toggle('sim-clock-busy', _simClockBusyCount > 0);
+      const overlay = document.getElementById('simBusyOverlay');
+      if (!overlay) return;
+      if (_simClockBusyCount > 0) {
+        if (_simBusyOverlayHideTimer) { clearTimeout(_simBusyOverlayHideTimer); _simBusyOverlayHideTimer = null; }
+        if (!overlay.classList.contains('visible')) {
+          overlay.classList.add('visible');
+          _simBusyOverlayShownAt = performance.now();
+        }
+      } else {
+        const remaining = SIM_BUSY_OVERLAY_MIN_MS - (performance.now() - _simBusyOverlayShownAt);
+        if (remaining > 0) {
+          _simBusyOverlayHideTimer = setTimeout(() => {
+            overlay.classList.remove('visible');
+            _simBusyOverlayHideTimer = null;
+          }, remaining);
+        } else {
+          overlay.classList.remove('visible');
+        }
+      }
+    }
+
+    /** Geeft de browser een kans om te schilderen (de spinner zichtbaar te maken)
+     *  vóórdat zwaar synchroon werk het hoofdthread blokkeert. Eén rAF is niet
+     *  genoeg (die vuurt vóór het schilderen van dat frame); de tweede rAF
+     *  garandeert dat het schilderen van de eerste al heeft plaatsgevonden. */
+    function _yieldToPaint() {
+      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    /** Debounce: voorkomt overmatig fetch-verkeer bij het slepen van de wijzer.
+     *  De spinner gaat al aan zodra de aanroep gepland wordt (bv. bij het aan-/
+     *  uitzetten van de simulatie), i.p.v. pas na afloop van de debounce-wachttijd. */
+    function scheduleSimApply() {
+      if (_simApplyTimer) { clearTimeout(_simApplyTimer); _setSimClockBusy(false); }
+      _setSimClockBusy(true);
+      return new Promise(resolve => {
+        _simApplyTimer = setTimeout(() => {
+          _setSimClockBusy(false);
+          applyFlowScaler().finally(resolve);
+        }, 300);
+      });
     }
 
     // ── Tijdvak-indicator op de gepauzeerde klok ────────────────────────────────
-    // Hoeken (0°=12 uur, met de klok mee) gemeten op de bestaande taartpunten
-    // #dpMrhWedge/#dpErhWedge: elk is een 40°-accentboogje rond resp. 08:00 en 17:00.
-    // 'rest' vult het korte stuk ertussen (van het einde van de avondspits-boog
-    // naar het begin van de ochtendspits-boog); 'etmaal' is de volle cirkel.
-    const SIM_DP_ANGLES = { mrh: [220, 260], erh: [130, 170], rest: [170, 220] };
+    // Hoeken (0°=12 uur, met de klok mee) rond resp. 08:00 (mrh) en 17:00 (erh);
+    // 'rest' is alles buiten die twee spits-wedges, dus de rest van de volle cirkel
+    // in twee losse stukken (het korte stuk ertussen + het lange stuk eromheen);
+    // 'etmaal' is de volle cirkel.
+    const SIM_DP_ANGLES = { mrh: [220, 260], erh: [130, 170] };
 
     function _simPolarPoint(deg, r) {
       const rad = deg * Math.PI / 180;
@@ -18784,6 +18849,21 @@
         // daarom in twee 180°-stukken splitsen.
         arc.setAttribute('d', `M${x0},${y0} A${R},${R} 0 0 1 ${x180},${y180} A${R},${R} 0 0 1 ${x0},${y0} Z`);
         endDeg = 0; // geen echt 'leidend' uiteinde op een volle cirkel; vaste referentie boven.
+      } else if (simPausedSelection === 'rest') {
+        // Twee losse boogstukken: het korte stuk tussen het einde van de avondspits
+        // en het begin van de ochtendspits, en het lange stuk tussen het einde van
+        // de ochtendspits en het begin van de avondspits (via 0°/360° heen).
+        const segs = [
+          [SIM_DP_ANGLES.erh[1], SIM_DP_ANGLES.mrh[0]],
+          [SIM_DP_ANGLES.mrh[1], SIM_DP_ANGLES.erh[0] + 360],
+        ];
+        arc.setAttribute('d', segs.map(([startDeg, deg2]) => {
+          const [x1, y1] = _simPolarPoint(startDeg, R);
+          const [x2, y2] = _simPolarPoint(deg2, R);
+          const largeArc = (deg2 - startDeg) > 180 ? 1 : 0;
+          return `M${x1},${y1} A${R},${R} 0 ${largeArc} 1 ${x2},${y2}`;
+        }).join(' '));
+        endDeg = segs[0][1]; // pijlpunt bij het begin van de ochtendspits, zoals voorheen
       } else {
         const [startDeg, deg2] = SIM_DP_ANGLES[simPausedSelection];
         endDeg = deg2;
@@ -18799,54 +18879,64 @@
 
     /** Pas de gekozen gepauzeerde tijdvak-selectie toe: label, boog, gebouwen (altijd 'rest') en flows. */
     function _applySimPausedSelection() {
-      const dig = document.getElementById('simClockDigital');
-      dig.textContent = {
+      document.getElementById('simClockTimeText').textContent = {
         etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), rest: T('dpLabelRest'), erh: T('dpLabelErh'),
       }[simPausedSelection];
+      document.getElementById('simClockModeBtn').textContent = '>';
+      let _pendingApply;
       if (simPausedSelection === 'mrh') {
         document.getElementById('fspHour').value = 8;
         applyDaypartSideEffects('rest', 'mrh');
-        scheduleSimApply();
+        _pendingApply = scheduleSimApply();
       } else if (simPausedSelection === 'erh') {
         document.getElementById('fspHour').value = 17;
         applyDaypartSideEffects('rest', 'erh');
-        scheduleSimApply();
+        _pendingApply = scheduleSimApply();
       } else if (simPausedSelection === 'rest') {
         applyDaypartSideEffects('rest', 'rest');
-        applyFlowScaler({ omitDate: true });
+        _pendingApply = applyFlowScaler({ omitDate: true });
       } else { // 'etmaal'
         applyDaypartSideEffects('rest', 'etmaal');
-        applyFlowScaler({ omitDate: true });
+        _pendingApply = applyFlowScaler({ omitDate: true });
       }
       // Taartpunten alsnog highlighten voor mrh/erh (applyDaypartSideEffects zet dit
       // terug op 'rest', wat geen van beide taartpunten matcht).
       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === simPausedSelection));
       _updateSimDpIndicator();
+      return _pendingApply;
     }
 
     /** Simulatie gepauzeerd: wijzer verbergen, tijdvak-indicator tonen, standaard op '24 uur'. */
     function _enterSimPaused() {
       simPausedSelection = 'etmaal';
       document.getElementById('simClockSvg').classList.add('sim-clock-paused');
-      const dig = document.getElementById('simClockDigital');
-      dig.dataset.i18nTitle = 'simClockCycleTitle';
-      dig.title = T('simClockCycleTitle');
-      _applySimPausedSelection();
+      const modeBtn = document.getElementById('simClockModeBtn');
+      modeBtn.dataset.i18nTitle = 'simClockCycleTitle';
+      modeBtn.title = T('simClockCycleTitle');
+      return _applySimPausedSelection();
     }
 
     /** Simulatie hervat: wijzer terug, klok weer uurgedreven. */
     function _exitSimPaused() {
       simPausedSelection = null;
       document.getElementById('simClockSvg').classList.remove('sim-clock-paused');
-      const dig = document.getElementById('simClockDigital');
-      dig.dataset.i18nTitle = 'simClockToggleTitle';
-      dig.title = T('simClockToggleTitle');
+      const modeBtn = document.getElementById('simClockModeBtn');
+      modeBtn.dataset.i18nTitle = 'simClockToggleTitle';
+      modeBtn.title = T('simClockToggleTitle');
       applyDaypartSideEffects(daypartForHour(simHour));
       updateClockUI(true);
-      scheduleSimApply();
+      return scheduleSimApply();
     }
 
     updateClockUI();
+
+    // Scenario-binnenkomst: de simulatie start standaard UIT (zie modi-default
+    // hierboven), dus de klok moet meteen in dezelfde gepauzeerde 'etmaal'-toestand
+    // beginnen i.p.v. pas na een handmatige aan/uit-klik (anders loopt de wijzer al
+    // terwijl de rest van de UI een gepauzeerde staat laat zien).
+    paused = true;
+    _setSimPausedUI(true);
+    _enterSimPaused();
 
     // Wijzer verslepen (muis + touch) om het uur handmatig te verzetten.
     (function initClockDrag() {
@@ -18894,16 +18984,28 @@
       }, { passive: true });
     })();
 
-    // Klik op de digitale tijd: gepauzeerd doorloopt dit de tijdvak-cyclus
+    // Klik op het knopje in het tijdsblokje: gepauzeerd doorloopt dit de tijdvak-cyclus
     // (24 uur → ochtendspits → restdag → avondspits → …); spelend wisselt het AM/PM.
-    document.getElementById('simClockDigital').addEventListener('click', () => {
+    document.getElementById('simClockModeBtn').addEventListener('click', async () => {
       if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
-      if (paused) {
-        const idx = SIM_DP_CYCLE.indexOf(simPausedSelection);
-        simPausedSelection = SIM_DP_CYCLE[(idx + 1) % SIM_DP_CYCLE.length];
-        _applySimPausedSelection();
-      } else {
-        setSimHour(simHour + 12);
+      // Zelfde redenering als bij het afspeel-vinkje: de spinner moet al staan
+      // vóór het (mogelijk zware) synchrone werk in _applySimPausedSelection/
+      // setSimHour, niet pas zodra die zelf scheduleSimApply/applyFlowScaler bereiken.
+      // Eerst laten schilderen, pas dán dat werk starten.
+      _setSimClockBusy(true);
+      await _yieldToPaint();
+      try {
+        let pending;
+        if (paused) {
+          const idx = SIM_DP_CYCLE.indexOf(simPausedSelection);
+          simPausedSelection = SIM_DP_CYCLE[(idx + 1) % SIM_DP_CYCLE.length];
+          pending = _applySimPausedSelection();
+        } else {
+          pending = setSimHour(simHour + 12);
+        }
+        await pending;
+      } finally {
+        _setSimClockBusy(false);
       }
     });
 
