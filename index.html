@@ -2777,7 +2777,8 @@
       carCountFmt: n => `~${n.toLocaleString('nl-NL')} voertuigen op de wegen`,
       // Flow-scaler panel
       fspBtnTitle:'Flow-scaler instellen',
-      fspTitle:'Flow-scaler',
+      fspTitle:'Inschatting',
+      fspTitleValue:'Volumes',
       fspDateLabel:'Datum',
       fspHourLabel:'Uur',
       fspTempLabel:'Temperatuur',
@@ -2795,8 +2796,9 @@
       fspError: e => `Fout: ${e}`,
       // Tooltip
       tooltipSegment: id => `Segment #${id}`,
-      tooltipDaypart:'Dagdeel', tooltipFlow:'Flow (dagdeel)', tooltipFlowTotal:'Flow (totaal/24u)',
-      tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg/24u',
+      tooltipDaypart:'Dagdeel',
+      tooltipFlow:'Aantal voertuigen', 
+      tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg',
       tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
       tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte', tooltipWidth:'Breedte',
       tooltipSpeedDataUnavailable:'Nog niet beschikbaar in deze brondata', tooltipSpeedFactorPresent:'Ja', tooltipSpeedFactorAbsent:'Nee',
@@ -3063,7 +3065,7 @@
       fspError: e => `Error: ${e}`,
       tooltipSegment: id => `Segment #${id}`,
       tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
-      tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh/24h',
+      tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh',
       tooltipSpeed:'Speed', tooltipLanes:'Lanes',
       tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length', tooltipWidth:'Width',
       tooltipSpeedDataUnavailable:'Not yet available in this source data', tooltipSpeedFactorPresent:'Yes', tooltipSpeedFactorAbsent:'No',
@@ -3287,7 +3289,7 @@
       fspError: e => `Virhe: ${e}`,
       tooltipSegment: id => `Segmentti #${id}`,
       tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
-      tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon/24h',
+      tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon',
       tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
       tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus', tooltipWidth:'Leveys',
       tooltipSpeedDataUnavailable:'Ei vielä saatavilla tassa aineistossa', tooltipSpeedFactorPresent:'Kyllä', tooltipSpeedFactorAbsent:'Ei',
@@ -12189,13 +12191,12 @@
           ${T('tooltipSegment', p.linkId)}
         </div>
         <div><span style="color:#6a757c">${contextKey}: </span><b>${contextLabel}</b></div>
-        <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
-        <div><span style="color:#6a757c">${T('tooltipFlowTotal')}: </span><b>${p.flow?.toFixed(0)} ${T('tooltipFlow24Unit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${flowDaypart === 'etmaal' ? T('tooltipFlow24Unit') : T('tooltipFlowUnit')}</b></div>
         <div><span style="color:#6a757c">${T('tooltipSpeed')}: </span><b>${p.speed} km/h</b></div>
         <div><span style="color:#6a757c">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
         <div><span style="color:#6a757c">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
-        <div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
-        <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
+        ${flowDaypart === 'etmaal' ? '' : `<div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>`}
         <div><span style="color:#6a757c">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
         ${p.roadWidthM != null ? `<div><span style="color:#6a757c">${T('tooltipWidth')}: </span><b>${Number(p.roadWidthM).toFixed(1)} m</b></div>` : ''}
         ${(() => {
@@ -19131,7 +19132,7 @@
         _fspVersion++;
 
         // Actief-label voor tooltip
-        _fspActiveLabel = dateTime ? `${dateVal} ${hour}:00` : T('fspTitle');
+        _fspActiveLabel = dateTime ? `${dateVal} ${hour}:00` : T('fspTitleValue');
         updateSunLight();
 
         rebuildCars();
