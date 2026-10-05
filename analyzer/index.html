@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>GMT Speeltuin</title>
+  <title>GMT Analyzer</title>
 
   <!-- MapLibre GL voor achtergrondkaart + 3D gebouwen -->
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
@@ -3386,7 +3386,7 @@
     // Netwerktitel (dynamische naam bewaard in window._networkName)
     if (window._networkName) {
       document.getElementById('networkTitle').textContent = T('networkTitle', window._networkName);
-      document.title = T('pageTitle', window._networkName);
+      // document.title = T('pageTitle', window._networkName);
     }
   }
 
@@ -5703,7 +5703,7 @@
     const networkName = geojson.properties?.name || AREA_ID;
     window._networkName = networkName;
     document.getElementById('networkTitle').textContent = T('networkTitle', networkName);
-    document.title = T('pageTitle', networkName);
+    // document.title = T('pageTitle', networkName);
 
     // Bepaal bbox voor kaartnavigatie: uit properties of berekend uit features
     let areaBounds = geojson.properties?.bbox;  // [minLon, minLat, maxLon, maxLat]
@@ -10222,6 +10222,31 @@
       });
     }
 
+    // Goudappel-groen (#49a748) — gebruikt om STUDY-zones te markeren.
+    const ZONE_STUDY_COLOR = [73, 167, 72];
+
+    // Standaard-fill voor STUDY-zones: altijd zichtbaar (ongeacht selectie), met een
+    // transparante versie van ZONE_STUDY_COLOR, zodat het studiegebied in één oogopslag
+    // herkenbaar is. BOUNDARY- en NODE-klassen hebben toch geen bruikbare polygoon.
+    function makeZoneStudyFillLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      const feats = zoneFeaturesRaw.filter(f =>
+        f.properties?.zoneClass === 'STUDY' &&
+        (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'));
+      if (!feats.length) return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      return new GeoJsonLayer({
+        id:           'zone-study-fill',
+        data:         feats,
+        pickable:     false,
+        stroked:      false,
+        filled:       true,
+        getFillColor: [...ZONE_STUDY_COLOR, 40],
+      });
+    }
+
     // Toon zone-grenzen als gestippelde lijn (PathLayer) wanneer modus niet 'off' is.
     // Altijd zwart, onafhankelijk van productie/attractie-modus.
     // BOUNDARY- en NODE-klassen worden overgeslagen (te groot of geen polygoon).
@@ -10229,20 +10254,22 @@
       if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
         return new PathLayer({ id: 'zone-boundaries', data: [] });
 
-      const color = [0, 0, 0, 160];
+      const color      = [0, 0, 0, 160];
+      const studyColor = [...ZONE_STUDY_COLOR, 220];   // Goudappel-groen — STUDY-zones
 
       // Extraheer buitenranden van Polygon/MultiPolygon zones
       const paths = [];
       for (const f of zoneFeaturesRaw) {
         const cl = f.properties?.zoneClass;
         if (cl === 'BOUNDARY' || cl === 'NODE') continue;
+        const isStudy = cl === 'STUDY';
         const geom = f.geometry;
         if (!geom) continue;
         if (geom.type === 'Polygon' && geom.coordinates?.[0]?.length >= 2) {
-          paths.push(geom.coordinates[0]);
+          paths.push({ path: geom.coordinates[0], isStudy });
         } else if (geom.type === 'MultiPolygon') {
           for (const poly of geom.coordinates)
-            if (poly?.[0]?.length >= 2) paths.push(poly[0]);
+            if (poly?.[0]?.length >= 2) paths.push({ path: poly[0], isStudy });
         }
       }
       if (!paths.length) return new PathLayer({ id: 'zone-boundaries', data: [] });
@@ -10259,12 +10286,12 @@
         pickable:       false,
         widthUnits:     'pixels',
         widthMinPixels: 1,
-        widthMaxPixels: 2,
-        getPath:        d => d,
-        getColor:       color,
-        getWidth:       1.5,
+        widthMaxPixels: 3,
+        getPath:        d => d.path,
+        getColor:       d => d.isStudy ? studyColor : color,
+        getWidth:       d => d.isStudy ? 5 : 1.5,
         ...dashProps,
-        updateTriggers: {},
+        updateTriggers: { getColor: [], getWidth: [] },
       });
     }
 
@@ -11804,7 +11831,7 @@
 
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
+      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneStudyFillLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
@@ -11999,6 +12026,7 @@
           makeLinkEditLayer(),
           ...makeSelectedLinkHighlightLayers(),
           makeWhatifRcHighlightLayer(),
+          makeZoneStudyFillLayer(),
           makeZoneSelectedFillLayer(),
           makeZoneBoundaryLayer(),
           makeZoneCentroidLayer(),
@@ -14004,7 +14032,7 @@
       const newName = newGeojson.properties?.name || newAreaId;
       window._networkName = newName;
       document.getElementById('networkTitle').textContent = T('networkTitle', newName);
-      document.title = T('pageTitle', newName);
+      // document.title = T('pageTitle', newName);
 
       // ── Zones ────────────────────────────────────────────────────────────
       try {

@@ -1928,6 +1928,121 @@
         </div>
       </div>
 
+      <!-- ── Aanpassingen-paneel ──────────────────────────────────────────────────── -->
+      <div class="lmp-block collapsed" data-block="tools">
+        <div class="lmp-block-header">
+          <span>Aanpassingen</span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body" id="editPanelBody">
+          <div class="sim-row">
+            <div class="edit-btn-group">
+            <!-- Productie/attractie per knoop wijzigen -->
+            <button class="tb-btn edit-btn" id="nodeEditBtn"
+                    data-i18n-title="nodeEditTitle"
+                    title="Productie/attractie per knoop wijzigen">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+                <polygon points="12,3 21,8.5 21,15.5 12,21 3,15.5 3,8.5"/>
+              </svg>
+            </button>
+            <!-- Capaciteit per wegvak wijzigen -->
+            <button class="tb-btn edit-btn" id="linkEditBtn"
+                    data-i18n-title="linkEditTitle"
+                    title="Capaciteit per wegvak wijzigen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="28" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h48l33 10h23"/><path d="M8 48h48l33-10h23"/><path d="M8 32h104" stroke-dasharray="5 5" stroke-width="1.5" opacity=".75"/></svg>
+            </button>
+            <!-- Flow per wegvak wijzigen -->
+            <button class="tb-btn edit-btn" id="linkFlowEditBtn"
+                    data-i18n-title="linkFlowEditTitle"
+                    title="Flow per wegvak wijzigen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 28h34M15 36h34"/><path d="M32 8v12M26 14h12M26 50h12"/></svg>
+            </button>
+            <!-- OD-paar aanpassen -->
+            <button class="tb-btn edit-btn" id="odEditBtn"
+                    data-i18n-title="odEditBtnTitle"
+                    title="OD-paar aanpassen" style="display:none">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="32" r="7"/><circle cx="50" cy="32" r="7"/><path d="M23 32h18M27 27l-5 5 5 5M37 27l5 5-5 5"/><path d="M32 11v12M26 17h12M26 50h12"/></svg>
+            </button>
+            <!-- Nieuw wegvak toevoegen -->
+            <button class="tb-btn tb-add edit-btn" id="linkAddBtn"
+                    data-i18n-title="linkAddTitle"
+                    title="Nieuw wegvak intekenen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>
+            </button>
+            </div>
+
+            <!-- Wijzigingen bekijken -->
+            <button class="tb-btn" id="viewChangesBtn"
+                    data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
+                    style="position:relative">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="10" width="38" height="44" rx="4"/><path d="M22 22l3 3 5-6M32 22h10M22 34l3 3 5-6M32 34h10M22 46h20"/></svg>
+              <span id="viewChangesBadge" class="tb-badge"></span>
+            </button>
+            <!-- What-if wegafsluiting -->
+            <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
+          </div>
+
+          <!-- ── Node-selectiemodus sub-paneel (tijdelijk, alleen tijdens zone-aanpassing) ── -->
+          <div id="nodeSelectPopup">
+            <h4 data-i18n="nodeSelectTitle">Selectiemodus</h4>
+            <label class="nsm-option">
+              <input type="radio" name="nodeSelectMode" value="click" checked/>
+              <span data-i18n="nodeSelectClick">Klik op een knoop</span>
+            </label>
+            <label class="nsm-option">
+              <input type="radio" name="nodeSelectMode" value="polygon"/>
+              <span data-i18n="nodeSelectPolygon">Polygon tekenen</span>
+            </label>
+            <div id="polygonHint" data-i18n="polygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
+            <button class="poly-ctrl-btn" id="polygonFinishBtn" data-i18n="polygonFinishBtn">&#10003; Polygon afsluiten</button>
+            <button class="poly-ctrl-btn" id="polygonClearBtn" data-i18n="polygonClearBtn">&#10005; Wis polygon</button>
+          </div>
+
+          <!-- ── Wijzigingenlijst (tijdelijk, alleen zichtbaar bij openstaande aanpassingen) ── -->
+          <div id="changesPanel">
+            <div id="changesPanelHeader">
+              <span data-i18n="changesTitle">Wijzigingen</span>
+              <span id="changesCount" style="color:#6a757c;font-weight:400">0</span>
+            </div>
+            <div id="changesList"></div>
+            <div id="changesPanelFooter">
+              <input type="text" id="scenarioNameInput" placeholder="Scenario-naam" data-i18n-ph="scenarioNamePh"/>
+              <label id="adjustDebugLabel">
+                <input type="checkbox" id="adjustDebug" style="accent-color:#dd7a00;width:13px;height:13px;flex-shrink:0"/>
+                Debug-uitvoer activeren
+              </label>
+              <button id="applyChangesBtn" data-i18n="applyBtn">&#9654; Doorvoeren</button>
+              <div id="applyStatus"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Analyse-paneel (selected link + scenario-vergelijker) ────────────── -->
+      <div class="lmp-block collapsed" data-block="analysis">
+        <div class="lmp-block-header">
+          <span>Analyse</span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body" id="analysisPanelBody">
+          <div class="sim-row">
+            <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
+            <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
+          </div>
+          <div class="sim-row">
+            <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
+            <button class="tb-btn" id="splitViewBtn" data-i18n-title="splitViewTitle"
+                    title="ScenarioVergelijker" style="display:none">⧉</button>
+            <!-- Verschilplot: toont toe-/afnames per wegvak (rood/groen) -->
+            <button class="tb-btn" id="diffPlotBtn" title="Verschilplot (Δ intensiteit)" style="display:none">Δ</button>
+            <!-- Verschilplot met ongewijzigd deel: grijze kern + gekleurde rand -->
+            <button class="tb-btn" id="diffStackBtn" title="Verschilplot met ongewijzigd deel (grijs)" style="display:none">Δ▤</button>
+            <!-- Smiley-verschilplot: blije/boze smiley per wegvak bij duidelijke verbetering/verslechtering -->
+            <button class="tb-btn" id="diffSmileyBtn" title="Verschilplot met smileys (verbetering/verslechtering)" style="display:none">☺</button>
+          </div>
+        </div>
+      </div>
+
       <div class="lmp-block collapsed" data-block="network">
         <div class="lmp-block-header">
           <span>Netwerk</span>
@@ -3177,7 +3292,7 @@
     // Netwerktitel (dynamische naam bewaard in window._networkName)
     if (window._networkName) {
       document.getElementById('networkTitle').textContent = T('networkTitle', window._networkName);
-      document.title = T('pageTitle', window._networkName);
+      // document.title = T('pageTitle', window._networkName);
     }
   }
 
@@ -5573,7 +5688,7 @@
     const networkName = geojson.properties?.name || AREA_ID;
     window._networkName = networkName;
     document.getElementById('networkTitle').textContent = T('networkTitle', networkName);
-    document.title = T('pageTitle', networkName);
+    // document.title = T('pageTitle', networkName);
 
     // Bepaal bbox voor kaartnavigatie: uit properties of berekend uit features
     let areaBounds = geojson.properties?.bbox;  // [minLon, minLat, maxLon, maxLat]
@@ -12765,6 +12880,31 @@
       });
     }
 
+    // Goudappel-groen (#49a748) — gebruikt om STUDY-zones te markeren.
+    const ZONE_STUDY_COLOR = [73, 167, 72];
+
+    // Standaard-fill voor STUDY-zones: altijd zichtbaar (ongeacht selectie), met een
+    // transparante versie van ZONE_STUDY_COLOR, zodat het studiegebied in één oogopslag
+    // herkenbaar is. BOUNDARY- en NODE-klassen hebben toch geen bruikbare polygoon.
+    function makeZoneStudyFillLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      const feats = zoneFeaturesRaw.filter(f =>
+        f.properties?.zoneClass === 'STUDY' &&
+        (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'));
+      if (!feats.length) return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      return new GeoJsonLayer({
+        id:           'zone-study-fill',
+        data:         feats,
+        pickable:     false,
+        stroked:      false,
+        filled:       true,
+        getFillColor: [...ZONE_STUDY_COLOR, 40],
+      });
+    }
+
     // Toon zone-grenzen als gestippelde lijn (PathLayer) wanneer modus niet 'off' is.
     // Altijd zwart, onafhankelijk van productie/attractie-modus.
     // BOUNDARY- en NODE-klassen worden overgeslagen (te groot of geen polygoon).
@@ -12772,20 +12912,22 @@
       if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
         return new PathLayer({ id: 'zone-boundaries', data: [] });
 
-      const color = [0, 0, 0, 160];
+      const color      = [0, 0, 0, 160];
+      const studyColor = [...ZONE_STUDY_COLOR, 220];   // Goudappel-groen — STUDY-zones
 
       // Extraheer buitenranden van Polygon/MultiPolygon zones
       const paths = [];
       for (const f of zoneFeaturesRaw) {
         const cl = f.properties?.zoneClass;
         if (cl === 'BOUNDARY' || cl === 'NODE') continue;
+        const isStudy = cl === 'STUDY';
         const geom = f.geometry;
         if (!geom) continue;
         if (geom.type === 'Polygon' && geom.coordinates?.[0]?.length >= 2) {
-          paths.push(geom.coordinates[0]);
+          paths.push({ path: geom.coordinates[0], isStudy });
         } else if (geom.type === 'MultiPolygon') {
           for (const poly of geom.coordinates)
-            if (poly?.[0]?.length >= 2) paths.push(poly[0]);
+            if (poly?.[0]?.length >= 2) paths.push({ path: poly[0], isStudy });
         }
       }
       if (!paths.length) return new PathLayer({ id: 'zone-boundaries', data: [] });
@@ -12802,12 +12944,12 @@
         pickable:       false,
         widthUnits:     'pixels',
         widthMinPixels: 1,
-        widthMaxPixels: 2,
-        getPath:        d => d,
-        getColor:       color,
-        getWidth:       1.5,
+        widthMaxPixels: 3,
+        getPath:        d => d.path,
+        getColor:       d => d.isStudy ? studyColor : color,
+        getWidth:       d => d.isStudy ? 2.5 : 1.5,
         ...dashProps,
-        updateTriggers: {},
+        updateTriggers: { getColor: [], getWidth: [] },
       });
     }
 
@@ -14344,7 +14486,7 @@
 
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
+      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneStudyFillLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
@@ -14541,6 +14683,7 @@
           makeLinkEditLayer(),
           ...makeSelectedLinkHighlightLayers(),
           makeWhatifRcHighlightLayer(),
+          makeZoneStudyFillLayer(),
           makeZoneSelectedFillLayer(),
           makeZoneBoundaryLayer(),
           makeZoneCentroidLayer(),
@@ -16419,7 +16562,7 @@
       const newName = newGeojson.properties?.name || newAreaId;
       window._networkName = newName;
       document.getElementById('networkTitle').textContent = T('networkTitle', newName);
-      document.title = T('pageTitle', newName);
+      // document.title = T('pageTitle', newName);
 
       // ── Zones ────────────────────────────────────────────────────────────
       try {
