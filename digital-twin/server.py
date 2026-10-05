@@ -50,6 +50,18 @@ try:
 except Exception:
     pass
 
+# ---------------------------------------------------------------------------
+# Gedeelde code (common/py, zie ../common/) op sys.path zetten. Dit bestand
+# leeft in analyzer/ of digital-twin/; common/py is een sibling van die map.
+# In een geflatten deployment (deploy.ps1-zip) bestaat ../common/py niet en
+# staan gedeelde packages (bv. buildings_fetcher/) gewoon naast dit bestand —
+# die vindt Python al via het standaard sys.path[0] (de scriptmap), dus dit
+# blok is dan een no-op.
+# ---------------------------------------------------------------------------
+_COMMON_PY_DIR = (Path(os.path.dirname(os.path.abspath(__file__))) / ".." / "common" / "py").resolve()
+if _COMMON_PY_DIR.is_dir():
+    sys.path.insert(0, str(_COMMON_PY_DIR))
+
 import requests
 from flask import (
     Flask,
@@ -293,6 +305,11 @@ args, _ = parser.parse_known_args()
 
 DATA_DIR = Path(args.data).resolve()
 STATIC_DIR = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
+# Gedeelde statische/data-bestanden (common/js, common/data). Bestaan niet in
+# een geflatten deployment (zie _COMMON_PY_DIR hierboven) — dan staan die
+# bestanden al gewoon in STATIC_DIR en zijn deze mappen eenvoudigweg leeg/afwezig.
+COMMON_JS_DIR = (STATIC_DIR / ".." / "common" / "js").resolve()
+COMMON_DATA_DIR = (STATIC_DIR / ".." / "common" / "data").resolve()
 _SAFE_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
@@ -1782,8 +1799,8 @@ def _get_area_name(area_id: str) -> str:
 
 
 def _find_local_file(filename: str) -> "Path | None":
-    """Zoek bestand in DATA_DIR en STATIC_DIR; geeft None als niet gevonden."""
-    for base in (DATA_DIR, STATIC_DIR):
+    """Zoek bestand in DATA_DIR, STATIC_DIR en COMMON_DATA_DIR; geeft None als niet gevonden."""
+    for base in (DATA_DIR, STATIC_DIR, COMMON_DATA_DIR):
         p = base / filename
         if p.exists():
             return p
@@ -3778,9 +3795,14 @@ def static_asset(filename):
     if ext not in _STATIC_EXTS:
         abort(404)
     p = STATIC_DIR / filename
-    if not p.is_file():
-        abort(404)
-    return send_from_directory(str(STATIC_DIR), filename)
+    if p.is_file():
+        return send_from_directory(str(STATIC_DIR), filename)
+    # Niet in de eigen scriptmap: val terug op common/js (bv. left-menu-panel.js),
+    # dat index.html via een kale bestandsnaam ("<script src=...>") opvraagt.
+    p = COMMON_JS_DIR / filename
+    if p.is_file():
+        return send_from_directory(str(COMMON_JS_DIR), filename)
+    abort(404)
 
 
 @app.route("/svg/<path:filename>")
