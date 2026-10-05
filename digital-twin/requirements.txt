@@ -1,0 +1,34 @@
+# GMT Calculation Library (lokale wheel, gedeeld op repo-niveau met GMT Analyzer).
+# Digital Twin draait geen prepare/adjust-pipelines zelf, dus zonder [prepare]-extra.
+../gmt_calculation_lib-0.5.3-py3-none-any.whl
+
+# Web framework
+flask>=3.1
+flask-compress>=1.15
+
+# AWS / S3 (lezen van gedeelde work/-data)
+boto3>=1.42
+
+# Data-validatie
+pydantic>=2
+
+# HTTP
+requests>=2.34.2
+
+# Environment-variabelen vanuit .env
+python-dotenv>=1.2
+
+numpy>=2.0
+
+# Windows timezone database (required by zoneinfo on Windows)
+tzdata>=2024.1
+
+# GeoParquet-ondersteuning (lezen van .geoparquet/.parquet netwerkbestanden)
+geopandas>=0.14
+pyarrow>=14
+
+# MVT (Mapbox Vector Tile) decodering voor Spectrum-proxy / achtergronden
+mapbox-vector-tile>=1.2
+
+# Maquette-camera: beeldherkenning van het fysieke schaalmodel
+opencv-python==4.13.0.92
