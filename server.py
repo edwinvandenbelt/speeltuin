@@ -2823,6 +2823,9 @@ def _execute_prepare(inputs: dict):
     # Vegetatie-vinkje (voorheen "Full digital twin"). De OSM/BGT-verrijking
     # zelf draait altijd; dit vinkje schakelt alleen het ophalen van vegetatie.
     fetch_vegetation = bool(inputs.get("vegetation", True))
+    # Hoogte-vinkje: haalt AHN-hoogtedata op voor de wegvakken. Kost extra tijd
+    # (één request per batch wegvakken), vandaar uitschakelbaar.
+    fetch_elevation = bool(inputs.get("elevation", True))
 
     job_id = str(uuid.uuid4())
 
@@ -2845,6 +2848,7 @@ def _execute_prepare(inputs: dict):
             debug=bool(inputs.get("debug", False)),
             osm_path=pbf_path,
             fetch_vegetation=fetch_vegetation,
+            add_elevation=fetch_elevation,
         )
         with _jobs_lock:
             _jobs[job_id] = {
