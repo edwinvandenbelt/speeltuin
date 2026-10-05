@@ -1875,7 +1875,10 @@
       <div class="lmp-block" data-block="simulation">
         <div class="lmp-block-header" id="simBlockHeader">
           <span>Simulatie</span>
-          <label class="sim-play-toggle" data-i18n-title="pauseTitle" title="Simulatie afspelen/pauzeren" onclick="event.stopPropagation()">
+          <!-- GMT Analyzer: geen doorlopende/levende klok, dus geen afspeel-toggle
+               (element blijft in de DOM — verborgen — zodat de bestaande
+               event-listener op #simPlayCheckbox geen null-referentie wordt). -->
+          <label class="sim-play-toggle" data-i18n-title="pauseTitle" title="Simulatie afspelen/pauzeren" onclick="event.stopPropagation()" style="display:none">
             <input type="checkbox" id="simPlayCheckbox"/>
           </label>
           <span class="lmp-block-arrow">▾</span>
@@ -1908,7 +1911,11 @@
               <input type="date" id="fspDate" class="fsp-input sim-date-input"/>
             </div>
           </div>
-          <div class="sim-row sim-labeled-row">
+          <!-- GMT Analyzer: geen weer/temperatuur/motief-sturing (hoort bij de
+               doorlopende klok van GMT Digital Twin). De onderliggende hidden
+               #fspTemp/#fspWeather/#fspPurpose-velden blijven op hun vaste
+               standaardwaarde staan (zie applyFlowScaler hieronder). -->
+          <div class="sim-row sim-labeled-row" style="display:none">
             <span class="sim-subrow-label" data-i18n="fspTempLabel">Temperatuur</span>
             <div class="sim-btn-group" id="simTempBtns">
             <button class="sim-opt-btn active" data-val="High" data-i18n-title="fspTempHigh" title="Hoog">
@@ -1951,7 +1958,7 @@
             </button>
             </div>
           </div>
-          <div class="sim-row sim-labeled-row">
+          <div class="sim-row sim-labeled-row" style="display:none">
             <span class="sim-subrow-label" data-i18n="fspWeatherLabel">Weer</span>
             <div class="sim-btn-group" id="simWeatherBtns">
               <button class="sim-opt-btn" data-val="sunny" data-i18n-title="fspWeatherSunny" title="Zonnig">&#9728;&#65039;</button>
@@ -1960,7 +1967,7 @@
               <button class="sim-opt-btn" data-val="rainy" data-i18n-title="fspWeatherRainy" title="Regenachtig">&#127783;&#65039;</button>
             </div>
           </div>
-          <div class="sim-row">
+          <div class="sim-row" style="display:none">
             <label class="fsp-label" for="fspPurpose" data-i18n="fspPurposeLabel">Reisdoel</label>
             <select id="fspPurpose" class="fsp-select">
               <option value="" data-i18n="fspPurposeAll">Alle</option>
@@ -3448,8 +3455,12 @@
   };
   window._maquetteFlag = _flag;
 
-  // ── maquette: combineert hide-panels + blok-cursor + verberg gebouwen (?maquette=true) ──
-  const _MAQUETTE = _flag('maquette');
+  // GMT Analyzer heeft geen maquette-modus (fysiek schaalmodel): die leeft
+  // alleen nog in GMT Digital Twin. Hardcoded false i.p.v. de URL-vlag te
+  // lezen houdt alle bestaande `if (_MAQUETTE)`-vertakkingen (camera-toggle,
+  // calibratie, highlight-laag) permanent inactief zonder ze stuk voor stuk
+  // te hoeven verwijderen uit deze ene grote closure.
+  const _MAQUETTE = false;
   if (_MAQUETTE) {
     document.body.classList.add('maquette-mode');
     document.addEventListener('mousemove', e => {
@@ -3539,69 +3550,10 @@
       console.warn('[follow] SSE verbindingsfout, herverbinden\u2026', e);
     };
 
-    // ── camera_status: heartbeat van maquette_camera.py ─────────────────────
-    let _cameraHeartbeatTimer = null;
-    const _camInd = document.getElementById('cameraIndicator');
-    const _camLbl = document.getElementById('cameraIndicatorLabel');
-    const _CAMERA_TIMEOUT_MS = 12000; // 2× heartbeat-interval
-
-    function _setCameraActive(active) {
-      if (!_camInd) return;
-      _camInd.classList.toggle('cam-active',   active);
-      _camInd.classList.toggle('cam-inactive', !active);
-      if (_camLbl) _camLbl.textContent = active ? 'Camera actief' : 'Camera inactief';
-    }
-
-    function _resetCameraTimeout() {
-      clearTimeout(_cameraHeartbeatTimer);
-      _cameraHeartbeatTimer = setTimeout(() => _setCameraActive(false), _CAMERA_TIMEOUT_MS);
-    }
-
-    es.addEventListener('camera_status', (evt) => {
-      try {
-        const { active } = JSON.parse(evt.data);
-        _setCameraActive(active);
-        if (active) _resetCameraTimeout();
-        else {
-          clearTimeout(_cameraHeartbeatTimer);
-          // Camera is (zichzelf) gestopt → knopstatus terugzetten naar "uit".
-          document.dispatchEvent(new Event('camera_inactive_event'));
-        }
-      } catch (e) {
-        console.warn('[follow] camera_status parse fout:', e);
-      }
-    });
-
-    // ── maquette_detections: geef door aan maquette-monitor.js ──────────────
-    es.addEventListener('maquette_detections', (evt) => {
-      try {
-        document.dispatchEvent(new CustomEvent('maquette-detections', {
-          detail: JSON.parse(evt.data),
-        }));
-      } catch (e) {
-        console.warn('[follow] maquette_detections parse fout:', e);
-      }
-    });
-
-    // ── link_preview: licht het gedetecteerde wegvak op vóór de berekening ───
-    es.addEventListener('link_preview', (evt) => {
-      try {
-        const { link_ids } = JSON.parse(evt.data);
-        const src = _maquetteMap?.getSource('maquette-highlight');
-        if (!src) return;
-        if (!link_ids || link_ids.length === 0) {
-          src.setData({ type: 'FeatureCollection', features: [] });
-          return;
-        }
-        const absIds = new Set(link_ids.map(id => Math.abs(id)));
-        const matched = _networkFeatures.filter(
-          f => absIds.has(Math.abs(f.properties?.linkId ?? NaN))
-        );
-        src.setData({ type: 'FeatureCollection', features: matched });
-      } catch (e) {
-        console.warn('[follow] link_preview parse fout:', e);
-      }
-    });
+    // camera_status / maquette_detections / link_preview SSE-events zijn
+    // maquette-specifiek (camera-koppeling) en daarom verwijderd uit GMT
+    // Analyzer; de backend emit ze hier ook niet meer. "started"/job-polling
+    // hierboven is generieke meekijk-functionaliteit en blijft bestaan.
   }
 
   // ── Camera toggle (alleen in ?maquette=true, niet in follow-modus) ────────
@@ -4043,16 +3995,8 @@
                 `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}&follow=true`;
             };
 
-            // Item: Maquette (opent kaart in maquette-modus met camera-koppeling)
-            const maquetteItem = mkItem('Maquette',
-              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/><circle cx="12" cy="14" r="2.5"/></svg>',
-              false, false);
-            maquetteItem.onclick = () => {
-              dropdown.style.display = 'none';
-              window.location.href =
-                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}` +
-                `&maquette=true&follow=true&cameraId=-1`;
-            };
+            // "Maquette"-menu-item is verwijderd: GMT Analyzer heeft geen
+            // maquette-modus (zie GMT Digital Twin).
 
             // Item: Upload GMT
             const gmtUploaded = !!area.gmtUploaded;
@@ -4209,7 +4153,6 @@
             };
 
             dropdown.appendChild(followItem);
-            dropdown.appendChild(maquetteItem);
             dropdown.appendChild(gmtItem);
             dropdown.appendChild(twinItem);
             dropdown.appendChild(delItem);
@@ -5466,6 +5409,11 @@
     let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
     let _sunIsDay       = true;  // idem — laatst berekende dag/nacht-status (updateSunLight)
     function updateSunLight() {
+      // GMT Analyzer heeft geen dag/nacht-belichting op basis van de klok (geen
+      // doorlopende/weer-gebonden simulatie); de kaart gebruikt de standaard
+      // belichting/hemel van de basemap-stijl. Zie GMT Digital Twin voor de
+      // live dag/nacht-cyclus.
+      return;
       if (!map || !map.isStyleLoaded()) return;
 
       let hour, month;
@@ -8928,6 +8876,9 @@
     }
 
     function makeFurnitureLayers() {
+      // GMT Analyzer: geen procedurele 3D-objecten (straatmeubilair hoort bij
+      // de 3D-scene van GMT Digital Twin).
+      return [];
       if (!_trafficAssetsVisible || !_trafficAssetCategories.furniture) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       _taEnsureFurnMeshes();
@@ -9232,6 +9183,8 @@
     }
 
     function makeVegetationTreeLayers() {
+      // GMT Analyzer: geen vegetatiedata/3D-bomen (zie GMT Digital Twin).
+      return [];
       if (!_vegetationVisible) return [];
       if (map.getZoom() < _VEG_MINZOOM) return [];
       const layers = [];
@@ -14515,6 +14468,9 @@
     }
 
     function makeCarLayers(data) {
+      // GMT Analyzer: geen 3D-voertuigrendering (dichtheid-als-auto's hoort bij
+      // de klok-gedreven live 3D-weergave van GMT Digital Twin).
+      return [];
       const vtypes = MODE === 'BIKE'  ? BIKE_VEHICLE_TYPES :
                      MODE === 'MIXED' ? [...VEHICLE_TYPES, ...BIKE_VEHICLE_TYPES] :
                                         VEHICLE_TYPES;
@@ -18929,16 +18885,12 @@
       return _applySimPausedSelection();
     }
 
-    /** Simulatie hervat: wijzer terug, klok weer uurgedreven. */
+    /** GMT Analyzer heeft geen doorlopende/levende klok (die hoort bij GMT
+     *  Digital Twin, incl. weer/temperatuur/motief). De klok blijft daarom
+     *  altijd in de gepauzeerde dagdeel-stand (OS/AS/RD/24hr), ook als iets
+     *  deze functie aanroept. */
     function _exitSimPaused() {
-      simPausedSelection = null;
-      document.getElementById('simClockSvg').classList.remove('sim-clock-paused');
-      const modeBtn = document.getElementById('simClockModeBtn');
-      modeBtn.dataset.i18nTitle = 'simClockToggleTitle';
-      modeBtn.title = T('simClockToggleTitle');
-      applyDaypartSideEffects(daypartForHour(simHour));
-      updateClockUI(true);
-      return scheduleSimApply();
+      return _enterSimPaused();
     }
 
     updateClockUI();
@@ -18951,51 +18903,9 @@
     _setSimPausedUI(true);
     _enterSimPaused();
 
-    // Wijzer verslepen (muis + touch) om het uur handmatig te verzetten.
-    (function initClockDrag() {
-      const svg  = document.getElementById('simClockSvg');
-      let dragging = false;
-
-      function angleToHour(clientX, clientY) {
-        const rect = svg.getBoundingClientRect();
-        const cx = rect.left + rect.width  / 2;
-        const cy = rect.top  + rect.height / 2;
-        const dx = clientX - cx, dy = clientY - cy;
-        let deg = Math.atan2(dx, -dy) * 180 / Math.PI; // 0° = boven (12 uur)
-        if (deg < 0) deg += 360;
-        const h12 = Math.round(deg / 30) % 12;
-        // Behoud AM/PM van het huidige uur (klok toont enkel 12 uur per omwenteling)
-        const isPM = simHour >= 12;
-        return isPM ? (h12 === 0 ? 12 : h12) + 12 : (h12 === 12 ? 0 : h12);
-      }
-
-      function onMove(e) {
-        if (!dragging) return;
-        const pt = e.touches ? e.touches[0] : e;
-        setSimHour(angleToHour(pt.clientX, pt.clientY));
-      }
-      function onUp() {
-        dragging = false;
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-        window.removeEventListener('touchmove', onMove);
-        window.removeEventListener('touchend', onUp);
-      }
-      document.getElementById('simClock').addEventListener('mousedown', e => {
-        if (paused || e.target.closest('.dp-wedge')) return;
-        dragging = true;
-        onMove(e);
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-      });
-      document.getElementById('simClock').addEventListener('touchstart', e => {
-        if (paused || e.target.closest('.dp-wedge')) return;
-        dragging = true;
-        onMove(e);
-        window.addEventListener('touchmove', onMove, { passive: true });
-        window.addEventListener('touchend', onUp);
-      }, { passive: true });
-    })();
+    // GMT Analyzer: geen handmatig sleepbare klok-wijzer (hoort bij de
+    // doorlopende klok van GMT Digital Twin). De wijzer blijft in de
+    // gepauzeerde dagdeel-stand; alleen de vier dagdeel-knoppen bedienen hem.
 
     // Klik op het knopje in het tijdsblokje: gepauzeerd doorloopt dit de tijdvak-cyclus
     // (24 uur → ochtendspits → restdag → avondspits → …); spelend wisselt het AM/PM.
@@ -19064,6 +18974,11 @@
       const dateVal    = document.getElementById('fspDate').value || null;
       const hour       = String(document.getElementById('fspHour').value).padStart(2, '0');
       const dateTime   = (!omitDate && dateVal) ? `${dateVal}T${hour}:00:00` : null;
+      // GMT Analyzer heeft geen UI om temperature/weather/purpose te wijzigen
+      // (zie de verborgen sim-row-blokken hierboven) — #fspTemp/#fspWeather
+      // staan daarom altijd vast op hun standaardwaarde (Medium/cloudy) en
+      // #fspPurpose blijft leeg (= geen motief-filter). De backend accepteert
+      // deze drie nog gewoon; alleen de UI om ze te veranderen is hier weg.
       const tempVal    = document.getElementById('fspTemp').value;
       const weatherVal = document.getElementById('fspWeather').value;
       const purposeVal = document.getElementById('fspPurpose').value || null;
@@ -19255,7 +19170,5 @@
 
   <!-- Achtergronden-blok in linker menu-paneel (los module, na de hoofdscript) -->
   <script src="left-menu-panel.js"></script>
-  <script src="maquette-calibration.js"></script>
-  <script src="maquette-monitor.js"></script>
 </body>
 </html>

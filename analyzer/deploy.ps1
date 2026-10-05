@@ -57,6 +57,7 @@ $directories = @(
 )
 $rootDirectories = @(
     "common/py/buildings_fetcher",
+    "common/data/traffic_sign_icons",
     "scripts"                # server.py importeert scripts.geofabrik_pbf (PBF-resolver)
 )
 

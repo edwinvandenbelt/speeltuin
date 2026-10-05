@@ -31,7 +31,6 @@ import queue
 import time
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -61,6 +60,15 @@ except Exception:
 _COMMON_PY_DIR = (Path(os.path.dirname(os.path.abspath(__file__))) / ".." / "common" / "py").resolve()
 if _COMMON_PY_DIR.is_dir():
     sys.path.insert(0, str(_COMMON_PY_DIR))
+
+# De repo-root (parent van analyzer/) op sys.path voor de scripts/-package
+# (scripts.geofabrik_pbf), die net als de wheel-bestanden op repo-niveau blijft
+# staan. In een geflatten deployment bestaat deze ouder-map niet op dezelfde
+# manier en is dit een no-op; de PBF-resolver is dan gewoon niet beschikbaar
+# (_GEOFABRIK_PBF_AVAILABLE wordt False, zie hieronder).
+_REPO_ROOT_DIR = (Path(os.path.dirname(os.path.abspath(__file__))) / "..").resolve()
+if (_REPO_ROOT_DIR / "scripts").is_dir():
+    sys.path.insert(0, str(_REPO_ROOT_DIR))
 
 import requests
 from flask import (
@@ -240,18 +248,20 @@ from buildings_fetcher.core.buildings_fetcher_core import (  # noqa: E402
     fetch_buildings_overpass as _fetch_buildings_overpass,
 )
 
-from vegetation_fetcher.core.vegetation_fetcher_core import (  # noqa: E402
-    VEGETATION_QUERY_VER as _VEGETATION_QUERY_VER,
-    fetch_vegetation_overpass as _fetch_vegetation_overpass,
-)
 
-from traffic_signs_fetcher.core.traffic_signs_fetcher_core import (  # noqa: E402
-    TRAFFIC_SIGNS_QUERY_VER as _TRAFFIC_SIGNS_QUERY_VER,
-    is_netherlands as _is_netherlands,
-    download_ndw_dataset as _download_ndw_dataset,
-    fetch_traffic_signs_ndw as _fetch_traffic_signs_ndw,
-    fetch_traffic_signs_overpass as _fetch_traffic_signs_overpass,
-)
+# vegetation_fetcher / traffic_signs_fetcher: alleen gebruikt door GMT Digital
+# Twin (3D-weergave); niet geïmporteerd in Analyzer. is_netherlands() komt
+# oorspronkelijk uit traffic_signs_fetcher; hier als kleine lokale fallback
+# gehouden omdat _execute_prepare() hem ook gebruikt wanneer de Geofabrik PBF
+# resolver niet beschikbaar is (zie _GEOFABRIK_PBF_AVAILABLE hieronder).
+_NL_BBOX = [3.3, 50.7, 7.3, 53.6]
+
+
+def _is_netherlands(bbox: list) -> bool:
+    """Geeft True als het zwaartepunt van de bbox in Nederland ligt."""
+    cx = (bbox[0] + bbox[2]) / 2.0
+    cy = (bbox[1] + bbox[3]) / 2.0
+    return _NL_BBOX[0] <= cx <= _NL_BBOX[2] and _NL_BBOX[1] <= cy <= _NL_BBOX[3]
 
 # ── Optionele rekenmodules uit gmt_calculation_lib (geluid & emissie) ──────
 # Puur fc -> fc; worden on-the-fly op de network-FC toegepast. Ontbreken ze,
@@ -746,17 +756,9 @@ _COLLECTIONS = {
         "title": "Gebouwen",
         "description": "Gebouwen in het studiegebied (OpenStreetMap / Overpass, gecached).",
     },
-    "traffic_signs": {
-        "title": "Verkeersborden",
-        "description": "Verkeersborden in het studiegebied (NDW voor NL, OSM Overpass voor buitenland, gecached).",
-    },
     "traffic_assets": {
         "title": "Verkeersobjecten",
         "description": "Verkeersobjecten (borden, verkeerslichten, e.a.) uit het geprepareerde TRAFFIC-ASSETS bestand; ondersteunt bbox-filtering en optioneel assetType-filtering.",
-    },
-    "vegetation": {
-        "title": "Vegetatie",
-        "description": "Bomen, struiken en bos/bosschage uit het geprepareerde VEGETATION bestand (OpenStreetMap); ondersteunt bbox-filtering.",
     },
     "heights": {
         "title": "Hoogte- en constructie-objecten",
@@ -1108,63 +1110,12 @@ def _overpass_breaker_success(collection: str) -> None:
 _sse_listeners: dict = {}
 _sse_listeners_lock = threading.Lock()
 
-# ---------------------------------------------------------------------------
-# Maquette-camera proces
-# ---------------------------------------------------------------------------
+# Maquette-camera (proces, MJPEG-relais, virtuele cursor) is verwijderd: die
+# fysieke-schaalmodel-functionaliteit leeft alleen nog in GMT Digital Twin.
+# De generieke SSE/"meekijken"-infrastructuur hierboven blijft in Analyzer.
 
-_maquette_process: "subprocess.Popen | None" = None
-_maquette_process_lock = threading.Lock()
-_maquette_area_id: str = ""  # area_id waarvoor de camera loopt (voor heartbeat SSE)
-
-# --- Camerabeeld-relais (preview tijdens calibratie) -------------------------
-# maquette_camera.py pusht JPEG-frames hierheen; browsers halen ze op als
-# MJPEG-stream. Eén "laatste frame"-slot in plaats van een queue per client:
-# een trage browser slaat frames over en kan de bron nooit afremmen of het
-# geheugen laten vollopen.
-_mjpeg_cond = threading.Condition()
-_mjpeg_frame: "bytes | None" = None
-_mjpeg_seq: int = 0
-_mjpeg_meta: dict = {"width": 0, "height": 0, "ts": 0.0}
-_mjpeg_clients: int = 0
-# De browser houdt per origin maar 6 HTTP/1.1-verbindingen aan, en de
-# SSE-stream bezet er al één. Meer dan een paar tegelijk is altijd een lek.
-_MJPEG_MAX_CLIENTS = 4
-
-# --- Cursorpositie voor de virtuele maquette-modus (cameraId=-1) -------------
-# De browser kent de cursor in kaartcoördinaten; die posten is exact en maakt
-# het uitlezen van de Windows-cursor (met alle DPI- en vensterrand-ellende)
-# overbodig.
-_cursor_lock = threading.Lock()
-_cursor_slot: "dict | None" = None
-
-# ---------------------------------------------------------------------------
-# NDW-achtergronddownload (verkeersborden NL)
-# ---------------------------------------------------------------------------
-
-# _ndw_ready wordt gezet zodra het NDW-bestand beschikbaar is (of de download
-# is mislukt).  Route-handlers voor traffic_signs wachten op dit event.
-_ndw_ready: threading.Event = threading.Event()
-_ndw_error: "str | None" = None
-
-
-def _ensure_ndw_data() -> None:
-    """Controleer of het NDW-bestand aanwezig is; download het indien nodig."""
-    global _ndw_error
-    p = DATA_DIR / "ndw_traffic_signs.json"
-    if p.exists():
-        _ndw_ready.set()
-        return
-    print("[server] NDW-verkeersborden downloaden …")
-    ok = _download_ndw_dataset(p)
-    if ok:
-        print(f"[server] NDW-verkeersborden opgeslagen: {p}")
-    else:
-        _ndw_error = "NDW-download mislukt"
-        print(f"[server]  {_ndw_error}")
-    _ndw_ready.set()
-
-
-threading.Thread(target=_ensure_ndw_data, daemon=True).start()
+# NDW-achtergronddownload (verkeersborden NL) is verwijderd: de traffic_signs-
+# collectie is alleen in GMT Digital Twin beschikbaar.
 
 
 class _LogStream(io.TextIOBase):
@@ -3003,19 +2954,6 @@ def _execute_adjust(inputs: dict):
     if scenario_name:
         (output_folder / ".area-name").write_text(scenario_name, encoding="utf-8")
 
-    # Neem de maquette-calibratie mee naar het nieuwe scenario. De fysieke
-    # opstelling (camera/beamer + kaartweergave) verandert niet door een
-    # afsluiting, dus de calibratie blijft geldig. Zonder deze kopie zou de
-    # camera bij het opnieuw aanzetten opnieuw willen calibreren omdat er in de
-    # nieuwe area-directory geen <new_area_id>-CALIBRATION.json staat.
-    try:
-        src_calib = _calibration_path(area_id)
-        if src_calib.is_file():
-            dst_calib = output_folder / f"{new_area_id}-CALIBRATION.json"
-            shutil.copyfile(src_calib, dst_calib)
-    except Exception as _e:
-        print(f"[maquette] calibratie kopiëren naar nieuw scenario mislukt: {_e}")
-
     changes_file = output_folder / f"{new_area_id}-changes.json"
     # Schrijf alleen reguliere wijzigingen (geen link-inserties) naar het changes-bestand
     changes_file.write_text(
@@ -4513,215 +4451,11 @@ def ogc_collection_items(collection_id):
 
         return _ogc_items_response("heights", data, self_url)
 
-    # ── vegetation: bomen/struiken/bos uit geprepareerd VEGETATION bestand ──
-    if collection_id == "vegetation":
-        area_id = request.args.get("areaId", "").strip()
-        if not area_id:
-            abort(400, 'Parameter "areaId" ontbreekt')
-        if not _safe(area_id):
-            abort(400, "Ongeldige parameter: areaId")
-
-        area_dir = _find_area_dir(area_id)
-
-        # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
-        bbox = None
-        bbox_arg = request.args.get("bbox", "").strip()
-        if bbox_arg:
-            parts = bbox_arg.split(",")
-            if len(parts) != 4:
-                abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
-            try:
-                bbox = [float(p) for p in parts]
-            except ValueError:
-                abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
-
-        # Alleen een vooraf geprepareerd VEGETATION-bestand wordt uitgeleverd.
-        # Als dit ontbreekt, retourneert het endpoint 404. De frontend gebruikt
-        # deze 404 om te stoppen met onnodige retry's.
-        prep_path = _find_prepared_with_base_fallback(area_id, "VEGETATION")
-        if prep_path is None:
-            abort(404, "Geen VEGETATION bestand voor dit gebied")
-
-        try:
-            data = _read_geodata(prep_path)
-        except Exception as exc:
-            abort(500, f"Fout bij lezen VEGETATION: {exc}")
-
-        # bbox-filter op de response. Voor vlakken (Polygon/MultiPolygon) en
-        # lijnen mag NIET op één representatief punt gefiltert worden: een groot
-        # bosvlak waarvan het eerste hoekpunt buiten beeld valt zou dan volledig
-        # verdwijnen (flikkeren bij pannen). We testen daarom of de geometrie-
-        # bounding-box de query-bbox overlapt.
-        if bbox is not None:
-            min_lon, min_lat, max_lon, max_lat = bbox
-
-            def _geom_bbox(coords):
-                lo_x = lo_y = float("inf")
-                hi_x = hi_y = float("-inf")
-                stack = [coords]
-                while stack:
-                    cur = stack.pop()
-                    if not isinstance(cur, list) or not cur:
-                        continue
-                    if isinstance(cur[0], (int, float)) and len(cur) >= 2:
-                        x, y = cur[0], cur[1]
-                        if x < lo_x:
-                            lo_x = x
-                        if x > hi_x:
-                            hi_x = x
-                        if y < lo_y:
-                            lo_y = y
-                        if y > hi_y:
-                            hi_y = y
-                    else:
-                        stack.extend(cur)
-                if lo_x == float("inf"):
-                    return None
-                return lo_x, lo_y, hi_x, hi_y
-
-            feats = []
-            for feat in data.get("features", []):
-                geom = feat.get("geometry") or {}
-                gb = _geom_bbox(geom.get("coordinates"))
-                if gb is None:
-                    continue
-                g_min_lon, g_min_lat, g_max_lon, g_max_lat = gb
-                # Rechthoek-overlap (geen disjunctie).
-                if (
-                    g_min_lon <= max_lon
-                    and g_max_lon >= min_lon
-                    and g_min_lat <= max_lat
-                    and g_max_lat >= min_lat
-                ):
-                    feats.append(feat)
-            data = {**data, "features": feats}
-
-        return _ogc_items_response("vegetation", data, self_url)
-
-    # ── traffic_signs: verkeersborden, gecached per gebied ────────────────
-    if collection_id == "traffic_signs":
-        area_id = request.args.get("areaId", "").strip()
-        if not area_id:
-            abort(400, 'Parameter "areaId" ontbreekt')
-        if not _safe(area_id):
-            abort(400, "Ongeldige parameter: areaId")
-
-        area_dir = _find_area_dir(area_id)
-        cache_path = area_dir / f"{area_id}-TRAFFIC-SIGNS.geojson"
-
-        # 1) Gebruik aggregate cache als aanwezig én actueel
-        if cache_path.exists():
-            with open(cache_path, encoding="utf-8") as fh:
-                data = json.load(fh)
-            if data.get("properties", {}).get("_qv") == _TRAFFIC_SIGNS_QUERY_VER:
-                return _ogc_items_response("traffic_signs", data, self_url)
-            # Verouderde cache: verwijder en herlaad
-            try:
-                cache_path.unlink()
-            except Exception:
-                pass
-
-        # 2) Bepaal bbox uit NETWORK-bestand
-        bbox = None
-        try:
-            _nw_list = list(area_dir.glob(f"{area_id}-NETWORK-*.geojson"))
-            if not _nw_list and _GEOPANDAS_AVAILABLE:
-                for _ext in _GEOPARQUET_EXTS:
-                    _nw_list = list(area_dir.glob(f"{area_id}-NETWORK-*{_ext}"))
-                    if _nw_list:
-                        break
-            if _nw_list:
-                ndata = _read_geodata(_nw_list[0])
-                props = ndata.get("properties", {})
-                bbox = props.get("bbox")
-                if not bbox or len(bbox) < 4:
-                    lons, lats = [], []
-                    for feat in ndata.get("features", []):
-                        for coord in feat.get("geometry", {}).get("coordinates", []):
-                            lons.append(coord[0])
-                            lats.append(coord[1])
-                    if lons:
-                        bbox = [min(lons), min(lats), max(lons), max(lats)]
-        except Exception as exc:
-            abort(500, f"Fout bij lezen netwerk voor bbox: {exc}")
-
-        if not bbox:
-            abort(404, "Geen bbox beschikbaar voor verkeersborden-query")
-
-        # 3) NDW (NL) of Overpass (buitenland)
-        if _is_netherlands(bbox):
-            # Wacht tot de NDW-achtergronddownload klaar is (blokkeert request)
-            _ndw_ready.wait()
-            if _ndw_error:
-                abort(502, f"NDW-dataset niet beschikbaar: {_ndw_error}")
-            ndw_path = DATA_DIR / "ndw_traffic_signs.json"
-            if not ndw_path.exists():
-                abort(503, "NDW-dataset nog niet beschikbaar, probeer later opnieuw")
-            try:
-                data = _fetch_traffic_signs_ndw(ndw_path, bbox)
-            except Exception as exc:
-                abort(500, f"Fout bij lezen NDW-dataset: {exc}")
-        else:
-            # Zoek fallback tegel-cache in base-scenario (via baseAreaId-keten)
-            visited = {area_id}
-            cur_id = area_id
-            base_tile_cache_dir = None
-            for _ in range(6):
-                try:
-                    cur_dir = _find_area_dir(cur_id)
-                    _nw2 = list(cur_dir.glob(f"{cur_id}-NETWORK-*.geojson"))
-                    if not _nw2 and _GEOPANDAS_AVAILABLE:
-                        for _ext in _GEOPARQUET_EXTS:
-                            _nw2 = list(cur_dir.glob(f"{cur_id}-NETWORK-*{_ext}"))
-                            if _nw2:
-                                break
-                    if not _nw2:
-                        break
-                    p2 = _read_geodata(_nw2[0]).get("properties", {})
-                    parent_id = p2.get("baseAreaId") or None
-                except Exception:
-                    break
-                if not parent_id or parent_id in visited:
-                    break
-                visited.add(parent_id)
-                cur_id = parent_id
-                parent_dir = _find_area_dir(parent_id)
-                ptcd = parent_dir / f"{parent_id}-TRAFFIC-SIGNS-tiles"
-                if ptcd.exists() and base_tile_cache_dir is None:
-                    base_tile_cache_dir = ptcd
-
-            try:
-                tile_cache_dir = area_dir / f"{area_id}-TRAFFIC-SIGNS-tiles"
-                _overpass_breaker_check("traffic-signs")
-                data = _fetch_traffic_signs_overpass(
-                    bbox,
-                    tile_cache_dir=tile_cache_dir,
-                    fallback_tile_cache_dir=base_tile_cache_dir,
-                )
-                _overpass_breaker_success("traffic-signs")
-            except Exception as exc:
-                _overpass_breaker_failure("traffic-signs")
-                abort(502, f"Overpass-query mislukt: {exc}")
-
-        # Cache opslaan — alleen als volledig
-        try:
-            if not data.get("properties", {}).get("_partial"):
-                area_dir.mkdir(parents=True, exist_ok=True)
-                with open(cache_path, "w", encoding="utf-8") as fh:
-                    json.dump(data, fh, ensure_ascii=False)
-                if _s3_enabled():
-                    try:
-                        _s3_write_bytes(
-                            _s3_key(area_id, cache_path.name),
-                            json.dumps(data, ensure_ascii=False).encode("utf-8"),
-                            "application/json",
-                        )
-                    except Exception as _e:
-                        print(f"[s3] traffic-signs-cache uploaden mislukt: {_e}")
-        except Exception:
-            pass
-
-        return _ogc_items_response("traffic_signs", data, self_url)
+    # vegetation / traffic_signs collecties zijn alleen in GMT Digital Twin
+    # beschikbaar (3D-weergave); Analyzer heeft geen live-serving endpoint
+    # hiervoor. De fetch_vegetation-vlag in de prepare-pipeline (hierboven)
+    # blijft wel bestaan: die produceert het VEGETATION-bestand zelf, dat de
+    # Digital Twin-app leest wanneer die tegen dezelfde scenario-data draait.
 
     # ── noise / emission: afgeleide lagen berekend uit het NETWORK-bestand ───
     # Deze endpoints "vervuilen" het network-bestand niet: ze berekenen de
@@ -4919,6 +4653,10 @@ def proxy_mvt(layer_uuid, z, x, y):
 def traffic_sign_icon(code):
     """Serveer een NDW PNG-icoon voor een RVV-bordcode; 404 als niet beschikbaar.
 
+    Gebruikt door de traffic_assets-laag (2D bordplaatjes). De iconenset zelf
+    leeft in common/data/traffic_sign_icons (gedeeld met GMT Digital Twin, dat
+    dezelfde code gebruikt voor zijn 3D-bordobjecten).
+
     Naast een exacte match worden enkele naamvarianten geprobeerd, omdat de
     NDW-brondata codes gebruikt die iets afwijken van de iconbestandsnamen:
       * voorloopnullen in het eerste segment (``A01`` → ``A1``, ``C08`` → ``C8``);
@@ -4928,7 +4666,9 @@ def traffic_sign_icon(code):
     safe = re.sub(
         r"[^A-Za-z0-9.\-]", "", code
     )  # koppelteken en decimaalpunt toegestaan
-    icon_dir = Path(__file__).parent / "traffic_sign_icons"
+    icon_dir = COMMON_DATA_DIR / "traffic_sign_icons"
+    if not icon_dir.is_dir():
+        icon_dir = Path(__file__).parent / "traffic_sign_icons"  # geflatten deployment
 
     def _norm_zeros(name: str) -> str:
         parts = name.split("-")
@@ -4957,13 +4697,10 @@ def traffic_sign_icon(code):
 
     match = next((c for c in candidates if (icon_dir / f"{c}.png").exists()), None)
     if match is None:
-        from flask import abort
-
         abort(404)
     resp = send_from_directory(str(icon_dir), f"{match}.png", mimetype="image/png")
     resp.headers["Cache-Control"] = "no-cache"
     return resp
-
 
 # ---------------------------------------------------------------------------
 # Maatregelsets uit een geüploade GeoPackage (measure_set_creator)
@@ -5320,381 +5057,6 @@ def sse_events():
     )
 
 
-@app.route("/maquette/preview", methods=["POST"])
-def maquette_preview():
-    """Ontvang een preview-melding van maquette_camera.py en stuur een SSE-event
-    naar alle actieve browsers zodat het wegvak kan oplichten vóór de berekening.
-
-    Body (JSON): { "area_id": "...", "link_ids": [123, -123] }
-    """
-    body = request.get_json(silent=True) or {}
-    link_ids = body.get("link_ids", [])
-    payload = json.dumps({"link_ids": link_ids})
-    with _sse_listeners_lock:
-        all_ids = list(_sse_listeners.keys())
-    for aid in all_ids:
-        _sse_put(aid, "link_preview", payload)
-    return jsonify({"ok": True})
-
-
-@app.route("/maquette/detections", methods=["POST"])
-def maquette_detections():
-    """Relais de zwarte vlakken die de camera ziet naar de browsers via SSE.
-
-    Body (JSON): { "area_id": "...", "detections": [ {lon, lat, outline, …} ] }
-
-    Puur ter controle: hiermee tekent de kaart live wat de camera detecteert,
-    zonder dat er iets wordt afgesloten. Ligt het vlak op de kaart ergens anders
-    dan het blokje op de maquette, dan is de calibratie scheef.
-    """
-    body = request.get_json(silent=True) or {}
-    payload = json.dumps(
-        {
-            "detections": body.get("detections", []),
-            "camera_view": body.get("camera_view"),
-        }
-    )
-    with _sse_listeners_lock:
-        all_ids = list(_sse_listeners.keys())
-    for aid in all_ids:
-        _sse_put(aid, "maquette_detections", payload)
-    return jsonify({"ok": True})
-
-
-@app.route("/maquette/heartbeat", methods=["POST"])
-def maquette_heartbeat():
-    """Ontvang een heartbeat van maquette_camera.py en stuur het als SSE-event
-    naar alle actieve SSE-listeners, ongeacht area_id.
-
-    Camera-status is globaal (één camera per server), dus er is geen reden om
-    dit te beperken tot één area_id — zeker niet als de browser via een adjust
-    ondertussen een nieuw area_id heeft gekregen.
-
-    Body (JSON): { "area_id": "...", "active": true/false }
-    """
-    body = request.get_json(silent=True) or {}
-    area_id = body.get("area_id", "")
-    active = bool(body.get("active", True))
-    if not area_id:
-        return jsonify({"error": "area_id vereist"}), 400
-    payload = json.dumps({"active": active})
-    with _sse_listeners_lock:
-        all_ids = list(_sse_listeners.keys())
-    for aid in all_ids:
-        _sse_put(aid, "camera_status", payload)
-    return jsonify({"ok": True})
-
-
-# ---------------------------------------------------------------------------
-# Camerabeeld-relais: maquette_camera.py → browser
-# ---------------------------------------------------------------------------
-
-
-@app.route("/maquette/frame", methods=["POST"])
-def maquette_post_frame():
-    """Ontvang één JPEG-frame van maquette_camera.py (body = ruwe JPEG).
-
-    Query: ?w=<breedte>&h=<hoogte> — de werkelijke cameraresolutie, die de
-    browser nodig heeft om de calibratie in camerapixels uit te drukken.
-    """
-    global _mjpeg_frame, _mjpeg_seq, _mjpeg_meta
-    data = request.get_data(cache=False)
-    if not data:
-        return jsonify({"error": "leeg frame"}), 400
-    try:
-        width = int(request.args.get("w", 0))
-        height = int(request.args.get("h", 0))
-    except ValueError:
-        width = height = 0
-    with _mjpeg_cond:
-        _mjpeg_frame = data
-        _mjpeg_seq += 1
-        _mjpeg_meta = {"width": width, "height": height, "ts": time.time()}
-        clients = _mjpeg_clients
-        _mjpeg_cond.notify_all()
-    return jsonify({"ok": True, "clients": clients})
-
-
-@app.route("/maquette/stream.mjpg")
-def maquette_stream():
-    """Live camerabeeld als MJPEG (multipart/x-mixed-replace).
-
-    Elke client leest altijd het *actuele* frame; wie te traag consumeert slaat
-    frames over in plaats van een wachtrij te laten vollopen.
-    """
-    global _mjpeg_clients
-    with _mjpeg_cond:
-        if _mjpeg_clients >= _MJPEG_MAX_CLIENTS:
-            return jsonify({"error": "te veel gelijktijdige kijkers"}), 503
-        _mjpeg_clients += 1
-
-    def _gen():
-        global _mjpeg_clients
-        last = -1
-        try:
-            while True:
-                with _mjpeg_cond:
-                    if not _mjpeg_cond.wait_for(
-                        lambda: _mjpeg_seq != last and _mjpeg_frame is not None,
-                        timeout=5.0,
-                    ):
-                        # Time-out: een lege boundary houdt de verbinding levend
-                        # en laat een verbroken socket alsnog blijken.
-                        yield b"--frame\r\n\r\n"
-                        continue
-                    frame = _mjpeg_frame
-                    last = _mjpeg_seq
-                yield (
-                    b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                    + str(len(frame)).encode()
-                    + b"\r\n\r\n"
-                    + frame
-                    + b"\r\n"
-                )
-        finally:
-            with _mjpeg_cond:
-                _mjpeg_clients -= 1
-
-    return Response(
-        _gen(),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate",
-            "Pragma": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.route("/maquette/frame.jpg")
-def maquette_frame_jpg():
-    """Het laatste frame als los plaatje — terugval als MJPEG niet werkt."""
-    with _mjpeg_cond:
-        frame = _mjpeg_frame
-    if frame is None:
-        abort(404)
-    return Response(
-        frame,
-        mimetype="image/jpeg",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.route("/maquette/stream-info")
-def maquette_stream_info():
-    """Status van het camerabeeld: resolutie, ouderdom en aantal kijkers."""
-    with _mjpeg_cond:
-        meta = dict(_mjpeg_meta)
-        seq = _mjpeg_seq
-        clients = _mjpeg_clients
-        have = _mjpeg_frame is not None
-    age = (time.time() - meta.get("ts", 0.0)) if have else None
-    return jsonify(
-        {
-            "available": have,
-            "width": meta.get("width", 0),
-            "height": meta.get("height", 0),
-            "seq": seq,
-            "age": age,
-            "clients": clients,
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
-# Cursorpositie voor de virtuele maquette-modus
-# ---------------------------------------------------------------------------
-
-
-@app.route("/maquette/cursor", methods=["POST"])
-def maquette_post_cursor():
-    """Ontvang de cursorpositie van de browser (virtuele maquette-modus).
-
-    Body (JSON): { "x": 123.0, "y": 456.0, "lon": 6.17, "lat": 52.25 }
-    x/y zijn CSS-pixels t.o.v. de kaartcontainer, lon/lat de ge-unprojecte
-    positie. De browser rekent zelf om: die kent de kaartweergave exact, terwijl
-    de Windows-cursor uitlezen een DPI- en vensterrandcorrectie zou vergen.
-    """
-    global _cursor_slot
-    body = request.get_json(silent=True) or {}
-    try:
-        slot = {
-            "x": float(body["x"]),
-            "y": float(body["y"]),
-            "lon": float(body["lon"]),
-            "lat": float(body["lat"]),
-            "ts": time.time(),
-        }
-    except (KeyError, TypeError, ValueError):
-        return jsonify({"error": "x, y, lon en lat vereist"}), 400
-    with _cursor_lock:
-        _cursor_slot = slot
-    return jsonify({"ok": True})
-
-
-@app.route("/maquette/cursor", methods=["GET"])
-def maquette_get_cursor():
-    """Geef de laatst ontvangen cursorpositie terug, met de ouderdom erbij."""
-    with _cursor_lock:
-        slot = dict(_cursor_slot) if _cursor_slot else None
-    if slot is None:
-        return jsonify({"available": False})
-    slot["age"] = time.time() - slot["ts"]
-    slot["available"] = True
-    return jsonify(slot)
-
-
-def _calibration_path(area_id: str) -> Path:
-    """Pad naar het calibratiebestand voor een basis-area."""
-    return _find_area_dir(area_id) / f"{area_id}-CALIBRATION.json"
-
-
-@app.route("/maquette/calibration", methods=["GET"])
-def maquette_get_calibration():
-    """Geef de opgeslagen calibratie voor een area terug.
-
-    Query: ?area_id=...&mode=CAR
-    Antwoord: { "exists": bool, "calibration": {...} | null }
-    """
-    area_id = str(request.args.get("area_id", "")).strip()
-    if not area_id:
-        return jsonify({"error": "area_id vereist"}), 400
-    path = _calibration_path(area_id)
-    if path.is_file():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return jsonify({"exists": True, "calibration": data})
-        except Exception as exc:
-            return jsonify({"exists": False, "calibration": None, "error": str(exc)})
-    return jsonify({"exists": False, "calibration": None})
-
-
-@app.route("/maquette/calibration", methods=["POST"])
-def maquette_post_calibration():
-    """Sla een calibratie op voor een area.
-
-    Body (JSON): { "area_id": "...", "calibration": {...} }
-    """
-    body = request.get_json(silent=True) or {}
-    area_id = str(body.get("area_id", "")).strip()
-    calibration = body.get("calibration")
-    if not area_id or not isinstance(calibration, dict):
-        return jsonify({"error": "area_id en calibration vereist"}), 400
-    path = _calibration_path(area_id)
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(calibration, indent=2), encoding="utf-8")
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-    return jsonify({"ok": True})
-
-
-def _stop_maquette_process() -> None:
-    """Beëindig het lopende maquette-camera proces (thread-safe)."""
-    global _maquette_process, _maquette_area_id
-    with _maquette_process_lock:
-        proc = _maquette_process
-        aid = _maquette_area_id
-        _maquette_process = None
-        _maquette_area_id = ""
-    if proc is not None:
-        try:
-            proc.terminate()
-        except Exception:
-            pass
-    if aid:
-        _sse_put(aid, "camera_status", json.dumps({"active": False}))
-
-
-@app.route("/maquette/start", methods=["POST"])
-def maquette_start():
-    """Start maquette_camera.py als subprocess.
-
-    Body (JSON):
-    {
-      "area_id":   "...",
-      "mode":      "CAR",
-      "camera_id": -1,
-      "preview":   false,
-      "viewport":  { "width": 1280, "height": 720 }
-    }
-
-    `viewport` geeft alleen nog de gewenste camera-resolutie door. De koppeling
-    tussen camerapixels en kaart komt uit het calibratiebestand, dat de browser
-    schrijft; geo-grenzen zijn daarvoor niet meer nodig.
-    """
-    global _maquette_process, _maquette_area_id
-
-    body = request.get_json(silent=True) or {}
-    area_id = str(body.get("area_id", "")).strip()
-    mode = str(body.get("mode", "CAR")).upper()
-    camera_id = int(body.get("camera_id", -1))
-    vp = body.get("viewport") or {}
-    preview = bool(body.get("preview", False))
-
-    if not area_id:
-        return jsonify({"error": "area_id vereist"}), 400
-
-    if not all(k in vp for k in ("width", "height")):
-        return jsonify({"error": "viewport vereist: ('width', 'height')"}), 400
-
-    # Stop eventueel lopend proces
-    _stop_maquette_process()
-
-    script = Path(__file__).parent / "maquette_camera.py"
-    cmd = [
-        sys.executable,
-        str(script),
-        "--server",
-        # Bewust 127.0.0.1 en niet localhost: een DNS-lookup van localhost kost
-        # op deze machines ~2 s, wat de frame-push tot stilstand zou brengen.
-        f"http://127.0.0.1:{request.host.split(':')[-1]}",
-        "--area-id",
-        area_id,
-        "--mode",
-        mode,
-        "--camera-id",
-        str(camera_id),
-        "--width",
-        str(int(vp["width"])),
-        "--height",
-        str(int(vp["height"])),
-    ]
-
-    # Preview-stand: alleen camerabeeld doorgeven, geen detectie. Wordt gebruikt
-    # terwijl de gebruiker in de browser de calibratie-vierhoek versleept.
-    if preview:
-        cmd.append("--preview")
-
-    print(f"[maquette] starten: {' '.join(cmd)}")
-    proc = subprocess.Popen(cmd, cwd=str(Path(__file__).parent))
-
-    with _maquette_process_lock:
-        _maquette_process = proc
-        _maquette_area_id = area_id
-
-    return jsonify({"ok": True, "pid": proc.pid})
-
-
-@app.route("/maquette/stop", methods=["POST"])
-def maquette_stop():
-    """Stop het lopende maquette-camera proces."""
-    _stop_maquette_process()
-    return jsonify({"ok": True})
-
-
-@app.route("/maquette/status")
-def maquette_status():
-    """Geeft de status van het maquette-camera proces terug."""
-    with _maquette_process_lock:
-        proc = _maquette_process
-        aid = _maquette_area_id
-    running = proc is not None and proc.poll() is None
-    return jsonify(
-        {"running": running, "area_id": aid, "pid": proc.pid if running else None}
-    )
-
-
 @app.route("/jobs")
 def ogc_jobs():
     with _jobs_lock:
@@ -5793,10 +5155,4 @@ if __name__ == "__main__":
     print(f"Server      : http://localhost:{args.port}")
     _threaded = not args.no_threaded
     print(f"threading   : {'multi-threaded' if _threaded else 'single-threaded'}")
-    if not _threaded:
-        print(
-            "WAARSCHUWING : single-threaded — het camerabeeld van de maquette "
-            "(/maquette/stream.mjpg) blokkeert dan de hele server. Gebruik de "
-            "maquette-calibratie alleen multi-threaded."
-        )
     app.run(host="0.0.0.0", port=args.port, debug=True, threaded=_threaded)

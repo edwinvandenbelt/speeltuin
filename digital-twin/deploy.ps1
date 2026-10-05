@@ -74,14 +74,14 @@ $dynamicFiles = @()
 $dynamicFiles += Get-ChildItem -Path $repoRoot -Filter "*.whl"               -File | Select-Object -ExpandProperty Name
 $dynamicFiles += Get-ChildItem -Path $repoRoot -Filter "release-notes-*.html" -File | Select-Object -ExpandProperty Name
 
-# ── Mappen (digital-twin/-mappen + gedeelde common/py-fetchers) ─────────────
+# ── Mappen (digital-twin/-mappen + gedeelde common/py-fetchers + iconen) ────
 $directories = @(
-    "traffic_sign_icons",
     "traffic_signs_fetcher",
     "vegetation_fetcher"    # server.py importeert vegetation_fetcher.core
 )
 $rootDirectories = @(
-    "common/py/buildings_fetcher"
+    "common/py/buildings_fetcher",
+    "common/data/traffic_sign_icons"
 )
 
 # ── Alles samenvoegen en controleren ─────────────────────────────────────────

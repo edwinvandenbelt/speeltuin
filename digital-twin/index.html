@@ -2606,9 +2606,6 @@
   </div>
 
 
-  <!-- ── Maatregelset-paneel (GeoPackage importeren) ─────────────────────── -->
-  <script src="measure-set-panel.js"></script>
-
   <script>
   'use strict';
 
@@ -18943,13 +18940,22 @@
 
     updateClockUI();
 
-    // Scenario-binnenkomst: de simulatie start standaard UIT (zie modi-default
-    // hierboven), dus de klok moet meteen in dezelfde gepauzeerde 'etmaal'-toestand
-    // beginnen i.p.v. pas na een handmatige aan/uit-klik (anders loopt de wijzer al
-    // terwijl de rest van de UI een gepauzeerde staat laat zien).
-    paused = true;
-    _setSimPausedUI(true);
-    _enterSimPaused();
+    // GMT Digital Twin: de doorlopende klok (incl. weer/temperatuur/motief en
+    // de 3D-autodichtheid) is de standaardweergave — in tegenstelling tot GMT
+    // Analyzer start deze niet gepauzeerd in een discrete dagdeel-selectie
+    // (OS/AS/RD/24hr), maar meteen uur-voor-uur lopend, net als bij het
+    // handmatig aanzetten van de simulatie via de afspeel-toggle.
+    paused = false;
+    _setSimPausedUI(false);
+    document.querySelectorAll('.modeBtn').forEach(btn => {
+      if (btn.style.display === 'none') return;
+      btn.classList.add('active');
+      visibleModes.add(btn.dataset.mode);
+    });
+    rebuildCars();
+    updateLegend();
+    _exitSimPaused();
+    updateOverlay(!paused);
 
     // Wijzer verslepen (muis + touch) om het uur handmatig te verzetten.
     (function initClockDrag() {
