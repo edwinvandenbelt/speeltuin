@@ -293,10 +293,23 @@ except ImportError as _e:  # pragma: no cover
 # ---------------------------------------------------------------------------
 
 parser = argparse.ArgumentParser(description="Verkeersnetwerk-visualisatie server")
+# Standaard datamap: in de monorepo-opstelling (analyzer/ + digital-twin/ +
+# common/ naast elkaar, herkenbaar aan de aanwezigheid van ../common) delen
+# GMT Analyzer en GMT Digital Twin dezelfde work/-map op repo-niveau (../work),
+# zodat Digital Twin de scenario's kan tonen die Analyzer voorbereidt/aanpast.
+# In een geflatten deployment (deploy.ps1-zip, losse installatie) bestaat
+# ../common niet en valt dit terug op de scriptmap zelf (zelfstandige work/),
+# zoals voorheen.
+_REPO_ROOT_CANDIDATE = Path(os.path.dirname(os.path.abspath(__file__))) / ".."
+_DEFAULT_DATA_DIR = (
+    str(_REPO_ROOT_CANDIDATE.resolve())
+    if (_REPO_ROOT_CANDIDATE / "common").is_dir()
+    else os.path.dirname(os.path.abspath(__file__))
+)
 parser.add_argument(
     "--data",
-    default=os.path.dirname(os.path.abspath(__file__)),
-    help="Map met GeoJSON-bestanden (standaard: scriptmap)",
+    default=_DEFAULT_DATA_DIR,
+    help="Map met GeoJSON-bestanden (standaard: gedeelde ../work bij analyzer/+digital-twin/+common/ naast elkaar, anders scriptmap)",
 )
 parser.add_argument(
     "--port", type=int, default=5000, help="TCP-poort (standaard: 5000)"

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>GMT Speeltuin</title>
+  <title>GMT Digital Twin</title>
 
   <!-- MapLibre GL voor achtergrondkaart + 3D gebouwen -->
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
@@ -1604,66 +1604,6 @@
     <div id="badge-right" class="map-badge" data-i18n="badgeRight">Bronscenario</div>
   </div>
 
-  <!-- ── Nieuw gebied aanmaken ──────────────────────────────────────────── -->
-  <div id="newScreen">
-    <div id="newPanel">
-      <h2 data-i18n="newAreaH2">Nieuw gebied</h2>
-
-      <label><span data-i18n="newAreaName">Naam</span>
-        <input type="text" id="newName" placeholder="bijv. Merwehaven" data-i18n-ph="newAreaNamePh"/>
-      </label>
-
-      <div class="new-mode-group">
-        <span data-i18n="newAreaMode">Transportmodus</span>
-        <div id="newModes">
-          <label class="new-mode-check"><input type="checkbox" value="CAR" checked/> <span data-i18n="newAreaCar">Auto (CAR)</span></label>
-          <label class="new-mode-check" title="Nog niet beschikbaar bij het aanmaken van een nieuw gebied"><input type="checkbox" value="BIKE" disabled/>        <span data-i18n="newAreaBike">Fiets (BIKE)</span></label>
-          <label class="new-mode-check" title="Nog niet beschikbaar bij het aanmaken van een nieuw gebied"><input type="checkbox" value="PEDESTRIAN" disabled/>  <span data-i18n="newAreaPed">Voetganger (PEDESTRIAN)</span></label>
-        </div>
-      </div>
-
-      <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c" data-i18n="newAreaBboxHint">
-        Teken een rechthoek op de kaart om de bbox te bepalen.
-        Klik voor de eerste hoek, klik nogmaals voor de tweede.
-      </label>
-
-      <div id="bboxDisplay" data-i18n="newAreaNoBbox">Geen bbox getekend</div>
-
-      <div style="display:flex;gap:8px">
-        <button class="new-btn" id="newClearBtn" style="flex:1" data-i18n="newAreaClearBbox">Wis bbox</button>
-      </div>
-
-      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer">
-        <input type="checkbox" id="newDebug" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0"/>
-        Debug-uitvoer activeren
-      </label>
-
-      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer" title="Haal OSM-vegetatie op (bomen, struiken, bos/bosschage). Uitschakelen versnelt de prepare.">
-        <input type="checkbox" id="newVegetation" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0" checked/>
-        Vegetatie opnemen
-      </label>
-
-      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer" title="Haal AHN-hoogtedata op voor de wegvakken (viaducten/bruggen, tunnels). Uitschakelen versnelt de prepare.">
-        <input type="checkbox" id="newElevation" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0"/>
-        Hoogte meenemen
-      </label>
-
-      <!-- Voortgang -->
-      <div id="newProgress">
-        <div id="newProgressBar"><div id="newProgressFill"></div></div>
-        <div id="newStatus" style="font-size:12px;color:#00a5ab"></div>
-        <div id="newLog"></div>
-      </div>
-
-      <div style="display:flex;gap:8px;margin-top:auto">
-        <button class="new-btn secondary" id="newHomeBtn" style="flex:1" onclick="window.location.href='/'" data-i18n="newAreaHome">&#8962; Overzicht</button>
-        <button class="new-btn secondary" id="newCancelBtn" style="flex:1" data-i18n="newAreaCancel">Annuleren</button>
-        <button class="new-btn" id="newSubmitBtn" style="flex:2" data-i18n="newAreaSubmit">Aanmaken</button>
-      </div>
-    </div>
-    <div id="newMap"></div>
-  </div>
-
   <div id="toolbar" style="display:none">
     <!-- Home, netwerknaam en instellingen zijn verplaatst naar de groene
          kop (#leftMenuHeader) bovenin het linker menu-paneel. Deze toolbar
@@ -1866,7 +1806,7 @@
     <!-- Groene kop: home, projectnaam, instellingen (verplaatst uit de oude toolbar) -->
     <div id="leftMenuHeader">
       <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" data-i18n-title="homeTitle" title="Terug naar overzicht">&#8962;</button>
-      <span class="lmp-header-title" id="networkTitle">GMT Speeltuin</span>
+      <span class="lmp-header-title" id="networkTitle">GMT Digital Twin</span>
       <button class="tb-btn" id="settingsBtn" data-i18n-title="settingsTitle" title="Instellingen">&#9881;</button>
     </div>
     <div class="lmp-body" id="leftMenuBody">
@@ -1988,127 +1928,6 @@
         </div>
       </div>
 
-      <!-- ── Aanpassingen-paneel ──────────────────────────────────────────────────── -->
-      <div class="lmp-block collapsed" data-block="tools">
-        <div class="lmp-block-header">
-          <span>Aanpassingen</span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body" id="editPanelBody">
-          <div class="sim-row">
-            <div class="edit-btn-group">
-            <!-- Productie/attractie per knoop wijzigen -->
-            <button class="tb-btn edit-btn" id="nodeEditBtn"
-                    data-i18n-title="nodeEditTitle"
-                    title="Productie/attractie per knoop wijzigen">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
-                <polygon points="12,3 21,8.5 21,15.5 12,21 3,15.5 3,8.5"/>
-              </svg>
-            </button>
-            <!-- Capaciteit per wegvak wijzigen -->
-            <button class="tb-btn edit-btn" id="linkEditBtn"
-                    data-i18n-title="linkEditTitle"
-                    title="Capaciteit per wegvak wijzigen">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="28" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h48l33 10h23"/><path d="M8 48h48l33-10h23"/><path d="M8 32h104" stroke-dasharray="5 5" stroke-width="1.5" opacity=".75"/></svg>
-            </button>
-            <!-- Flow per wegvak wijzigen -->
-            <button class="tb-btn edit-btn" id="linkFlowEditBtn"
-                    data-i18n-title="linkFlowEditTitle"
-                    title="Flow per wegvak wijzigen">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 28h34M15 36h34"/><path d="M32 8v12M26 14h12M26 50h12"/></svg>
-            </button>
-            <!-- OD-paar aanpassen -->
-            <button class="tb-btn edit-btn" id="odEditBtn"
-                    data-i18n-title="odEditBtnTitle"
-                    title="OD-paar aanpassen" style="display:none">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="32" r="7"/><circle cx="50" cy="32" r="7"/><path d="M23 32h18M27 27l-5 5 5 5M37 27l5 5-5 5"/><path d="M32 11v12M26 17h12M26 50h12"/></svg>
-            </button>
-            <!-- Nieuw wegvak toevoegen -->
-            <button class="tb-btn tb-add edit-btn" id="linkAddBtn"
-                    data-i18n-title="linkAddTitle"
-                    title="Nieuw wegvak intekenen">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>
-            </button>
-            </div>
-            <!-- Maatregelsets importeren -->
-            <button class="tb-btn" id="measureSetBtn"
-                    data-i18n-title="measureSetBtnTitle" title="GeoPackage maatregelset importeren"
-                    style="position:relative;display:none">
-              📦
-            </button>
-
-            <!-- Wijzigingen bekijken -->
-            <button class="tb-btn" id="viewChangesBtn"
-                    data-i18n-title="viewChangesBtnTitle" title="Wijzigingen bekijken"
-                    style="position:relative">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="10" width="38" height="44" rx="4"/><path d="M22 22l3 3 5-6M32 22h10M22 34l3 3 5-6M32 34h10M22 46h20"/></svg>
-              <span id="viewChangesBadge" class="tb-badge"></span>
-            </button>
-            <!-- What-if wegafsluiting -->
-            <button class="tb-btn" id="whatifRcBtn" data-i18n-title="whatifRcBtnTitle" title="What-if wegafsluiting" style="display:none">&#128683;</button>
-          </div>
-
-          <!-- ── Node-selectiemodus sub-paneel (tijdelijk, alleen tijdens zone-aanpassing) ── -->
-          <div id="nodeSelectPopup">
-            <h4 data-i18n="nodeSelectTitle">Selectiemodus</h4>
-            <label class="nsm-option">
-              <input type="radio" name="nodeSelectMode" value="click" checked/>
-              <span data-i18n="nodeSelectClick">Klik op een knoop</span>
-            </label>
-            <label class="nsm-option">
-              <input type="radio" name="nodeSelectMode" value="polygon"/>
-              <span data-i18n="nodeSelectPolygon">Polygon tekenen</span>
-            </label>
-            <div id="polygonHint" data-i18n="polygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
-            <button class="poly-ctrl-btn" id="polygonFinishBtn" data-i18n="polygonFinishBtn">&#10003; Polygon afsluiten</button>
-            <button class="poly-ctrl-btn" id="polygonClearBtn" data-i18n="polygonClearBtn">&#10005; Wis polygon</button>
-          </div>
-
-          <!-- ── Wijzigingenlijst (tijdelijk, alleen zichtbaar bij openstaande aanpassingen) ── -->
-          <div id="changesPanel">
-            <div id="changesPanelHeader">
-              <span data-i18n="changesTitle">Wijzigingen</span>
-              <span id="changesCount" style="color:#6a757c;font-weight:400">0</span>
-            </div>
-            <div id="changesList"></div>
-            <div id="changesPanelFooter">
-              <input type="text" id="scenarioNameInput" placeholder="Scenario-naam" data-i18n-ph="scenarioNamePh"/>
-              <label id="adjustDebugLabel">
-                <input type="checkbox" id="adjustDebug" style="accent-color:#dd7a00;width:13px;height:13px;flex-shrink:0"/>
-                Debug-uitvoer activeren
-              </label>
-              <button id="applyChangesBtn" data-i18n="applyBtn">&#9654; Doorvoeren</button>
-              <div id="applyStatus"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Analyse-paneel (selected link + scenario-vergelijker) ────────────── -->
-      <div class="lmp-block collapsed" data-block="analysis">
-        <div class="lmp-block-header">
-          <span>Analyse</span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body" id="analysisPanelBody">
-          <div class="sim-row">
-            <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
-            <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
-          </div>
-          <div class="sim-row">
-            <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
-            <button class="tb-btn" id="splitViewBtn" data-i18n-title="splitViewTitle"
-                    title="ScenarioVergelijker" style="display:none">⧉</button>
-            <!-- Verschilplot: toont toe-/afnames per wegvak (rood/groen) -->
-            <button class="tb-btn" id="diffPlotBtn" title="Verschilplot (Δ intensiteit)" style="display:none">Δ</button>
-            <!-- Verschilplot met ongewijzigd deel: grijze kern + gekleurde rand -->
-            <button class="tb-btn" id="diffStackBtn" title="Verschilplot met ongewijzigd deel (grijs)" style="display:none">Δ▤</button>
-            <!-- Smiley-verschilplot: blije/boze smiley per wegvak bij duidelijke verbetering/verslechtering -->
-            <button class="tb-btn" id="diffSmileyBtn" title="Verschilplot met smileys (verbetering/verslechtering)" style="display:none">☺</button>
-          </div>
-        </div>
-      </div>
-
       <div class="lmp-block collapsed" data-block="network">
         <div class="lmp-block-header">
           <span>Netwerk</span>
@@ -2146,33 +1965,6 @@
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_elevation"> <span data-i18n="metricSpeedElevation">Hellingen</span></label>
           <span>Geen</span>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="none"> <span data-i18n="metricNone">Geen</span></label>
-        </div>
-      </div>
-
-      <div class="lmp-block collapsed" data-block="prodattr">
-        <div class="lmp-block-header">
-          <span>Zone productie/attractie</span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="off" checked> <span>uit</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="production"> <span>productie</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpZoneCentroid" value="attraction"> <span>attractie</span></label>
-        </div>
-      </div>
-
-      <div class="lmp-block collapsed" data-block="buildings">
-        <div class="lmp-block-header">
-          <span>Pand productie/attractie</span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="off" checked> <span>uit</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="all"> <span>alles</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="werk"> <span>werk</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="onderwijs"> <span>onderwijs</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="winkelen"> <span>winkelen</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="recreatie"> <span>recreatie</span></label>
         </div>
       </div>
 
@@ -2393,25 +2185,6 @@
     <div class="node-dialog-btns">
       <button id="linkAddDialogCancel" data-i18n="dialogCancel">Annuleren</button>
       <button id="linkAddDialogOk" data-i18n="linkAddDialogOkBtn">Toevoegen</button>
-    </div>
-  </div>
-
-  <!-- ── GMT upload dialoog ────────────────────────────────────────────────── -->
-  <div id="gmtUploadDialog" style="display:none">
-    <h3 data-i18n="gmtUploadDialogTitle">Upload naar GMT</h3>
-    <div class="node-field">
-      <div id="gmtUploadMaxFlowDisplay" style="font-size:12px;color:#6a757c;margin-bottom:8px;"></div>
-      <label>
-        <span data-i18n="gmtUploadFilterLabel">Max. voor upload (leeg = alles)</span>
-        <span class="field-hint" data-i18n="linkFlowDialogUnit">pae/dag</span>
-      </label>
-      <input type="number" id="gmtUploadMaxFlowInput" min="0" step="100"
-             data-i18n-ph="gmtUploadFilterPh" placeholder=""
-             style="width:100%;margin-top:4px;"/>
-    </div>
-    <div class="node-dialog-btns">
-      <button id="gmtUploadDialogCancel" data-i18n="dialogCancel">Annuleren</button>
-      <button id="gmtUploadDialogOk" data-i18n="gmtUploadBtn">Uploaden</button>
     </div>
   </div>
 
@@ -2696,13 +2469,6 @@
       linkAddDialogOkBtn:'Toevoegen',
       linkAddChangeLabel: m => `+ Nieuw wegvak (~${m}\u00a0m)`,
       changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pae/u \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0rijstr.`,
-      // GMT upload-dialoog
-      gmtUploadDialogTitle:'Upload naar GMT',
-      gmtUploadMaxFlowLabel: v => `Max. intensiteit in netwerk: ${v.toLocaleString('nl-NL')}\u00a0pae/dag`,
-      gmtUploadMaxFlowLoading:'Max. intensiteit ophalen\u2026',
-      gmtUploadFilterLabel:'Max. voor upload (leeg\u00a0=\u00a0alles)',
-      gmtUploadFilterPh:'bijv. 5000',
-      gmtUploadBtn:'Uploaden',
       // Node-dialoog
       nodeDialogDefault:'Knoop',
       nodeDialogProd:'Productie', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut (\u22650)',
@@ -2970,13 +2736,6 @@
       linkAddDialogOkBtn:'Add',
       linkAddChangeLabel: m => `+ New road link (~${m}\u00a0m)`,
       changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pcu/h \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0lane${lanes !== 1 ? 's' : ''}`,
-      // GMT upload dialog
-      gmtUploadDialogTitle:'Upload to GMT',
-      gmtUploadMaxFlowLabel: v => `Max. flow in network: ${v.toLocaleString('en-GB')}\u00a0pcu/day`,
-      gmtUploadMaxFlowLoading:'Fetching max. flow\u2026',
-      gmtUploadFilterLabel:'Max. for upload (empty\u00a0=\u00a0all)',
-      gmtUploadFilterPh:'e.g. 5000',
-      gmtUploadBtn:'Upload',
       nodeDialogDefault:'Node',
       nodeDialogProd:'Production', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute (\u22650)',
       nodeDialogProdPh:'+300 or 1200',
@@ -4051,76 +3810,6 @@
                 `&maquette=true&follow=true&cameraId=-1`;
             };
 
-            // Item: Upload GMT
-            const gmtUploaded = !!area.gmtUploaded;
-            const gmtItem = mkItem(
-              gmtUploaded ? 'Upload GMT (al geüpload)' : 'Upload GMT',
-              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>',
-              gmtUploaded, false);
-            if (!gmtUploaded) {
-              gmtItem.onclick = () => {
-                dropdown.style.display = 'none';
-                const dlg     = document.getElementById('gmtUploadDialog');
-                const display = document.getElementById('gmtUploadMaxFlowDisplay');
-                const input   = document.getElementById('gmtUploadMaxFlowInput');
-                const cancelBtn = document.getElementById('gmtUploadDialogCancel');
-                const okBtn     = document.getElementById('gmtUploadDialogOk');
-                input.value = '';
-                display.textContent = T('gmtUploadMaxFlowLoading');
-                dlg.style.display = 'block';
-
-                fetch(`/api/areas/${area.areaId}/max-flow?mode=${area.mode}`)
-                  .then(r => r.json())
-                  .then(d => { display.textContent = T('gmtUploadMaxFlowLabel', d.maxFlow ?? 0); })
-                  .catch(() => { display.textContent = ''; });
-
-                const cleanup = () => {
-                  dlg.style.display = 'none';
-                  cancelBtn.onclick = null;
-                  okBtn.onclick = null;
-                };
-                cancelBtn.onclick = cleanup;
-                okBtn.onclick = async () => {
-                  cleanup();
-                  gmtItem.querySelector('span:last-child').textContent = 'Bezig met uploaden…';
-                  const maxFlowVal = input.value.trim();
-                  const body = { inputs: { areaId: area.areaId, mode: area.mode } };
-                  if (maxFlowVal !== '') body.inputs.maxFlow = parseFloat(maxFlowVal);
-                  try {
-                    const res = await fetch('/processes/upload-to-gmt/execution', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(body),
-                    });
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const { jobID } = await res.json();
-                    let lastLog = 0;
-                    for (;;) {
-                      await new Promise(r => setTimeout(r, 1500));
-                      const jd = await fetch(`/jobs/${jobID}`).then(r => r.json());
-                      if (jd.log?.length > lastLog) { lastLog = jd.log.length; }
-                      if (jd.status === 'successful') {
-                        gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (al geüpload)';
-                        gmtItem.style.color = '#3a4455';
-                        gmtItem.style.cursor = 'default';
-                        gmtItem.onmouseenter = null;
-                        gmtItem.onmouseleave = null;
-                        break;
-                      }
-                      if (jd.status === 'failed') {
-                        gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (mislukt)';
-                        gmtItem.style.color = '#ff6b6b';
-                        break;
-                      }
-                    }
-                  } catch (err) {
-                    gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (fout)';
-                    gmtItem.style.color = '#ff6b6b';
-                  }
-                };
-              };
-            }
-
             // Item: Maak Full digital twin (OSM-verrijking van bestaand gebied)
             const isFullTwin = !!area.isFullTwin;
             const twinItem = mkItem(
@@ -4185,31 +3874,9 @@
               };
             }
 
-            // Item: Verwijderen
-            const delItem = mkItem('Verwijderen',
-              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>',
-              false, true);
-            delItem.onclick = async () => {
-              dropdown.style.display = 'none';
-              if (!confirm(T('areaDelConfirm', area.name, area.mode))) return;
-              const res = await fetch('/processes/delete-area/execution', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: area.areaId }),
-              });
-              if (res.ok) {
-                nodeEl.remove();
-              } else {
-                const d = await res.json().catch(() => ({}));
-                alert(T('areaDelError', d.error || res.statusText));
-              }
-            };
-
             dropdown.appendChild(followItem);
             dropdown.appendChild(maquetteItem);
-            dropdown.appendChild(gmtItem);
             dropdown.appendChild(twinItem);
-            dropdown.appendChild(delItem);
 
             // Wrapper voor positionering dropdown
             const menuWrap = document.createElement('div');
@@ -4258,17 +3925,17 @@
         }
 
         // "Nieuw"-knop altijd toevoegen
-        const newBtn = document.createElement('button');
-        newBtn.textContent = T('newAreaBtn');
-        newBtn.style.cssText = `
-          background:transparent;color:#00a5ab;
-          border:1px dashed rgba(0,165,171,0.4);
-          border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
-          transition:background .15s;width:100%;margin-top:6px`;
-        newBtn.onmouseenter = () => newBtn.style.background = 'rgba(0,165,171,0.07)';
-        newBtn.onmouseleave = () => newBtn.style.background = 'transparent';
-        newBtn.onclick = () => openNewScreen();
-        container.appendChild(newBtn);
+        // const newBtn = document.createElement('button');
+        // newBtn.textContent = T('newAreaBtn');
+        // newBtn.style.cssText = `
+        //   background:transparent;color:#00a5ab;
+        //   border:1px dashed rgba(0,165,171,0.4);
+        //   border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
+        //   transition:background .15s;width:100%;margin-top:6px`;
+        // newBtn.onmouseenter = () => newBtn.style.background = 'rgba(0,165,171,0.07)';
+        // newBtn.onmouseleave = () => newBtn.style.background = 'transparent';
+        // newBtn.onclick = () => openNewScreen();
+        // container.appendChild(newBtn);
       })
       .catch(() => {
         document.getElementById('areaError').textContent = T('areaConnError');
@@ -16674,148 +16341,6 @@
       updateClosedLinksLayer();
       updateSpeedSignLayer();
     }
-
-    // ── Doorvoeren (adjust) ──────────────────────────────────────────────────
-
-    document.getElementById('applyChangesBtn').addEventListener('click', async () => {
-      if (!pendingChanges.length) return;
-      const btn    = document.getElementById('applyChangesBtn');
-      const status = document.getElementById('applyStatus');
-      btn.disabled = true;
-      status.style.display = 'block';
-      status.textContent   = T('applyStart');
-
-      // Verberg edit-schermpjes direct bij starten doorvoeren
-      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
-      if (linkEditActive) document.getElementById('linkEditBtn').click();
-      if (linkAddActive)  document.getElementById('linkAddBtn').click();
-
-      // Toon wacht-overlay over het netwerk
-      const overlay    = document.getElementById('calcOverlay');
-      const overlayMsg = document.getElementById('calcOverlayMsg');
-      overlay.style.display = 'flex';
-      overlayMsg.textContent = T('applyStart');
-
-      // Bouw changes-array op modus —
-      // MIXED: per modus één API-aanroep op basis van de link-modus in segments.
-      // Overige: één aanroep voor de gehele MODE.
-      const serializeChange = c => {
-        if (c._isLink) {
-          return c.speed != null ? { linkId: c.linkId, speed: c.speed }
-                                 : { linkId: c.linkId, capacity: c.capacity };
-        }
-        if (c._isLinkAdd) {
-          return { geometry: c.geometry, capacity: c.capacity, speed: c.speed, lanes: c.lanes };
-        }
-        if (c._isLinkFlow) {
-          return { linkId: c.linkId, flow: c.flow };
-        }
-        if (c._isOd) {
-          const obj = { fromZoneId: c.fromZoneId, toZoneId: c.toZoneId,
-                        tripFraction: c.tripFraction,
-                        originProduction: c.originProduction };
-          if (c.motifRatio) obj.motifRatio = c.motifRatio;
-          return obj;
-        }
-        const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
-        if (c.production != null) obj.production = c.production;
-        if (c.attraction != null) obj.attraction = c.attraction;
-        return obj;
-      };
-
-      const scenarioName = document.getElementById('scenarioNameInput').value.trim()
-                        || `${networkName} (${scenarioCounter})`;
-
-      // Bouw job-wachtrij: één invoer per getroffen modus
-      let jobQueue;
-      if (MODE === 'MIXED') {
-        // Bouw linkId → modus-map vanuit de netwerksegmenten
-        const linkModeMap = {};
-        for (const seg of segments) {
-          const lid = String(seg.props.linkId ?? seg.props.id ?? '');
-          if (lid) linkModeMap[lid] = (seg.props.mode || 'CAR').toUpperCase();
-        }
-        const constituentModes = [...new Set(Object.values(linkModeMap))];
-        // Verdeel wijzigingen per modus; zone/knoop-wijzigingen gelden voor alle modi
-        const changesByMode = {};
-        for (const c of pendingChanges) {
-          const affected = c._isLink
-            ? [linkModeMap[String(c.linkId)] ?? 'CAR']
-            : constituentModes;
-          for (const m of affected) {
-            (changesByMode[m] = changesByMode[m] ?? []).push(c);
-          }
-        }
-        jobQueue = Object.entries(changesByMode)
-          .map(([m, mChanges]) => ({ mode: m, changes: mChanges.map(serializeChange) }));
-      } else {
-        jobQueue = [{ mode: MODE, changes: pendingChanges.map(serializeChange) }];
-      }
-
-      // Hulpfunctie: poll een job tot gereed; geeft job_id terug bij succes
-      const pollJobPromise = job_id => new Promise((resolve, reject) => {
-        const POLL_DELAYS = [10000, 5000, 3000, 2000];
-        let pollStep = 0;
-        const schedulePoll = () => setTimeout(doPoll,
-          pollStep < POLL_DELAYS.length ? POLL_DELAYS[pollStep++] : 1000);
-        const doPoll = async () => {
-          try {
-            const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
-            if (sj.status === 'running' || sj.status === 'accepted') {
-              status.textContent = overlayMsg.textContent = T('applyRunning');
-              schedulePoll();
-            } else if (sj.status === 'successful') {
-              resolve(job_id);
-            } else {
-              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
-              reject(new Error(errLines.length
-                ? errLines.join('\n')
-                : T('applyError', sj.returncode)));
-            }
-          } catch (e) { reject(e); }
-        };
-        schedulePoll();
-      });
-
-      status.style.display = 'block';
-      try {
-        let lastResults = null;
-        for (let qi = 0; qi < jobQueue.length; qi++) {
-          const { mode: jobMode, changes: jobChanges } = jobQueue[qi];
-          const effectiveSource = qi === 0 ? AREA_ID : lastResults.new_area_id;
-          const res = await fetch('/processes/adjust/execution', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ inputs: {
-              area_id: effectiveSource,
-              mode: jobMode,
-              changes: jobChanges,
-              scenario_name: scenarioName,
-              debug: document.getElementById('adjustDebug').checked,
-            }}),
-          });
-          if (!res.ok) throw new Error(await res.text());
-          const { jobID: job_id } = await res.json();
-          status.textContent = overlayMsg.textContent = T('applyRunning');
-          await pollJobPromise(job_id);
-          lastResults = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
-        }
-        btn.disabled = false;
-        overlay.style.display = 'none';
-        scenarioCounter++;
-        clearHighlight();
-        _setChangesPanelReadOnly(false);
-        pendingChanges = [];
-        document.getElementById('scenarioNameInput').value = '';
-        renderChangesList();
-        await loadAdjustedResult(lastResults.new_area_id, lastResults.compare_url);
-      } catch (err) {
-        status.style.color = '#ff6b6b';
-        status.textContent = overlayMsg.textContent = err?.message || T('applyFetchError', String(err));
-        btn.disabled = false;
-        overlay.style.display = 'none';
-      }
-    });
 
     async function loadAdjustedResult(newAreaId, compareUrl) {
       // Nieuw scenario binnenkomen: 3D-weergaveopties altijd terug op UIT,
