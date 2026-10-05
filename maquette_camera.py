@@ -907,6 +907,26 @@ def _log_rejections(evaluations: list, min_area: float, max_area: float) -> None
     )
 
 
+def _with_smoothed_position(det: dict) -> dict:
+    """Vervang center/bbox/polygon door de gladgestreken (EMA) variant van de
+    tracker, voor weergave op de kaart.
+
+    De rauwe per-frame fit wiebelt een paar pixels, ook als het blokje
+    doodstil ligt - zonder dit sprong het getekende vlak op de kaart elk
+    frame een beetje mee. De stabiliteitsbepaling in `tracking.py` blijft wel
+    op de rauwe posities rekenen, dus echte beweging wordt hier niet
+    gemaskeerd.
+    """
+    merged = dict(det)
+    if det.get("smoothed_center") is not None:
+        merged["center"] = det["smoothed_center"]
+    if det.get("smoothed_bbox"):
+        merged["bbox"] = det["smoothed_bbox"]
+    if det.get("smoothed_polygon"):
+        merged["polygon"] = det["smoothed_polygon"]
+    return merged
+
+
 def _detection_report(det: dict, anchor: str, to_wgs84, calibration=None) -> dict:
     """Vertaal één detectie naar iets dat de browser kan tekenen.
 
@@ -1148,16 +1168,24 @@ def run(
                 _log_rejections(evaluations, area_min, area_max)
 
             # --- Alles wat de camera ziet naar de kaart sturen ---
-            # Bewust de ruwe detecties, niet alleen de stabiele: je wilt ook
-            # zien wanneer de camera iets ánders zwart vindt dan jouw blokje.
+            # Bewust alle tracks, niet alleen de stabiele: je wilt ook zien
+            # wanneer de camera iets ánders zwart vindt dan jouw blokje. Dit
+            # zijn de tracker's eigen tracks (incl. die net deze frame niet
+            # opnieuw gevonden zijn, tot _MAX_MISSING_FRAMES) in plaats van de
+            # rauwe per-frame detecties: elke contourfit wiebelt een paar
+            # pixels, en een enkel gemist frame (flikkerend beamerlicht) liet
+            # het vlak eerder even helemaal verdwijnen op de kaart. De tracker
+            # houdt positie/omtrek dus gladgestreken (EMA) en blijft ze een
+            # paar frames vasthouden na een gemiste detectie.
             if now - last_detections_sent >= _DETECTIONS_INTERVAL:
                 last_detections_sent = now
+                visual_stable, visual_unstable = tracker.get_visualization_detections()
                 _send_detections(
                     server_url,
                     runner.get_area_id(),
                     [
-                        _detection_report(d, anchor, _to_wgs84, calibration)
-                        for d in detections
+                        _detection_report(_with_smoothed_position(d), anchor, _to_wgs84, calibration)
+                        for d in visual_stable + visual_unstable
                     ],
                     camera_view=camera_view,
                 )

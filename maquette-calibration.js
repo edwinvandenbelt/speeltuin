@@ -235,10 +235,15 @@
   // ───────────────────────────────────────────────────────────────────────────
   // Calibratie-UI
   //
-  // Drie fasen. De opstelling dwingt die volgorde af: het bedienscherm is
+  // Vier fasen. De opstelling dwingt die volgorde af: het bedienscherm is
   // meestal hetzelfde scherm dat de beamer projecteert, dus alles wat we tonen
   // belandt op de maquette en wordt door de camera teruggefilmd.
   //
+  //   0. neerleggen — de kaart ligt nog niet vast: eerst pannen/zoomen tot hij
+  //                  past op de fysieke maquette, zónder dat de camera al
+  //                  meekijkt. Pas na een klik op "Start calibreren" begint de
+  //                  rest — anders zie je meteen het camerabeeld terwijl de
+  //                  kaart nog niet goed ligt.
   //   A. markers   — vier genummerde markers op bekende schermposities, zodat
   //                  er een scherp mikpunt is in plaats van "wegen op wegen".
   //   B. bevriezen — één camerabeeld vastleggen. Dít doorbreekt de
@@ -257,7 +262,7 @@
     { n: 4, label: 'LO', color: '#44e06a' },
   ];
 
-  const PHASE = { MARKERS: 'markers', POINT: 'point' };
+  const PHASE = { SETUP: 'setup', MARKERS: 'markers', POINT: 'point' };
 
   const state = {
     open: false,
@@ -587,6 +592,18 @@
   function render() {
     if (!state.open) return;
 
+    if (state.phase === PHASE.SETUP) {
+      // De kaart moet vrij te pannen/zoomen zijn en de camera staat nog uit:
+      // alles behalve het paneel blijft onzichtbaar en klik-doorlatend.
+      state.markerEls.forEach(el => { el.style.display = 'none'; });
+      state.handles.forEach(h => { h.style.display = 'none'; });
+      state.svg.style.display = 'none';
+      state.still.style.display = 'none';
+      state.warp.style.display = 'none';
+      state.stage.classList.add('transparent');
+      return;
+    }
+
     if (state.phase === PHASE.MARKERS) {
       const pts = markerPixels();
       state.markerEls.forEach((el, i) => {
@@ -680,6 +697,15 @@
     panel.innerHTML = `
       <h4>Camera calibreren</h4>
 
+      <div class="maq-step" data-step="setup">
+        <p>Leg eerst de kaart goed neer: pan en zoom tot de kaart overeenkomt
+           met de maquette op tafel. De camera doet nog niets mee — beweeg
+           gerust zo lang als nodig.</p>
+        <p class="maq-status" id="maqCalibStatusSetup"></p>
+        <button id="maqCalibBegin">Start calibreren</button>
+        <button id="maqCalibCancelSetup" class="secondary">Annuleren</button>
+      </div>
+
       <div class="maq-step" data-step="markers">
         <p>Op de maquette staan nu vier genummerde markers. Richt de camera tot
            je ze alle vier in het beeld hieronder ziet.</p>
@@ -721,22 +747,28 @@
 
     state.captureBtn.addEventListener('click', capture);
     state.saveBtn.addEventListener('click', save);
+    panel.querySelector('#maqCalibBegin').addEventListener('click', beginCalibration);
     panel.querySelector('#maqCalibRetake').addEventListener('click', backToMarkers);
     panel.querySelector('#maqCalibCheck').addEventListener('click', toggleCheck);
+    panel.querySelector('#maqCalibCancelSetup').addEventListener('click', () => close(true));
     panel.querySelector('#maqCalibCancel').addEventListener('click', () => close(true));
     panel.querySelector('#maqCalibCancel2').addEventListener('click', () => close(true));
 
-    showStep(PHASE.MARKERS);
+    showStep(PHASE.SETUP);
   }
+
+  const STATUS_EL_ID = {
+    [PHASE.SETUP]: '#maqCalibStatusSetup',
+    [PHASE.MARKERS]: '#maqCalibStatus',
+    [PHASE.POINT]: '#maqCalibStatus2',
+  };
 
   function showStep(phase) {
     state.phase = phase;
     state.panel.querySelectorAll('.maq-step').forEach(el => {
       el.classList.toggle('active', el.dataset.step === phase);
     });
-    state.statusEl = state.panel.querySelector(
-      phase === PHASE.MARKERS ? '#maqCalibStatus' : '#maqCalibStatus2',
-    );
+    state.statusEl = state.panel.querySelector(STATUS_EL_ID[phase]);
   }
 
   function toggleCheck() {
@@ -1017,7 +1049,12 @@
     window.addEventListener('resize', scheduleRender);
     map.on('resize', scheduleRender);
     window.addEventListener('beforeunload', releaseStream);
+  }
 
+  /** Van de neerleg-fase naar de markerfase: nu pas gaat de camera aan. */
+  async function beginCalibration() {
+    showStep(PHASE.MARKERS);
+    render();
     try {
       await startPreview();
     } catch (err) {
