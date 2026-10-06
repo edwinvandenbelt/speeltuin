@@ -508,7 +508,7 @@ def _run_virtual(
     )
     print("[camera] Druk op Ctrl+C om te stoppen.")
 
-    INTERVAL = 1 / 20  # 20 polls per seconde is ruim voor een handbeweging
+    INTERVAL = 1 / _CAMERA_FPS  # zelfde framerate als de fysieke camera, niet sneller
 
     try:
         while True:
@@ -696,6 +696,11 @@ def run_preview(server_url: str, camera_id: int, width: int, height: int) -> Non
         cap.release()
 
 
+# Framerate van de fysieke camera. Ook de virtuele cursor-modus (_run_virtual)
+# polt niet sneller dan dit: een echte camera levert toch niet meer op.
+_CAMERA_FPS = 10
+
+
 def _open_camera(camera_id: int, width: int, height: int):
     """Open een fysieke camera. Geeft None als dat niet lukt."""
     print(f"[camera] Camera {camera_id} openen ...")
@@ -705,7 +710,7 @@ def _open_camera(camera_id: int, width: int, height: int):
     if not cap.isOpened():
         print(f"[camera] FOUT: camera {camera_id} kon niet geopend worden.")
         return None
-    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_FPS, _CAMERA_FPS)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     return cap

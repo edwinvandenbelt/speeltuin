@@ -148,11 +148,6 @@
       flex: 0 0 80px; display: flex; align-items: center; justify-content: center;
       cursor: grab; touch-action: none; user-select: none;
     }
-    /* Tijdvak-indicator op de gepauzeerde klok: ronde pijl i.p.v. de wijzer. */
-    .sim-dp-arc { display: none; pointer-events: none; fill: none; stroke: #00a5ab; stroke-width: 5; stroke-linecap: round; }
-    .sim-dp-arrow { display: none; pointer-events: none; fill: #00a5ab; }
-    .sim-clock-paused #simClockHand { display: none; }
-    .sim-clock-paused .sim-dp-arc, .sim-clock-paused .sim-dp-arrow { display: block; }
     .sim-clock:active { cursor: grabbing; }
     .sim-clock-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
     .sim-time-box {
@@ -1831,10 +1826,6 @@
                   <line x1="6"  y1="50" x2="12" y2="50"/>
                   <line x1="88" y1="50" x2="94" y2="50"/>
                 </g>
-                <!-- Tijdvak-indicator (alleen zichtbaar tijdens pauze): ronde pijl langs de
-                     buitenrand i.p.v. de wijzer; geometrie wordt per selectie door JS gezet. -->
-                <path id="simDpArc" class="sim-dp-arc"/>
-                <path id="simDpArrow" class="sim-dp-arrow" d="M0,-4 L0,4 L6.4,0 Z"/>
                 <line id="simClockHand" x1="50" y1="50" x2="50" y2="20" stroke="#00a5ab" stroke-width="4" stroke-linecap="round" style="transition: transform 4.7s linear"/>
                 <circle cx="50" cy="50" r="3.5" fill="#232931"/>
               </svg>
@@ -2496,6 +2487,45 @@
 
   <script>
   'use strict';
+
+  // ── TIJDELIJK: fetch-tracing voor het "blijft pending"-onderzoek ──────────
+  // Logt elke fetch (start/einde/duur) naar de console, en meldt elke 5s welke
+  // fetches nog openstaan en hoe lang al. Verwijder dit blok weer zodra het
+  // onderzoek afgerond is.
+  (function _instrumentFetchForTracing() {
+    const _origFetch = window.fetch.bind(window);
+    let _traceSeq = 0;
+    const _inFlight = new Map(); // id -> { method, url, start }
+    window.fetch = function (input, init) {
+      const id = ++_traceSeq;
+      const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      const method = (init && init.method) || (input && input.method) || 'GET';
+      const start = performance.now();
+      _inFlight.set(id, { method, url, start });
+      console.log(`[trace] →#${id} ${method} ${url}`);
+      return _origFetch(input, init).then(
+        (resp) => {
+          _inFlight.delete(id);
+          console.log(`[trace] ←#${id} ${resp.status} ${method} ${url} (${(performance.now() - start).toFixed(0)}ms)`);
+          return resp;
+        },
+        (err) => {
+          _inFlight.delete(id);
+          console.log(`[trace] ✗#${id} FOUT ${method} ${url} (${(performance.now() - start).toFixed(0)}ms): ${err}`);
+          throw err;
+        }
+      );
+    };
+    setInterval(() => {
+      const now = performance.now();
+      for (const [id, info] of _inFlight) {
+        const elapsedS = (now - info.start) / 1000;
+        if (elapsedS > 3) {
+          console.log(`[trace] ...#${id} nog bezig: ${info.method} ${info.url} (${elapsedS.toFixed(1)}s)`);
+        }
+      }
+    }, 5000);
+  })();
 
   // ── Vertalingen ───────────────────────────────────────────────────────────
   const TRANSLATIONS = {
@@ -3918,11 +3948,36 @@
             const maquetteItem = mkItem('Maquette',
               '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/><circle cx="12" cy="14" r="2.5"/></svg>',
               false, false);
-            maquetteItem.onclick = () => {
+            maquetteItem.onclick = async () => {
               dropdown.style.display = 'none';
+
+              // Camera-ID 1 is de vaste maquette-camera; is die aanwezig, gebruik
+              // hem dan zonder te vragen. Anders (bv. andere/geen camera's
+              // aangesloten) de gebruiker laten kiezen.
+              let cameraId = -1;
+              let camPresent = false;
+              try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                camPresent = devices.filter(d => d.kind === 'videoinput').length > 1;
+              } catch (e) {
+                console.warn('[maquette] camera-detectie mislukt:', e);
+              }
+
+              if (camPresent) {
+                cameraId = 1;
+              } else {
+                const answer = prompt(
+                  'Camera 1 niet gevonden. Welke camera-ID moet gebruikt worden? ' +
+                  '(-1 voor de virtuele cursor, zonder fysieke camera)',
+                  '-1');
+                if (answer === null) return; // geannuleerd
+                cameraId = parseInt(answer, 10);
+                if (Number.isNaN(cameraId)) cameraId = -1;
+              }
+
               window.location.href =
                 `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}` +
-                `&maquette=true&follow=true&cameraId=-1`;
+                `&maquette=true&follow=true&cameraId=${cameraId}`;
             };
 
             // Item: Maak Full digital twin (OSM-verrijking van bestaand gebied)
@@ -10370,7 +10425,10 @@
       return { pathData, flowByFromZone, flowByToZone };
     }
 
-    setLoaderMsg(T('loaderRoutes'));
+    // Routes worden hieronder op de achtergrond geladen (niet ge-await't): de kaart
+    // hoeft er niet op te wachten. "Routes laden…" wordt dus niet meer als blokkerende
+    // laadtekst getoond; de resterende synchrone init leidt naar de kaart zelf.
+    setLoaderMsg(T('loaderMap'));
     let routeMode        = false;
     let routeList        = [];
     let totalRouteWeight = 1;
@@ -10441,32 +10499,44 @@
       }
     }
 
+    // Routes zijn optioneel en sturen alleen de route-gebaseerde animatiemodus aan
+    // (segment-modus, hieronder al met `segments` opgebouwd, werkt zonder routes).
+    // Daarom wordt er hier niet op _rtFetch gewacht: de rest van de initialisatie
+    // (kaart, zones, UI) gaat direct verder in segment-modus, en deze achtergrond-
+    // taak schakelt — zodra de (potentieel grote) routes-fetch/parse klaar is —
+    // naar route-modus over via rebuildCars(), zonder de kaart opnieuw te laden.
     const _tPost = performance.now();
-    try {
-      if (MODE === 'MIXED') {
-        const [carFc, bikeFc] = await _rtFetch;
-        const _tP0 = performance.now();
-        _parseAndAddRoutes(carFc,  'CAR');
-        _parseAndAddRoutes(bikeFc, 'BIKE');
-        console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
-      } else {
-        const routesFc = await _rtFetch;
-        if (!routesFc) throw new Error('geen data');
-        const _tP0 = performance.now();
-        _parseAndAddRoutes(routesFc, MODE);
-        console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
+    async function _loadRoutesInBackground() {
+      try {
+        if (MODE === 'MIXED') {
+          const [carFc, bikeFc] = await _rtFetch;
+          const _tP0 = performance.now();
+          _parseAndAddRoutes(carFc,  'CAR');
+          _parseAndAddRoutes(bikeFc, 'BIKE');
+          console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
+        } else {
+          const routesFc = await _rtFetch;
+          if (!routesFc) throw new Error('geen data');
+          const _tP0 = performance.now();
+          _parseAndAddRoutes(routesFc, MODE);
+          console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
+        }
+        totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
+        routeMode = routeList.length > 0;
+        const _tBlrm = performance.now();
+        buildLinkRouteMap();
+        console.log('[perf] buildLinkRouteMap:', (performance.now() - _tBlrm).toFixed(0), 'ms | routes:', routeList.length);
+        calibrateRouteProductions();  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
+        if (routeMode) {
+          document.getElementById('odEditBtn').style.display = '';
+          rebuildCars();  // was al gestart in segment-modus; nu overschakelen naar route-modus
+        }
+        console.log('[perf] routes geladen (achtergrond):', (performance.now() - _tPost).toFixed(0), 'ms');
+      } catch (e) {
+        console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
       }
-      totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
-      routeMode = routeList.length > 0;
-      const _tBlrm = performance.now();
-      buildLinkRouteMap();
-      console.log('[perf] buildLinkRouteMap:', (performance.now() - _tBlrm).toFixed(0), 'ms | routes:', routeList.length);
-      if (routeMode) {
-        document.getElementById('odEditBtn').style.display   = '';
-      }
-    } catch (e) {
-      console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
     }
+    _loadRoutesInBackground();
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
      let timeScale = 1;
@@ -10479,12 +10549,10 @@
     // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
     let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
     const _tRlfm = performance.now();
-    rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan)
+    rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan); onafhankelijk van routes
     console.log('[perf] rebuildLinkFlowMap:', (performance.now() - _tRlfm).toFixed(0), 'ms');
-    const _tCal = performance.now();
-    calibrateRouteProductions();  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
-    console.log('[perf] calibrateRouteProductions:', (performance.now() - _tCal).toFixed(0), 'ms');
-    console.log('[perf] TOTAL post-routes sync:', (performance.now() - _tPost).toFixed(0), 'ms');
+    // calibrateRouteProductions() gebeurt pas in _loadRoutesInBackground() hierboven,
+    // zodra routeList daadwerkelijk gevuld is (hier zou het nog altijd een no-op zijn).
     let widthScale = false;
     let colorMetric = 'flow';
     let cars      = [];
@@ -14666,11 +14734,12 @@
     }
 
       function updateOverlay(withCars = true) {
-         // Gepauzeerd betekent altijd "geen auto's in beeld", ongeacht wat de
-         // aanroeper meegeeft — anders duikt de bevroren auto-positie weer op
-         // zodra een ongerelateerde update (camera, assets, …) hier met de
-         // standaardwaarde `true` doorheen loopt.
-         const showCars = withCars && !paused;
+         // Tijdens het bewerken van knopen/wegvakken betekent dat altijd "geen
+         // auto's in beeld", ongeacht wat de aanroeper meegeeft — anders duikt de
+         // bevroren auto-positie weer op zodra een ongerelateerde update (camera,
+         // assets, …) hier met de standaardwaarde `true` doorheen loopt. Het
+         // afspeel-vinkje van de simulatie bepaalt alleen de klok, niet dit.
+         const showCars = withCars && !carsSuspended;
          overlay.setProps({ layers: [
            ...makeSunkenLayers(),
            ...makePathRibbonLayers(),
@@ -14706,11 +14775,8 @@
 
     // ── 7. Animatielus ──────────────────────────────────────────────────────
     let lastT  = null;
-    let paused = false;
-    // Welk tijdvak is gekozen op de klok terwijl gepauzeerd ('etmaal'|'mrh'|'rest'|'erh');
-    // null = niet gepauzeerd / geen selectie-modus actief.
-    let simPausedSelection = null;
-    const SIM_DP_CYCLE = ['etmaal', 'mrh', 'rest', 'erh'];
+    let paused = false;          // simulatieklok (uur-van-de-dag) staat stil; auto's blijven rijden
+    let carsSuspended = false;   // alleen tijdens knoop-/wegvak-bewerken: auto's echt stilgezet/verborgen
 
     /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus. */
     function _setSimPausedUI(isPaused) {
@@ -14734,7 +14800,7 @@
 
     function animate() {
       const now = performance.now() / 1000;
-      if (!paused && lastT !== null) {
+      if (!carsSuspended && lastT !== null) {
         const dt  = Math.min(now - lastT, 0.05) * timeScale;
         const t   = now;   // huidige tijd in seconden (performance.now()/1000)
 
@@ -15102,7 +15168,7 @@
 
         updateOverlay(true);
       }
-      if (paused) lastT = null; else lastT = now;
+      if (carsSuspended) lastT = null; else lastT = now;
       requestAnimationFrame(animate);
     }
 
@@ -16630,6 +16696,11 @@
       if (linkEditActive) document.getElementById('linkEditBtn').click();
       deactivateWhatifRc();
 
+      // Simulatie altijd gepauzeerd starten bij het laden van een (nieuw) scenario,
+      // ongeacht de afspeelstand in het vorige scenario/sessie.
+      paused = true;
+      _setSimPausedUI(true);
+
       updateLegend();
       updateClosedLinksLayer();
       updateSpeedSignLayer();
@@ -17596,6 +17667,7 @@
       if (nodeEditActive) {
         // Stop animatie en verwijder voertuigen uit beeld
         paused = true;
+        carsSuspended = true;
         cars   = [];
         carData = [];
         updateOverlay(false);
@@ -17619,6 +17691,7 @@
         map.getCanvas().style.cursor = '';
         // Hervat animatie
         paused = false;
+        carsSuspended = false;
         _setSimPausedUI(false);
         rebuildCars();
       }
@@ -17639,6 +17712,7 @@
 
       if (linkEditActive) {
         paused = true;
+        carsSuspended = true;
         cars   = [];
         carData = [];
         updateOverlay(false);
@@ -17661,6 +17735,7 @@
         linkSelectMode = 'click';
         map.getCanvas().style.cursor = '';
         paused = false;
+        carsSuspended = false;
         _setSimPausedUI(false);
         updateOverlay(false);
         rebuildCars();
@@ -17682,6 +17757,7 @@
 
       if (linkFlowEditActive) {
         paused = true;
+        carsSuspended = true;
         cars   = [];
         carData = [];
         updateOverlay(false);
@@ -17692,6 +17768,7 @@
         closeLinkFlowDialog();
         map.getCanvas().style.cursor = '';
         paused = false;
+        carsSuspended = false;
         _setSimPausedUI(false);
         updateOverlay(false);
         rebuildCars();
@@ -17711,7 +17788,7 @@
         : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>';
 
       if (linkAddActive) {
-        paused = true; cars = []; carData = [];
+        paused = true; carsSuspended = true; cars = []; carData = [];
         updateOverlay(false);
         _setSimPausedUI(true);
         map.once('idle', () => {
@@ -17731,6 +17808,7 @@
         document.getElementById('linkAddHintEl').style.display      = 'none';
         document.getElementById('linkAddDialog').style.display      = 'none';
         paused = false;
+        carsSuspended = false;
         _setSimPausedUI(false);
         updateOverlay(false);
         rebuildCars();
@@ -18136,7 +18214,7 @@
       try {
         paused = !e.target.checked;
         _setSimPausedUI(paused);
-        let pending;
+        let pending = Promise.resolve();
         if (e.target.checked) {
           // Eén vinkje moet volstaan: bij afspelen meteen alle in dit netwerk
           // aanwezige modi aanzetten, i.p.v. ook nog apart een modus-knopje
@@ -18148,12 +18226,9 @@
           });
           rebuildCars();
           updateLegend();
-          pending = _exitSimPaused();
-        } else {
-          pending = _enterSimPaused();
+          pending = scheduleSimApply();
         }
-        // Auto's tonen/verbergen: bij pauze verdwijnen de auto's uit beeld.
-        updateOverlay(!paused);
+        updateOverlay(true);
         await pending;
       } finally {
         _setSimClockBusy(false);
@@ -18164,12 +18239,10 @@
       _setChangesPanelReadOnly(!_changesPanelReadOnly);
     });
 
-     /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …).
-      *  `flowDp` stuurt verkeersintensiteiten aan en kan tijdens pauze afwijken van `dp`
-      *  (incl. 'etmaal', dat `dp`/gebouwen zelf nooit aannemen — zie simPausedSelection). */
-     function applyDaypartSideEffects(dp, flowDp = dp) {
+     /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …). */
+     function applyDaypartSideEffects(dp) {
        daypart = dp;
-       flowDaypart = flowDp;
+       flowDaypart = dp;
        document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === dp));
        updateLegend();
        rebuildLinkFlowMap();
@@ -18177,7 +18250,7 @@
        // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
        // in segment-modus bepaalt het de flow-drempel per segment.
        rebuildCars();
-       updateOverlay(!paused);
+       updateOverlay(true);
        updateDebugPanel();
        // Gebouwkleur (grondvlak én 3D-extrusie) synchroniseren met het geselecteerde dagdeel.
        // De color_${daypart}-eigenschap is door _applyBuildingDisplay al op grijs
@@ -18501,120 +18574,15 @@
       });
     }
 
-    // ── Tijdvak-indicator op de gepauzeerde klok ────────────────────────────────
-    // Hoeken (0°=12 uur, met de klok mee) rond resp. 08:00 (mrh) en 17:00 (erh);
-    // 'rest' is alles buiten die twee spits-wedges, dus de rest van de volle cirkel
-    // in twee losse stukken (het korte stuk ertussen + het lange stuk eromheen);
-    // 'etmaal' is de volle cirkel.
-    const SIM_DP_ANGLES = { mrh: [220, 260], erh: [130, 170] };
-
-    function _simPolarPoint(deg, r) {
-      const rad = deg * Math.PI / 180;
-      return [50 + r * Math.sin(rad), 50 - r * Math.cos(rad)];
-    }
-
-    /** Teken de ronde-pijl-indicator (boog + pijlpunt) voor de huidige simPausedSelection. */
-    function _updateSimDpIndicator() {
-      const arc   = document.getElementById('simDpArc');
-      const arrow = document.getElementById('simDpArrow');
-      if (!simPausedSelection) return;
-      const R = 45;
-      let endDeg;
-      if (simPausedSelection === 'etmaal') {
-        const [x0, y0]     = _simPolarPoint(0, R);
-        const [x180, y180] = _simPolarPoint(180, R);
-        // Eén boogcommando kan geen volle 360° tekenen (start/eind vallen samen);
-        // daarom in twee 180°-stukken splitsen.
-        arc.setAttribute('d', `M${x0},${y0} A${R},${R} 0 0 1 ${x180},${y180} A${R},${R} 0 0 1 ${x0},${y0} Z`);
-        endDeg = 0; // geen echt 'leidend' uiteinde op een volle cirkel; vaste referentie boven.
-      } else if (simPausedSelection === 'rest') {
-        // Twee losse boogstukken: het korte stuk tussen het einde van de avondspits
-        // en het begin van de ochtendspits, en het lange stuk tussen het einde van
-        // de ochtendspits en het begin van de avondspits (via 0°/360° heen).
-        const segs = [
-          [SIM_DP_ANGLES.erh[1], SIM_DP_ANGLES.mrh[0]],
-          [SIM_DP_ANGLES.mrh[1], SIM_DP_ANGLES.erh[0] + 360],
-        ];
-        arc.setAttribute('d', segs.map(([startDeg, deg2]) => {
-          const [x1, y1] = _simPolarPoint(startDeg, R);
-          const [x2, y2] = _simPolarPoint(deg2, R);
-          const largeArc = (deg2 - startDeg) > 180 ? 1 : 0;
-          return `M${x1},${y1} A${R},${R} 0 ${largeArc} 1 ${x2},${y2}`;
-        }).join(' '));
-        endDeg = segs[0][1]; // pijlpunt bij het begin van de ochtendspits, zoals voorheen
-      } else {
-        const [startDeg, deg2] = SIM_DP_ANGLES[simPausedSelection];
-        endDeg = deg2;
-        const [x1, y1] = _simPolarPoint(startDeg, R);
-        const [x2, y2] = _simPolarPoint(deg2, R);
-        const largeArc = (deg2 - startDeg) > 180 ? 1 : 0;
-        arc.setAttribute('d', `M${x1},${y1} A${R},${R} 0 ${largeArc} 1 ${x2},${y2}`);
-      }
-      // Pijlpuntje: getekend wijzend naar +x (= tangentieel "met de klok mee" op 0°),
-      // dus positioneren (translate) vóórdat om het middelpunt geroteerd wordt.
-      arrow.setAttribute('transform', `rotate(${endDeg} 50 50) translate(50 ${50 - R})`);
-    }
-
-    /** Pas de gekozen gepauzeerde tijdvak-selectie toe: label, boog, gebouwen (altijd 'rest') en flows. */
-    function _applySimPausedSelection() {
-      document.getElementById('simClockTimeText').textContent = {
-        etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), rest: T('dpLabelRest'), erh: T('dpLabelErh'),
-      }[simPausedSelection];
-      document.getElementById('simClockModeBtn').textContent = '>';
-      let _pendingApply;
-      if (simPausedSelection === 'mrh') {
-        document.getElementById('fspHour').value = 8;
-        applyDaypartSideEffects('rest', 'mrh');
-        _pendingApply = scheduleSimApply();
-      } else if (simPausedSelection === 'erh') {
-        document.getElementById('fspHour').value = 17;
-        applyDaypartSideEffects('rest', 'erh');
-        _pendingApply = scheduleSimApply();
-      } else if (simPausedSelection === 'rest') {
-        applyDaypartSideEffects('rest', 'rest');
-        _pendingApply = applyFlowScaler({ omitDate: true });
-      } else { // 'etmaal'
-        applyDaypartSideEffects('rest', 'etmaal');
-        _pendingApply = applyFlowScaler({ omitDate: true });
-      }
-      // Taartpunten alsnog highlighten voor mrh/erh (applyDaypartSideEffects zet dit
-      // terug op 'rest', wat geen van beide taartpunten matcht).
-      document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === simPausedSelection));
-      _updateSimDpIndicator();
-      return _pendingApply;
-    }
-
-    /** Simulatie gepauzeerd: wijzer verbergen, tijdvak-indicator tonen, standaard op '24 uur'. */
-    function _enterSimPaused() {
-      simPausedSelection = 'etmaal';
-      document.getElementById('simClockSvg').classList.add('sim-clock-paused');
-      const modeBtn = document.getElementById('simClockModeBtn');
-      modeBtn.dataset.i18nTitle = 'simClockCycleTitle';
-      modeBtn.title = T('simClockCycleTitle');
-      return _applySimPausedSelection();
-    }
-
-    /** Simulatie hervat: wijzer terug, klok weer uurgedreven. */
-    function _exitSimPaused() {
-      simPausedSelection = null;
-      document.getElementById('simClockSvg').classList.remove('sim-clock-paused');
-      const modeBtn = document.getElementById('simClockModeBtn');
-      modeBtn.dataset.i18nTitle = 'simClockToggleTitle';
-      modeBtn.title = T('simClockToggleTitle');
-      applyDaypartSideEffects(daypartForHour(simHour));
-      updateClockUI(true);
-      return scheduleSimApply();
-    }
 
     updateClockUI();
 
-    // GMT Digital Twin: de doorlopende klok (incl. weer/temperatuur/motief en
-    // de 3D-autodichtheid) is de standaardweergave — in tegenstelling tot GMT
-    // Analyzer start deze niet gepauzeerd in een discrete dagdeel-selectie
-    // (OS/AS/RD/24hr), maar meteen uur-voor-uur lopend, net als bij het
-    // handmatig aanzetten van de simulatie via de afspeel-toggle.
-    paused = false;
-    _setSimPausedUI(false);
+    // GMT Digital Twin: de simulatie start altijd gepauzeerd — de klok staat
+    // stil op het startuur totdat de gebruiker zelf de afspeel-toggle aanzet.
+    // De modi hieronder worden alvast geactiveerd zodat zodra er wél wordt
+    // afgespeeld, meteen alle in dit netwerk aanwezige verkeersmodi zichtbaar zijn.
+    paused = true;
+    _setSimPausedUI(true);
     document.querySelectorAll('.modeBtn').forEach(btn => {
       if (btn.style.display === 'none') return;
       btn.classList.add('active');
@@ -18622,8 +18590,8 @@
     });
     rebuildCars();
     updateLegend();
-    _exitSimPaused();
-    updateOverlay(!paused);
+    scheduleSimApply();
+    updateOverlay(true);
 
     // Wijzer verslepen (muis + touch) om het uur handmatig te verzetten.
     (function initClockDrag() {
@@ -18671,26 +18639,18 @@
       }, { passive: true });
     })();
 
-    // Klik op het knopje in het tijdsblokje: gepauzeerd doorloopt dit de tijdvak-cyclus
-    // (24 uur → ochtendspits → restdag → avondspits → …); spelend wisselt het AM/PM.
+    // Klik op het knopje in het tijdsblokje: wisselt AM/PM (12 uur door). Genegeerd
+    // terwijl gepauzeerd, net als het slepen van de wijzer (zie initClockDrag hieronder).
     document.getElementById('simClockModeBtn').addEventListener('click', async () => {
-      if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
+      if (_simClockBusyCount > 0 || paused) return; // vorige overgang nog bezig, of gepauzeerd
       // Zelfde redenering als bij het afspeel-vinkje: de spinner moet al staan
-      // vóór het (mogelijk zware) synchrone werk in _applySimPausedSelection/
-      // setSimHour, niet pas zodra die zelf scheduleSimApply/applyFlowScaler bereiken.
+      // vóór het (mogelijk zware) synchrone werk in setSimHour, niet pas zodra
+      // die zelf scheduleSimApply/applyFlowScaler bereikt.
       // Eerst laten schilderen, pas dán dat werk starten.
       _setSimClockBusy(true);
       await _yieldToPaint();
       try {
-        let pending;
-        if (paused) {
-          const idx = SIM_DP_CYCLE.indexOf(simPausedSelection);
-          simPausedSelection = SIM_DP_CYCLE[(idx + 1) % SIM_DP_CYCLE.length];
-          pending = _applySimPausedSelection();
-        } else {
-          pending = setSimHour(simHour + 12);
-        }
-        await pending;
+        await setSimHour(simHour + 12);
       } finally {
         _setSimClockBusy(false);
       }
@@ -18823,7 +18783,7 @@
 
         rebuildCars();
         updateLegend();
-        updateOverlay(!paused);
+        updateOverlay(true);
 
       } catch (err) {
         console.error('[flow-scaler] toepassen mislukt:', err);

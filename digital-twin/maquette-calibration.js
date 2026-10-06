@@ -185,6 +185,11 @@
   // Virtuele modus: cursorpositie doorgeven
   // ───────────────────────────────────────────────────────────────────────────
 
+  // Zelfde framerate als de fysieke camera (zie _CAMERA_FPS in maquette_camera.py):
+  // de virtuele cursor hoeft niet vaker bijgewerkt te worden dan een echte camera
+  // zou leveren, en dit scheelt 2x zoveel requests t.o.v. de eerdere 20 Hz.
+  const CURSOR_SEND_INTERVAL_MS = 100;
+
   function installCursorReporter(map) {
     let last = null;      // laatst bekende positie binnen de kaart
     let lastSent = 0;
@@ -217,8 +222,7 @@
         return;
       }
       last = { x, y, lon: ll.lng, lat: ll.lat };
-      // 20 Hz is ruim voor een handbeweging en houdt het aantal requests laag.
-      if (performance.now() - lastSent >= 50) send();
+      if (performance.now() - lastSent >= CURSOR_SEND_INTERVAL_MS) send();
     }, { passive: true });
 
     // Blijf de positie herhalen zolang de cursor op de kaart staat. Dat is
@@ -226,8 +230,8 @@
     // herhaling zou het camera-script de samples als verouderd afschrijven
     // juist op het moment dat de gebruiker niet beweegt.
     setInterval(() => {
-      if (performance.now() - lastSent >= 150) send();
-    }, 100);
+      if (performance.now() - lastSent >= CURSOR_SEND_INTERVAL_MS) send();
+    }, CURSOR_SEND_INTERVAL_MS);
 
     console.log('[maquette] cursorpositie wordt naar de server gestuurd.');
   }

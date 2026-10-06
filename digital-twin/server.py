@@ -2567,21 +2567,35 @@ def ogc_collection_items(collection_id):
                 holiday_index=holiday_index,
             )
 
+            # TIJDELIJK: stap-voor-stap timing voor het "blijft pending"-onderzoek.
+            # Verwijder deze _t_step-regels weer zodra het onderzoek afgerond is.
+            _t_step = time.perf_counter()
+
+            def _trace_step(label):
+                nonlocal _t_step
+                now = time.perf_counter()
+                print(f"[trace][flows] {label}: {(now - _t_step) * 1000:.0f}ms", flush=True)
+                _t_step = now
+
             try:
                 network_fc = _read_geodata(network_path)
             except ImportError as exc:
                 abort(503, str(exc))
+            _trace_step("_read_geodata(network_path)")
 
             n_features = len(network_fc.get("features", []))
             filtered = filterNetwork(
                 network_fc, bbox=None, offset=0, limit=max(n_features, 1)
             )
             filtered.params = params
+            _trace_step(f"filterNetwork ({n_features} features)")
 
             indexes_by_mode = resolve_indexes_by_mode(params, filtered, purpose_index)
+            _trace_step("resolve_indexes_by_mode")
             # run_cleaner=False: behoud o.a. flowTemporalUnit (1 = specifiek uur, 24 = dagtotaal)
             # zodat de client kan onderscheiden of 'flow' een uurwaarde of een dagtotaal is.
             result = applyIndices(filtered, indexes_by_mode, run_cleaner=False)
+            _trace_step("applyIndices")
 
             # Normaliseer naar plain dict voor OGC-envelope
             if not isinstance(result, dict):
@@ -3954,6 +3968,73 @@ def _timing_end(response):
                 f"{response.status_code} {elapsed_ms:.0f}ms"
             )
     return response
+
+
+# ---------------------------------------------------------------------------
+# TIJDELIJK: trace-logging voor het "blijft pending"-onderzoek (/flows).
+# Logt start én einde van élke request (niet alleen trage), en een watchdog
+# die elke 5s meldt welke requests nog bezig zijn en hoe lang al — zodat een
+# request die blijft hangen zichtbaar wordt zonder debugger. Verwijder dit
+# hele blok (en de watchdog-thread onderaan) weer zodra het onderzoek
+# afgerond is.
+# ---------------------------------------------------------------------------
+_trace_active_requests: dict = {}  # req_id -> (method, full_path, start, thread_name)
+_trace_active_requests_lock = threading.Lock()
+_trace_seq = 0
+_trace_seq_lock = threading.Lock()
+
+
+@app.before_request
+def _trace_request_start():
+    global _trace_seq
+    with _trace_seq_lock:
+        _trace_seq += 1
+        req_id = _trace_seq
+    g._trace_req_id = req_id
+    thread_name = threading.current_thread().name
+    with _trace_active_requests_lock:
+        _trace_active_requests[req_id] = (
+            request.method,
+            request.full_path,
+            time.perf_counter(),
+            thread_name,
+        )
+    print(f"[trace] →#{req_id} ({thread_name}) {request.method} {request.full_path}", flush=True)
+
+
+@app.after_request
+def _trace_request_end(response):
+    req_id = getattr(g, "_trace_req_id", None)
+    if req_id is not None:
+        with _trace_active_requests_lock:
+            entry = _trace_active_requests.pop(req_id, None)
+        if entry is not None:
+            elapsed_ms = (time.perf_counter() - entry[2]) * 1000.0
+            print(
+                f"[trace] ←#{req_id} {request.method} {request.full_path} "
+                f"{response.status_code} {elapsed_ms:.0f}ms",
+                flush=True,
+            )
+    return response
+
+
+def _trace_watchdog():
+    while True:
+        time.sleep(5.0)
+        now = time.perf_counter()
+        with _trace_active_requests_lock:
+            items = list(_trace_active_requests.items())
+        for req_id, (method, full_path, start, thread_name) in items:
+            elapsed = now - start
+            if elapsed > 3.0:
+                print(
+                    f"[trace] ...#{req_id} ({thread_name}) nog bezig: "
+                    f"{method} {full_path} ({elapsed:.1f}s)",
+                    flush=True,
+                )
+
+
+threading.Thread(target=_trace_watchdog, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
