@@ -1,7 +1,6 @@
 # deploy.ps1
 # Maakt een deployment-ZIP van GMT Digital Twin (digital-twin/ + de gedeelde
-# common/-map + de kien-camera-maquette modules voor de fysieke maquette).
-# De collega heeft alleen de ZIP + een .env-bestand nodig.
+# common/-map). De collega heeft alleen de ZIP + een .env-bestand nodig.
 # Alles landt plat in één map — common/py, common/js en common/data worden
 # uitgepakt als gewone submappen/bestanden naast server.py.
 #
@@ -9,7 +8,6 @@
 #   .\deploy.ps1
 #   .\deploy.ps1 -OutputDir "C:\Users\jou\Desktop"
 #   .\deploy.ps1 -IncludeNdw                      # doel-PC heeft geen internet
-#   .\deploy.ps1 -CameraLibDir "D:\kien-camera-maquette"
 
 param(
     [string]$OutputDir = $PSScriptRoot,
@@ -17,13 +15,7 @@ param(
     # De NDW-verkeersbordendataset is ruim 1 GB en wordt door server.py bij het
     # eerste gebruik zelf gedownload (_ensure_ndw_data). Meesturen maakt de ZIP
     # onhanteerbaar traag; geef deze vlag als de doel-PC geen internet heeft.
-    [switch]$IncludeNdw,
-
-    # Map van het kien-camera-maquette project, met detection.py en tracking.py.
-    # Die modules horen niet bij dit project maar zijn wel nodig voor de
-    # maquette-camera; ze gaan als submap 'kien-camera-maquette' mee, waar
-    # maquette_camera.py ze ook zoekt.
-    [string]$CameraLibDir = "C:\sources\GMP\kien-maquette\kien-camera-maquette"
+    [switch]$IncludeNdw
 )
 
 $scriptDir = $PSScriptRoot
@@ -77,7 +69,8 @@ $dynamicFiles += Get-ChildItem -Path $repoRoot -Filter "release-notes-*.html" -F
 # ── Mappen (digital-twin/-mappen + gedeelde common/py-fetchers + iconen) ────
 $directories = @(
     "traffic_signs_fetcher",
-    "vegetation_fetcher"    # server.py importeert vegetation_fetcher.core
+    "vegetation_fetcher",   # server.py importeert vegetation_fetcher.core
+    "kien-camera-maquette"  # vendored detectie/tracking voor maquette_camera.py
 )
 $rootDirectories = @(
     "common/py/buildings_fetcher",
@@ -130,20 +123,6 @@ foreach ($f in (@($commonDataFiles) + @($commonJsFiles))) {
     $destName = Split-Path $f -Leaf
     Copy-Item $src (Join-Path $stageDir $destName) -Force
     $paths += (Join-Path $stageDir $destName)
-}
-
-# ── Camera-detectiemodules uit het kien-project ──────────────────────────────
-# Die staan buiten deze repo, dus ze gaan via dezelfde staging-map mee.
-if (Test-Path (Join-Path $CameraLibDir "detection.py")) {
-    $camDest = Join-Path $stageDir "kien-camera-maquette"
-    New-Item -ItemType Directory -Path $camDest -Force | Out-Null
-    foreach ($f in @("detection.py", "tracking.py", "config.py", "camera_capture.py")) {
-        Copy-Item (Join-Path $CameraLibDir $f) $camDest -ErrorAction SilentlyContinue
-    }
-    Copy-Item (Join-Path $CameraLibDir "utils") $camDest -Recurse -ErrorAction SilentlyContinue
-    $paths += $camDest
-} else {
-    $missing += "kien-camera-maquette (via -CameraLibDir '$CameraLibDir')"
 }
 
 # Eén opruimactie voor alles wat in de staging-map staat. `-Exclude` van

@@ -3,7 +3,9 @@ maquette_camera.py — Fysieke maquette koppeling via camera-detectie
 ====================================================================
 
 Detecteert een zwart blokje op de maquette en sluit de dichtstbijzijnde weg
-af via de adjust-pipeline zodra het blokje ≥ STABLE_SECONDS stilstaat.
+af via de adjust-pipeline zodra de tracker (tracking.py) het blokje als
+stabiel (ruisvrij) herkent binnen het geprojecteerde gebied — zonder verdere
+wachttijd: de aanpassing-call volgt dan direct.
 
 Dit script **calibreert niet zelf**. De camera staat doorgaans schuin boven de
 maquette, zodat het beeld perspectivisch vervormd is. Die vervorming wordt in de
@@ -49,14 +51,15 @@ Bij ``--camera-id -1`` (virtuele modus) is er geen camera: de browser post dan
 zijn cursorpositie, inclusief de ge-unprojecte lon/lat, naar /maquette/cursor.
 
 Afhankelijkheden (naast standaard-bibliotheek en opencv/shapely/requests):
-    detection.py + tracking.py uit het kien-camera-maquette project. Waar die
-    vandaan komen bepaalt `_find_kien_dir`.
+    detection.py + tracking.py, vendored (gekopieerd, niet een extern pad) in
+    `kien-camera-maquette/` naast dit script. Zie dat project
+    (GMP/kien-maquette) voor de bron en de volledige GUI/calibratiepijplijn
+    eromheen.
 """
 
 import argparse
 import json
 import math
-import os
 import sys
 import threading
 import time
@@ -75,55 +78,23 @@ import numpy as np
 import requests
 
 # ---------------------------------------------------------------------------
-# Importeer detectie/tracking-modules uit het kien-camera-maquette project.
-# De modules gebruiken een `config` module op datzelfde pad.
+# Importeer de vendored detectie/tracking-modules uit kien-camera-maquette/,
+# een submap van dit project (geen extern pad). Die submap heeft ook een
+# eigen `config` module; vandaar het eigen sys.path-entry in plaats van een
+# gewone package-import.
 # ---------------------------------------------------------------------------
 
-# Het ontwikkelpad op de bouwmachine. Als terugval, niet als aanname: op een
-# gedeployde PC bestaat deze map niet.
-_KIEN_DEV_DIR = r"C:\sources\GMP\kien-maquette\kien-camera-maquette"
-
-
-def _find_kien_dir() -> str:
-    """Zoek de map met `detection.py` en `tracking.py`.
-
-    Drie plekken, in deze volgorde:
-
-    1. ``$KIEN_CAMERA_DIR`` — expliciet ingesteld, wint altijd.
-    2. ``kien-camera-maquette/`` naast dit script — zo zit het in de deploy-ZIP.
-    3. Het ontwikkelpad hierboven.
-
-    Een hardgecodeerd pad alléén werkte alleen op de machine waar het gebouwd
-    is; elders viel het script om met een kale ImportError zonder aanwijzing
-    waaróm.
-    """
-    here = Path(__file__).resolve().parent
-    candidates = [
-        os.environ.get("KIEN_CAMERA_DIR"),
-        here / "kien-camera-maquette",
-        _KIEN_DEV_DIR,
-    ]
-    for candidate in candidates:
-        if not candidate:
-            continue
-        path = Path(candidate)
-        if (path / "detection.py").is_file() and (path / "tracking.py").is_file():
-            return str(path)
-
+_KIEN_DIR = Path(__file__).resolve().parent / "kien-camera-maquette"
+if not (_KIEN_DIR / "detection.py").is_file() or not (_KIEN_DIR / "tracking.py").is_file():
     sys.exit(
-        "[camera] FOUT: de detectiemodules (detection.py, tracking.py) zijn niet\n"
-        "         gevonden. Gezocht in:\n"
-        + "".join(f"           - {c}\n" for c in candidates if c)
-        + "         Zet KIEN_CAMERA_DIR naar de map van het kien-camera-maquette\n"
-        "         project, of plaats die map als 'kien-camera-maquette' naast\n"
-        f"         {Path(__file__).name}."
+        f"[camera] FOUT: {_KIEN_DIR} mist detection.py/tracking.py. "
+        "Die submap hoort gewoon in de repo te staan (vendored vanuit "
+        "GMP/kien-maquette/kien-camera-maquette)."
     )
+if str(_KIEN_DIR) not in sys.path:
+    sys.path.insert(0, str(_KIEN_DIR))
 
-
-_KIEN_DIR = _find_kien_dir()
-if _KIEN_DIR not in sys.path:
-    sys.path.insert(0, _KIEN_DIR)
-
+import config  # noqa: E402  (kien-camera-maquette/config.py, voor drempelwaarden in logging)
 from detection import BlackObjectDetector  # noqa: E402
 from tracking import DetectionTracker  # noqa: E402
 
@@ -471,7 +442,9 @@ def _start_heartbeat_thread(
 # ---------------------------------------------------------------------------
 
 # Stabilititeitsdrempel in pixels: cursor mag dit veel bewegen en telt nog als
-# "stilstaand" (zelfde semantiek als STABILITY_POSITION_THRESHOLD in tracking.py)
+# "stilstaand". Eigen, eenvoudiger stabiliteitscheck dan DetectionTracker
+# hieronder gebruikt: hier is maar één (virtueel) object, dus is er geen
+# matching tussen meerdere tracks nodig.
 _VIRTUAL_STABILITY_PX = 10
 
 # Een cursorsample ouder dan dit betekent: muis staat stil buiten de kaart, of
@@ -893,14 +866,25 @@ def _log_rejections(evaluations: list, min_area: float, max_area: float) -> None
     rejected = [e for e in evaluations if _is_reportable_rejection(e)]
     if not rejected:
         return
-    by_reason: dict[str, list[float]] = {}
+    by_reason: dict[str, list[dict]] = {}
     for item in rejected:
-        by_reason.setdefault(item.get("reason", "onbekend"), []).append(
-            float(item.get("raw_area", 0.0))
-        )
+        by_reason.setdefault(item.get("reason", "onbekend"), []).append(item)
     parts = []
-    for reason, areas in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
-        parts.append(f"{reason}x{len(areas)} (grootste {max(areas):.0f} px²)")
+    for reason, items in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
+        biggest = max(items, key=lambda it: float(it.get("raw_area", 0.0)))
+        detail = f"grootste {float(biggest.get('raw_area', 0.0)):.0f} px²"
+        # Bij "not_absolutely_black" is het oppervlak vaak al goed (het
+        # mobieltje is wél gevonden als lokaal donkere vlek) - de absolute
+        # helderheid/verzadiging is dan de blokkerende factor. Zonder deze
+        # getallen erbij is dat verschil onzichtbaar in de log.
+        if reason == "not_absolutely_black":
+            detail += (
+                f", mean_v={float(biggest.get('mean_v', 0.0)):.0f} "
+                f"(drempel {config.BLACK_OBJECT_VALUE_THRESHOLD}), "
+                f"mean_s={float(biggest.get('mean_s', 0.0)):.0f} "
+                f"(drempel {config.BLACK_OBJECT_SAT_THRESHOLD})"
+            )
+        parts.append(f"{reason}x{len(items)} ({detail})")
     print(
         f"[camera] Niets geaccepteerd; toegestaan "
         f"{_format_area_range(min_area, max_area)}. " + ", ".join(parts[:3])
@@ -1111,16 +1095,19 @@ def run(
         # omgeving buiten beeld, deze controle gooit blobs weg die nog over de
         # rand heen steken (config.ROI_MIN_BLOCK_COVERAGE).
         detector = BlackObjectDetector(detection_area=roi_polygon)
+        # overlap_threshold is een IoU-fractie (niet een pixel-afstand): elke van
+        # de laatste `stability_frames` detecties moet minstens dit aandeel met de
+        # vorige overlappen. Een pixel-drempel brak hier regelmatig doordat
+        # autootjes net het vlak in/uit reden en het contour van het mobieltje
+        # daardoor iets van vorm/grootte veranderde, zonder dat het echt bewoog.
         tracker = DetectionTracker(
-            stability_frames=5, position_threshold=10, max_allowed_distance=80
+            stability_frames=5, overlap_threshold=0.75, max_allowed_distance=80
         )
 
         def _to_wgs84(px: float, py: float) -> tuple[float, float]:
             return calibration.pixel_to_wgs84(px, py)
 
         # --- State ---
-        # track_id → timestamp waarop dit track voor het eerst als stabiel gemarkeerd werd
-        stable_since: dict[int, float] = {}
         last_detections_sent: float = 0.0
         last_reject_log: float = 0.0
         # Hoeken van het camerabeeld op de kaart: verandert niet, dus eenmalig.
@@ -1134,7 +1121,9 @@ def run(
         cooldown_until: float = 0.0
 
         print(
-            f"[camera] Detectie gestart. Stabiel na {stable_seconds}s, cooldown {cooldown_seconds}s."
+            f"[camera] Detectie gestart. Stabiliteit wordt bepaald door de tracker "
+            f"(tracking.py); een stabiele detectie binnen het geprojecteerde gebied "
+            f"sluit direct af. Cooldown {cooldown_seconds}s."
         )
         print("[camera] Druk op Ctrl+C om te stoppen.")
 
@@ -1190,39 +1179,16 @@ def run(
                     camera_view=camera_view,
                 )
 
-            # --- Bijhouden welke track-ids momenteel stabiel zijn ---
-            stable_ids_this_frame = {d["track_id"] for d in stable_dets}
-
-            # Verwijder stable_since-entries voor tracks die niet meer stabiel zijn
-            for tid in list(stable_since.keys()):
-                if tid not in stable_ids_this_frame:
-                    del stable_since[tid]
-
             # --- Trigger-check ---
+            # Geen eigen wachttijd meer hier: een detectie is pas een `stable_det`
+            # nadat tracker.update() (tracking.py) ruis al heeft uitgefilterd
+            # (STABILITY_FRAMES opeenvolgende, overlappende detecties). Zodra zo'n
+            # detectie binnen het geprojecteerde gebied valt, volgt de
+            # aanpassing-call meteen — geen extra stabilisatie- of preview-vertraging.
             in_cooldown = now < cooldown_until
             adjust_busy = runner.is_busy()
 
             for det in stable_dets:
-                track_id = det["track_id"]
-
-                # Registreer eerste moment van stabiliteit
-                if track_id not in stable_since:
-                    stable_since[track_id] = now
-
-                duration = now - stable_since[track_id]
-
-                # Progress-feedback elke seconde
-                if int(duration) != int(duration - 0.033):  # ~30fps ticks
-                    cx, cy = _detection_point(det, anchor)
-                    lon, lat = _to_wgs84(cx, cy)
-                    print(
-                        f"[camera] Blokje stabiel {duration:.1f}s  "
-                        f"px=({cx:.0f},{cy:.0f})  "
-                        f"wgs84=({lon:.6f},{lat:.6f})"
-                    )
-
-                if duration < stable_seconds:
-                    continue
                 if in_cooldown or adjust_busy:
                     if in_cooldown:
                         remaining = cooldown_until - now
@@ -1258,16 +1224,15 @@ def run(
                     )
                     continue
 
-                # Oplichten + wachten + afsluiten
+                # Direct oplichten + afsluiten — geen wachttijd: deze detectie is
+                # stabiel (tracker) én binnen het geprojecteerde gebied.
                 print(
-                    f"[camera] Blokje {stable_seconds}s stabiel op "
-                    f"({lon:.6f}, {lat:.6f}) → links {link_ids} oplichten, "
-                    f"berekening over {_PREVIEW_DELAY}s …"
+                    f"[camera] Blokje gedetecteerd binnen het geprojecteerde gebied op "
+                    f"({lon:.6f}, {lat:.6f}) → links {link_ids} direct oplichten en afsluiten."
                 )
                 triggered_links.update(link_ids)
                 cooldown_until = now + cooldown_seconds
                 _send_preview(server_url, runner.get_area_id(), link_ids)
-                time.sleep(_PREVIEW_DELAY)
                 _adjust_done = threading.Event()
                 runner.trigger(link_ids, on_done=_adjust_done.set)
                 print("[camera] Eén berekening gestart — wachten op afronding …")
@@ -1309,20 +1274,20 @@ def run(
                         (150, 150, 150),
                         1,
                     )
-                # Teken stabiele detecties groen, onstabiel rood
+                # Teken stabiele detecties groen, onstabiel rood. Stabiel (tracker)
+                # betekent hier meteen trigger-klaar - er is geen aparte
+                # stabilisatiewachttijd meer die nog "oranje" (bijna zover) zou zijn.
                 all_stable, all_unstable = tracker.get_visualization_detections()
                 for d in all_unstable:
                     cx, cy = int(d["center"][0]), int(d["center"][1])
                     cv2.circle(display, (cx, cy), 8, (0, 0, 200), 2)
                 for d in all_stable:
                     cx, cy = int(d["center"][0]), int(d["center"][1])
-                    tid = d["track_id"]
-                    duration = now - stable_since.get(tid, now)
-                    color = (0, 200, 0) if duration >= stable_seconds else (0, 165, 255)
+                    color = (0, 200, 0)
                     cv2.circle(display, (cx, cy), 10, color, 2)
                     cv2.putText(
                         display,
-                        f"{duration:.1f}s",
+                        f"{d.get('frames_tracked', 0)}f",
                         (cx + 12, cy),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.5,
@@ -1378,7 +1343,10 @@ def _parse_args():
         "--stable-seconds",
         type=float,
         default=3.0,
-        help="Seconden stilstand voordat weg wordt afgesloten (default: 3.0)",
+        help="Seconden stilstand voordat weg wordt afgesloten — geldt alleen voor "
+        "de virtuele cursor-modus (--camera-id -1). Bij een fysieke camera bepaalt "
+        "de tracker (tracking.py) zelf wanneer een blokje stabiel is; de "
+        "aanpassing-call volgt dan direct, zonder deze wachttijd (default: 3.0)",
     )
     p.add_argument(
         "--cooldown",

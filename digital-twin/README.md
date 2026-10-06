@@ -42,12 +42,14 @@ Je start **maar één proces: `server.py`** (de Flask-server).
 - Voor de **fysieke camera** (`cameraId=0`) daarnaast:
   - `opencv-python` (staat al in `requirements.txt`);
   - `shapely` (voor het vinden van het dichtstbijzijnde wegvak);
-  - de externe detectie-/tracking-modules op het vaste pad
-    `C:\sources\GMP\kien-maquette\kien-camera-maquette` (`detection.py`,
-    `tracking.py` en hun `config`).
+  - de detectie-/tracking-modules in `kien-camera-maquette/` (`detection.py`,
+    `tracking.py` en hun `config.py`) — een lokale, vendored kopie die gewoon
+    in deze repo staat, geen extern pad nodig. Bron: het losstaande
+    kien-camera-maquette project (GMP/kien-maquette), dat er ook een
+    GUI/calibratiepijplijn omheen heeft.
 
 > De **virtuele cursor-modus** (`cameraId=-1`) gebruikt geen echte camera, maar
-> importeert dezelfde modules. Zorg dat bovenstaand pad bereikbaar is.
+> importeert dezelfde modules.
 
 ---
 
@@ -248,7 +250,7 @@ Drie foutbronnen die de homografie **niet** wegneemt:
 | Probleem                                   | Oplossing                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------------- |
 | "Camera aan" doet ogenschijnlijk niets     | Staat `follow=true` in de URL? Zonder dat komt er geen status/voortgang.  |
-| Fysieke camera start niet                  | Controleer `opencv-python` en het pad `...\kien-camera-maquette` (detection/tracking). |
+| Fysieke camera start niet                  | Controleer `opencv-python` en of `kien-camera-maquette/detection.py`/`tracking.py` naast `maquette_camera.py` staan. |
 | Poort 5000 is bezet                        | Start met `server.py --port <andere-poort>`.                              |
 | Geen camerabeeld in het calibratiescherm   | Draait de server multi-threaded? Met `--no-threaded` werkt de beeldstream niet. |
 | Camerabeeld blijft hangen                  | Het camera-script is gestopt; sluit het calibratiescherm en klik opnieuw op "Camera aan". |
