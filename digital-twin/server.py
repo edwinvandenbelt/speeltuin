@@ -211,6 +211,11 @@ parser.add_argument(
     action="store_true",
     help="Log de duur van elke request (standaard: alleen trage requests >500ms)",
 )
+parser.add_argument(
+    "--trace",
+    action="store_true",
+    help="Log gedetailleerde traces (per-requesttiming, pending-request watchdog); standaard uit",
+)
 args, _ = parser.parse_known_args()
 
 DATA_DIR = Path(args.data).resolve()
@@ -2573,6 +2578,8 @@ def ogc_collection_items(collection_id):
 
             def _trace_step(label):
                 nonlocal _t_step
+                if not args.trace:
+                    return
                 now = time.perf_counter()
                 print(f"[trace][flows] {label}: {(now - _t_step) * 1000:.0f}ms", flush=True)
                 _t_step = now
@@ -3974,9 +3981,9 @@ def _timing_end(response):
 # TIJDELIJK: trace-logging voor het "blijft pending"-onderzoek (/flows).
 # Logt start én einde van élke request (niet alleen trage), en een watchdog
 # die elke 5s meldt welke requests nog bezig zijn en hoe lang al — zodat een
-# request die blijft hangen zichtbaar wordt zonder debugger. Verwijder dit
-# hele blok (en de watchdog-thread onderaan) weer zodra het onderzoek
-# afgerond is.
+# request die blijft hangen zichtbaar wordt zonder debugger. Alleen actief met
+# --trace (standaard uit). Verwijder dit hele blok (en de watchdog-thread
+# onderaan) weer zodra het onderzoek afgerond is.
 # ---------------------------------------------------------------------------
 _trace_active_requests: dict = {}  # req_id -> (method, full_path, start, thread_name)
 _trace_active_requests_lock = threading.Lock()
@@ -3986,6 +3993,8 @@ _trace_seq_lock = threading.Lock()
 
 @app.before_request
 def _trace_request_start():
+    if not args.trace:
+        return
     global _trace_seq
     with _trace_seq_lock:
         _trace_seq += 1
@@ -4004,6 +4013,8 @@ def _trace_request_start():
 
 @app.after_request
 def _trace_request_end(response):
+    if not args.trace:
+        return response
     req_id = getattr(g, "_trace_req_id", None)
     if req_id is not None:
         with _trace_active_requests_lock:
@@ -4034,7 +4045,8 @@ def _trace_watchdog():
                 )
 
 
-threading.Thread(target=_trace_watchdog, daemon=True).start()
+if args.trace:
+    threading.Thread(target=_trace_watchdog, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------

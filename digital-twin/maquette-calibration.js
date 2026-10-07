@@ -185,17 +185,22 @@
   // Virtuele modus: cursorpositie doorgeven
   // ───────────────────────────────────────────────────────────────────────────
 
-  // Zelfde framerate als de fysieke camera (zie _CAMERA_FPS in maquette_camera.py):
-  // de virtuele cursor hoeft niet vaker bijgewerkt te worden dan een echte camera
-  // zou leveren, en dit scheelt 2x zoveel requests t.o.v. de eerdere 20 Hz.
-  const CURSOR_SEND_INTERVAL_MS = 100;
+  // 1x per seconde is ruim genoeg voor het "blokje staat stil"-gedrag: de
+  // server-side staleness-drempel (_CURSOR_MAX_AGE in maquette_camera.py) is
+  // hierop afgestemd (1.5s), zodat de stabiliteitsteller niet tussendoor reset.
+  const CURSOR_SEND_INTERVAL_MS = 1000;
+
+  // Alleen posten zolang de camera (virtuele cursor-modus) daadwerkelijk aan
+  // staat; zie window.MaquetteCalibration.setCursorActive, aangeroepen vanuit
+  // de camera-toggle in index.html.
+  let _cursorReportingEnabled = false;
 
   function installCursorReporter(map) {
     let last = null;      // laatst bekende positie binnen de kaart
     let lastSent = 0;
 
     function send() {
-      if (!last) return;
+      if (!last || !_cursorReportingEnabled) return;
       lastSent = performance.now();
       fetch('/maquette/cursor', {
         method: 'POST',
@@ -1156,6 +1161,9 @@
     isOpen: () => state.open,
     // Blootgesteld zodat index.html kan bepalen of calibreren nodig is.
     needsCalibration: FORCE_CALIBRATE,
+    // Aan/uit gezet door de camera-toggle in index.html: zolang de camera uit
+    // staat, hoeft de cursorpositie niet naar de server gepost te worden.
+    setCursorActive: active => { _cursorReportingEnabled = !!active; },
   };
 
   function install() {

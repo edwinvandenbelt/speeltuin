@@ -249,20 +249,41 @@ class _AdjustRunner:
     def is_busy(self) -> bool:
         return self._busy.is_set()
 
-    def trigger(self, link_ids: list[int], on_done=None) -> None:
+    def trigger(self, link_ids: list[int], on_started=None, on_done=None) -> None:
         """Start de adjust in een daemon-thread."""
         area_id = self.get_area_id()
         t = threading.Thread(
-            target=self._run, args=(area_id, link_ids, on_done), daemon=True
+            target=self._run, args=(area_id, link_ids, on_started, on_done), daemon=True
         )
         t.start()
 
-    def _run(self, area_id: str, link_ids: list[int], on_done) -> None:
+    def _run(self, area_id: str, link_ids: list[int], on_started, on_done) -> None:
         self._busy.set()
+        job_id = None
         try:
             print(f"[camera] POST adjust: area={area_id} links={link_ids}")
             job_id = post_adjust(self.server_url, area_id, self.mode, link_ids)
             print(f"[camera] Job gestart: {job_id}")
+        except Exception as exc:
+            print(f"[camera] Fout bij starten van adjust: {exc}")
+        finally:
+            # Ongeacht succes/falen van de POST: de aanroeper (camera-lus) mag nu
+            # al verder, bv. om de camera uit te schakelen, zonder op de
+            # uitkomst van de berekening te wachten.
+            if on_started:
+                try:
+                    on_started()
+                except Exception:
+                    pass
+        if job_id is None:
+            self._busy.clear()
+            if on_done:
+                try:
+                    on_done()
+                except Exception:
+                    pass
+            return
+        try:
             job = poll_job(self.server_url, job_id)
             if job["status"] == "successful":
                 # GET /jobs/{id} geeft geen _results terug (bewust gestript);
@@ -449,7 +470,10 @@ _VIRTUAL_STABILITY_PX = 10
 
 # Een cursorsample ouder dan dit betekent: muis staat stil buiten de kaart, of
 # de browser is weg. In beide gevallen mag er niets getriggerd worden.
-_CURSOR_MAX_AGE = 0.4
+# De browser post nu 1x/seconde (CURSOR_SEND_INTERVAL_MS in
+# maquette-calibration.js); deze drempel moet ruim daarboven liggen, anders
+# reset de stabiliteitsteller tussen twee posts in.
+_CURSOR_MAX_AGE = 1.5
 
 
 def _fetch_cursor(session: requests.Session, server_url: str) -> "dict | None":
@@ -575,12 +599,11 @@ def _run_virtual(
                     cooldown_until = now + cooldown_seconds
                     _send_preview(server_url, runner.get_area_id(), link_ids)
                     time.sleep(_PREVIEW_DELAY)
-                    _adjust_done = threading.Event()
-                    runner.trigger(link_ids, on_done=_adjust_done.set)
-                    print("[camera] Een berekening gestart - wachten op afronding ...")
-                    _adjust_done.wait()
+                    _adjust_started = threading.Event()
+                    runner.trigger(link_ids, on_started=_adjust_started.set)
+                    _adjust_started.wait()
                     print(
-                        "[camera] Berekening klaar - camera wordt uitgeschakeld. "
+                        "[camera] Berekening gestart - camera wordt nu al uitgeschakeld. "
                         "Zet 'm handmatig weer aan voor een volgende meting."
                     )
                     return
@@ -1238,12 +1261,11 @@ def run(
                 triggered_links.update(link_ids)
                 cooldown_until = now + cooldown_seconds
                 _send_preview(server_url, runner.get_area_id(), link_ids)
-                _adjust_done = threading.Event()
-                runner.trigger(link_ids, on_done=_adjust_done.set)
-                print("[camera] Eén berekening gestart — wachten op afronding …")
-                _adjust_done.wait()
+                _adjust_started = threading.Event()
+                runner.trigger(link_ids, on_started=_adjust_started.set)
+                _adjust_started.wait()
                 print(
-                    "[camera] Berekening klaar — camera wordt uitgeschakeld. "
+                    "[camera] Berekening gestart — camera wordt nu al uitgeschakeld. "
                     "Zet 'm handmatig weer aan voor een volgende meting."
                 )
                 return

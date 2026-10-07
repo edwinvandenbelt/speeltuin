@@ -3359,6 +3359,10 @@
     });
   }
 
+  // Scenario waarmee deze maquette-sessie begon. Hier keert de maquette een
+  // minuut na elke aanpassing automatisch naar terug (zie _startFollowMode).
+  const _MAQUETTE_INITIAL_AREA_ID = AREA_ID;
+
   // ── follow: herlaad in-place zodra een adjust klaar is (?follow=true) ────
   // In maquette-stand altijd aan: zonder deze verbinding komt er geen enkel
   // bericht van de camera binnen (geen oplichtend wegvak, geen detecties,
@@ -3378,6 +3382,15 @@
   // Late-bound referentie naar loadAdjustedResult (gedefinieerd verderop in een andere scope).
   // Wordt ingevuld zodra loadAdjustedResult beschikbaar is.
   let _followLoadFn = null;
+
+  // Toegewezen binnen de camera-toggle IIFE: vergrendelt/ontgrendelt de
+  // camera-knop terwijl de maquette terugschakelt naar het initiële scenario.
+  let _maquetteLockCamera = null;
+  let _maquetteUnlockCamera = null;
+
+  // Timer-handle voor de "terug naar initieel scenario"-reset, zodat een
+  // eventuele volgende aanpassing een lopende reset kan annuleren.
+  let _maquetteResetTimer = null;
 
   /**
    * Opent een SSE-verbinding naar /events?areaId=<AREA_ID>.
@@ -3429,6 +3442,26 @@
 
         // Herverbind expliciet op het nieuwe areaId (niet via AREA_ID — andere closure)
         _startFollowMode(results.new_area_id);
+
+        // Maquette: een minuut na het laden van het aangepaste resultaat
+        // automatisch terug naar het scenario waarmee deze sessie begon;
+        // camera blijft tot die reload klaar is vergrendeld.
+        if (_MAQUETTE) {
+          if (_maquetteLockCamera) _maquetteLockCamera();
+          clearTimeout(_maquetteResetTimer);
+          _maquetteResetTimer = setTimeout(async () => {
+            try {
+              if (_followLoadFn) {
+                await _followLoadFn(_MAQUETTE_INITIAL_AREA_ID, null);
+              }
+              _startFollowMode(_MAQUETTE_INITIAL_AREA_ID);
+            } catch (e) {
+              console.warn('[maquette] reset naar initieel scenario mislukt:', e);
+            } finally {
+              if (_maquetteUnlockCamera) _maquetteUnlockCamera();
+            }
+          }, 60000);
+        }
       } catch (e) {
         console.warn('[follow] fout:', e);
         const ind = document.getElementById('followIndicator');
@@ -3516,6 +3549,25 @@
     let _cameraOn = false;
     const _cameraId = parseInt(_params.get('cameraId') ?? '-1', 10);
 
+    // Vergrendeling tijdens de "terug naar initieel scenario"-reset (zie
+    // _startFollowMode): voorkomt dat de camera alweer aangezet wordt
+    // terwijl de maquette nog bezig is terug te schakelen.
+    let _resetLocked = false;
+
+    _maquetteLockCamera = function () {
+      _resetLocked = true;
+      btn.disabled = true;
+      if (!_cameraOn) label.textContent = 'Wacht op reset…';
+    };
+
+    _maquetteUnlockCamera = function () {
+      _resetLocked = false;
+      if (!_cameraOn) {
+        btn.disabled = false;
+        label.textContent = 'Camera aan';
+      }
+    };
+
     // Alleen de pixelmaat is nog nodig: de koppeling tussen camerapixels en de
     // kaart komt uit het calibratiebestand. getBoundingClientRect en niet
     // window.innerWidth, zodat de maat ook klopt als de kaart niet het hele
@@ -3528,6 +3580,7 @@
     }
 
     async function _startCamera() {
+      if (_resetLocked) return;
       const vp = _getViewport();
       if (!vp) { alert('Kaart nog niet beschikbaar — wacht tot hij geladen is.'); return; }
       if (!AREA_ID)  { alert('Geen area_id bekend — laad eerst een scenario.'); return; }
@@ -3576,6 +3629,7 @@
     // Idem als het uitlijnen is afgebroken: knop weer in de uitgangsstand.
     window._maquetteCalibrationCancelled = function () {
       _cameraOn = false;
+      window.MaquetteCalibration?.setCursorActive?.(false);
       btn.classList.remove('cam-on');
       btn.disabled = false;
       label.textContent = 'Camera aan';
@@ -3658,6 +3712,7 @@
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || resp.statusText);
         _cameraOn = true;
+        window.MaquetteCalibration?.setCursorActive?.(true);
         btn.classList.add('cam-on');
         label.textContent = 'Camera uit';
         console.log('[maquette] camera gestart, pid=', data.pid);
@@ -3684,6 +3739,7 @@
         console.warn('[maquette] stop fout:', e);
       }
       _cameraOn = false;
+      window.MaquetteCalibration?.setCursorActive?.(false);
       btn.classList.remove('cam-on');
       label.textContent = 'Camera aan';
       btn.disabled = false;
@@ -3697,6 +3753,7 @@
     document.addEventListener('camera_inactive_event', () => {
       if (_cameraOn) {
         _cameraOn = false;
+        window.MaquetteCalibration?.setCursorActive?.(false);
         btn.classList.remove('cam-on');
         label.textContent = 'Camera aan';
       }
@@ -5767,6 +5824,7 @@
 
     let _buildingsGeoJson = null;
     let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
+    let _buildingsLoadStarted = false;  // voorkomt dubbele fetch bij snel schakelen
     let _trafficSignsGeoJson = null;
     // Verkeersobjecten: per-categorie zichtbaarheid (standaard allemaal uit).
     // _trafficAssetsVisible is een afgeleide master-vlag (true zodra minstens
@@ -6502,6 +6560,9 @@
                            || display === 'geschaald_productie'
                            || display === 'geschaald_attractie';
       const is3D = display === 'normaal' || isScaledDisplay;
+
+      // Gebouwen worden pas opgehaald zodra ze daadwerkelijk getoond moeten worden.
+      if (is3D || purpose !== 'off') _loadBuildingsIfNeeded();
 
       // ── Kleuren altijd verversen zodra er iets in 3D getoond wordt (of het
       // grondvlak zichtbaar is), zodat de 3D-extrusie straks dezelfde
@@ -9498,9 +9559,18 @@
       // binnenkomen van een scenario. De netwerklaag zelf blijft zichtbaar
       // (die filtert niet op visibleModes buiten MIXED-modus); alleen het
       // plaatsen van auto's wordt uitgesteld tot de gebruiker het vinkje aanzet.
+      // In maquette-modus kan niemand dat vinkje aanzetten (alle panelen zijn
+      // verborgen): daar moeten de auto's juist blijven rijden na elke
+      // aanpassing of automatische terugkeer naar het initiële scenario.
       document.querySelectorAll('.modeBtn').forEach(btn => {
-        btn.classList.remove('active');
-        visibleModes.delete(btn.dataset.mode);
+        if (_MAQUETTE) {
+          if (btn.style.display === 'none') return;
+          btn.classList.add('active');
+          visibleModes.add(btn.dataset.mode);
+        } else {
+          btn.classList.remove('active');
+          visibleModes.delete(btn.dataset.mode);
+        }
       });
       rebuildCars();
       updateOverlay(true);
@@ -9516,8 +9586,15 @@
     }
     map.on('moveend', _scheduleAssetLoad);
 
-    // Laad gebouwen asynchroon; verrijking vindt plaats zodra ook zones beschikbaar zijn
-    fetch(`/collections/buildings/items?areaId=${AREA_ID}`)
+    // Laad gebouwen pas zodra een gebouwweergave (3D of plat) daadwerkelijk is
+    // aangezet — zie _applyBuildingDisplay(). In maquette-modus blijven
+    // gebouwen sowieso altijd verborgen (_tryAddBuildings), dus daar nooit fetchen.
+    function _loadBuildingsIfNeeded() {
+      if (_buildingsLoadStarted || _MAQUETTE) return;
+      _buildingsLoadStarted = true;
+
+      // Verrijking vindt plaats zodra ook zones beschikbaar zijn
+      fetch(`/collections/buildings/items?areaId=${AREA_ID}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data || !Array.isArray(data.features)) return;
@@ -9575,8 +9652,14 @@
         }
         _buildingsRaw = data;
         _tryZoneJoin();
+        // Lagen zijn net (verborgen) toegevoegd door _tryZoneJoin → _tryAddBuildings;
+        // pas nu de al gekozen weergavestand toe zodat ze meteen zichtbaar worden.
+        _applyBuildingDisplay();
       })
-      .catch(() => {});  // gebouwen zijn optioneel; stil negeren bij fout
+      .catch(() => {
+        _buildingsLoadStarted = false;  // laat een volgende poging toe na een netwerkfout
+      });  // gebouwen zijn optioneel; stil negeren bij fout
+    }
 
     // Verkeersobjecten worden lazy geladen op basis van het zichtbare kaartdeel
     // (zie loadTrafficAssetsInView / moveend-hook) zodra de kaart klaar is.
