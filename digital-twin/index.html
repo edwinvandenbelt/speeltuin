@@ -472,13 +472,6 @@
       display: flex; align-items: center; justify-content: center;
     }
 
-    .dpBtn  { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
-    .dpBtn.active  { background: #de0058 !important; color: #ffffff !important; border-color: #de0058 !important; }
-    .dpBtn:disabled, .dpBtn:disabled:hover {
-      opacity: 0.35; cursor: not-allowed;
-      background: #f4f6f8 !important;
-      color: #6a757c !important; border-color: #e3e6ea !important;
-    }
     .fillBtn { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
     .fillBtn.active { background: #de0058 !important; color: #ffffff !important; border-color: #de0058 !important; }
 
@@ -2532,9 +2525,6 @@
     NL: {
       // Toolbar
       homeTitle:'Terug naar overzicht',
-      dpMrhLabel:'OS', dpMrhTitle:'Ochtendspits',
-      dpErhLabel:'AS', dpErhTitle:'Avondspits',
-      dpRestLabel:'RD', dpRestTitle:'Restdag',
       fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
       fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
       settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
@@ -2717,7 +2707,7 @@
       tooltipSegment: id => `Segment #${id}`,
       tooltipDaypart:'Dagdeel',
       tooltipFlow:'Aantal voertuigen', 
-      tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg',
+      tooltipFlowUnit:'vtg/u',
       tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
       tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte', tooltipWidth:'Breedte',
       tooltipSpeedDataUnavailable:'Nog niet beschikbaar in deze brondata', tooltipSpeedFactorPresent:'Ja', tooltipSpeedFactorAbsent:'Nee',
@@ -2733,7 +2723,7 @@
       tooltipZoneFloorEducation:'Onderwijs', tooltipZoneFloorRecreation:'Recreatie',
       tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Overig',
       tooltipZoneFloorUnit:'m²',
-      dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag', dpLabelEtmaal:'24 uur',
+      dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
       // Motiefverdeling (purposeChart)
       purposeChartTitle:'Motiefverdeling',
       purposeChartEstimated:'(geschat)', purposeChartNoData:'Onvoldoende data',
@@ -2804,9 +2794,6 @@
     },
     EN: {
       homeTitle:'Back to overview',
-      dpMrhLabel:'AM', dpMrhTitle:'Morning peak',
-      dpErhLabel:'PM', dpErhTitle:'Evening peak',
-      dpRestLabel:'OP', dpRestTitle:'Off-peak',
       fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
       settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
@@ -2977,7 +2964,7 @@
       fspError: e => `Error: ${e}`,
       tooltipSegment: id => `Segment #${id}`,
       tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
-      tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh',
+      tooltipFlowUnit:'veh/h',
       tooltipSpeed:'Speed', tooltipLanes:'Lanes',
       tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length', tooltipWidth:'Width',
       tooltipSpeedDataUnavailable:'Not yet available in this source data', tooltipSpeedFactorPresent:'Yes', tooltipSpeedFactorAbsent:'No',
@@ -2993,7 +2980,7 @@
       tooltipZoneFloorEducation:'Education', tooltipZoneFloorRecreation:'Recreation',
       tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Other',
       tooltipZoneFloorUnit:'m²',
-      dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak', dpLabelEtmaal:'24 hours',
+      dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
       // Purpose chart
       purposeChartTitle:'Trip purposes',
       purposeChartEstimated:'(estimated)', purposeChartNoData:'Insufficient data',
@@ -3063,9 +3050,6 @@
     },
     FI: {
       homeTitle:'Takaisin yleiskatsaukseen',
-      dpMrhLabel:'AR', dpMrhTitle:'Aamuruuhka',
-      dpErhLabel:'IR', dpErhTitle:'Iltaruuhka',
-      dpRestLabel:'MA', dpRestTitle:'Muu aika',
       fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
       settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
@@ -3201,7 +3185,7 @@
       fspError: e => `Virhe: ${e}`,
       tooltipSegment: id => `Segmentti #${id}`,
       tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
-      tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon',
+      tooltipFlowUnit:'ajon/h',
       tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
       tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus', tooltipWidth:'Leveys',
       tooltipSpeedDataUnavailable:'Ei vielä saatavilla tassa aineistossa', tooltipSpeedFactorPresent:'Kyllä', tooltipSpeedFactorAbsent:'Ei',
@@ -3211,7 +3195,7 @@
       tooltipZoneProd:'Tuotanto', tooltipZoneProdUnit:'ajon/vrk',
       tooltipZoneAttr:'Houkuttelevuus', tooltipZoneAttrUnit:'ajon/vrk',
       tooltipZoneRoute:'Matkavirta', tooltipZoneRouteUnit:'ajon/h',
-      dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika', dpLabelEtmaal:'24 tuntia',
+      dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika',
       networkTitle: n => `Liikenneverkko ${n}`, pageTitle: n => `Liikenneverkko ${n}`,
       // Skenaariovertailija
       splitViewTitle:'Skenaariovertailija: laskettu ↔ lähde',
@@ -5176,11 +5160,6 @@
   // Globaal maximum flow — toegankelijk voor flowToRgba() die buiten de async IIFE staat
   let globalMaxFlow     = 1;
   let globalMaxFlowBike = 1;  // idem, alleen voor fietslinks (MIXED-modus)
-  // Plafonds voor het ongeschaalde etmaaltotaal (flowDaypart === 'etmaal'), apart van
-  // bovenstaande omdat een etmaaltotaal een heel andere orde van grootte heeft dan een
-  // per-dagdeel uurintensiteit — anders verzadigt de kleur-/breedteschaal in die stand.
-  let globalMax24hFlow     = 1;
-  let globalMax24hFlowBike = 1;
 
   /** Welke transportmodi zichtbaar zijn. Alleen relevant in MIXED-modus. */
   const visibleModes = new Set(['CAR', 'BIKE', 'PEDESTRIAN']);
@@ -5351,8 +5330,7 @@
     let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
     let daypart         = 'mrh'; // idem — moet overeenkomen met de startklok (08:00)
     // Stuurt verkeersintensiteiten aan (dpFlowOf, routeproductie, PARK_RATIOS, …).
-    // Gelijk aan `daypart` tijdens afspelen; kan tijdens pauze afwijken (incl. 'etmaal',
-    // een waarde die `daypart` zelf nooit aanneemt — gebouwen blijven dan op 'rest' staan).
+    // Altijd gelijk aan `daypart`, die op zijn beurt volledig wordt afgeleid van de klok.
     let flowDaypart     = 'mrh';
     let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
     let _sunIsDay       = true;  // idem — laatst berekende dag/nacht-status (updateSunLight)
@@ -10881,24 +10859,18 @@
     window._updateDebugPanel = updateDebugPanel;
     setInterval(updateDebugPanel, 300);
 
-    /** Uurintensiteit voor het actieve dagdeel (stuurt op flowDaypart, niet op daypart —
-     *  zie de 'etmaal'-selectie op de gepauzeerde klok, die gebouwen op 'rest' laat staan
-     *  maar de écht ongeschaalde etmaalwaarde voor verkeer teruggeeft).
+    /** Uurintensiteit voor het actieve dagdeel (stuurt op flowDaypart, niet op daypart).
      *  Als dp[flowDaypart] gevuld (>0): direct teruggeven.
      *  Anders (bijv. Tampere: dp=0 maar flow24hrs gevuld): fractie van flow24hrs. */
     function dpFlowOf(props) {
-      if (flowDaypart === 'etmaal') return props.flow24hrs ?? props.flow ?? 0;
       const dp = props.flowsPerDaypart;
       if (dp && dp[flowDaypart]) return dp[flowDaypart];
       const base = props.flow24hrs ?? props.flow ?? 0;
       return base * (DP_FRACTION[flowDaypart] ?? (1/14.4));
     }
 
-    /** Schaalplafond voor kleur-/breedtenormalisatie: het ongeschaalde etmaaltotaal
-     *  (flowDaypart === 'etmaal') zit op een heel andere grootte-orde dan een
-     *  per-dagdeel uurintensiteit, dus die twee plafonds nooit door elkaar gebruiken. */
+    /** Schaalplafond voor kleur-/breedtenormalisatie. */
     function currentFlowCeiling(isBike) {
-      if (flowDaypart === 'etmaal') return isBike ? globalMax24hFlowBike : globalMax24hFlow;
       return isBike ? globalMaxFlowBike : globalMaxFlow;
     }
 
@@ -10937,28 +10909,6 @@
             : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
           if (v > mx) mx = v;
         }
-      }
-      return mx || 1;
-    })();
-
-    /** Zelfde als globalMaxFlow, maar dan voor het ongeschaalde etmaaltotaal
-     *  ('24 uur'-selectie op de gepauzeerde klok) — geen DP_FRACTION-deling. */
-    globalMax24hFlow = (() => {
-      let mx = 0;
-      for (const seg of segments) {
-        const v = seg.props.flow24hrs ?? seg.props.flow ?? 0;
-        if (v > mx) mx = v;
-      }
-      return mx || 1;
-    })();
-
-    /** Zelfde als globalMaxFlowBike, maar dan voor het ongeschaalde etmaaltotaal. */
-    globalMax24hFlowBike = (() => {
-      let mx = 0;
-      for (const seg of segments) {
-        if ((seg.props.mode ?? '').toUpperCase() !== 'BIKE') continue;
-        const v = seg.props.flow24hrs ?? seg.props.flow ?? 0;
-        if (v > mx) mx = v;
       }
       return mx || 1;
     })();
@@ -11342,7 +11292,8 @@
           if (!path || path.length < 30) continue;
 
           const isBoundary = false;
-          const canPark    = path.speedMs <= (50 / 3.6);
+          // Fietsen parkeren niet in de digital twin: alleen onderweg zichtbaar.
+          const canPark    = path.speedMs <= (50 / 3.6) && (route.vehicleMode ?? MODE) !== 'BIKE';
           routePaths.push({ path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount });
         }
 
@@ -12115,7 +12066,7 @@
     const _segTipRender = (info, sourceMap) => {
       const p = info?.object?.properties;
       if (!p) { _segTip.style.display = 'none'; return; }
-      const dpLabels = { etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+      const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
       const dpFlow = dpFlowOf(p);
       const occ = p.capacity > 0 ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
       // Fysieke bezettingsgraad (zelfde model als de 'coverage'-metric)
@@ -12133,12 +12084,12 @@
           ${T('tooltipSegment', p.linkId)}
         </div>
         <div><span style="color:#6a757c">${contextKey}: </span><b>${contextLabel}</b></div>
-        <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${flowDaypart === 'etmaal' ? T('tooltipFlow24Unit') : T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
         <div><span style="color:#6a757c">${T('tooltipSpeed')}: </span><b>${p.speed} km/h</b></div>
         <div><span style="color:#6a757c">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
         <div><span style="color:#6a757c">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
-        ${flowDaypart === 'etmaal' ? '' : `<div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
-        <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>`}
+        <div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
         <div><span style="color:#6a757c">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
         ${p.roadWidthM != null ? `<div><span style="color:#6a757c">${T('tooltipWidth')}: </span><b>${Number(p.roadWidthM).toFixed(1)} m</b></div>` : ''}
         ${(() => {
@@ -14558,7 +14509,7 @@
            BOUNDARY:  T('tooltipZoneClassBoundary'),
            CBS:       T('tooltipZoneClassCbs'),
          })[d.zoneClass] ?? d.zoneClass;
-         const dpLabels = { etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+         const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
          const flowRow = d.flow > 0
            ? `<div><span style="color:#6a757c">${T('tooltipZoneRoute')} (${dpLabels[flowDaypart]}): </span>
                 <b>${d.flow.toFixed(0)}\u202f${T('tooltipZoneRouteUnit')}</b></div>`
@@ -14821,7 +14772,8 @@
          // auto's in beeld", ongeacht wat de aanroeper meegeeft — anders duikt de
          // bevroren auto-positie weer op zodra een ongerelateerde update (camera,
          // assets, …) hier met de standaardwaarde `true` doorheen loopt. Het
-         // afspeel-vinkje van de simulatie bepaalt alleen de klok, niet dit.
+         // afspeel-vinkje van de simulatie bepaalt via `paused` of auto's bewegen
+         // (animate()); zichtbaarheid blijft hier uitsluitend aan carsSuspended hangen.
          const showCars = withCars && !carsSuspended;
          overlay.setProps({ layers: [
            ...makeSunkenLayers(),
@@ -14858,8 +14810,8 @@
 
     // ── 7. Animatielus ──────────────────────────────────────────────────────
     let lastT  = null;
-    let paused = false;          // simulatieklok (uur-van-de-dag) staat stil; auto's blijven rijden
-    let carsSuspended = false;   // alleen tijdens knoop-/wegvak-bewerken: auto's echt stilgezet/verborgen
+    let paused = false;          // simulatieklok (uur-van-de-dag) staat stil; auto's blijven zichtbaar maar bewegen niet
+    let carsSuspended = false;   // alleen tijdens knoop-/wegvak-bewerken: auto's echt verborgen/verwijderd
 
     /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus. */
     function _setSimPausedUI(isPaused) {
@@ -14883,7 +14835,7 @@
 
     function animate() {
       const now = performance.now() / 1000;
-      if (!carsSuspended && lastT !== null) {
+      if (!carsSuspended && !paused && lastT !== null) {
         const dt  = Math.min(now - lastT, 0.05) * timeScale;
         const t   = now;   // huidige tijd in seconden (performance.now()/1000)
 
@@ -15251,7 +15203,7 @@
 
         updateOverlay(true);
       }
-      if (carsSuspended) lastT = null; else lastT = now;
+      if (carsSuspended || paused) lastT = null; else lastT = now;
       requestAnimationFrame(animate);
     }
 
@@ -18326,7 +18278,6 @@
      function applyDaypartSideEffects(dp) {
        daypart = dp;
        flowDaypart = dp;
-       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === dp));
        updateLegend();
        rebuildLinkFlowMap();
        calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
@@ -18774,13 +18725,11 @@
 
     }, SIM_TICK_MS);
 
-    /** Vraag de backend om geschaalde flows en patch de in-memory segmenten.
-     *  `omitDate`: sla de datum/uur-parameter over zodat de backend het ongeschaalde
-     *  etmaaltotaal teruggeeft (gebruikt door de 'restdag'/'24 uur'-selectie tijdens pauze). */
-    async function applyFlowScaler({ omitDate = false } = {}) {
+    /** Vraag de backend om geschaalde flows en patch de in-memory segmenten. */
+    async function applyFlowScaler() {
       const dateVal    = document.getElementById('fspDate').value || null;
       const hour       = String(document.getElementById('fspHour').value).padStart(2, '0');
-      const dateTime   = (!omitDate && dateVal) ? `${dateVal}T${hour}:00:00` : null;
+      const dateTime   = dateVal ? `${dateVal}T${hour}:00:00` : null;
       const tempVal    = document.getElementById('fspTemp').value;
       const weatherVal = document.getElementById('fspWeather').value;
       const purposeVal = document.getElementById('fspPurpose').value || null;
@@ -18848,6 +18797,7 @@
         }
 
         rebuildLinkFlowMap();
+        calibrateRouteProductions();  // herkalibreren tegen de weer/tijd-geschaalde flows
 
         // Herbereken max-flow na schaling voor legenda en kleurschaal
         let fspMax = 0;
