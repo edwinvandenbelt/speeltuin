@@ -267,6 +267,18 @@
       width: 16px; height: 16px; margin: 0;
       accent-color: #de0058; cursor: pointer;
     }
+    /* Kleine inline laad-indicator naast een checkbox terwijl de bijbehorende
+       data (traffic assets / vegetatie) wordt opgehaald. */
+    .lmp-asset-spinner {
+      display: none;
+      width: 11px; height: 11px;
+      border: 2px solid rgba(0,165,171,0.2);
+      border-top-color: #00a5ab;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex: none;
+    }
+    .lmp-asset-spinner.visible { display: inline-block; }
 
     /* ── Slider-tab om paneel in/uit te klappen ───────────────────────── */
     #leftMenuPanelToggle {
@@ -2087,12 +2099,12 @@
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="signs"> <span>Borden &amp; signalen</span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="paths"> <span>Voet-/fietspaden</span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="height"> <span>Kunstwerken (viaduct/brug/tunnel)</span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="furniture"> <span>Straatmeubilair</span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="bumps"> <span>Drempels</span></label>
-          <label class="lmp-radio-row"><input type="checkbox" id="lmpVegetation"> <span>Bomen</span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="signs"> <span>Borden &amp; signalen</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="paths"> <span>Voet-/fietspaden</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="height"> <span>Kunstwerken (viaduct/brug/tunnel)</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="furniture"> <span>Straatmeubilair</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="bumps"> <span>Drempels</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" id="lmpVegetation"> <span>Bomen</span> <span class="lmp-asset-spinner" id="lmpVegetationSpinner"></span></label>
         </div>
       </div>
 
@@ -8845,7 +8857,8 @@
     let _vegBushes       = null;    // afgeleide struik-instanties [{position, yaw, sxy, sz, color}]
     let _vegAreaTrees    = null;    // bomen verspreid over bos-vlakken (forest/wood)
     let _lastVegBbox     = null;
-    let _vegNoFile       = false;   // true na 404 → geen VEGETATION bestand, niet blijven pollen
+    let _vegPollJobId    = null;    // jobID van een lopende vegetatie-generatie (server haalt via Overpass op), of null
+    let _vegPollAreaId   = null;    // AREA_ID waarvoor die job gestart is
 
     // Struikvlakken (scrub) worden gevuld met verspreide lage struik-meshes.
     // Bosvlakken (forest/wood) krijgen verspreide volwaardige bomen (zoals OSM).
@@ -9161,36 +9174,115 @@
       return layers;
     }
 
+    // Laad-indicatoren (Drempels/Bomen e.a.) blijven minstens dit lang zichtbaar
+    // nadat ze zijn aangezet: een (deels) gecachte of 404-respons komt soms al
+    // binnen enkele milliseconden terug, dan knippert de spinner te snel om op
+    // te merken. Zelfde aanpak als SIM_BUSY_OVERLAY_MIN_MS verderop in dit bestand.
+    const ASSET_SPINNER_MIN_MS = 350;
+    function _makeMinDurationSpinner(setVisible) {
+      let shownAt = 0;
+      let hideTimer = null;
+      return function (show) {
+        if (show) {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          shownAt = performance.now();
+          setVisible(true);
+        } else {
+          const remaining = ASSET_SPINNER_MIN_MS - (performance.now() - shownAt);
+          if (remaining > 0) {
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => { setVisible(false); hideTimer = null; }, remaining);
+          } else {
+            setVisible(false);
+          }
+        }
+      };
+    }
+
+    // Laad-indicator naast de 'Bomen'-checkbox terwijl vegetatiedata wordt opgehaald.
+    const _setVegetationSpinner = _makeMinDurationSpinner(show => {
+      const el = document.getElementById('lmpVegetationSpinner');
+      if (el) el.classList.toggle('visible', show);
+    });
+
+    // Wacht tot een server-side vegetatie-generatiejob (gestart na een 201 op
+    // /collections/vegetation/items) klaar is, door /jobs/<id> te pollen. Zelfde
+    // vorm als pollWegenscanJob: vaste wachttijd + begrensd aantal pogingen i.p.v.
+    // een ongelimiteerde lus. Stopt vroegtijdig (zonder de job zelf te annuleren —
+    // die loopt op de server gewoon door) zodra de gebruiker van gebied wisselt of
+    // de 'Bomen'-checkbox weer uitzet.
+    async function _waitForVegetationJob(jobId, areaId) {
+      _vegPollJobId = jobId;
+      _vegPollAreaId = areaId;
+      try {
+        for (let i = 0; i < 200; i++) {               // 200 × 3s ≈ 10 minuten timeout
+          if (AREA_ID !== areaId || !_vegetationVisible) return false;
+          await new Promise(res => setTimeout(res, 3000));
+          if (AREA_ID !== areaId || !_vegetationVisible) return false;
+          try {
+            const jr = await fetch(`/jobs/${jobId}`);
+            if (!jr.ok) continue;
+            const job = await jr.json();
+            if (job.status === 'successful') return true;
+            if (job.status === 'failed') return false;
+          } catch (_) { /* netwerkhapering: gewoon blijven pollen */ }
+        }
+        return false;   // time-out
+      } finally {
+        _vegPollJobId = null;
+        _vegPollAreaId = null;
+      }
+    }
+
     async function loadVegetationInView() {
-      if (!_mapReady || !_vegetationVisible || _vegNoFile) return;
+      if (!_mapReady || !_vegetationVisible) return;
+      if (_vegPollJobId) return;   // generatie loopt al; wacht tot die klaar is
       if (map.getZoom() < _VEG_MINZOOM) return;
       const b  = map.getBounds();
       const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
       if (_bboxContains(_lastVegBbox, vw)) return;
       const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
       const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
-      let data;
+      const requestedForArea = AREA_ID;
+
+      _setVegetationSpinner(true);
       try {
-        const r = await fetch(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`);
-        if (r.status === 404) { _vegNoFile = true; return; }   // geen bbox/bestand → stop met pollen
-        if (!r.ok) return;
-        data = await r.json();
-      } catch { return; }
-      if (!data || !Array.isArray(data.features)) return;
-      _lastVegBbox = bbox;
-      const trees = [];
-      const polys = [];
-      for (const f of data.features) {
-        const t = (f.geometry || {}).type;
-        if (t === 'Point' || t === 'LineString' || t === 'MultiLineString') trees.push(f);
-        else if (t === 'Polygon' || t === 'MultiPolygon') polys.push(f);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          let r;
+          try {
+            r = await fetch(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`);
+          } catch { return; }
+
+          if (r.status === 201) {
+            const body = await r.json().catch(() => ({}));
+            if (!body.jobID) return;
+            const ready = await _waitForVegetationJob(body.jobID, requestedForArea);
+            if (!ready) return;   // mislukt, time-out, of ondertussen van gebied/zichtbaarheid gewisseld
+            continue;             // bestand zou er nu moeten staan → nog eenmaal proberen
+          }
+          if (!r.ok) return;
+
+          const data = await r.json();
+          if (!data || !Array.isArray(data.features)) return;
+          _lastVegBbox = bbox;
+          const trees = [];
+          const polys = [];
+          for (const f of data.features) {
+            const t = (f.geometry || {}).type;
+            if (t === 'Point' || t === 'LineString' || t === 'MultiLineString') trees.push(f);
+            else if (t === 'Polygon' || t === 'MultiPolygon') polys.push(f);
+          }
+          _vegTreeFeatures = trees;
+          _vegPolyFeatures = polys;
+          _vegTrees = null;   // opnieuw afleiden bij volgende render
+          _vegBushes = null;
+          _vegAreaTrees = null;
+          updateOverlay(true);
+          return;
+        }
+      } finally {
+        _setVegetationSpinner(false);
       }
-      _vegTreeFeatures = trees;
-      _vegPolyFeatures = polys;
-      _vegTrees = null;   // opnieuw afleiden bij volgende render
-      _vegBushes = null;
-      _vegAreaTrees = null;
-      updateOverlay(true);
     }
 
     // Klik-popup voor verkeersobjecten (deck.gl onClick is onbetrouwbaar in
@@ -9358,6 +9450,12 @@
       _lastAssetBboxSpeedBump = [ -180, -90, 180, 90 ]; // markeer als globaal compleet
     }
 
+    // Laad-indicator naast de 'Verkeersobjecten'-checkboxen (borden/paden/
+    // kunstwerken/meubilair/drempels delen allemaal dezelfde fetch hieronder).
+    const _setTrafficAssetSpinner = _makeMinDurationSpinner(show => {
+      document.querySelectorAll('[data-ta-spinner]').forEach(el => el.classList.toggle('visible', show));
+    });
+
     // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
     async function loadTrafficAssetsInView() {
       console.debug('[TA] loadTrafficAssetsInView called', { ready: _mapReady, visible: _trafficAssetsVisible, noFile: _trafficAssetsNoFile, zoom: map.getZoom(), minzoom: _TRAFFIC_ASSET_MINZOOM });
@@ -9373,6 +9471,8 @@
       const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
       const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
 
+      _setTrafficAssetSpinner(true);
+      try {
       let data;
       try {
         console.debug('[TA] fetch traffic_assets', bbox);
@@ -9465,6 +9565,9 @@
         console.error('loadTrafficAssetsInView: fout bij verwerken traffic assets', e);
       }
       updateOverlay(true);
+      } finally {
+        _setTrafficAssetSpinner(false);
+      }
     }
 
     function _setTrafficAssetsVisibility(vis) {

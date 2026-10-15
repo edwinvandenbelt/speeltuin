@@ -39,6 +39,22 @@ OVERPASS_URL: str = os.environ.get(
     "OVERPASS_URL", "https://overpass-api.de/api/interpreter"
 )
 
+# Gedeelde Overpass-client (gmt_shared) kan een query ook tegen een lokaal
+# .osm.pbf-extract evalueren i.p.v. de remote API — zie fetch_vegetation_overpass.
+# Optioneel: als gmt_shared niet geïnstalleerd is, werkt alles gewoon met de
+# hand-geschreven urllib-tiling hieronder (remote Overpass, zoals voorheen).
+try:
+    from gmt_shared.overpass import (
+        fetch_overpass as _shared_fetch_overpass,
+        _resolve_pbf_path as _resolve_osm_pbf_path,
+    )
+
+    _GMT_SHARED_OVERPASS_AVAILABLE = True
+except ImportError:
+    _shared_fetch_overpass = None  # type: ignore[assignment]
+    _resolve_osm_pbf_path = None  # type: ignore[assignment]
+    _GMT_SHARED_OVERPASS_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # Constanten
 # ---------------------------------------------------------------------------
@@ -210,6 +226,7 @@ def fetch_vegetation_overpass(
     bbox: list,
     tile_cache_dir: Path | None = None,
     fallback_tile_cache_dir: Path | None = None,
+    osm_path: str | None = None,
 ) -> dict:
     """Haal bomen op via Overpass API en sla ze op als GeoJSON per tegel.
 
@@ -221,9 +238,16 @@ def fetch_vegetation_overpass(
         Map voor de eigen tegel-cache van dit gebied (optioneel).
     fallback_tile_cache_dir:
         Tegel-cache van het bovenliggende basis-scenario (optioneel).
+    osm_path:
+        Pad naar een lokaal .osm.pbf-extract (optioneel). Als dit is opgegeven,
+        of als OSM_PBF_PATH in de omgeving staat, wordt de hele bbox in één
+        keer lokaal gelezen — geen tiling, tegel-cache of rate-limiting nodig,
+        dat bestaat alleen om verzoeken aan de remote Overpass-API klein te
+        houden. Zie gmt_shared.overpass.fetch_overpass voor de resolutievolgorde
+        (expliciet argument > OSM_PBF_PATH env > remote Overpass-API).
 
-    Het gebied wordt opgesplitst in OVERPASS_GRID × OVERPASS_GRID tegels.
-    Per tegel geldt de voorkeursvolgorde:
+    Zonder lokaal extract wordt het gebied opgesplitst in
+    OVERPASS_GRID × OVERPASS_GRID tegels. Per tegel geldt de voorkeursvolgorde:
       1. Eigen tegel-cache (tile_cache_dir)
       2. Tegel-cache van het basis-scenario (fallback_tile_cache_dir)
       3. Ophalen via Overpass
@@ -233,6 +257,21 @@ def fetch_vegetation_overpass(
     aggregaat niet cachet.
     """
     minLon, minLat, maxLon, maxLat = bbox
+
+    if _GMT_SHARED_OVERPASS_AVAILABLE:
+        pbf_path = _resolve_osm_pbf_path(osm_path)
+        if pbf_path is not None:
+            b = f"{minLat},{minLon},{maxLat},{maxLon}"
+            data = _shared_fetch_overpass(overpass_query_for_bbox(b), osm_path=str(pbf_path))
+            features = _thin_trees(
+                elements_to_vegetation_features(data.get("elements", [])), MAX_TREES
+            )
+            return {
+                "type": "FeatureCollection",
+                "features": features,
+                "properties": {"_qv": VEGETATION_QUERY_VER},
+            }
+
     n = OVERPASS_GRID
     dLon = (maxLon - minLon) / n
     dLat = (maxLat - minLat) / n

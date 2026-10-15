@@ -62,6 +62,15 @@ _COMMON_PY_DIR = (Path(os.path.dirname(os.path.abspath(__file__))) / ".." / "com
 if _COMMON_PY_DIR.is_dir():
     sys.path.insert(0, str(_COMMON_PY_DIR))
 
+# De repo-root (parent van digital-twin/) op sys.path voor de scripts/-package
+# (scripts.geofabrik_pbf), die op repo-niveau blijft staan (zelfde aanpak als
+# analyzer/server.py). In een geflatten deployment bestaat deze ouder-map niet
+# op dezelfde manier en is dit een no-op; de PBF-resolver is dan gewoon niet
+# beschikbaar (_GEOFABRIK_PBF_AVAILABLE wordt False, zie hieronder).
+_REPO_ROOT_DIR = (Path(os.path.dirname(os.path.abspath(__file__))) / "..").resolve()
+if (_REPO_ROOT_DIR / "scripts").is_dir():
+    sys.path.insert(0, str(_REPO_ROOT_DIR))
+
 import requests
 from flask import (
     Flask,
@@ -171,6 +180,26 @@ from traffic_signs_fetcher.core.traffic_signs_fetcher_core import (  # noqa: E40
     fetch_traffic_signs_ndw as _fetch_traffic_signs_ndw,
     fetch_traffic_signs_overpass as _fetch_traffic_signs_overpass,
 )
+
+# Geofabrik-PBF-resolver (zelfde helper als analyzer/server.py): vindt/downloadt
+# het kleinste Geofabrik-extract dat een bbox dekt, zodat Overpass-achtige
+# fetchers (zoals vegetation) lokaal kunnen lezen i.p.v. de remote Overpass-API
+# te bevragen. Optioneel: als scripts/ niet beschikbaar is (geflatten deployment)
+# valt alles gewoon terug op de remote Overpass-API.
+try:
+    from scripts.geofabrik_pbf import (
+        resolve_or_download_pbf as _resolve_or_download_pbf,
+        OSM_PBF_CACHE_DIR_ENV_VAR as _OSM_PBF_CACHE_DIR_ENV_VAR,
+        DEFAULT_CACHE_DIR as _DEFAULT_PBF_CACHE_DIR,
+    )
+
+    _GEOFABRIK_PBF_AVAILABLE = True
+except ImportError as _e:
+    _resolve_or_download_pbf = None  # type: ignore[assignment]
+    _OSM_PBF_CACHE_DIR_ENV_VAR = "OSM_PBF_CACHE_DIR"
+    _DEFAULT_PBF_CACHE_DIR = Path(tempfile.gettempdir()) / "geofabrik_pbf"
+    _GEOFABRIK_PBF_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: geofabrik_pbf helper niet beschikbaar — {_e}")
 
 # ---------------------------------------------------------------------------
 # Configuratie
@@ -675,6 +704,10 @@ Compress(app)
 
 _jobs: dict = {}
 _jobs_lock = threading.Lock()
+# area_id -> jobID van een lopende vegetatie-generatiejob (beschermd door _jobs_lock),
+# zodat gelijktijdige requests voor hetzelfde gebied niet elk hun eigen Overpass-fetch
+# starten.
+_vegetation_jobs_by_area: dict = {}
 # Serialiseert redirect_stdout/redirect_stderr over alle job-threads: contextlib.redirect_*
 # past sys.stdout/sys.stderr globaal aan, dus gelijktijdige jobs zouden elkaars stream
 # overschrijven.  Door de pipeline-uitvoering te serialiseren voorkom je dat.
@@ -709,6 +742,103 @@ def _overpass_breaker_success(collection: str) -> None:
     """Reset de teller na een geslaagde Overpass-poging."""
     with _overpass_breaker_lock:
         _overpass_fail_counts.pop(collection, None)
+
+
+def _run_vegetation_job(
+    job_id: str,
+    area_id: str,
+    area_dir: Path,
+    bbox: list,
+    tile_cache_dir: Path,
+    fallback_tile_cache_dir,
+    cache_path: Path,
+) -> None:
+    """Haal vegetatie op via Overpass in een achtergrondthread (zie _run_adjust_job
+    voor hetzelfde job-boekhoudpatroon) en cache het resultaat zodra het compleet is."""
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+
+    # Liever een lokaal .osm.pbf-extract dan de remote Overpass-API: zoek (en
+    # download zo nodig, gecached in OSM_PBF_CACHE_DIR) het kleinste Geofabrik-
+    # extract dat de bbox dekt. Lukt dat niet (geen dekkend extract, download
+    # mislukt, resolver niet beschikbaar), dan valt de fetch terug op de remote
+    # Overpass-API — dit is best-effort, geen harde vereiste voor vegetatie.
+    osm_path = None
+    if _GEOFABRIK_PBF_AVAILABLE:
+        try:
+            pbf_cache_dir = Path(
+                os.environ.get(_OSM_PBF_CACHE_DIR_ENV_VAR, "") or _DEFAULT_PBF_CACHE_DIR
+            )
+            pbf_path_obj, extract = _resolve_or_download_pbf(
+                bbox[0], bbox[1], bbox[2], bbox[3], cache_dir=pbf_cache_dir
+            )
+            osm_path = str(pbf_path_obj)
+            with _jobs_lock:
+                label = extract.name if extract else "expliciet OSM_PBF_PATH"
+                _jobs[job_id]["log"].append(f"Lokale OSM-extract gebruikt: {label} ({pbf_path_obj.name})")
+        except Exception as exc:
+            with _jobs_lock:
+                _jobs[job_id]["log"].append(
+                    f"Geen lokaal OSM-extract gevonden/gedownload ({exc}); val terug op Overpass API."
+                )
+
+    try:
+        data = _fetch_vegetation_overpass(
+            bbox,
+            tile_cache_dir=tile_cache_dir,
+            fallback_tile_cache_dir=fallback_tile_cache_dir,
+            osm_path=osm_path,
+        )
+        _overpass_breaker_success("vegetation")
+    except Exception as exc:
+        _overpass_breaker_failure("vegetation")
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["log"].append(f"Overpass-query mislukt: {exc}")
+            _jobs[job_id]["finished"] = _now_iso()
+            _vegetation_jobs_by_area.pop(area_id, None)
+        return
+
+    try:
+        if not data.get("properties", {}).get("_partial"):
+            data.setdefault("properties", {})["_qv"] = _VEGETATION_QUERY_VER
+            area_dir.mkdir(parents=True, exist_ok=True)
+            tmp_fd, tmp_name = tempfile.mkstemp(dir=area_dir, suffix=".tmp")
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False)
+            os.replace(tmp_name, cache_path)
+            if _s3_enabled():
+                try:
+                    _s3_write_bytes(
+                        _s3_key(area_id, cache_path.name),
+                        json.dumps(data, ensure_ascii=False).encode("utf-8"),
+                        "application/json",
+                    )
+                except Exception as _e:
+                    print(f"[s3] vegetation-cache uploaden mislukt: {_e}")
+            with _jobs_lock:
+                _jobs[job_id]["log"].append(
+                    f"{len(data.get('features', []))} vegetatie-features opgehaald en opgeslagen."
+                )
+        else:
+            with _jobs_lock:
+                _jobs[job_id]["log"].append(
+                    "Overpass-resultaat was gedeeltelijk; niet gecachet, een volgende "
+                    "poging hergebruikt de tegel-cache en probeert alleen de "
+                    "ontbrekende tegels opnieuw."
+                )
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+    except Exception as exc:
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["log"].append(f"Fout bij verwerken vegetatie-resultaat: {exc}")
+            _jobs[job_id]["finished"] = _now_iso()
+    finally:
+        with _jobs_lock:
+            _vegetation_jobs_by_area.pop(area_id, None)
 
 
 # SSE follow-modus: area_id → set van queue.SimpleQueue-objecten voor verbonden browsers
@@ -3027,12 +3157,113 @@ def ogc_collection_items(collection_id):
             except ValueError:
                 abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
 
-        # Alleen een vooraf geprepareerd VEGETATION-bestand wordt uitgeleverd.
-        # Als dit ontbreekt, retourneert het endpoint 404. De frontend gebruikt
-        # deze 404 om te stoppen met onnodige retry's.
         prep_path = _find_prepared_with_base_fallback(area_id, "VEGETATION")
         if prep_path is None:
-            abort(404, "Geen VEGETATION bestand voor dit gebied")
+            # Geen VEGETATION-bestand (ook niet via de baseAreaId-keten): start
+            # (of hergebruik) een achtergrondjob die het via Overpass ophaalt, en
+            # geef 201 + jobID terug zodat de frontend kan pollen i.p.v. te stoppen
+            # op een definitieve 404.
+            with _jobs_lock:
+                existing_job_id = _vegetation_jobs_by_area.get(area_id)
+                existing_job = _jobs.get(existing_job_id) if existing_job_id else None
+                if existing_job and existing_job["status"] in ("accepted", "running"):
+                    return (
+                        {"jobID": existing_job_id, "status": existing_job["status"]},
+                        201,
+                        {"Location": f"/jobs/{existing_job_id}"},
+                    )
+
+            _overpass_breaker_check("vegetation")
+
+            # Bbox voor de Overpass-query bepalen uit het NETWORK-bestand van het
+            # gebied (zelfde aanpak als buildings/traffic_signs hierboven/verderop).
+            network_bbox = None
+            try:
+                _nw_list = list(area_dir.glob(f"{area_id}-NETWORK-*.geojson"))
+                if not _nw_list and _GEOPANDAS_AVAILABLE:
+                    for _ext in _GEOPARQUET_EXTS:
+                        _nw_list = list(area_dir.glob(f"{area_id}-NETWORK-*{_ext}"))
+                        if _nw_list:
+                            break
+                if _nw_list:
+                    ndata = _read_geodata(_nw_list[0])
+                    props = ndata.get("properties", {})
+                    network_bbox = props.get("bbox")
+                    if not network_bbox or len(network_bbox) < 4:
+                        lons, lats = [], []
+                        for feat in ndata.get("features", []):
+                            for coord in feat.get("geometry", {}).get("coordinates", []):
+                                lons.append(coord[0])
+                                lats.append(coord[1])
+                        if lons:
+                            network_bbox = [min(lons), min(lats), max(lons), max(lats)]
+            except Exception as exc:
+                abort(500, f"Fout bij lezen netwerk voor bbox: {exc}")
+
+            if not network_bbox:
+                abort(404, "Geen bbox beschikbaar voor vegetatie-query")
+
+            # Fallback-tegelcache zoeken in de baseAreaId-keten (ouder-scenario kan
+            # al (deels) dezelfde tegels hebben opgehaald).
+            visited = {area_id}
+            cur_id = area_id
+            base_tile_cache_dir = None
+            for _ in range(6):
+                try:
+                    cur_dir = _find_area_dir(cur_id)
+                    _nw2 = list(cur_dir.glob(f"{cur_id}-NETWORK-*.geojson"))
+                    if not _nw2 and _GEOPANDAS_AVAILABLE:
+                        for _ext in _GEOPARQUET_EXTS:
+                            _nw2 = list(cur_dir.glob(f"{cur_id}-NETWORK-*{_ext}"))
+                            if _nw2:
+                                break
+                    if not _nw2:
+                        break
+                    p2 = _read_geodata(_nw2[0]).get("properties", {})
+                    parent_id = p2.get("baseAreaId") or None
+                except Exception:
+                    break
+                if not parent_id or parent_id in visited:
+                    break
+                visited.add(parent_id)
+                cur_id = parent_id
+                parent_dir = _find_area_dir(parent_id)
+                ptcd = parent_dir / f"{parent_id}-VEGETATION-tiles"
+                if ptcd.exists() and base_tile_cache_dir is None:
+                    base_tile_cache_dir = ptcd
+
+            job_id = str(uuid.uuid4())
+            with _jobs_lock:
+                _jobs[job_id] = {
+                    "jobID": job_id,
+                    "processID": "vegetation-fetch",
+                    "status": "accepted",
+                    "log": [],
+                    "returncode": None,
+                    "created": _now_iso(),
+                    "started": None,
+                    "finished": None,
+                    "_results": {},
+                }
+                _vegetation_jobs_by_area[area_id] = job_id
+            threading.Thread(
+                target=_run_vegetation_job,
+                args=(
+                    job_id,
+                    area_id,
+                    area_dir,
+                    network_bbox,
+                    area_dir / f"{area_id}-VEGETATION-tiles",
+                    base_tile_cache_dir,
+                    area_dir / f"{area_id}-VEGETATION.geojson",
+                ),
+                daemon=True,
+            ).start()
+            return (
+                {"jobID": job_id, "status": "accepted"},
+                201,
+                {"Location": f"/jobs/{job_id}"},
+            )
 
         try:
             data = _read_geodata(prep_path)
