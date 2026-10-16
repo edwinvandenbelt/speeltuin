@@ -381,6 +381,12 @@ _GMT_PASSWORD: str = os.environ.get("GMT_PASSWORD", "")
 # binnen Nederland automatisch terug op OSM Overpass voor verkeersborden.
 _NDW_DATA_URI: str | None = os.environ.get("NDW_DATA_URI", "").strip() or None
 
+# Nominatim-endpoint voor reverse geocoding (naamsuggestie in de "Nieuw
+# gebied"-wizard). Overschrijfbaar voor een eigen/lokale Nominatim-instantie.
+_NOMINATIM_URL: str = os.environ.get(
+    "NOMINATIM_URL", "https://nominatim.openstreetmap.org/reverse"
+).strip()
+
 # OSM/ODbL-attributie. De geprepareerde/geüploade data is deels afgeleid van
 # OpenStreetMap (o.a. trafficSignal-annotatie, verkeersobjecten, gebouwen,
 # groen). De ODbL vereist bronvermelding zodra deze data publiek gedeeld of
@@ -1992,7 +1998,7 @@ def _call_prepare_run_pipeline(**kwargs):
 
 
 def _run_prepare_job(
-    job_id: str, out_dir: Path, kwargs: dict, name: str, mode_label: str
+    job_id: str, out_dir: Path, kwargs: dict, name: str, mode_label: str, area_id: str
 ):
     """Voer prepare-pipeline uit in achtergrondthread.
 
@@ -2026,7 +2032,7 @@ def _run_prepare_job(
         # Sync naar S3 als geconfigureerd
         if _s3_enabled():
             try:
-                _s3_sync_to(out_dir, name)
+                _s3_sync_to(out_dir, area_id)
             except Exception as _e:
                 print(f"[s3] sync na prepare mislukt: {_e}")
 
@@ -2036,7 +2042,8 @@ def _run_prepare_job(
             _jobs[job_id]["status"] = "successful"
             _jobs[job_id]["finished"] = _now_iso()
             _jobs[job_id]["_results"] = {
-                "collection": f"/collections/network/items?areaId={name}&mode={mode_label}",
+                "areaId": area_id,
+                "collection": f"/collections/network/items?areaId={area_id}&mode={mode_label}",
             }
     except BaseException as exc:
         stream.flush()
@@ -2047,7 +2054,9 @@ def _run_prepare_job(
             _jobs[job_id]["finished"] = _now_iso()
 
 
-def _run_osm_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str):
+def _run_osm_prepare_job(
+    job_id: str, out_dir: Path, kwargs: dict, name: str, area_id: str
+):
     """Voer de OSM-only prepare-pipeline uit in achtergrondthread."""
     env_var = kwargs.get("osm_pbf_env_var", "OSM_PBF_PATH")
     with _jobs_lock:
@@ -2081,7 +2090,7 @@ def _run_osm_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str):
 
         if _s3_enabled():
             try:
-                _s3_sync_to(out_dir, name)
+                _s3_sync_to(out_dir, area_id)
             except Exception as _e:
                 print(f"[s3] sync na prepare mislukt: {_e}")
 
@@ -2091,7 +2100,8 @@ def _run_osm_prepare_job(job_id: str, out_dir: Path, kwargs: dict, name: str):
             _jobs[job_id]["status"] = "successful"
             _jobs[job_id]["finished"] = _now_iso()
             _jobs[job_id]["_results"] = {
-                "collection": f"/collections/network/items?areaId={name}&mode=CAR",
+                "areaId": area_id,
+                "collection": f"/collections/network/items?areaId={area_id}&mode=CAR",
             }
     except BaseException as exc:
         stream.flush()
@@ -2756,11 +2766,16 @@ def _execute_prepare(inputs: dict):
     if not name:
         abort(400, 'Parameter "name" ontbreekt')
 
+    # area_id is de echte, URL-/bestandsnaam-veilige identifier van het gebied
+    # (gebruikt door run_pipeline() voor alle output-bestanden en door de
+    # /collections-endpoints). `name` is slechts de door de gebruiker ingevoerde
+    # weergavenaam en kan spaties/leestekens bevatten die _safe() afkeurt.
+    area_id = str(uuid.uuid4())
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / ".area-uuid").write_text(name, encoding="utf-8")
+    (out_dir / ".area-uuid").write_text(area_id, encoding="utf-8")
     if _s3_enabled():
         try:
-            _s3_write_text(_s3_key(name, ".area-uuid"), name)
+            _s3_write_text(_s3_key(area_id, ".area-uuid"), area_id)
         except Exception as _e:
             print(f"[s3] .area-uuid schrijven mislukt: {_e}")
 
@@ -2869,6 +2884,8 @@ def _execute_prepare(inputs: dict):
             kwargs["parking_use_osm"] = parking_use_osm
         if "parking_use_bgt" in _pipeline_params:
             kwargs["parking_use_bgt"] = parking_use_bgt
+        if "area_id" in _pipeline_params:
+            kwargs["area_id"] = area_id
         with _jobs_lock:
             _jobs[job_id] = {
                 "jobID": job_id,
@@ -2884,7 +2901,7 @@ def _execute_prepare(inputs: dict):
             }
         threading.Thread(
             target=_run_prepare_job,
-            args=(job_id, out_dir, kwargs, name, mode_label),
+            args=(job_id, out_dir, kwargs, name, mode_label, area_id),
             daemon=True,
         ).start()
     else:
@@ -2899,7 +2916,7 @@ def _execute_prepare(inputs: dict):
             max_lon=max_lon,
             max_lat=max_lat,
             out_dir=out_dir,
-            area_id=name,
+            area_id=area_id,
             name=name,
             refresh=bool(inputs.get("refresh")),
             debug=bool(inputs.get("debug", False)),
@@ -2925,7 +2942,7 @@ def _execute_prepare(inputs: dict):
             }
         threading.Thread(
             target=_run_osm_prepare_job,
-            args=(job_id, out_dir, kwargs, name),
+            args=(job_id, out_dir, kwargs, name, area_id),
             daemon=True,
         ).start()
 
@@ -3706,6 +3723,49 @@ def api_area_max_flow(area_id: str):
             except (TypeError, ValueError):
                 pass
     return jsonify({"maxFlow": max_flow})
+
+
+@app.route("/api/reverse-geocode")
+def api_reverse_geocode():
+    """Stelt een plaatsnaam voor op basis van lon/lat via Nominatim.
+
+    Gebruikt door de "Nieuw gebied"-wizard om het naamveld te vullen zodra een
+    bbox getekend is. Faalt stil (name: null) zodat een trage/onbereikbare
+    geocoder de wizard nooit blokkeert."""
+    try:
+        lon = float(request.args.get("lon", ""))
+        lat = float(request.args.get("lat", ""))
+    except (TypeError, ValueError):
+        abort(400, "lon en lat zijn verplicht en moeten numeriek zijn")
+    try:
+        resp = requests.get(
+            _NOMINATIM_URL,
+            params={
+                "lon": lon,
+                "lat": lat,
+                "format": "jsonv2",
+                "zoom": 14,
+                "accept-language": "nl",
+            },
+            headers={"User-Agent": "GMP-speeltuin-analyzer (reverse-geocode)"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        app.logger.warning("Reverse geocoding mislukt: %s", exc)
+        return jsonify({"name": None})
+    addr = data.get("address", {})
+    name = (
+        addr.get("suburb")
+        or addr.get("neighbourhood")
+        or addr.get("city_district")
+        or addr.get("town")
+        or addr.get("village")
+        or addr.get("city")
+        or data.get("name")
+    )
+    return jsonify({"name": name})
 
 
 # ---------------------------------------------------------------------------
