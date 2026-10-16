@@ -13475,7 +13475,7 @@
         return new PathLayer({ id: 'zone-routes', data: [] });
       }
 
-      const { pathData, linkIdsByZone } = computeZoneRouteData();
+      const { pathData, linkIdsByZone, linkFlowByZone } = computeZoneRouteData();
       if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
 
       const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
@@ -13498,6 +13498,17 @@
         : null;
       const isDimmedLink = d => highlightLinkIds !== null && !highlightLinkIds.has(d.linkId);
 
+      // Bij een vastgeklikte OD-pijl: normaliseer de breedte/dekking van de
+      // gehighlighte wegvakken op de max flow van dát OD-paar zelf i.p.v. de
+      // zone-brede maxFlow, zodat een laag-volume alternatieve route (Yen's
+      // k-shortest-paths) niet wordt weggedrukt door de dominante zone-flow.
+      const pairLinkFlow = highlightedOdZoneId !== null
+        ? (linkFlowByZone.get(highlightedOdZoneId) ?? new Map())
+        : null;
+      let pairMaxFlow = 1e-9;
+      if (pairLinkFlow) for (const f of pairLinkFlow.values()) pairMaxFlow = Math.max(pairMaxFlow, f);
+      const normPair = d => Math.max(0, Math.min(1, (pairLinkFlow?.get(d.linkId) ?? 0) / pairMaxFlow));
+
       return new PathLayer({
         id:             'zone-routes',
         data:           pathData,
@@ -13507,10 +13518,17 @@
         widthMaxPixels: 14,
         getPath:        d => d.coords,
         getWidth:       d => {
+          if (highlightLinkIds !== null && !isDimmedLink(d)) {
+            return Math.max(1, normPair(d) * 14);
+          }
           const w = Math.max(1, norm(d) * 14);
           return isDimmedLink(d) ? Math.max(0.5, w * 0.3) : w;
         },
         getColor:       d => {
+          if (highlightLinkIds !== null && !isDimmedLink(d)) {
+            const aPair = Math.round(50 + 190 * Math.sqrt(normPair(d)));
+            return [...baseColor, aPair];
+          }
           const a = Math.round(50 + 190 * Math.sqrt(norm(d)));
           return isDimmedLink(d) ? [...baseColor, Math.round(a * 0.15)] : [...baseColor, a];
         },
@@ -13559,6 +13577,7 @@
       const flowByLink  = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
       const routeCountByZone = new Map(); // counterpartZoneId → aantal route-objecten (diagnose)
       const linkIdsByZone = new Map(); // counterpartZoneId → Set van linkIds van routes naar/van die zone (voor OD-pijl-isolatie)
+      const linkFlowByZone = new Map(); // counterpartZoneId → Map<linkId, flow>, per-paar flowsom per wegvak (voor OD-paar-eigen normalisatie bij highlight)
 
       for (const route of relevant) {
         const flow        = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
@@ -13570,9 +13589,13 @@
         if (!linkIdsByZone.has(counterpart)) linkIdsByZone.set(counterpart, new Set());
         const cpLinkIds = linkIdsByZone.get(counterpart);
 
+        if (!linkFlowByZone.has(counterpart)) linkFlowByZone.set(counterpart, new Map());
+        const cpLinkFlow = linkFlowByZone.get(counterpart);
+
         for (const linkId of route.linkIds ?? []) {
           flowByLink.set(linkId, (flowByLink.get(linkId) ?? 0) + flow);
           cpLinkIds.add(linkId);
+          cpLinkFlow.set(linkId, (cpLinkFlow.get(linkId) ?? 0) + flow);
         }
       }
 
@@ -13591,7 +13614,7 @@
         if (hasGeom) zonesWithPath.add(zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId);
       }
 
-      return { pathData, flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath, linkIdsByZone };
+      return { pathData, flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath, linkIdsByZone, linkFlowByZone };
     }
 
     /** Centroïd (lon/lat) van een zone opzoeken op zoneId, met dezelfde fallback-
