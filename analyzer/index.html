@@ -208,21 +208,21 @@
     #leftMenuPanel.visible { display: flex; }
     #leftMenuPanel.collapsed { margin-left: -300px; }
 
-    /* ── Groene kop bovenin het linker menu-paneel ────────────────────── */
-    #leftMenuHeader {
+    /* ── Groene kop bovenin een menu-paneel (linker paneel + wizard) ───── */
+    .lmp-header {
       flex-shrink: 0;
       display: flex; align-items: center; gap: 10px;
       padding: 10px 12px;
       background: #00a5ab;
       color: #ffffff;
     }
-    #leftMenuHeader .tb-btn {
+    .lmp-header .tb-btn {
       border-color: rgba(255,255,255,0.35);
       background: rgba(255,255,255,0.12);
       color: #ffffff;
     }
-    #leftMenuHeader .tb-btn:hover { background: rgba(255,255,255,0.25); color: #ffffff; }
-    #leftMenuHeader .lmp-header-title {
+    .lmp-header .tb-btn:hover { background: rgba(255,255,255,0.25); color: #ffffff; }
+    .lmp-header .lmp-header-title {
       flex: 1;
       font-size: 14px; font-weight: 600;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -354,13 +354,19 @@
       background: #ffffff;
       border-right: 1px solid #e3e6ea;
       display: flex; flex-direction: column;
-      padding: 24px 20px; gap: 16px;
       font-family: 'Segoe UI', sans-serif;
-      overflow-y: auto;
+      overflow: hidden;
     }
-    #newPanel h2 { margin: 0; color: #de0058; font-size: 16px; }
+    /* Vaste knoppenbalk + voortgang onderin, net als de kop bovenin niet mee
+       scrollend met .lmp-body. */
+    .lmp-footer {
+      flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 12px; border-top: 1px solid #e3e6ea;
+    }
+    /* #newPanel h2 { margin: 0; color: #de0058; font-size: 16px; } */
     #newPanel label {
-      display: flex; flex-direction: column; gap: 5px;
+      /* display: flex; flex-direction: column; gap: 5px; */  
       font-size: 12px; color: #6a757c;
       text-transform: uppercase; letter-spacing: .05em;
     }
@@ -409,6 +415,38 @@
       border-color: #e3e6ea;
     }
     .new-btn.secondary:hover { background: #f0f2f4; color: #232931; }
+    #newDataSources > summary {
+      cursor: pointer; font-size: 12px; color: #6a757c;
+      text-transform: uppercase; letter-spacing: .05em; list-style: revert;
+    }
+    #modes > summary {
+      cursor: pointer; font-size: 12px; color: #6a757c;
+      text-transform: uppercase; letter-spacing: .05em; list-style: revert;
+    }
+    .new-ds-tree { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+    .new-ds-item { display: flex; flex-direction: column; gap: 6px; }
+    .new-check-row {
+      display: flex; flex-direction: row; align-items: center; gap: 8px;
+      text-transform: none; letter-spacing: 0; font-size: 13px; color: #232931;
+      cursor: pointer;
+    }
+    .new-check-row input[type=checkbox] {
+      accent-color: #00a5ab; width: 14px; height: 14px; flex-shrink: 0;
+    }
+    .new-check-row:has(input:disabled) { color: #a8b0b6; cursor: default; }
+    /* Boomstructuur: subkeuzes hangen visueel onder hun hoofdtoggle, verbonden
+       met een verticale lijn, zodat de relatie meteen duidelijk is. */
+    .new-ds-children {
+      display: flex; flex-direction: column; gap: 6px;
+      margin-left: 6px; padding-left: 16px; border-left: 2px solid #e3e6ea;
+    }
+    .new-ds-children .new-check-row { color: #6a757c; font-size: 12px; }
+    .new-ds-badge {
+      display: none; margin-left: 2px; padding: 1px 6px; border-radius: 10px;
+      font-size: 9px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+      background: #eef1f3; color: #8a939a;
+    }
+    .new-ds-badge.visible { display: inline-block; }
     #newProgress {
       display: none; flex-direction: column; gap: 8px;
     }
@@ -1607,58 +1645,146 @@
   <!-- ── Nieuw gebied aanmaken ──────────────────────────────────────────── -->
   <div id="newScreen">
     <div id="newPanel">
-      <h2 data-i18n="newAreaH2">Nieuw gebied</h2>
+      <div id="newPanelHeader" class="lmp-header">
+        <button class="tb-btn" id="newHomeBtn" onclick="window.location.href='/'" data-i18n="newAreaHome" title="Home">&#8962;</button>
+        <span class="lmp-header-title" data-i18n="newAreaH2">Nieuw gebied</span>
+      </div>
 
+      <div class="lmp-body">
       <label><span data-i18n="newAreaName">Naam</span>
         <input type="text" id="newName" placeholder="bijv. Merwehaven" data-i18n-ph="newAreaNamePh"/>
       </label>
 
-      <div class="new-mode-group">
-        <span data-i18n="newAreaMode">Transportmodus</span>
-        <div id="newModes">
-          <label class="new-mode-check"><input type="checkbox" value="CAR" checked/> <span data-i18n="newAreaCar">Auto (CAR)</span></label>
-          <label class="new-mode-check" title="Nog niet beschikbaar bij het aanmaken van een nieuw gebied"><input type="checkbox" value="BIKE" disabled/>        <span data-i18n="newAreaBike">Fiets (BIKE)</span></label>
-          <label class="new-mode-check" title="Nog niet beschikbaar bij het aanmaken van een nieuw gebied"><input type="checkbox" value="PEDESTRIAN" disabled/>  <span data-i18n="newAreaPed">Voetganger (PEDESTRIAN)</span></label>
+      <div id="bboxDisplay" data-i18n="newAreaNoBbox" title="Teken een rechthoek op de kaart om de bbox te bepalen.
+        Klik voor de eerste hoek, klik nogmaals voor de tweede.">Geen bbox getekend</div>
+
+      <details id="modes"> 
+        <summary>Transportmodus</summary>
+          <div id="newModes">
+            <label class="new-mode-check"><input type="checkbox" value="CAR" checked/> <span data-i18n="newAreaCar">Auto (CAR)</span></label>
+            <label class="new-mode-check" title="Nog niet beschikbaar bij het aanmaken van een nieuw gebied"><input type="checkbox" value="BIKE" disabled/>        <span data-i18n="newAreaBike">Fiets (BIKE)</span></label>
+            <label class="new-mode-check" title="Nog niet beschikbaar bij het aanmaken van een nieuw gebied"><input type="checkbox" value="PEDESTRIAN" disabled/>  <span data-i18n="newAreaPed">Voetganger (PEDESTRIAN)</span></label>
+          </div>
+      </details>
+
+      <details id="newDataSources">
+        <summary>Additionele databronnen</summary>
+        <div class="new-ds-tree">
+
+          <div class="new-ds-item">
+            <label class="new-check-row" title="Haal OSM-vegetatie op (bomen, struiken, bos/bosschage). Uitschakelen versnelt de prepare.">
+              <input type="checkbox" id="newVegetation"/>
+              Vegetatie
+            </label>
+            <div class="new-ds-children">
+              <label class="new-check-row" title="Haal OSM-vegetatie op (bomen, struiken, bos/bosschage). Uitschakelen versnelt de prepare.">
+                <input type="checkbox" id="newVegetationOsm"/>
+                  OSM
+              </label>
+              <label class="new-check-row" title="Neem naast OSM ook BGT-begroeiing mee.">
+                <input type="checkbox" id="newVegetationBgt"/>
+                BGT
+                <span class="new-ds-badge" data-nl-only>NL</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="new-ds-item">
+            <label class="new-check-row" title="Haal AHN-hoogtedata op voor de wegvakken (viaducten/bruggen, tunnels). Uitschakelen versnelt de prepare.">
+              <input type="checkbox" id="newElevation"/>
+              Hoogte (Open-Meteo)
+            </label>
+          </div>
+
+          <div class="new-ds-item">
+            <label class="new-check-row" title="Haal OSM-verkeerslichten (highway=traffic_signals) op en koppel ze aan het netwerk: wegvakken binnen 15 m van een verkeerslicht krijgen een trafficSignal-markering; de locaties verschijnen ook als kaartmarker.">
+              <input type="checkbox" id="newTrafficSignals"/>
+              Verkeerslichten (OSM)*
+            </label>
+          </div>
+
+          <div class="new-ds-item">
+            <label class="new-check-row" title="Binnen Nederland: NDW-dataset (indien geconfigureerd); daarbuiten: OSM.">
+              <input type="checkbox" id="newTrafficSigns"/>
+              Verkeersborden (NDW/OSM)
+            </label>
+          </div>
+
+          <div class="new-ds-item">
+            <label class="new-check-row" title="PDOK/BGT-verkeersdrempels.">
+              <input type="checkbox" id="newBgtAssets"/>
+              Verkeersdrempels (BGT)
+              <span class="new-ds-badge" data-nl-only>NL</span>
+            </label>
+          </div>
+
+          <div class="new-ds-item">
+            <label class="new-check-row" title="Oversteekplaatsen, stop/voorrang-borden, mini-rotondes e.d. (OSM).">
+              <input type="checkbox" id="newOsmAssets"/>
+              Verkeersobjecten (OSM)
+            </label>
+            <div class="new-ds-children">
+              <label class="new-check-row" title="Oversteekplaatsen">
+                <input type="checkbox" id="newOversteekOsm" disabled/>
+                Oversteekplaatsen
+              </label>
+              <label class="new-check-row" title="Stop/voorrangsborden">
+                <input type="checkbox" id="newStopBordOsm" disabled/>
+                Stop/voorrangsborden
+              </label>
+              <label class="new-check-row" title="Mini-rotondes">
+                <input type="checkbox" id="newMiniRotondeOsm" disabled/>
+                Mini-rotondes
+              </label>
+            </div>
+          </div>
+
+          <div class="new-ds-item">
+            <label class="new-check-row" title="Parkeerterreinen.">
+              <input type="checkbox" id="newParking"/>
+              Parkeerterreinen
+              <span class="new-ds-badge" data-nl-only>NL</span>
+            </label>
+            <div class="new-ds-children">
+              <label class="new-check-row" title="Parkeerterreinen uit OSM.">
+                <input type="checkbox" id="newParkingOsm"/>
+                OSM
+              </label>
+              <label class="new-check-row" title="Parkeerterreinen uit BGT.">
+                <input type="checkbox" id="newParkingBgt"/>
+                BGT
+                <span class="new-ds-badge" data-nl-only>NL</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="new-ds-item">
+          <label class="new-check-row" title="worden altijd meegenomen (vereist voor de productie/attractie-berekening)">
+            <input type="checkbox" id="newGebouwenOsm" disabled checked/>
+            Gebouwen (OSM)
+          </label>
+          </div>
         </div>
-      </div>
-
-      <label style="text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c" data-i18n="newAreaBboxHint">
-        Teken een rechthoek op de kaart om de bbox te bepalen.
-        Klik voor de eerste hoek, klik nogmaals voor de tweede.
-      </label>
-
-      <div id="bboxDisplay" data-i18n="newAreaNoBbox">Geen bbox getekend</div>
-
-      <div style="display:flex;gap:8px">
-        <button class="new-btn" id="newClearBtn" style="flex:1" data-i18n="newAreaClearBbox">Wis bbox</button>
-      </div>
+      </details>
 
       <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer">
         <input type="checkbox" id="newDebug" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0"/>
-        Debug-uitvoer activeren
+        Debug
       </label>
-
-      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer" title="Haal OSM-vegetatie op (bomen, struiken, bos/bosschage). Uitschakelen versnelt de prepare.">
-        <input type="checkbox" id="newVegetation" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0" checked/>
-        Vegetatie opnemen
-      </label>
-
-      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:#6a757c;cursor:pointer" title="Haal AHN-hoogtedata op voor de wegvakken (viaducten/bruggen, tunnels). Uitschakelen versnelt de prepare.">
-        <input type="checkbox" id="newElevation" style="accent-color:#00a5ab;width:14px;height:14px;flex-shrink:0"/>
-        Hoogte meenemen
-      </label>
-
-      <!-- Voortgang -->
-      <div id="newProgress">
-        <div id="newProgressBar"><div id="newProgressFill"></div></div>
-        <div id="newStatus" style="font-size:12px;color:#00a5ab"></div>
-        <div id="newLog"></div>
       </div>
 
-      <div style="display:flex;gap:8px;margin-top:auto">
-        <button class="new-btn secondary" id="newHomeBtn" style="flex:1" onclick="window.location.href='/'" data-i18n="newAreaHome">&#8962; Overzicht</button>
-        <button class="new-btn secondary" id="newCancelBtn" style="flex:1" data-i18n="newAreaCancel">Annuleren</button>
-        <button class="new-btn" id="newSubmitBtn" style="flex:2" data-i18n="newAreaSubmit">Aanmaken</button>
+      <div class="lmp-footer">
+        <!-- Voortgang -->
+        <div id="newProgress">
+          <div id="newProgressBar"><div id="newProgressFill"></div></div>
+          <div id="newStatus" style="font-size:12px;color:#00a5ab"></div>
+          <div id="newLog"></div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button class="new-btn secondary" id="newClearBtn" style="flex:1" data-i18n="newAreaClearBbox">Wis bbox</button>
+          <button class="new-btn" id="newSubmitBtn" style="flex:2" data-i18n="newAreaSubmit">Aanmaken</button>
+        </div>
       </div>
     </div>
     <div id="newMap"></div>
@@ -1854,8 +1980,8 @@
   <!-- Linker menu-paneel (bij areaId) -->
   <div id="leftMenuPanel">
     <!-- Groene kop: home, projectnaam, instellingen (verplaatst uit de oude toolbar) -->
-    <div id="leftMenuHeader">
-      <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" data-i18n-title="homeTitle" title="Terug naar overzicht">&#8962;</button>
+    <div id="leftMenuHeader" class="lmp-header">
+      <button class="tb-btn" id="homeBtn" onclick="window.location.href='/'" data-i18n-title="homeTitle" title="Home">&#8962;</button>
       <span class="lmp-header-title" id="networkTitle">GMT Speeltuin</span>
       <button class="tb-btn" id="settingsBtn" data-i18n-title="settingsTitle" title="Instellingen">&#9881;</button>
     </div>
@@ -2584,7 +2710,7 @@
   const TRANSLATIONS = {
     NL: {
       // Toolbar
-      homeTitle:'Terug naar overzicht',
+      homeTitle:'Home',
       dpMrhLabel:'OS', dpMrhTitle:'Ochtendspits',
       dpErhLabel:'AS', dpErhTitle:'Avondspits',
       dpRestLabel:'RD', dpRestTitle:'Restdag',
@@ -2637,7 +2763,7 @@
       newAreaPed:'Voetganger (PEDESTRIAN)',
       newAreaBboxHint:'Teken een rechthoek op de kaart om de bbox te bepalen. Klik voor de eerste hoek, klik nogmaals voor de tweede.',
       newAreaNoBbox:'Geen bbox getekend', newAreaClearBbox:'Wis bbox',
-      newAreaHome:'\u2302 Overzicht', newAreaCancel:'Annuleren', newAreaSubmit:'Aanmaken',
+      newAreaHome:'\u2302', newAreaCancel:'Annuleren', newAreaSubmit:'Aanmaken',
       newAreaStatusStart:'Pipeline starten\u2026', newAreaStatusConn:'Verbinding mislukt.',
       newAreaStatusRunning:'Pipeline actief\u2026', newAreaStatusDone:'Klaar! Gebied is beschikbaar.',
       newAreaStatusBack:'Terug naar overzicht', newAreaStatusError: c => `Fout (exitcode ${c}).`,
@@ -4253,11 +4379,26 @@
         bbox ? bboxToGeoJSON(bbox) : { type: 'FeatureCollection', features: [] }
       );
       document.getElementById('bboxDisplay').innerHTML = bbox
-        ? `min lon: <b>${bbox.minLon.toFixed(5)}</b><br>
-           min lat: <b>${bbox.minLat.toFixed(5)}</b><br>
-           max lon: <b>${bbox.maxLon.toFixed(5)}</b><br>
-           max lat: <b>${bbox.maxLat.toFixed(5)}</b>`
+        ? `bbox: <b>${bbox.minLon.toFixed(5)},${bbox.minLat.toFixed(5)}</b> - 
+           ${bbox.maxLon.toFixed(5)},${bbox.maxLat.toFixed(5)}</b>`
         : T('newAreaNoBbox');
+      updateNlOnlyNotes();
+    }
+
+    // Grove NL-bbox, zelfde grenzen als server-side _is_netherlands(); puur
+    // om de "alleen binnen Nederland"-notities te tonen, geen harde check.
+    const NL_BBOX = { minLon: 3.3, minLat: 50.7, maxLon: 7.3, maxLat: 53.6 };
+    function updateNlOnlyNotes() {
+      let withinNl = true;
+      if (bbox) {
+        const cx = (bbox.minLon + bbox.maxLon) / 2;
+        const cy = (bbox.minLat + bbox.maxLat) / 2;
+        withinNl = cx >= NL_BBOX.minLon && cx <= NL_BBOX.maxLon
+                && cy >= NL_BBOX.minLat && cy <= NL_BBOX.maxLat;
+      }
+      document.querySelectorAll('[data-nl-only]').forEach(el => {
+        el.classList.toggle('visible', !withinNl);
+      });
     }
 
     newMap.on('load', () => {
@@ -4310,12 +4451,31 @@
     newDebugEl.checked = !!window._debugMode;
     newDebugEl.onchange = e => { window._debugMode = e.target.checked; };
 
-    document.getElementById('newCancelBtn').onclick = () => {
-      // Geen loader herstellen: het keuzescherm (menu-paneel + kaart) staat
-      // hieronder nog gewoon, #newScreen lag er alleen full-screen overheen.
-      document.getElementById('newScreen').classList.remove('visible');
-      newMap.remove();
-    };
+    // Subtoggles volgen hun hoofdtoggle (uitgeschakeld + afgevinkt-weergave
+    // genegeerd zodra de hoofdbron uit staat).
+    function wireSubToggle(mainId, subIds) {
+      const mainEl = document.getElementById(mainId);
+      const subEls = subIds.map(id => document.getElementById(id));
+      const sync = () => subEls.forEach(el => { el.disabled = !mainEl.checked; el.checked = mainEl.checked; });
+      mainEl.addEventListener('change', sync);
+      sync();
+    }
+    wireSubToggle('newVegetation', ['newVegetationOsm', 'newVegetationBgt']);
+    wireSubToggle('newParking', ['newParkingOsm', 'newParkingBgt']);
+    wireSubToggle('newOsmAssets', ['newStopBordOsm', 'newMiniRotondeOsm', 'newOversteekOsm']);
+
+    // newCancelBtn is momenteel verwijderd uit de UI (Home-knop in de kop
+    // doet nu dienst als uitgang); defensief geschreven zodat een eventuele
+    // herintroductie van de knop geen aparte JS-wijziging vereist.
+    const newCancelBtnEl = document.getElementById('newCancelBtn');
+    if (newCancelBtnEl) {
+      newCancelBtnEl.onclick = () => {
+        // Geen loader herstellen: het keuzescherm (menu-paneel + kaart) staat
+        // hieronder nog gewoon, #newScreen lag er alleen full-screen overheen.
+        document.getElementById('newScreen').classList.remove('visible');
+        newMap.remove();
+      };
+    }
 
   document.getElementById('newSubmitBtn').onclick = async () => {
     const name = document.getElementById('newName').value.trim();
@@ -4345,7 +4505,15 @@
         max_lon: bbox.maxLon, max_lat: bbox.maxLat,
         debug: !!window._debugMode,
         vegetation: !!document.getElementById('newVegetation').checked,
+        vegetationBgt: !!document.getElementById('newVegetationBgt').checked,
         elevation: !!document.getElementById('newElevation').checked,
+        trafficSignals: !!document.getElementById('newTrafficSignals').checked,
+        trafficSigns: !!document.getElementById('newTrafficSigns').checked,
+        bgtAssets: !!document.getElementById('newBgtAssets').checked,
+        osmAssets: !!document.getElementById('newOsmAssets').checked,
+        parking: !!document.getElementById('newParking').checked,
+        parkingOsm: !!document.getElementById('newParkingOsm').checked,
+        parkingBgt: !!document.getElementById('newParkingBgt').checked,
       };
       const res  = await fetch('/processes/prepare/execution', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

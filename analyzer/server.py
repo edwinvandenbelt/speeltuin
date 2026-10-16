@@ -23,6 +23,7 @@ OGC API:
 import argparse
 import contextlib
 import datetime as _dt
+import inspect
 import io
 import json
 from collections import OrderedDict
@@ -374,6 +375,11 @@ _GMT_BASE_URL: str = os.environ.get(
 ).rstrip("/")
 _GMT_USERNAME: str = os.environ.get("GMT_USERNAME", "")
 _GMT_PASSWORD: str = os.environ.get("GMT_PASSWORD", "")
+
+# NDW-verkeersbordendataset (optioneel) — pad/URI naar een vooraf aangeleverde
+# NDW-GeoJSON FeatureCollection. Zonder deze variabele valt de prepare-pipeline
+# binnen Nederland automatisch terug op OSM Overpass voor verkeersborden.
+_NDW_DATA_URI: str | None = os.environ.get("NDW_DATA_URI", "").strip() or None
 
 # OSM/ODbL-attributie. De geprepareerde/geüploade data is deels afgeleid van
 # OpenStreetMap (o.a. trafficSignal-annotatie, verkeersobjecten, gebouwen,
@@ -2807,6 +2813,18 @@ def _execute_prepare(inputs: dict):
     # Hoogte-vinkje: haalt AHN-hoogtedata op voor de wegvakken. Kost extra tijd
     # (één request per batch wegvakken), vandaar uitschakelbaar.
     fetch_elevation = bool(inputs.get("elevation", True))
+    # Databronnen-toggles uit de wizard. Allemaal default True, consistent met
+    # de library-defaults van run_pipeline()/osm_prepare's run_pipeline().
+    vegetation_bgt = bool(inputs.get("vegetationBgt", True))
+    annotate_traffic_signals = bool(inputs.get("trafficSignals", True))
+    fetch_traffic_signs = bool(inputs.get("trafficSigns", True))
+    fetch_bgt_assets = bool(inputs.get("bgtAssets", True))
+    fetch_osm_assets = bool(inputs.get("osmAssets", True))
+    fetch_parking_areas = bool(inputs.get("parking", True))
+    parking_use_osm = bool(inputs.get("parkingOsm", True))
+    parking_use_bgt = bool(inputs.get("parkingBgt", True))
+    # Gebouwen zijn geen wizard-toggle: de productie/attractie-berekening in de
+    # analyzer (motief-kleuring, zone-koppeling) vereist de BUILDINGS-laag.
 
     job_id = str(uuid.uuid4())
 
@@ -2830,7 +2848,27 @@ def _execute_prepare(inputs: dict):
             osm_path=pbf_path,
             fetch_vegetation=fetch_vegetation,
             add_elevation=fetch_elevation,
+            annotate_traffic_signals=annotate_traffic_signals,
+            fetch_traffic_signs=fetch_traffic_signs,
+            fetch_bgt_assets=fetch_bgt_assets,
+            fetch_osm_assets=fetch_osm_assets,
+            fetch_buildings=True,
+            fetch_parking_areas=fetch_parking_areas,
+            ndw_data_uri=_NDW_DATA_URI,
         )
+        # vegetation_bgt / parking_use_osm / parking_use_bgt zijn (nog) geen
+        # publieke parameters van run_pipeline() in de geïnstalleerde
+        # prepare-package (worden los in de gmt-calculation-lib-repo
+        # toegevoegd/blootgesteld) — alleen doorgeven als de geïnstalleerde
+        # run_pipeline() ze al ondersteunt, zodat oudere installaties niet
+        # crashen op een onbekend keyword-argument.
+        _pipeline_params = inspect.signature(_prepare_run_pipeline).parameters
+        if "vegetation_bgt" in _pipeline_params:
+            kwargs["vegetation_bgt"] = vegetation_bgt
+        if "parking_use_osm" in _pipeline_params:
+            kwargs["parking_use_osm"] = parking_use_osm
+        if "parking_use_bgt" in _pipeline_params:
+            kwargs["parking_use_bgt"] = parking_use_bgt
         with _jobs_lock:
             _jobs[job_id] = {
                 "jobID": job_id,
@@ -2867,6 +2905,10 @@ def _execute_prepare(inputs: dict):
             debug=bool(inputs.get("debug", False)),
             osm_path=pbf_path,
             osm_pbf_env_var=_OSM_PBF_ENV_VAR,
+            annotate_traffic_signals=annotate_traffic_signals,
+            fetch_traffic_signs=fetch_traffic_signs,
+            fetch_osm_assets=fetch_osm_assets,
+            add_elevation=fetch_elevation,
         )
         with _jobs_lock:
             _jobs[job_id] = {
