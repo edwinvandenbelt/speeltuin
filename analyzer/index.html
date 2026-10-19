@@ -553,7 +553,7 @@
     .edit-btn-group .edit-btn.active { position: relative; z-index: 1; }
 
     /* ── Node-dialoog ─────────────────────────────────────────────────── */
-    #nodeDialog, #linkDialog, #linkFlowDialog {
+    #nodeDialog, #linkDialog, #linkFlowDialog, #zoneExplodeDialog {
       display: none;
       position: absolute;
       z-index: 50;
@@ -628,7 +628,7 @@
     }
     #linkAddDialogCancel:hover { background: #f0f2f4; color: #232931; }
 
-    #nodeDialog h3, #linkDialog h3, #linkFlowDialog h3 {
+    #nodeDialog h3, #linkDialog h3, #linkFlowDialog h3, #zoneExplodeDialog h3 {
       font-size: 13px; color: #de0058; margin-bottom: 14px;
       padding-bottom: 8px; border-bottom: 1px solid #e3e6ea;
     }
@@ -681,16 +681,16 @@
       font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif;
       transition: background 0.15s;
     }
-    #nodeDialogOk {
+    #nodeDialogOk, #zoneExplodeDialogOk {
       background: #de0058; color: #ffffff;
       border: 1px solid #de0058;
     }
-    #nodeDialogOk:hover { background: #c70050; }
-    #nodeDialogCancel {
+    #nodeDialogOk:hover, #zoneExplodeDialogOk:hover { background: #c70050; }
+    #nodeDialogCancel, #zoneExplodeDialogCancel {
       background: #ffffff; color: #232931;
       border: 1px solid #e3e6ea;
     }
-    #nodeDialogCancel:hover { background: #f0f2f4; color: #232931; }
+    #nodeDialogCancel:hover, #zoneExplodeDialogCancel:hover { background: #f0f2f4; color: #232931; }
 
     /* ── Wijzigingenlijst (inline sub-paneel onder de aanpassing-knoppen) ──── */
     #changesPanel {
@@ -2149,6 +2149,12 @@
                     title="Nieuw wegvak intekenen">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>
             </button>
+            <!-- Zone opsplitsen (explode) -->
+            <button class="tb-btn edit-btn" id="zoneExplodeBtn"
+                    data-i18n-title="zoneExplodeBtnTitle"
+                    title="Zone opsplitsen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 3h7.5v7.5H3z"/><path d="M13.5 3H21v7.5h-7.5z"/><path d="M3 13.5h18V21H3z"/></svg>
+            </button>
             </div>
             <!-- Maatregelsets importeren -->
             <button class="tb-btn" id="measureSetBtn"
@@ -2585,6 +2591,23 @@
     </div>
   </div>
 
+  <!-- ── Zone-explode dialoog ─────────────────────────────────────────────── -->
+  <div id="zoneExplodeDialog">
+    <h3 id="zoneExplodeDialogTitle" data-i18n="zoneExplodeDialogDefault">Zone opsplitsen</h3>
+    <div class="node-field">
+      <label><span data-i18n="zoneExplodeDialogCount">Aantal delen</span> <span class="field-hint" data-i18n="zoneExplodeDialogHint">minimaal 2</span></label>
+      <div class="node-field-row">
+        <button id="zoneExplodeMinus">−</button>
+        <input type="text" id="zoneExplodeVal" placeholder="bijv. 3" data-i18n-ph="zoneExplodeDialogPh"/>
+        <button id="zoneExplodePlus">+</button>
+      </div>
+    </div>
+    <div class="node-dialog-btns">
+      <button id="zoneExplodeDialogCancel" data-i18n="dialogCancel">Annuleren</button>
+      <button id="zoneExplodeDialogOk" data-i18n="dialogOk">OK</button>
+    </div>
+  </div>
+
   <!-- ── Polygon aanpassing dialoog ──────────────────────────────────────── -->
   <div id="polygonDialog">
     <h3 data-i18n="polygonDialogTitle">Polygon aanpassing</h3>
@@ -2802,6 +2825,9 @@
       nodeDialogProdPh:'+300 of 1200',
       nodeDialogAttr:'Attractie', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut (\u22650)',
       nodeDialogAttrPh:'+300 of 800',
+      zoneExplodeBtnTitle:'Zone opsplitsen',
+      zoneExplodeDialogDefault:'Zone opsplitsen', zoneExplodeDialogCount:'Aantal delen',
+      zoneExplodeDialogHint:'minimaal 2', zoneExplodeDialogPh:'bijv. 3',
       // Gedeeld dialoog
       dialogCancel:'Annuleren', dialogOk:'OK',
       // Wijzigingenlijst
@@ -2811,6 +2837,7 @@
       applyError: c => `Onbekende fout (returncode: ${c})`, applyFetchError: e => `Fout: ${e}`,
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeExplodeLabel: n => `opsplitsen \u00d7${n}`,
       changeItemDel:'Verwijder',
       noChanges:'Geen wijzigingen', viewChangesBtnTitle:'Wijzigingen bekijken',
       changesPendingSection:'Openstaand',
@@ -3074,6 +3101,9 @@
       nodeDialogProdPh:'+300 or 1200',
       nodeDialogAttr:'Attraction', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute (\u22650)',
       nodeDialogAttrPh:'+300 or 800',
+      zoneExplodeBtnTitle:'Split zone',
+      zoneExplodeDialogDefault:'Split zone', zoneExplodeDialogCount:'Number of parts',
+      zoneExplodeDialogHint:'minimum 2', zoneExplodeDialogPh:'e.g. 3',
       dialogCancel:'Cancel', dialogOk:'OK',
       changesTitle:'Changes', scenarioNamePh:'Scenario name', applyBtn:'\u25b6 Apply',
       applyStart:'Starting adjust\u2026', applyRunning:'Processing\u2026', applyDone:'Done!',
@@ -3081,6 +3111,7 @@
       applyError: c => `Unknown error (return code: ${c})`, applyFetchError: e => `Error: ${e}`,
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `speed: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeExplodeLabel: n => `split \u00d7${n}`,
       changeItemDel:'Delete',
       noChanges:'No changes', viewChangesBtnTitle:'View changes',
       changesPendingSection:'Pending',
@@ -3312,6 +3343,9 @@
       nodeDialogProdPh:'+300 tai 1200',
       nodeDialogAttr:'Houkuttelevuus', nodeDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen (\u22650)',
       nodeDialogAttrPh:'+300 tai 800',
+      zoneExplodeBtnTitle:'Jaa vy\xf6hyke',
+      zoneExplodeDialogDefault:'Jaa vy\xf6hyke', zoneExplodeDialogCount:'Osien m\xe4\xe4r\xe4',
+      zoneExplodeDialogHint:'v\xe4hint\xe4\xe4n 2', zoneExplodeDialogPh:'esim. 3',
       dialogCancel:'Peruuta', dialogOk:'OK',
       changesTitle:'Muutokset', scenarioNamePh:'Skenaarion nimi', applyBtn:'\u25b6 K\xe4yt\xe4',
       applyStart:'K\xe4ynnistet\xe4\xe4n s\xe4\xe4t\xf6\xe4\u2026', applyRunning:'K\xe4sitell\xe4\xe4n\u2026', applyDone:'Valmis!',
@@ -3319,6 +3353,7 @@
       applyError: c => `Tuntematon virhe (paluuarvo: ${c})`, applyFetchError: e => `Virhe: ${e}`,
       changeCapLabel: (v, u) => `kap: ${v} ${u}`, changeSpeedLabel: v => `nopeus: ${v} km/h`,
       changeProdLabel: v => `tuot: ${v}`, changeAttrLabel: v => `houk: ${v}`,
+      changeExplodeLabel: n => `jako \u00d7${n}`,
       changeItemDel:'Poista',
       noChanges:'Ei muutoksia', viewChangesBtnTitle:'Näytä muutokset',
       changesPendingSection:'Odottaa',
@@ -3901,7 +3936,7 @@
       <div class="lmp-block">
         <div style="padding:14px">
           <p style="color:#6a757c;font-size:13px;margin:0 0 12px">${T('areaSubtitle')}</p>
-          <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px"></div>
+          <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px;overflow-y:scroll;"></div>
           <p id="areaError" style="display:none;color:#e63312;font-size:13px;margin-top:16px;text-align:center"></p>
         </div>
       </div>`;
@@ -9479,6 +9514,7 @@
     let linkEditActive = false;
     let linkFlowEditActive = false;
     let linkAddActive  = false;        // Nieuw wegvak intekenen
+    let zoneExplodeActive = false;     // Zone opsplitsen (explode)
     let linkAddVertices = [];          // [[lon,lat], ...] vertices van de lijn in aanbouw
     let _linkAddMouseCoord = null;     // huidige muispositie (rubberbanding)
     // ── Selected Link Analysis — state ──────────────────────────────────────
@@ -12782,6 +12818,7 @@
 
     let scenarioCounter  = 1;
     let activeNodeFeature = null;  // feature dat de dialoog opende
+    let activeZoneExplodeFeature = null;  // feature dat de zone-explode-dialoog opende
     let compareVisible   = false;
     let compareData      = null;   // GeoJSON FeatureCollection van COMPARE-laag
 
@@ -12816,11 +12853,15 @@
 
     function addNodeLayer() {
       initPolygonDrawLayers();
-      // 1. BOUNDARY + NODE zones (met productie/attractie-info)
+      // 1. BOUNDARY + NODE zones (met productie/attractie-info), en STUDY/
+      //    INFLUENCE zones op hun centroid (nodig om ze te kunnen selecteren
+      //    voor productie/attractie-wijzigingen én voor "zone opsplitsen" —
+      //    BOUNDARY-zones hebben geen eigen geometrie om te splitsen en
+      //    worden daarom in de explode-dialoog zelf uitgesloten).
       const zonePts = zoneFeaturesRaw
         .filter(f => {
           const cl = f.properties?.zoneClass;
-          return cl === 'BOUNDARY' || cl === 'NODE';
+          return cl === 'BOUNDARY' || cl === 'NODE' || cl === 'STUDY' || cl === 'INFLUENCE';
         })
         .map(f => {
           const p = f.properties;
@@ -12876,8 +12917,10 @@
             ],
             'circle-color': [
               'case',
-              ['==', ['get', 'zoneClass'], 'BOUNDARY'], '#ffb450',
-              ['==', ['get', 'zoneClass'], 'NODE'],     '#7ec8e3',
+              ['==', ['get', 'zoneClass'], 'BOUNDARY'],   '#ffb450',
+              ['==', ['get', 'zoneClass'], 'NODE'],       '#7ec8e3',
+              ['==', ['get', 'zoneClass'], 'STUDY'],      '#49a748',
+              ['==', ['get', 'zoneClass'], 'INFLUENCE'],  '#2f8f7a',
               '#a0aec0'   // NETWORK_NODE
             ],
             'circle-stroke-width': 1.5,
@@ -12887,16 +12930,28 @@
         });
 
         map.on('click', NODE_LAYER, e => {
-          if (!nodeEditActive || nodeSelectMode !== 'click') return;
           const f = e.features[0];
+          if (zoneExplodeActive) {
+            const cl = f.properties?.zoneClass;
+            if (cl !== 'STUDY' && cl !== 'INFLUENCE') return;  // alleen echte zones te exploderen
+            openZoneExplodeDialog(f, e.point);
+            e.originalEvent.stopPropagation();
+            return;
+          }
+          if (!nodeEditActive || nodeSelectMode !== 'click') return;
           openNodeDialog(f, e.point);
           e.originalEvent.stopPropagation();
         });
-        map.on('mouseenter', NODE_LAYER, () => {
+        map.on('mouseenter', NODE_LAYER, e => {
+          if (zoneExplodeActive) {
+            const cl = e.features[0]?.properties?.zoneClass;
+            map.getCanvas().style.cursor = (cl === 'STUDY' || cl === 'INFLUENCE') ? 'pointer' : '';
+            return;
+          }
           if (nodeEditActive && nodeSelectMode === 'click') map.getCanvas().style.cursor = 'pointer';
         });
         map.on('mouseleave', NODE_LAYER, () => {
-          map.getCanvas().style.cursor =
+          map.getCanvas().style.cursor = zoneExplodeActive ? '' :
             (nodeEditActive && nodeSelectMode === 'polygon') ? 'crosshair' : '';
         });
       } else {
@@ -13505,7 +13560,7 @@
         `${p.zoneClass}: ${p.zoneName || p.zoneId}`;
 
       // Vul huidige waarden in (of leeg)
-      const existing = pendingChanges.find(c => c.zoneId === p.zoneId);
+      const existing = pendingChanges.find(c => c.zoneId === p.zoneId && !c._isZoneExplode);
       document.getElementById('nodeProdVal').value = existing?.production ?? '';
       document.getElementById('nodeAttrVal').value = existing?.attraction ?? '';
 
@@ -13524,6 +13579,33 @@
     function closeNodeDialog() {
       document.getElementById('nodeDialog').style.display = 'none';
       activeNodeFeature = null;
+    }
+
+    // ── Zone-explode-dialoog ─────────────────────────────────────────────────
+
+    function openZoneExplodeDialog(feature, mapPoint) {
+      activeZoneExplodeFeature = feature;
+      const p = feature.properties;
+      document.getElementById('zoneExplodeDialogTitle').textContent =
+        `${T('zoneExplodeDialogDefault')}: ${p.zoneName || p.zoneId}`;
+
+      const existing = pendingChanges.find(c => c._isZoneExplode && c.zoneId === p.zoneId);
+      document.getElementById('zoneExplodeVal').value = existing?.explodeInto ?? '';
+
+      const dlg = document.getElementById('zoneExplodeDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 260 > window.innerWidth)  x = mapPoint.x + rect.left - 260;
+      if (y + 200 > window.innerHeight) y = window.innerHeight - 220;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeZoneExplodeDialog() {
+      document.getElementById('zoneExplodeDialog').style.display = 'none';
+      activeZoneExplodeFeature = null;
     }
 
     // ── Link-dialoog ─────────────────────────────────────────────────────────
@@ -13654,6 +13736,16 @@
     document.getElementById('nodeProdPlus' ).onclick = () => stepValue('nodeProdVal', +100);
     document.getElementById('nodeAttrMinus').onclick = () => stepValue('nodeAttrVal', -100);
     document.getElementById('nodeAttrPlus' ).onclick = () => stepValue('nodeAttrVal', +100);
+    document.getElementById('zoneExplodeMinus').onclick = () => {
+      const inp = document.getElementById('zoneExplodeVal');
+      const cur = parseInt(inp.value, 10) || 2;
+      inp.value = Math.max(2, cur - 1);
+    };
+    document.getElementById('zoneExplodePlus' ).onclick = () => {
+      const inp = document.getElementById('zoneExplodeVal');
+      const cur = parseInt(inp.value, 10) || 1;
+      inp.value = Math.max(2, cur + 1);
+    };
 
     document.getElementById('linkCapMinus').onclick = () => {
       const inp = document.getElementById('linkCapVal');
@@ -13731,10 +13823,11 @@
       const p    = activeNodeFeature.properties;
       const prod = document.getElementById('nodeProdVal').value.trim();
       const attr = document.getElementById('nodeAttrVal').value.trim();
+      const featureId = p.zoneId;
+
       if (!prod && !attr) { closeNodeDialog(); return; }
 
       // Verwijder eventuele bestaande wijziging voor dit id
-      const featureId = p.zoneId;
       pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== featureId);
 
       const isNetworkNode = p.zoneClass === 'NETWORK_NODE';
@@ -13748,6 +13841,34 @@
        _setChangesPanelReadOnly(false);
        renderChangesList();
       closeNodeDialog();
+    };
+
+    document.getElementById('zoneExplodeDialogCancel').onclick = closeZoneExplodeDialog;
+
+    document.getElementById('zoneExplodeDialogOk').onclick = () => {
+      if (!activeZoneExplodeFeature) return;
+      const p = activeZoneExplodeFeature.properties;
+      const raw = document.getElementById('zoneExplodeVal').value.trim();
+      if (!raw) { closeZoneExplodeDialog(); return; }
+      const n = parseInt(raw, 10);
+      if (!Number.isInteger(n) || n < 2) { closeZoneExplodeDialog(); return; }
+
+      const featureId = p.zoneId;
+      // Verwijder eventuele bestaande wijziging voor dit id (zone-explode
+      // vervangt de zone volledig; combineren met een productie/attractie-
+      // wijziging op dezelfde zone is niet zinvol).
+      pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== featureId);
+      pendingChanges.push({
+        zoneId:         featureId,
+        explodeInto:    n,
+        _label:         p.zoneName || p.zoneId,
+        _zoneClass:     p.zoneClass,
+        _isZoneExplode: true,
+      });
+
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+      closeZoneExplodeDialog();
     };
 
     // ── Wijzigingenlijst ────────────────────────────────────────────────────
@@ -13963,6 +14084,8 @@
           const prod = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(c.fromZoneId))?.properties?.production ?? 0;
           const trips = (prod * c.tripFraction).toLocaleString(loc, { maximumFractionDigits: 1 });
           parts.push(T('changeOdTripsLabel', trips));
+        } else if (c._isZoneExplode) {
+          parts.push(T('changeExplodeLabel', c.explodeInto));
         } else {
           if (c.production != null) parts.push(T('changeProdLabel', fmt(c.production)));
           if (c.attraction != null) parts.push(T('changeAttrLabel', fmt(c.attraction)));
@@ -14024,6 +14147,8 @@
               } else {
                 parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
               }
+            } else if (h.explodeInto != null) {
+              parts.push(T('changeExplodeLabel', h.explodeInto));
             } else {
               if (h.production != null) parts.push(T('changeProdLabel', fmt(h.production)));
               if (h.attraction != null) parts.push(T('changeAttrLabel', fmt(h.attraction)));
@@ -14086,6 +14211,9 @@
                         originProduction: c.originProduction };
           if (c.motifRatio) obj.motifRatio = c.motifRatio;
           return obj;
+        }
+        if (c._isZoneExplode) {
+          return { zoneId: c.zoneId, explodeInto: c.explodeInto };
         }
         const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
         if (c.production != null) obj.production = c.production;
@@ -15146,6 +15274,7 @@
       if (nodeEditActive)     document.getElementById('nodeEditBtn').click();
       if (linkEditActive)     document.getElementById('linkEditBtn').click();
       if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
+      if (zoneExplodeActive)  document.getElementById('zoneExplodeBtn').click();
       deactivateWhatifRc();
 
       if (odEditActive) {
@@ -15277,8 +15406,9 @@
     // ── Node-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('nodeEditBtn').addEventListener('click', () => {
-      // Zet link-edit en what-if uit als die actief waren
+      // Zet link-edit, zone-explode en what-if uit als die actief waren
       if (linkEditActive) document.getElementById('linkEditBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
       deactivateWhatifRc();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
@@ -15316,13 +15446,47 @@
       }
     });
 
+    // ── Zone-explode knop ───────────────────────────────────────────────────
+
+    document.getElementById('zoneExplodeBtn').addEventListener('click', () => {
+      // Zet alle andere aanpassing-tools uit als die actief waren
+      if (nodeEditActive)      document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)      document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive)  document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive)       document.getElementById('linkAddBtn').click();
+      if (odEditActive) document.getElementById('odEditBtn').click();
+      deactivateWhatifRc();
+      zoneExplodeActive = !zoneExplodeActive;
+      document.getElementById('zoneExplodeBtn').classList.toggle('active', zoneExplodeActive);
+      document.getElementById('zoneExplodeBtn').innerHTML = zoneExplodeActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 3h7.5v7.5H3z"/><path d="M13.5 3H21v7.5h-7.5z"/><path d="M3 13.5h18V21H3z"/></svg>';
+
+      if (zoneExplodeActive) {
+        // Stop animatie en verwijder voertuigen uit beeld (zelfde als node-edit)
+        paused = true;
+        cars   = [];
+        carData = [];
+        updateOverlay(false);
+        _setSimPausedUI(true);
+        map.once('idle', addNodeLayer);
+      } else {
+        removeNodeLayer();
+        closeZoneExplodeDialog();
+        map.getCanvas().style.cursor = '';
+        paused = false;
+        _setSimPausedUI(false);
+        rebuildCars();
+      }
+    });
+
     // ── Link-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('linkEditBtn').addEventListener('click', () => {
-      // Zet node-edit, flow-edit, link-add en what-if uit als die actief waren
+      // Zet node-edit, flow-edit, link-add, zone-explode en what-if uit als die actief waren
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       if (linkAddActive) document.getElementById('linkAddBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
       deactivateWhatifRc();
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
@@ -15365,6 +15529,7 @@
       if (nodeEditActive)  document.getElementById('nodeEditBtn').click();
       if (linkEditActive)  document.getElementById('linkEditBtn').click();
       if (linkAddActive)   document.getElementById('linkAddBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
       deactivateWhatifRc();
       linkFlowEditActive = !linkFlowEditActive;
       document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
@@ -15396,6 +15561,7 @@
       if (nodeEditActive)    document.getElementById('nodeEditBtn').click();
       if (linkEditActive)    document.getElementById('linkEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
       deactivateWhatifRc();
       linkAddActive = !linkAddActive;
       document.getElementById('linkAddBtn').classList.toggle('active', linkAddActive);
@@ -16339,8 +16505,12 @@
     _wireOptButtonGroup(['simWeatherBtns'], 'fspWeather');
 
     // Simulatielus: elke 10 seconden schuift de wijzer een stukje op (1 simulatie-uur per echte minuut).
+    // GMT Analyzer heeft geen doorlopende/levende klok (zie _exitSimPaused hierboven) —
+    // deze lus mag daarom nooit draaien. `paused` wordt elders (node-/link-/zone-edit
+    // aan/uit) ook gebruikt om alleen de auto's te tonen/verbergen en kan dus `false`
+    // worden terwijl de klok toch op een tijdvak (OS/AS/RD/24u) moet blijven staan.
     setInterval(() => {
-      if (paused) return;
+      if (paused || simPausedSelection !== null) return;
       const prev = simHour;
       let next = simHour + SIM_HOURS_PER_TICK;
       if (next >= 24) {
