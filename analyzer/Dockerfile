@@ -11,8 +11,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # ── Python-afhankelijkheden ───────────────────────────────────────────────────
-# Wheels op repo-niveau eerst, zodat analyzer/requirements.txt ze via ../ vindt.
-COPY *.whl ./
+# Wheels staan op repo-niveau; kopieer ze rechtstreeks in analyzer/, zodat
+# requirements.txt (zonder ../) ze naast zichzelf vindt — net als bij de
+# platgeslagen deploy-zip (zie analyzer/deploy.ps1).
+COPY *.whl analyzer/
 COPY analyzer/requirements.txt analyzer/requirements.txt
 RUN pip install --no-cache-dir -r analyzer/requirements.txt
 

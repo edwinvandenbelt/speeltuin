@@ -16,7 +16,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # ── Python-afhankelijkheden ───────────────────────────────────────────────────
-COPY *.whl ./
+# Wheels staan op repo-niveau; kopieer ze rechtstreeks in digital-twin/, zodat
+# requirements.txt (zonder ../) ze naast zichzelf vindt — net als bij de
+# platgeslagen deploy-zip (zie digital-twin/deploy.ps1).
+COPY *.whl digital-twin/
 COPY digital-twin/requirements.txt digital-twin/requirements.txt
 RUN pip install --no-cache-dir -r digital-twin/requirements.txt
 
