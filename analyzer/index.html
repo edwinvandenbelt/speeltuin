@@ -1100,18 +1100,15 @@
     }
     #polygonDialogCancel:hover { background: #e8ecf0; color: #232931; }
 
-    /* ── Link-selectiemodus popup ─────────────────────────────────────────── */
+    /* ── Link-selectiemodus sub-paneel (inline onder de aanpassing-knoppen) ── */
     #linkSelectPopup {
       display: none;
-      position: fixed; left: 16px; top: 70px;
-      z-index: 50;
-      background: #ffffff;
+      background: #f4f6f8;
       border: 1px solid #e3e6ea;
-      border-radius: 12px;
-      padding: 14px 16px; width: 200px;
+      border-radius: 10px;
+      padding: 10px 12px; width: auto;
+      margin: 2px 0 4px 0;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
     }
     #linkSelectPopup h4 {
       margin: 0 0 10px;
@@ -1130,7 +1127,7 @@
       font-size: 10px; color: #6a757c;
       margin-top: 8px; line-height: 1.5;
       padding: 6px 8px;
-      background: #f4f6f8; border-radius: 6px;
+      background: #ffffff; border-radius: 6px;
     }
     .link-poly-ctrl-btn {
       display: none; width: 100%;
@@ -1145,7 +1142,7 @@
     }
     #linkPolygonFinishBtn:hover { background: #c96800; }
     #linkPolygonClearBtn {
-      background: #f4f6f8; color: #232931;
+      background: #ffffff; color: #232931;
       border: 1px solid #e3e6ea;
     }
     #linkPolygonClearBtn:hover { background: #e8ecf0; color: #232931; }
@@ -2190,6 +2187,22 @@
             <button class="poly-ctrl-btn" id="polygonClearBtn" data-i18n="polygonClearBtn">&#10005; Wis polygon</button>
           </div>
 
+          <!-- ── Link-selectiemodus sub-paneel (tijdelijk, alleen tijdens capaciteit-aanpassing) ── -->
+          <div id="linkSelectPopup">
+            <h4 data-i18n="linkSelectTitle">Selectiemodus</h4>
+            <label class="lsm-option">
+              <input type="radio" name="linkSelectMode" value="click" checked/>
+              <span data-i18n="linkSelectClick">Klik op een wegvak</span>
+            </label>
+            <label class="lsm-option">
+              <input type="radio" name="linkSelectMode" value="polygon"/>
+              <span data-i18n="linkSelectPolygon">Polygon tekenen</span>
+            </label>
+            <div id="linkPolygonHint" data-i18n="linkPolygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
+            <button class="link-poly-ctrl-btn" id="linkPolygonFinishBtn" data-i18n="linkPolygonFinishBtn">&#10003; Polygon afsluiten</button>
+            <button class="link-poly-ctrl-btn" id="linkPolygonClearBtn" data-i18n="linkPolygonClearBtn">&#10005; Wis polygon</button>
+          </div>
+
           <!-- ── Wijzigingenlijst (tijdelijk, alleen zichtbaar bij openstaande aanpassingen) ── -->
           <div id="changesPanel">
             <div id="changesPanelHeader">
@@ -2510,22 +2523,6 @@
       <button id="gmtUploadDialogCancel" data-i18n="dialogCancel">Annuleren</button>
       <button id="gmtUploadDialogOk" data-i18n="gmtUploadBtn">Uploaden</button>
     </div>
-  </div>
-
-  <!-- ── Link-selectiemodus popup ──────────────────────────────────────────── -->
-  <div id="linkSelectPopup">
-    <h4 data-i18n="linkSelectTitle">Selectiemodus</h4>
-    <label class="lsm-option">
-      <input type="radio" name="linkSelectMode" value="click" checked/>
-      <span data-i18n="linkSelectClick">Klik op een wegvak</span>
-    </label>
-    <label class="lsm-option">
-      <input type="radio" name="linkSelectMode" value="polygon"/>
-      <span data-i18n="linkSelectPolygon">Polygon tekenen</span>
-    </label>
-    <div id="linkPolygonHint" data-i18n="linkPolygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
-    <button class="link-poly-ctrl-btn" id="linkPolygonFinishBtn" data-i18n="linkPolygonFinishBtn">&#10003; Polygon afsluiten</button>
-    <button class="link-poly-ctrl-btn" id="linkPolygonClearBtn" data-i18n="linkPolygonClearBtn">&#10005; Wis polygon</button>
   </div>
 
   <!-- ── Link polygon aanpassing dialoog ───────────────────────────────────── -->
