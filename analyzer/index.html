@@ -10960,10 +10960,13 @@
         widthMaxPixels: 14,
         getPath:        d => d.coords,
         getWidth:       d => {
+          // sqrt() i.p.v. lineaire schaling: zonder demping verdwijnen minder
+          // dominante routes (bv. 10% van de flow) bijna in de minimumbreedte,
+          // terwijl de kleurdekking hierboven al wel met sqrt gedempt wordt.
           if (highlightLinkIds !== null && !isDimmedLink(d)) {
-            return Math.max(1, normPair(d) * 14);
+            return Math.max(2, Math.sqrt(normPair(d)) * 14);
           }
-          const w = Math.max(1, norm(d) * 14);
+          const w = Math.max(1, Math.sqrt(norm(d)) * 14);
           return isDimmedLink(d) ? Math.max(0.5, w * 0.3) : w;
         },
         getColor:       d => {
