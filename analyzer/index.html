@@ -424,6 +424,15 @@
       cursor: pointer; font-size: 12px; color: #6a757c;
       text-transform: uppercase; letter-spacing: .05em; list-style: revert;
     }
+    #newAdvanced > summary {
+      cursor: pointer; font-size: 12px; color: #6a757c;
+      text-transform: uppercase; letter-spacing: .05em; list-style: revert;
+    }
+    .new-field-row {
+      display: flex; flex-direction: column; gap: 4px;
+      text-transform: none; letter-spacing: 0; font-size: 13px; color: #232931;
+    }
+    .new-field-row select, .new-field-row input[type=number] { width: 100%; }
     .new-ds-tree { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
     .new-ds-item { display: flex; flex-direction: column; gap: 6px; }
     .new-check-row {
@@ -1762,6 +1771,48 @@
             Gebouwen (OSM)
           </label>
           </div>
+        </div>
+      </details>
+
+      <details id="newAdvanced" title="Extra configuratie voor de prepare-pipeline. De velden staan al op de standaardwaarden.">
+        <summary>Geavanceerd</summary>
+        <div class="new-ds-tree">
+
+          <div class="new-ds-item">
+            <label class="new-field-row" title="Bepaalt hoe de zones (studiegebied/invloedsgebied) voor het nieuwe gebied worden opgehaald.">
+              Zone-methode
+              <select id="newZoneMethod">
+                <option value="fetch" selected>Grenszones (bestaande CBS-buurten binnen de bbox)</option>
+                <option value="aggregated">Geaggregeerde zones (centroïden geaggregeerd tot doelaantal)</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="new-ds-item" id="newZoneFetchOpts">
+            <label class="new-field-row" title="Hoe een buurt zonder duidelijke bbox-overlap wordt toegewezen: op basis van het centroïde, of op basis van de grootste overlap.">
+              Study-fallback
+              <select id="newStudyFallback">
+                <option value="centroid" selected>Centroid</option>
+                <option value="max_overlap">Max. overlap</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="new-ds-item" id="newZoneAggregatedOpts" style="display:none">
+            <label class="new-field-row" title="Doelaantal zones binnen het studiegebied (STUDY).">
+              Aantal zones studiegebied
+              <input type="number" id="newZonesStudiegebied" value="20" min="1" step="1"/>
+            </label>
+            <label class="new-field-row" title="Doelaantal zones totaal (STUDY + INFLUENCE).">
+              Aantal zones totaal
+              <input type="number" id="newZonesTotaal" value="100" min="1" step="1"/>
+            </label>
+            <label class="new-field-row" title="Zoekradius rond de bbox waarbinnen CBS-buurtcentroïden worden opgehaald, in meters.">
+              Zoekradius (m)
+              <input type="number" id="newZoneSearchRadiusM" value="100000" min="0" step="1000"/>
+            </label>
+          </div>
+
         </div>
       </details>
 
@@ -4517,6 +4568,16 @@
     wireSubToggle('newParking', ['newParkingOsm', 'newParkingBgt']);
     wireSubToggle('newOsmAssets', ['newStopBordOsm', 'newMiniRotondeOsm', 'newOversteekOsm']);
 
+    // Zone-methode: toon alleen de opties die bij de gekozen methode horen
+    // (grenszones → study-fallback; geaggregeerde zones → aantallen/radius).
+    function syncZoneMethodPanels() {
+      const aggregated = document.getElementById('newZoneMethod').value === 'aggregated';
+      document.getElementById('newZoneFetchOpts').style.display = aggregated ? 'none' : '';
+      document.getElementById('newZoneAggregatedOpts').style.display = aggregated ? '' : 'none';
+    }
+    document.getElementById('newZoneMethod').addEventListener('change', syncZoneMethodPanels);
+    syncZoneMethodPanels();
+
     // newCancelBtn is momenteel verwijderd uit de UI (Home-knop in de kop
     // doet nu dienst als uitgang); defensief geschreven zodat een eventuele
     // herintroductie van de knop geen aparte JS-wijziging vereist.
@@ -4567,6 +4628,11 @@
         parking: !!document.getElementById('newParking').checked,
         parkingOsm: !!document.getElementById('newParkingOsm').checked,
         parkingBgt: !!document.getElementById('newParkingBgt').checked,
+        zoneMethod: document.getElementById('newZoneMethod').value,
+        studyFallback: document.getElementById('newStudyFallback').value,
+        zonesStudiegebied: parseInt(document.getElementById('newZonesStudiegebied').value, 10),
+        zonesTotaal: parseInt(document.getElementById('newZonesTotaal').value, 10),
+        zoneSearchRadiusM: parseFloat(document.getElementById('newZoneSearchRadiusM').value),
       };
       const res  = await fetch('/processes/prepare/execution', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

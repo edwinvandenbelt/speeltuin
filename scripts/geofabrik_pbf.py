@@ -254,16 +254,24 @@ def resolve_or_download_pbf(
     osm_path: str | None = None,
     cache_dir: Path | str | None = None,
     allow_download: bool = True,
+    ignore_explicit: bool = False,
 ) -> tuple[Path, Extract | None]:
     """Return a local PBF path and the extract that covers the bbox.
 
-    Resolution order:
+    Resolution order (unless *ignore_explicit* is True):
     1. Explicit *osm_path* argument.
     2. OSM_PBF_PATH environment variable.
     3. The smallest Geofabrik extract whose polygon contains the bbox
        (cached locally, or downloaded when *allow_download* is True).
+
+    *ignore_explicit* skips steps 1/2 and always does the bbox-based lookup.
+    A caller uses this after it has already determined — by its own means —
+    that an explicitly configured OSM_PBF_PATH does not actually cover the
+    requested bbox (e.g. a fixed province snapshot used for a different
+    area): without this flag, step 2 would silently re-discover the same
+    environment variable and undo that fallback.
     """
-    explicit = resolve_explicit_pbf_path(osm_path)
+    explicit = None if ignore_explicit else resolve_explicit_pbf_path(osm_path)
     if explicit is not None:
         return explicit, None
 

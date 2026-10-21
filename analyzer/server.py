@@ -164,6 +164,7 @@ except ImportError as _e:
 try:
     from scripts.geofabrik_pbf import (
         resolve_or_download_pbf as _resolve_or_download_pbf,
+        find_covering_extracts as _find_covering_extracts,
         is_within_netherlands as _is_within_netherlands,
         OSM_PBF_ENV_VAR as _OSM_PBF_ENV_VAR,
         OSM_PBF_CACHE_DIR_ENV_VAR as _OSM_PBF_CACHE_DIR_ENV_VAR,
@@ -173,12 +174,181 @@ try:
     _GEOFABRIK_PBF_AVAILABLE = True
 except ImportError as _e:
     _resolve_or_download_pbf = None  # type: ignore[assignment]
+    _find_covering_extracts = None  # type: ignore[assignment]
     _is_within_netherlands = None  # type: ignore[assignment]
     _OSM_PBF_ENV_VAR = "OSM_PBF_PATH"
     _OSM_PBF_CACHE_DIR_ENV_VAR = "OSM_PBF_CACHE_DIR"
     _DEFAULT_PBF_CACHE_DIR = Path(tempfile.gettempdir()) / "geofabrik_pbf"
     _GEOFABRIK_PBF_AVAILABLE = False
     print(f"[server] WAARSCHUWING: geofabrik_pbf helper niet beschikbaar — {_e}")
+
+
+def _pbf_varint(buf: bytes, pos: int) -> tuple:
+    """Decodeer één base-128 varint uit buf vanaf pos; geeft (waarde, nieuwe_pos)."""
+    result = 0
+    shift = 0
+    while True:
+        b = buf[pos]
+        pos += 1
+        result |= (b & 0x7F) << shift
+        if not b & 0x80:
+            return result, pos
+        shift += 7
+
+
+def _read_pbf_header_bbox(path) -> tuple | None:
+    """Lees de bounding box uit het OSMHeader-blok van een .osm.pbf-bestand.
+
+    Elke geldige .osm.pbf (incl. alle Geofabrik-extracts) start met een
+    OSMHeader-blob die optioneel een HeaderBBox bevat (left/right/top/bottom,
+    sint64 in nanodegrees). Dit is de enige betrouwbare manier om te
+    verifiëren welk gebied een expliciet opgegeven .pbf-bestand daadwerkelijk
+    dekt — de bestandsnaam alleen (bv. 'gelderland-260903-internal.osm.pbf')
+    is daarvoor geen garantie.
+
+    Geeft (minLon, minLat, maxLon, maxLat) terug, of None als het bestand
+    geen (leesbare) HeaderBBox bevat — dan kan de dekking niet geverifieerd
+    worden en wordt het bestand ongewijzigd vertrouwd (fail-open, zie
+    aanroeper).
+    """
+    import struct
+    import zlib
+
+    try:
+        with open(path, "rb") as fh:
+            hdr_len_raw = fh.read(4)
+            if len(hdr_len_raw) < 4:
+                return None
+            blobheader = fh.read(struct.unpack(">I", hdr_len_raw)[0])
+
+            pos = 0
+            blob_type = None
+            datasize = None
+            while pos < len(blobheader):
+                tag, pos = _pbf_varint(blobheader, pos)
+                field_no, wire = tag >> 3, tag & 7
+                if wire == 2:
+                    length, pos = _pbf_varint(blobheader, pos)
+                    value = blobheader[pos : pos + length]
+                    pos += length
+                    if field_no == 1:
+                        blob_type = value.decode("ascii", "replace")
+                elif wire == 0:
+                    value, pos = _pbf_varint(blobheader, pos)
+                    if field_no == 3:
+                        datasize = value
+                else:
+                    return None
+            if blob_type != "OSMHeader" or not datasize:
+                return None
+            blob = fh.read(datasize)
+
+        pos = 0
+        raw = None
+        while pos < len(blob):
+            tag, pos = _pbf_varint(blob, pos)
+            field_no, wire = tag >> 3, tag & 7
+            if wire == 0:
+                # bv. optional int32 raw_size = 2; niet nodig, overslaan.
+                _, pos = _pbf_varint(blob, pos)
+                continue
+            if wire != 2:
+                return None
+            length, pos = _pbf_varint(blob, pos)
+            value = blob[pos : pos + length]
+            pos += length
+            if field_no == 1:
+                raw = value
+            elif field_no == 3:
+                raw = zlib.decompress(value)
+        if raw is None:
+            return None
+
+        pos = 0
+        while pos < len(raw):
+            tag, pos = _pbf_varint(raw, pos)
+            field_no, wire = tag >> 3, tag & 7
+            if wire == 2:
+                length, pos = _pbf_varint(raw, pos)
+                value = raw[pos : pos + length]
+                pos += length
+                if field_no == 1:
+                    bpos = 0
+                    bvals = {}
+                    while bpos < len(value):
+                        btag, bpos = _pbf_varint(value, bpos)
+                        bfield, bwire = btag >> 3, btag & 7
+                        if bwire != 0:
+                            break
+                        braw, bpos = _pbf_varint(value, bpos)
+                        bvals[bfield] = (braw >> 1) ^ -(braw & 1)  # zigzag
+                    if all(k in bvals for k in (1, 2, 3, 4)):
+                        left, right, top, bottom = (bvals[k] * 1e-9 for k in (1, 2, 3, 4))
+                        return (left, bottom, right, top)
+                    return None
+            elif wire == 0:
+                _, pos = _pbf_varint(raw, pos)
+            else:
+                return None
+        return None
+    except Exception:
+        return None
+
+
+def _pbf_bbox_covers(pbf_bbox, requested_bbox, margin_deg: float = 0.01) -> bool:
+    """True als pbf_bbox (met kleine marge) de requested_bbox volledig omvat."""
+    p_min_lon, p_min_lat, p_max_lon, p_max_lat = pbf_bbox
+    r_min_lon, r_min_lat, r_max_lon, r_max_lat = requested_bbox
+    return (
+        p_min_lon - margin_deg <= r_min_lon
+        and p_min_lat - margin_deg <= r_min_lat
+        and p_max_lon + margin_deg >= r_max_lon
+        and p_max_lat + margin_deg >= r_max_lat
+    )
+
+
+def _explicit_pbf_covers_bbox(pbf_path: Path, bbox: list, pbf_cache_dir) -> bool | None:
+    """Best-effort check of een expliciet OSM_PBF_PATH-bestand de bbox écht dekt.
+
+    Twee controles, van nauwkeurig naar grof:
+
+    1. Echte provinciegrenzen (Geofabrik .poly, al gebruikt door de
+       automatische resolver): welke extract(s) bevatten de bbox volgens hun
+       werkelijke (onregelmatige) vorm? Zo ja, staat die extract-naam
+       (bv. 'overijssel') in de bestandsnaam? Dit is de enige controle die
+       het Gelderland/Overijssel-grensgeval herkent: hun bounding *boxes*
+       overlappen namelijk wél, ook al ligt een punt vlak over de grens
+       buiten de werkelijke provincie.
+    2. Bounding box uit de PBF-header zelf (geen netwerk nodig) — vangt in
+       elk geval de grove gevallen (totaal andere regio) als 1) niet lukt
+       (geen netwerk, onbekende naamgeving).
+
+    Geeft None als geen van beide iets kan vaststellen; de aanroeper
+    vertrouwt het bestand dan ongewijzigd (fail-open, huidig gedrag).
+    """
+    name_lower = pbf_path.name.lower()
+    if _GEOFABRIK_PBF_AVAILABLE and _find_covering_extracts is not None:
+        try:
+            covering = _find_covering_extracts(*bbox, cache_dir=pbf_cache_dir)
+        except Exception as exc:
+            print(
+                f"[server] WAARSCHUWING: provinciegrens-check voor {pbf_path.name} "
+                f"mislukt ({exc!r}); val terug op de grove PBF-header-bbox."
+            )
+            covering = None
+        if covering:
+            matched = any(ext.slug in name_lower for ext in covering)
+            print(
+                f"[server] PBF-dekkingscheck {pbf_path.name}: bbox hoort bij "
+                f"{[e.slug for e in covering]}, match={matched}"
+            )
+            return matched
+
+    header_bbox = _read_pbf_header_bbox(pbf_path)
+    if header_bbox is not None:
+        return _pbf_bbox_covers(header_bbox, bbox)
+    return None
+
 
 try:
     from flow_scaler.core.flow_scaler_core import (
@@ -2795,7 +2965,27 @@ def _execute_prepare(inputs: dict):
             abort(
                 400, f"OSM PBF pad is geen leesbaar .pbf bestand: {explicit_osm_path}"
             )
-        pbf_path = str(pbf_path_obj)
+        # Verifieer dat het expliciete bestand de opgevraagde bbox daadwerkelijk
+        # dekt vóórdat we het vertrouwen. Zonder deze check levert een vast
+        # ingestelde OSM_PBF_PATH (bv. een interne provincie-snapshot) voor een
+        # gebied buiten die provincie stilzwijgend lege/verkeerde data op (0
+        # gebouwen, verkeerd wegennet) — zonder enige foutmelding, zie het
+        # Vroomshoop/Overijssel-incident met een vast ingestelde Gelderland-PBF
+        # (hun bounding *boxes* overlappen, dus een grove bbox-check alleen
+        # had dit niet gevangen — vandaar ook de provinciegrens-check).
+        covers = _explicit_pbf_covers_bbox(
+            pbf_path_obj, [min_lon, min_lat, max_lon, max_lat], pbf_cache_dir
+        )
+        if covers is False:
+            print(
+                f"[server] WAARSCHUWING: expliciet OSM_PBF_PATH "
+                f"({pbf_path_obj.name}) dekt de opgevraagde bbox "
+                f"({min_lon}, {min_lat}, {max_lon}, {max_lat}) niet — val terug "
+                f"op automatische Geofabrik-detectie."
+            )
+            explicit_osm_path = ""
+    if explicit_osm_path:
+        pbf_path = str(Path(explicit_osm_path))
     else:
         if not _GEOFABRIK_PBF_AVAILABLE:
             abort(
@@ -2809,6 +2999,12 @@ def _execute_prepare(inputs: dict):
                 max_lon,
                 max_lat,
                 cache_dir=pbf_cache_dir,
+                # Reaching deze branch betekent: geen bruikbaar expliciet pad
+                # (geen osm_path/OSM_PBF_PATH gegeven, óf dat pad dekte de bbox
+                # niet — zie de coverage-check hierboven). resolve_or_download_pbf()
+                # zou zonder ignore_explicit zelf ook weer OSM_PBF_PATH uit de
+                # omgeving lezen en zo de net vastgestelde fallback ongedaan maken.
+                ignore_explicit=True,
             )
         except Exception as exc:
             abort(400, f"Kon geen passend Geofabrik-extract vinden/downloaden: {exc}")
@@ -2886,6 +3082,42 @@ def _execute_prepare(inputs: dict):
             kwargs["parking_use_bgt"] = parking_use_bgt
         if "area_id" in _pipeline_params:
             kwargs["area_id"] = area_id
+
+        # Zone-methode (wizard-paneel "Geavanceerd"): keuze tussen grenszones
+        # ("fetch", CBS-buurten op bbox-overlap) en geaggregeerde zones
+        # ("aggregated", centroïden geaggregeerd tot een doelaantal). Alleen
+        # relevant voor deze NL-tak (gmt_zone_core); de internationale
+        # osm_prepare-tak hieronder kent deze parameters niet. Net als
+        # hierboven alleen doorgeven als de geïnstalleerde run_pipeline() ze
+        # al ondersteunt.
+        zone_method = str(inputs.get("zoneMethod", "fetch")).strip() or "fetch"
+        if zone_method not in ("fetch", "aggregated"):
+            abort(
+                400,
+                f"Ongeldige zoneMethod: {zone_method!r}. Toegestaan: fetch, aggregated",
+            )
+        study_fallback = str(inputs.get("studyFallback", "centroid")).strip() or "centroid"
+        try:
+            zones_studiegebied = int(inputs.get("zonesStudiegebied", 20))
+            zones_totaal = int(inputs.get("zonesTotaal", 100))
+            zone_search_radius_m = float(inputs.get("zoneSearchRadiusM", 100_000.0))
+        except (ValueError, TypeError):
+            abort(
+                400,
+                "Ongeldige numerieke zone-parameter "
+                "(zonesStudiegebied/zonesTotaal/zoneSearchRadiusM)",
+            )
+        if "zone_method" in _pipeline_params:
+            kwargs["zone_method"] = zone_method
+        if "study_fallback" in _pipeline_params:
+            kwargs["study_fallback"] = study_fallback
+        if "zones_studiegebied" in _pipeline_params:
+            kwargs["zones_studiegebied"] = zones_studiegebied
+        if "zones_totaal" in _pipeline_params:
+            kwargs["zones_totaal"] = zones_totaal
+        if "zone_search_radius_m" in _pipeline_params:
+            kwargs["zone_search_radius_m"] = zone_search_radius_m
+
         with _jobs_lock:
             _jobs[job_id] = {
                 "jobID": job_id,
