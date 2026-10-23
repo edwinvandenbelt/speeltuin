@@ -15018,19 +15018,21 @@
 
     // ── 7. Animatielus ──────────────────────────────────────────────────────
     let lastT  = null;
-    let paused = false;          // simulatieklok (uur-van-de-dag) staat stil; auto's blijven zichtbaar maar bewegen niet
+    let paused = false;          // auto's blijven zichtbaar maar bewegen niet; klok/datum/condities blijven instelbaar
     let carsSuspended = false;   // alleen tijdens knoop-/wegvak-bewerken: auto's echt verborgen/verwijderd
 
-    /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus. */
+    /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus.
+     *  `paused` (het afspeel-vinkje) bevriest alleen de bewegende auto's; datum, tijd,
+     *  temperatuur, weer en motief blijven daarbij gewoon instelbaar. Alleen tijdens
+     *  knoop-/wegvak-bewerken (`carsSuspended`) zijn ze geblokkeerd, om verstoring van
+     *  die bewerkmodus te voorkomen. */
     function _setSimPausedUI(isPaused) {
       const cb = document.getElementById('simPlayCheckbox');
       if (cb) cb.checked = !isPaused;
-      // Datum, temperatuur, weer en motief (reisdoel) hebben alleen betekenis
-      // terwijl de simulatie speelt; zolang ze gepauzeerd staat, gedisabled.
-      document.getElementById('fspDate').disabled = isPaused;
-      document.getElementById('fspPurpose').disabled = isPaused;
+      document.getElementById('fspDate').disabled = carsSuspended;
+      document.getElementById('fspPurpose').disabled = carsSuspended;
       document.querySelectorAll('#simTempBtns .sim-opt-btn, #simWeatherBtns .sim-opt-btn')
-        .forEach(btn => { btn.disabled = isPaused; });
+        .forEach(btn => { btn.disabled = carsSuspended; });
     }
 
     // ── Kruispunt rechts-voor-links parameters ────────────────────────────
@@ -18876,14 +18878,14 @@
         window.removeEventListener('touchend', onUp);
       }
       document.getElementById('simClock').addEventListener('mousedown', e => {
-        if (paused || e.target.closest('.dp-wedge')) return;
+        if (carsSuspended || e.target.closest('.dp-wedge')) return;
         dragging = true;
         onMove(e);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
       });
       document.getElementById('simClock').addEventListener('touchstart', e => {
-        if (paused || e.target.closest('.dp-wedge')) return;
+        if (carsSuspended || e.target.closest('.dp-wedge')) return;
         dragging = true;
         onMove(e);
         window.addEventListener('touchmove', onMove, { passive: true });
@@ -18891,10 +18893,12 @@
       }, { passive: true });
     })();
 
-    // Klik op het knopje in het tijdsblokje: wisselt AM/PM (12 uur door). Genegeerd
-    // terwijl gepauzeerd, net als het slepen van de wijzer (zie initClockDrag hieronder).
+    // Klik op het knopje in het tijdsblokje: wisselt AM/PM (12 uur door). Werkt ook
+    // terwijl gepauzeerd, net als het slepen van de wijzer (zie initClockDrag hierboven) —
+    // alleen de bewegende auto's staan stil, de tijd blijft instelbaar. Enkel tijdens
+    // knoop-/wegvak-bewerken (carsSuspended) is dit geblokkeerd.
     document.getElementById('simClockModeBtn').addEventListener('click', async () => {
-      if (_simClockBusyCount > 0 || paused) return; // vorige overgang nog bezig, of gepauzeerd
+      if (_simClockBusyCount > 0 || carsSuspended) return; // vorige overgang nog bezig, of aan het bewerken
       // Zelfde redenering als bij het afspeel-vinkje: de spinner moet al staan
       // vóór het (mogelijk zware) synchrone werk in setSimHour, niet pas zodra
       // die zelf scheduleSimApply/applyFlowScaler bereikt.
