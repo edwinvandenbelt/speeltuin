@@ -164,6 +164,15 @@
       font-family: inherit; box-sizing: border-box;
     }
     .sim-clock-mode-btn:hover { background: #dde2e6; color: #232931; }
+    .sim-time-nav-row { display: flex; align-items: center; gap: 4px; }
+    .sim-time-nav-row .sim-time-box { flex: 1 1 auto; min-width: 0; }
+    .sim-clock-nav-btn {
+      flex: 0 0 auto; height: 26px; min-width: 20px; padding: 0 4px; margin: 0;
+      border: 1px solid #e3e6ea; border-radius: 4px; background: #eef1f3; color: #4b5159;
+      font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer;
+      font-family: inherit; box-sizing: border-box;
+    }
+    .sim-clock-nav-btn:hover { background: #dde2e6; color: #232931; }
     .sim-date-input { height: 26px; font-size: 11px; padding: 0 6px; border: 1px solid #e3e6ea; border-radius: 6px; color: #232931; box-sizing: border-box; }
     .sim-row.sim-labeled-row { align-items: center; gap: 8px; }
     .sim-subrow-label {
@@ -1845,10 +1854,20 @@
               </svg>
             </div>
             <div class="sim-clock-info">
-              <div id="simClockDigital" class="sim-time-box">
-                <span id="simClockTimeText">08:00</span>
-                <button type="button" id="simClockModeBtn" class="sim-clock-mode-btn"
-                        data-i18n-title="simClockToggleTitle" title="Klik om te wisselen tussen AM/PM">AM</button>
+              <div class="sim-time-nav-row">
+                <button type="button" id="simHourBackFullBtn" class="sim-clock-nav-btn"
+                        data-i18n-title="simHourBackFullTitle" title="Een uur terug">&#171;</button>
+                <button type="button" id="simHourBackHalfBtn" class="sim-clock-nav-btn"
+                        data-i18n-title="simHourBackHalfTitle" title="Een half uur terug">&#8249;</button>
+                <div id="simClockDigital" class="sim-time-box">
+                  <span id="simClockTimeText">08:00</span>
+                  <button type="button" id="simClockModeBtn" class="sim-clock-mode-btn"
+                          data-i18n-title="simClockToggleTitle" title="Klik om te wisselen tussen AM/PM">AM</button>
+                </div>
+                <button type="button" id="simHourFwdHalfBtn" class="sim-clock-nav-btn"
+                        data-i18n-title="simHourFwdHalfTitle" title="Een half uur vooruit">&#8250;</button>
+                <button type="button" id="simHourFwdFullBtn" class="sim-clock-nav-btn"
+                        data-i18n-title="simHourFwdFullTitle" title="Een uur vooruit">&#187;</button>
               </div>
               <input type="date" id="fspDate" class="fsp-input sim-date-input"/>
             </div>
@@ -2562,6 +2581,10 @@
       simClockTitle:'Sleep de wijzer om de tijd aan te passen',
       simClockToggleTitle:'Klik om te wisselen tussen AM/PM',
       simClockCycleTitle:'Klik om te wisselen tussen 24 uur / ochtendspits / restdag / avondspits',
+      simHourBackFullTitle:'Een uur terug',
+      simHourBackHalfTitle:'Een half uur terug',
+      simHourFwdHalfTitle:'Een half uur vooruit',
+      simHourFwdFullTitle:'Een uur vooruit',
       nodeEditTitle:'Productie/attractie per knoop wijzigen',
       linkEditTitle:'Capaciteit per wegvak wijzigen',
       linkFlowEditTitle:'Flow per wegvak wijzigen',
@@ -2831,6 +2854,10 @@
       simClockTitle:'Drag the hand to change the time',
       simClockToggleTitle:'Click to toggle AM/PM',
       simClockCycleTitle:'Click to cycle through 24 hours / morning peak / off-peak / evening peak',
+      simHourBackFullTitle:'Back one hour',
+      simHourBackHalfTitle:'Back half an hour',
+      simHourFwdHalfTitle:'Forward half an hour',
+      simHourFwdFullTitle:'Forward one hour',
       nodeEditTitle:'Edit production/attraction per node',
       linkEditTitle:'Edit capacity per road link',
       linkFlowEditTitle:'Edit flow per road link',
@@ -3087,6 +3114,10 @@
       simClockTitle:'Ved\u00e4 viisaria aikaa muuttaaksesi',
       simClockToggleTitle:'Vaihda AM/PM napauttamalla',
       simClockCycleTitle:'Napauta vaihtaaksesi 24 tuntia / aamuruuhka / muu aika / iltaruuhka',
+      simHourBackFullTitle:'Tunti taaksepäin',
+      simHourBackHalfTitle:'Puoli tuntia taaksepäin',
+      simHourFwdHalfTitle:'Puoli tuntia eteenpäin',
+      simHourFwdFullTitle:'Tunti eteenpäin',
       nodeEditTitle:'Muokkaa solmupisteen tuotantoa/houkuttelevuutta',
       linkEditTitle:'Muokkaa tiejakson kapasiteettia',
       addWegvakTitle:'Lis\xe4\xe4 tiejakso (ei viel\xe4 saatavilla)',
@@ -15424,6 +15455,70 @@
       computeCarData();
     }
 
+    /** Lichte update van de OD-productiesnelheden na een flow-schaal-wijziging (nieuw heel
+     *  uur, dagdeel, datum, weer, temperatuur of motief): de routes en hun onderlinge
+     *  verdeling liggen vast, alleen het aantal auto's dat per tijdseenheid van een
+     *  herkomst vertrekt verandert. Auto's die al onderweg zijn blijven gewoon doorrijden;
+     *  de bestaande spawn-cyclus (zie 'Productie' in animate()) laat de wegbezetting
+     *  vloeiend naar het nieuwe niveau toe-/afgroeien i.p.v. de hele populatie in één klap
+     *  te vervangen — dat gaf bij elke klokstap een merkbare hapering.
+     *  Valt terug op een volledige rebuildCars() buiten route-modus, of zolang er nog geen
+     *  odGroups zijn opgebouwd (eerste keer). */
+    function refreshProductionRates() {
+      if (!routeMode || odGroups.size === 0) { rebuildCars(); return; }
+      for (const g of odGroups.values()) {
+        let total = 0;
+        for (const rp of g.paths) {
+          const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[flowDaypart] ?? (1 / 14.4));
+          total += productionDp * rp.route.weight * (rp.route.calib ?? 1);
+        }
+        g.totalFlow = total;
+      }
+    }
+
+    // ── Stapgrootte-afhankelijke update: productie bijwerken vs. auto's herplaatsen ──
+    const PRODUCTION_ONLY_MAX_STEP_H = 0.25; // 15 minuten: grotere stappen vereisen herplaatsing
+    let _lastPlacedSimHour = undefined;      // tijdstip waarvoor de auto's voor het laatst
+    let _lastPlacedDateStr = undefined;      // (her)geplaatst zijn; undefined = nog nooit
+
+    /** Kleinste afstand tussen twee klokstanden (0–24) op een cirkelvormige 24-uurs
+     *  wijzerplaat, in uren (bv. 23:50 en 00:10 liggen 20 minuten uit elkaar, niet 23u40). */
+    function _circularHourDiff(a, b) {
+      const d = Math.abs(a - b) % 24;
+      return Math.min(d, 24 - d);
+    }
+
+    /** Tijdsverschil in uren tussen twee (datum, klokuur)-combinaties. Zonder datum (geen
+     *  specifieke datum gekozen) vergelijkt dit alleen het klokuur, cirkelvormig; is er wél
+     *  een datum, dan telt een midnight-overgang niet als een sprong van bijna een etmaal. */
+    function _timeStepHours(dateA, hourA, dateB, hourB) {
+      if (dateA == null || dateB == null) {
+        return dateA !== dateB ? Infinity : _circularHourDiff(hourA, hourB);
+      }
+      const msPerHour = 3_600_000;
+      const tA = new Date(dateA + 'T00:00:00').getTime() + hourA * msPerHour;
+      const tB = new Date(dateB + 'T00:00:00').getTime() + hourB * msPerHour;
+      return Math.abs(tA - tB) / msPerHour;
+    }
+
+    /** Werk de auto-productie bij na een flow-schaal-wijziging (nieuw uur, dagdeel, datum,
+     *  weer, temperatuur of motief). Is de stap t.o.v. de laatst geplaatste tijd klein
+     *  (≤15 min, zie PRODUCTION_ONLY_MAX_STEP_H), dan volstaat het bijwerken van de
+     *  productiesnelheden (refreshProductionRates): routes en hun onderlinge verdeling
+     *  liggen vast, alleen het aantal vertrekkende auto's verandert, en auto's die al
+     *  onderweg zijn kunnen gewoon doorrijden. Bij een grotere stap (bv. de "half uur"/
+     *  "heel uur"-knoppen, ver slepen aan de wijzer, of een andere datum) klopt de
+     *  bestaande autopopulatie niet meer met het nieuwe tijdstip en worden de auto's
+     *  wél opnieuw geplaatst (rebuildCars). */
+    function applyProductionStep() {
+      const dateVal = document.getElementById('fspDate').value || null;
+      const bigStep = _lastPlacedDateStr === undefined
+        || _timeStepHours(dateVal, simHour, _lastPlacedDateStr, _lastPlacedSimHour) > PRODUCTION_ONLY_MAX_STEP_H;
+      _lastPlacedDateStr = dateVal;
+      _lastPlacedSimHour = simHour;
+      if (bigStep) rebuildCars(); else refreshProductionRates();
+    }
+
     // Onderdruk 'Image X could not be loaded'-waarschuwingen van OpenFreeMap's sprite-sheet
     // Onderdruk 'Image X could not be loaded'-waarschuwingen van de sprite-sheet
     // door ontbrekende afbeeldingen te vervangen door een transparante 1×1 placeholder.
@@ -18501,9 +18596,10 @@
        updateLegend();
        rebuildLinkFlowMap();
        calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
-       // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
-       // in segment-modus bepaalt het de flow-drempel per segment.
-       rebuildCars();
+       // Kleine stap (≤15 min t.o.v. laatst geplaatste tijd): alleen de productiesnelheid
+       // per herkomst bijwerken. Grote stap, of segment-modus: auto's echt herplaatsen.
+       // Zie applyProductionStep().
+       applyProductionStep();
        updateOverlay(true);
        updateDebugPanel();
        // Gebouwkleur (grondvlak én 3D-extrusie) synchroniseren met het geselecteerde dagdeel.
@@ -18893,11 +18989,11 @@
       }, { passive: true });
     })();
 
-    // Klik op het knopje in het tijdsblokje: wisselt AM/PM (12 uur door). Werkt ook
-    // terwijl gepauzeerd, net als het slepen van de wijzer (zie initClockDrag hierboven) —
-    // alleen de bewegende auto's staan stil, de tijd blijft instelbaar. Enkel tijdens
-    // knoop-/wegvak-bewerken (carsSuspended) is dit geblokkeerd.
-    document.getElementById('simClockModeBtn').addEventListener('click', async () => {
+    /** Verzet de klok een vast aantal uren t.o.v. de huidige stand (knopjes rond het
+     *  tijdveld en de AM/PM-knop). Werkt ook terwijl gepauzeerd — alleen de bewegende
+     *  auto's staan dan stil, de tijd blijft instelbaar. Enkel tijdens knoop-/wegvak-
+     *  bewerken (carsSuspended) is dit geblokkeerd. */
+    async function _nudgeSimHour(deltaHours) {
       if (_simClockBusyCount > 0 || carsSuspended) return; // vorige overgang nog bezig, of aan het bewerken
       // Zelfde redenering als bij het afspeel-vinkje: de spinner moet al staan
       // vóór het (mogelijk zware) synchrone werk in setSimHour, niet pas zodra
@@ -18906,11 +19002,20 @@
       _setSimClockBusy(true);
       await _yieldToPaint();
       try {
-        await setSimHour(simHour + 12);
+        await setSimHour(simHour + deltaHours);
       } finally {
         _setSimClockBusy(false);
       }
-    });
+    }
+
+    // Klik op het knopje in het tijdsblokje: wisselt AM/PM (12 uur door).
+    document.getElementById('simClockModeBtn').addEventListener('click', () => _nudgeSimHour(12));
+
+    // Knopjes rond het tijdveld: een (half) uur terug/vooruit.
+    document.getElementById('simHourBackFullBtn').addEventListener('click', () => _nudgeSimHour(-1));
+    document.getElementById('simHourBackHalfBtn').addEventListener('click', () => _nudgeSimHour(-0.5));
+    document.getElementById('simHourFwdHalfBtn').addEventListener('click', () => _nudgeSimHour(0.5));
+    document.getElementById('simHourFwdFullBtn').addEventListener('click', () => _nudgeSimHour(1));
 
     // Datum-, temperatuur-, weer- en reisdoel-wijzigingen passen de simulatie direct toe.
     document.getElementById('fspDate').addEventListener('change', () => { updateSunLight(); scheduleSimApply(); });
@@ -19036,7 +19141,7 @@
         _fspActiveLabel = dateTime ? `${dateVal} ${hour}:00` : T('fspTitleValue');
         updateSunLight();
 
-        rebuildCars();
+        applyProductionStep();
         updateLegend();
         updateOverlay(true);
 
