@@ -4036,8 +4036,18 @@ def api_reverse_geocode():
 # ---------------------------------------------------------------------------
 
 
+def _is_hard_refresh() -> bool:
+    """Detecteer een Ctrl+F5/Shift+F5 (hard refresh): browsers sturen dan
+    'Cache-Control: no-cache' en/of 'Pragma: no-cache' mee op de navigatie-aanvraag."""
+    cache_control = (request.headers.get("Cache-Control") or "").lower()
+    pragma = (request.headers.get("Pragma") or "").lower()
+    return "no-cache" in cache_control or "no-cache" in pragma
+
+
 @app.route("/")
 def index():
+    if _is_hard_refresh():
+        _areas_cache_invalidate()
     fmt = request.args.get("f", "html").lower()
     if fmt == "json":
         return jsonify(
