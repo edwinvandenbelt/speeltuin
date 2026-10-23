@@ -272,6 +272,22 @@
       width: 16px; height: 16px; margin: 0;
       accent-color: #de0058; cursor: pointer;
     }
+    .lmp-motief-spinner {
+      display: none;
+      width: 11px; height: 11px;
+      border: 2px solid rgba(0,165,171,0.25);
+      border-top-color: #00a5ab;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    .lmp-motief-spinner.visible { display: inline-block; }
+    .lmp-buildings-status {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 6px; padding-top: 8px;
+      border-top: 1px solid rgba(35,41,49,0.08);
+      font-size: 12px; color: #6a757c;
+    }
 
     /* ── Slider-tab om paneel in/uit te klappen ───────────────────────── */
     #leftMenuPanelToggle {
@@ -2358,11 +2374,15 @@
         </div>
         <div class="lmp-block-body">
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="off" checked> <span>uit</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="all"> <span>alles</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="werk"> <span>werk</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="onderwijs"> <span>onderwijs</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="winkelen"> <span>winkelen</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="recreatie"> <span>recreatie</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="all"> <span>alles</span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="werk"> <span>werk</span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="onderwijs"> <span>onderwijs</span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="winkelen"> <span>winkelen</span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="recreatie"> <span>recreatie</span><span class="lmp-motief-spinner"></span></label>
+          <div class="lmp-buildings-status" id="lmpBuildingsStatus">
+            <span class="lmp-motief-spinner" id="lmpBuildingsStatusSpinner"></span>
+            <span id="lmpBuildingsStatusText">nog niet opgehaald</span>
+          </div>
         </div>
       </div>
 
@@ -5447,6 +5467,56 @@
     return { type: 'FeatureCollection', features, properties };
   }
 
+  /**
+   * Haal de panden-collectie op als NDJSON-stream (?format=ndjson), zelfde
+   * patroon als _fetchRoutesNdjson: header-regel + één feature per regel,
+   * progressief geparsed. Werkt het aantal al ontvangen panden bij in de
+   * statusregel van het "Pand productie/attractie"-paneel. Valt terug op de
+   * gewone JSON-respons als de server geen streaming content-type teruggeeft.
+   */
+  async function _fetchBuildingsNdjson(url) {
+    const resp = await fetch(url, { headers: { Accept: 'application/x-ndjson' } });
+    if (!resp.ok) throw new Error(`buildings ndjson ${resp.status}`);
+    const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+    if (!resp.body || !ct.includes('ndjson')) {
+      return resp.json();
+    }
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const features = [];
+    let properties = {};
+    let buf = '';
+    const statusEl = document.getElementById('lmpBuildingsStatusText');
+
+    const handleLine = (line) => {
+      const s = line.trim();
+      if (!s) return;
+      let obj;
+      try { obj = JSON.parse(s); } catch { return; }
+      if (obj && obj.type === 'Header') {
+        properties = obj.properties || {};
+        return;
+      }
+      features.push(obj);
+      if (statusEl && (features.length & 1023) === 0) statusEl.textContent = `ophalen (${features.length})`;
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    buf += decoder.decode();
+    if (buf.length) handleLine(buf);
+
+    return { type: 'FeatureCollection', features, properties };
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
 
@@ -6559,6 +6629,10 @@
       if (buildingGroup) buildingGroup.style.display = 'flex';
 
       _tryAddBuildings();
+
+      // Pas het al geselecteerde motief (indien aangeklikt vóórdat de data
+      // beschikbaar was) alsnog toe, en werk de status-UI bij naar 'beschikbaar'.
+      _applyBuildingDisplay();
     }
 
     // Schrijf color_mrh/erh/rest op elk gebouw voor het gegeven motief
@@ -6659,9 +6733,21 @@
     function _applyBuildingDisplay() {
       const purpose = document.getElementById('buildingPurpose')?.value ?? 'off';
       _currentPurpose = purpose;
+
+      document.querySelectorAll('.lmp-motief-spinner').forEach(s => s.classList.remove('visible'));
+
       if (purpose !== 'off' && _buildingsGeoJson && _NORM) {
         _doUpdateBuildingColors(purpose, false, false);
-        if (map.getSource('buildings')) map.getSource('buildings').setData(_buildingsGeoJson);
+        if (map.getSource('buildings')) {
+          // Spinner naast het gekozen motief totdat MapLibre klaar is met (her)tekenen
+          const rowSpinner = document.querySelector(`input[name="lmpBuildingPurpose"][value="${purpose}"]`)
+            ?.closest('.lmp-radio-row')?.querySelector('.lmp-motief-spinner');
+          if (rowSpinner) {
+            rowSpinner.classList.add('visible');
+            map.once('idle', () => rowSpinner.classList.remove('visible'));
+          }
+          map.getSource('buildings').setData(_buildingsGeoJson);
+        }
       }
 
       // ── Productie/attractie: het gekleurde grondvlak (buildings-fill) ──
@@ -6672,6 +6758,21 @@
       if (purpose !== 'off' && map.getLayer('buildings-fill')) {
         map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
       }
+
+      _refreshBuildingsStatusUI();
+    }
+
+    /** Werkt de statusregel onderaan het "Pand productie/attractie"-blok bij:
+     *  'nog niet opgehaald' (geen motief actief, data nog niet klaar),
+     *  'ophalen' (motief actief maar data nog niet klaar), of 'beschikbaar'. */
+    function _refreshBuildingsStatusUI() {
+      const textEl = document.getElementById('lmpBuildingsStatusText');
+      if (!textEl) return;
+      const spinEl    = document.getElementById('lmpBuildingsStatusSpinner');
+      const available = !!(_buildingsGeoJson && _NORM);
+      const fetching  = !available && _currentPurpose !== 'off';
+      textEl.textContent = available ? 'beschikbaar' : (fetching ? 'ophalen' : 'nog niet opgehaald');
+      if (spinEl) spinEl.classList.toggle('visible', fetching);
     }
 
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
@@ -6776,17 +6877,11 @@
       if (!_mapReady || !_buildingsGeoJson) return;
 
       // Maquette-modus: verberg alle gebouwlagen en stop hier
+      // (building/building-3d zijn al verborgen door _onMapStyleLoad())
       if (_MAQUETTE) {
-        try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
-        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
         try { if (map.getLayer('buildings-fill')) map.setLayoutProperty('buildings-fill', 'visibility', 'none'); } catch (_) {}
         return;
       }
-
-      // Verberg Liberty 2D/3D-gebouwlagen; ons eigen gekleurde grondvlak
-      // (buildings-fill) vervangt ze.
-      try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
-      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
 
       // OGC GeoJSON-source (kleuren). generateId → stabiele feature-ids voor
       // feature-state (selectie-highlight).
@@ -7114,9 +7209,11 @@
     }
     window._resetSceneryDisplayDefaults = _resetSceneryDisplayDefaults;
 
-    // Laad gebouwen asynchroon; verrijking vindt plaats zodra ook zones beschikbaar zijn
-    fetch(`/collections/buildings/items?areaId=${AREA_ID}`)
-      .then(r => r.ok ? r.json() : null)
+    // Laad gebouwen asynchroon; verrijking vindt plaats zodra ook zones beschikbaar zijn.
+    // Progressief via NDJSON (?format=ndjson), met fallback op de gewone JSON-respons.
+    const _buildingsUrl = `/collections/buildings/items?areaId=${AREA_ID}`;
+    _fetchBuildingsNdjson(_buildingsUrl + '&format=ndjson')
+      .catch(() => fetch(_buildingsUrl).then(r => r.ok ? r.json() : null).catch(() => null))
       .then(data => {
         if (!data || !Array.isArray(data.features)) return;
         // Verwijder brugpijlers en ondergrondse niet-parkeer objecten.
@@ -12799,6 +12896,16 @@
       }
       hideLaadscherm();
       _startFollowMode();
+
+      // Liberty 2D/3D-gebouwlagen altijd verbergen, meteen bij het laden van de
+      // stijl — niet pas zodra _tryAddBuildings() de pandendata heeft verwerkt.
+      // Anders flitsen de standaard 3D-gebouwen van de basiskaart kort op terwijl
+      // de pandendata nog wordt opgehaald/verrijkt. Ons eigen gekleurde grondvlak
+      // (buildings-fill, zie _tryAddBuildings) vervangt ze zodra het motief
+      // "Pand productie/attractie" ≠ 'uit' staat; tot die tijd blijft alles leeg.
+      try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+
       if (_MAQUETTE) {
         map.getStyle().layers
           .filter(l => l.id.toLowerCase().includes('building'))
