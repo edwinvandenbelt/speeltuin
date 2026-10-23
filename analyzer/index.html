@@ -282,6 +282,13 @@
       flex-shrink: 0;
     }
     .lmp-motief-spinner.visible { display: inline-block; }
+    .lmp-motief-swatch {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.15);
+      flex-shrink: 0;
+    }
     .lmp-buildings-status {
       display: flex; align-items: center; gap: 6px;
       margin-top: 6px; padding-top: 8px;
@@ -2375,10 +2382,10 @@
         <div class="lmp-block-body">
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="off" checked> <span>uit</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="all"> <span>alles</span><span class="lmp-motief-spinner"></span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="werk"> <span>werk</span><span class="lmp-motief-spinner"></span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="onderwijs"> <span>onderwijs</span><span class="lmp-motief-spinner"></span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="winkelen"> <span>winkelen</span><span class="lmp-motief-spinner"></span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="recreatie"> <span>recreatie</span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="werk"> <span>werk</span><span class="lmp-motief-swatch" style="background:#f4b942"></span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="onderwijs"> <span>onderwijs</span><span class="lmp-motief-swatch" style="background:#a29bfe"></span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="winkelen"> <span>winkelen</span><span class="lmp-motief-swatch" style="background:#e05c5c"></span><span class="lmp-motief-spinner"></span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpBuildingPurpose" value="recreatie"> <span>recreatie</span><span class="lmp-motief-swatch" style="background:#5cb85c"></span><span class="lmp-motief-spinner"></span></label>
           <div class="lmp-buildings-status" id="lmpBuildingsStatus">
             <span class="lmp-motief-spinner" id="lmpBuildingsStatusSpinner"></span>
             <span id="lmpBuildingsStatusText">nog niet opgehaald</span>
@@ -3060,7 +3067,8 @@
       tooltipBuildingHeight:'Hoogte', tooltipBuildingCap:'Capaciteit',
       tooltipBuildingDir:'Richting', tooltipBuildingAttraction:'Attractie',
       tooltipBuildingProduction:'Productie', tooltipBuildingNeutral:'Neutraal',
-      tooltipPurposeAll:'alles', tooltipPurposeWerk:'werk',
+      tooltipBuildingMotief:'Motief',
+      tooltipPurposeAll:'alles', tooltipPurposeWerk:'werk', tooltipPurposeWonen:'wonen',
       tooltipPurposeOnderwijs:'onderwijs', tooltipPurposeWinkelen:'winkelen', tooltipPurposeRecreat:'recreatie',
       buildingTypeResidential:'Wonen', buildingTypeOffice:'Kantoor',
       buildingTypeCommercial:'Winkel / horeca', buildingTypeEducation:'Onderwijs',
@@ -3329,7 +3337,8 @@
       tooltipBuildingHeight:'Height', tooltipBuildingCap:'Capacity',
       tooltipBuildingDir:'Direction', tooltipBuildingAttraction:'Attraction',
       tooltipBuildingProduction:'Production', tooltipBuildingNeutral:'Neutral',
-      tooltipPurposeAll:'all', tooltipPurposeWerk:'work',
+      tooltipBuildingMotief:'Purpose',
+      tooltipPurposeAll:'all', tooltipPurposeWerk:'work', tooltipPurposeWonen:'residential',
       tooltipPurposeOnderwijs:'education', tooltipPurposeWinkelen:'shopping', tooltipPurposeRecreat:'recreation',
       buildingTypeResidential:'Residential', buildingTypeOffice:'Office',
       buildingTypeCommercial:'Retail / food', buildingTypeEducation:'Education',
@@ -3542,7 +3551,8 @@
       tooltipBuildingHeight:'Korkeus', tooltipBuildingCap:'Kapasiteetti',
       tooltipBuildingDir:'Suunta', tooltipBuildingAttraction:'Vetovoima',
       tooltipBuildingProduction:'Tuotanto', tooltipBuildingNeutral:'Neutraali',
-      tooltipPurposeAll:'kaikki', tooltipPurposeWerk:'työ',
+      tooltipBuildingMotief:'Tarkoitus',
+      tooltipPurposeAll:'kaikki', tooltipPurposeWerk:'työ', tooltipPurposeWonen:'asuminen',
       tooltipPurposeOnderwijs:'koulutus', tooltipPurposeWinkelen:'ostokset', tooltipPurposeRecreat:'vapaa-aika',
       buildingTypeResidential:'Asuminen', buildingTypeOffice:'Toimisto',
       buildingTypeCommercial:'Kauppa / ravintola', buildingTypeEducation:'Koulutus',
@@ -6645,6 +6655,32 @@
       recreatie: new Set(['residential','recreation','transport','other']),
     };
 
+    // Dominante motiefcategorie per pandtype, voor de 24-uurs (etmaal) weergave.
+    // null = neutraal/ondersteunend type (geen eigen motiefkleur, altijd grijs).
+    const _BUILDING_MOTIEF_CATEGORY = {
+      residential: 'wonen',
+      office:      'werk',
+      industrial:  'werk',
+      education:   'onderwijs',
+      commercial:  'winkelen',
+      recreation:  'recreatie',
+      parking:     null,
+      transport:   null,
+      other:       null,
+    };
+
+    // Motiefkleuren voor de etmaal-weergave. Zelfde kleurtaal als MOTIF_COLORS
+    // (motiefverdeling op routes, verderop in dit bestand) — hier als letterlijke
+    // waarden herhaald omdat MOTIF_COLORS pas later in deze IIFE wordt gedefinieerd.
+    const _MOTIEF_CATEGORY_COLOR = {
+      wonen:     '#4e9af1', // = MOTIF_COLORS.house
+      werk:      '#f4b942', // = MOTIF_COLORS.work
+      onderwijs: '#a29bfe', // = MOTIF_COLORS.education
+      winkelen:  '#e05c5c', // = MOTIF_COLORS.shopping
+      recreatie: '#5cb85c', // = MOTIF_COLORS.recreational
+    };
+    const _BUILDING_NEUTRAL_GRAY = '#888888'; // zelfde grijs als buildingColor(0)
+
     function _doUpdateBuildingColors(purpose, scaled = false, forceGrayColor = false) {
       if (!_buildingsGeoJson || !_NORM) return;
       const norm         = _NORM[purpose] || 1;
@@ -6685,6 +6721,16 @@
         const type = p._btype || 'other';
         const cap  = p._cap?.[purpose] ?? 0;   // = geschat aantal (inwoners/arbeidsplaatsen/leerlingen), of vloeroppervlak als fallback
         const isRelevant = relevantTypes === null || relevantTypes.has(type);
+
+        // Etmaal (24 uur): productie en attractie zijn over een vol etmaal per saldo
+        // in balans, dus de rood-grijs-groen schaal is hier niet informatief. Toon
+        // in plaats daarvan een categorale motiefkleur: bij 'alles' elk pand in zijn
+        // eigen motiefkleur, bij een specifiek motief alleen de panden van dát motief
+        // (de rest grijs).
+        const motiefCat = _BUILDING_MOTIEF_CATEGORY[type] || null;
+        p.color_etmaal = (forceGrayColor || !motiefCat || (purpose !== 'all' && motiefCat !== purpose))
+          ? _BUILDING_NEUTRAL_GRAY
+          : _MOTIEF_CATEGORY_COLOR[motiefCat];
 
         for (const dp of ['mrh', 'erh', 'rest']) {
           const dir = _getBuildingDir(type, purpose, dp);
@@ -6756,7 +6802,8 @@
         map.setLayoutProperty('buildings-fill', 'visibility', purpose === 'off' ? 'none' : 'visible');
       }
       if (purpose !== 'off' && map.getLayer('buildings-fill')) {
-        map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+        map.setPaintProperty('buildings-fill', 'fill-color',
+          ['get', flowDaypart === 'etmaal' ? 'color_etmaal' : `color_${daypart}`]);
       }
 
       _refreshBuildingsStatusUI();
@@ -6952,9 +6999,22 @@
           const heightM   = p.height ? Math.round(p.height) + '\u202fm' : '–';
           const capFmt    = cap > 0 ? Math.round(cap).toLocaleString(T('numberLocale')) : '–';
 
-          // Productie/attractie voor het huidige motief + dagdeel
+          // Productie/attractie voor het huidige motief + dagdeel. Bij 24 uur (etmaal)
+          // is deze balans niet informatief; toon in plaats daarvan de motiefcategorie
+          // waarmee het pand op de kaart gekleurd is (zie color_etmaal).
           let dirHtml = '';
-          if (_currentPurpose && _currentPurpose !== 'off' && _NORM && _BUILDING_SCORES) {
+          if (flowDaypart === 'etmaal') {
+            const motiefCat = _BUILDING_MOTIEF_CATEGORY[p._btype || 'other'] || null;
+            if (motiefCat) {
+              const catLabel = { wonen: T('tooltipPurposeWonen'), werk: T('tooltipPurposeWerk'),
+                                  onderwijs: T('tooltipPurposeOnderwijs'), winkelen: T('tooltipPurposeWinkelen'),
+                                  recreatie: T('tooltipPurposeRecreat') }[motiefCat] || motiefCat;
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingMotief')}</span><br>
+                <b style="color:${_MOTIEF_CATEGORY_COLOR[motiefCat]}">${catLabel}</b>
+              </div>`;
+            }
+          } else if (_currentPurpose && _currentPurpose !== 'off' && _NORM && _BUILDING_SCORES) {
             const btype      = p._btype || 'other';
             const norm       = _NORM[_currentPurpose] || 1;
             const dir        = _getBuildingDir(btype, _currentPurpose, daypart);
@@ -16214,7 +16274,8 @@
        // gezet voor alle dagdelen wanneer 'Gebouw productie/attractie' = uit staat,
        // dus hier hoeft niet apart op de motief-status gecontroleerd te worden.
        if (map.getLayer('buildings-fill')) {
-         map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+         map.setPaintProperty('buildings-fill', 'fill-color',
+           ['get', flowDaypart === 'etmaal' ? 'color_etmaal' : `color_${daypart}`]);
        }
        updateSunLight();
        // Spectrum: update laag bij dagdeel-wissel
