@@ -1660,6 +1660,35 @@ def _ogc_items_response(
     return resp
 
 
+def _ndjson_stream_response(collection_id: str, data):
+    """Streamt een FeatureCollection als NDJSON: headerregel + één feature per regel."""
+    features = data.get("features", []) if isinstance(data, dict) else []
+    top_props = (
+        data.get("properties")
+        if isinstance(data, dict) and isinstance(data.get("properties"), dict)
+        else {}
+    )
+
+    def _gen():
+        header = {
+            "type": "Header",
+            "collection": collection_id,
+            "numberMatched": len(features),
+            "timeStamp": _dt.datetime.now(_dt.timezone.utc).isoformat(
+                timespec="seconds"
+            ),
+            "properties": top_props,
+        }
+        yield json.dumps(header, ensure_ascii=False) + "\n"
+        for feat in features:
+            yield json.dumps(feat, ensure_ascii=False) + "\n"
+
+    resp = Response(stream_with_context(_gen()), mimetype="application/x-ndjson")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"  # Nginx: geen buffering
+    return resp
+
+
 def _now_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None).isoformat() + "Z"
 
@@ -2756,6 +2785,16 @@ def ogc_collection_items(collection_id):
         area_dir = _find_area_dir(area_id)
         cache_path = area_dir / f"{area_id}-BUILDINGS.geojson"
 
+        # Progressief laden via NDJSON (?format=ndjson): vermijdt één grote
+        # blokkerende JSON-respons voor grote gebieden (panden-bestanden lopen
+        # in de praktijk op tot ~10-12 MB).
+        _format_nd = request.args.get("format", "").strip().lower() == "ndjson"
+
+        def _buildings_response(data):
+            if _format_nd:
+                return _ndjson_stream_response("buildings", data)
+            return _ogc_items_response("buildings", data, self_url)
+
         # 0) Autoritatief: geprepareerd BUILDINGS-parquet uit de gmt-library.
         #    Bevat vooraf verrijkte gebouwen (met OSM-tags onder 'tag_'-prefix en
         #    afgeleide velden zoals buildingType/parkingCapacity). Als dit bestaat
@@ -2801,14 +2840,14 @@ def ogc_collection_items(collection_id):
                         continue
                     newp[k[4:] if k.startswith("tag_") else k] = v
                 feat["properties"] = newp
-            return _ogc_items_response("buildings", data, self_url)
+            return _buildings_response(data)
 
         # 1) Gebruik cache als aanwezig én actueel (versienummer klopt)
         if cache_path.exists():
             with open(cache_path, encoding="utf-8") as fh:
                 data = json.load(fh)
             if data.get("properties", {}).get("_qv") == _BUILDINGS_QUERY_VER:
-                return _ogc_items_response("buildings", data, self_url)
+                return _buildings_response(data)
             # Verouderde cache: verwijder en herlaad
             try:
                 cache_path.unlink()
@@ -2846,7 +2885,7 @@ def ogc_collection_items(collection_id):
                 with open(parent_cache, encoding="utf-8") as fh:
                     data = json.load(fh)
                 if data.get("properties", {}).get("_qv") == _BUILDINGS_QUERY_VER:
-                    return _ogc_items_response("buildings", data, self_url)
+                    return _buildings_response(data)
                 try:
                     parent_cache.unlink()
                 except Exception:
@@ -2914,7 +2953,7 @@ def ogc_collection_items(collection_id):
         except Exception:
             pass
 
-        return _ogc_items_response("buildings", data, self_url)
+        return _buildings_response(data)
 
     # ── traffic_assets: verkeersobjecten uit geprepareerd TRAFFIC-ASSETS bestand ──
     if collection_id == "traffic_assets":
