@@ -3,7 +3,12 @@ Verkeersnetwerk-visualisatie — Flask back-end (OGC API Features + Processes)
 ============================================================================
 
 Start:
-    python server.py [--data <map>] [--port <poort>]
+    python server.py [--port <poort>]
+
+Data-map wordt uitsluitend via de DATA_DIR-variabele in .env ingesteld.
+DATA_DIR wijst rechtstreeks naar de map waarin gegenereerde bestanden komen
+te staan (standaard: gedeelde ../work bij analyzer/+digital-twin/+common/
+naast elkaar, anders work/ in de analyzer-scriptmap).
 
 OGC API:
     GET  /                                        -> f=html: SPA; f=json: landing page
@@ -470,17 +475,15 @@ parser = argparse.ArgumentParser(description="Verkeersnetwerk-visualisatie serve
 # zodat Digital Twin de scenario's kan tonen die Analyzer voorbereidt/aanpast.
 # In een geflatten deployment (deploy.ps1-zip, losse installatie) bestaat
 # ../common niet en valt dit terug op de scriptmap zelf (zelfstandige work/),
-# zoals voorheen.
+# zoals voorheen. Overschrijfbaar via DATA_DIR in .env — dit is de enige
+# manier om de data-map te configureren (geen CLI-optie meer). DATA_DIR wijst
+# rechtstreeks naar de map waarin gegenereerde bestanden komen te staan; er
+# wordt geen "work"-submap meer achter geplakt.
 _REPO_ROOT_CANDIDATE = Path(os.path.dirname(os.path.abspath(__file__))) / ".."
-_DEFAULT_DATA_DIR = (
-    str(_REPO_ROOT_CANDIDATE.resolve())
+_DEFAULT_DATA_DIR = str(
+    (_REPO_ROOT_CANDIDATE / "work").resolve()
     if (_REPO_ROOT_CANDIDATE / "common").is_dir()
-    else os.path.dirname(os.path.abspath(__file__))
-)
-parser.add_argument(
-    "--data",
-    default=_DEFAULT_DATA_DIR,
-    help="Map met GeoJSON-bestanden (standaard: gedeelde ../work bij analyzer/+digital-twin/+common/ naast elkaar, anders scriptmap)",
+    else Path(os.path.dirname(os.path.abspath(__file__))) / "work"
 )
 parser.add_argument(
     "--port", type=int, default=5000, help="TCP-poort (standaard: 5000)"
@@ -497,7 +500,7 @@ parser.add_argument(
 )
 args, _ = parser.parse_known_args()
 
-DATA_DIR = Path(args.data).resolve()
+DATA_DIR = Path(os.environ.get("DATA_DIR", "").strip() or _DEFAULT_DATA_DIR).resolve()
 STATIC_DIR = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
 # Gedeelde statische/data-bestanden (common/js, common/data). Bestaan niet in
 # een geflatten deployment (zie _COMMON_PY_DIR hierboven) — dan staan die
@@ -508,10 +511,9 @@ _SAFE_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
 def _work_dir() -> Path:
-    """Submap van DATA_DIR waar alle gegenereerde bestanden worden opgeslagen."""
-    d = DATA_DIR / "work"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """DATA_DIR zelf: de map waarin alle gegenereerde bestanden worden opgeslagen."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR
 
 
 def _areas_cache_path() -> Path:
