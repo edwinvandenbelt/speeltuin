@@ -1082,18 +1082,15 @@
     }
     #polygonDialogCancel:hover { background: #e8ecf0; color: #232931; }
 
-    /* ── Link-selectiemodus popup ─────────────────────────────────────────── */
+    /* ── Link-selectiemodus sub-paneel (inline onder de aanpassing-knoppen) ── */
     #linkSelectPopup {
       display: none;
-      position: fixed; left: 16px; top: 70px;
-      z-index: 50;
-      background: #ffffff;
+      background: #f4f6f8;
       border: 1px solid #e3e6ea;
-      border-radius: 12px;
-      padding: 14px 16px; width: 200px;
+      border-radius: 10px;
+      padding: 10px 12px; width: auto;
+      margin: 2px 0 4px 0;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
     }
     #linkSelectPopup h4 {
       margin: 0 0 10px;
@@ -1112,7 +1109,7 @@
       font-size: 10px; color: #6a757c;
       margin-top: 8px; line-height: 1.5;
       padding: 6px 8px;
-      background: #f4f6f8; border-radius: 6px;
+      background: #ffffff; border-radius: 6px;
     }
     .link-poly-ctrl-btn {
       display: none; width: 100%;
@@ -2025,6 +2022,22 @@
             <button class="poly-ctrl-btn" id="polygonClearBtn" data-i18n="polygonClearBtn">&#10005; Wis polygon</button>
           </div>
 
+          <!-- ── Link-selectiemodus sub-paneel (tijdelijk, alleen tijdens capaciteit-aanpassing) ── -->
+          <div id="linkSelectPopup">
+            <h4 data-i18n="linkSelectTitle">Selectiemodus</h4>
+            <label class="lsm-option">
+              <input type="radio" name="linkSelectMode" value="click" checked/>
+              <span data-i18n="linkSelectClick">Klik op een wegvak</span>
+            </label>
+            <label class="lsm-option">
+              <input type="radio" name="linkSelectMode" value="polygon"/>
+              <span data-i18n="linkSelectPolygon">Polygon tekenen</span>
+            </label>
+            <div id="linkPolygonHint" data-i18n="linkPolygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
+            <button class="link-poly-ctrl-btn" id="linkPolygonFinishBtn" data-i18n="linkPolygonFinishBtn">&#10003; Polygon afsluiten</button>
+            <button class="link-poly-ctrl-btn" id="linkPolygonClearBtn" data-i18n="linkPolygonClearBtn">&#10005; Wis polygon</button>
+          </div>
+
           <!-- ── Wijzigingenlijst (tijdelijk, alleen zichtbaar bij openstaande aanpassingen) ── -->
           <div id="changesPanel">
             <div id="changesPanelHeader">
@@ -2332,22 +2345,6 @@
       <button id="linkAddDialogCancel" data-i18n="dialogCancel">Annuleren</button>
       <button id="linkAddDialogOk" data-i18n="linkAddDialogOkBtn">Toevoegen</button>
     </div>
-  </div>
-
-  <!-- ── Link-selectiemodus popup ──────────────────────────────────────────── -->
-  <div id="linkSelectPopup">
-    <h4 data-i18n="linkSelectTitle">Selectiemodus</h4>
-    <label class="lsm-option">
-      <input type="radio" name="linkSelectMode" value="click" checked/>
-      <span data-i18n="linkSelectClick">Klik op een wegvak</span>
-    </label>
-    <label class="lsm-option">
-      <input type="radio" name="linkSelectMode" value="polygon"/>
-      <span data-i18n="linkSelectPolygon">Polygon tekenen</span>
-    </label>
-    <div id="linkPolygonHint" data-i18n="linkPolygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
-    <button class="link-poly-ctrl-btn" id="linkPolygonFinishBtn" data-i18n="linkPolygonFinishBtn">&#10003; Polygon afsluiten</button>
-    <button class="link-poly-ctrl-btn" id="linkPolygonClearBtn" data-i18n="linkPolygonClearBtn">&#10005; Wis polygon</button>
   </div>
 
   <!-- ── Link polygon aanpassing dialoog ───────────────────────────────────── -->
@@ -15052,6 +15049,11 @@
     const CLOSED_SOURCE = 'closed-links-src';
     const CLOSED_LAYER  = 'closed-links-layer';
     const CLOSED_ICON   = 'no-entry';
+    // Middenpunten van afgesloten/snelheids-wegvakken voor de deck.gl-bordjeslaag
+    // (zie makeEditSignLayer). `var`: updateOverlay kan al vóór deze regel lopen.
+    var _closedSignPts = [];
+    var _speedSignPts  = [];
+    var _editSignIcons = {};
 
     // ── Snelheidsbordje symboollaag ────────────────────────────────────────────
     const SPEED_SOURCE = 'speed-signs-src';
@@ -15098,6 +15100,7 @@
           ...makeHeightAssetLayers(),
           ...makeFurnitureLayers(),
           ...makeVegetationTreeLayers(),
+          makeEditSignLayer(),
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
         if (splitViewActive && overlay2) {
@@ -16140,7 +16143,6 @@
      * en zet het middenpunt ervan in CLOSED_SOURCE zodat het bord zichtbaar wordt.
      */
     function updateClosedLinksLayer() {
-      if (!map.getSource(CLOSED_SOURCE)) return;
       const capOverride = new Map();
       for (const ch of pendingChanges) {
         if (ch._isLink) capOverride.set(String(ch.linkId), ch.capacity);
@@ -16160,7 +16162,9 @@
           properties: {},
         });
       }
-      map.getSource(CLOSED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+      _closedSignPts = pts;
+      if (map.getSource(CLOSED_SOURCE))
+        map.getSource(CLOSED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
     }
 
     /** Initialiseer MapLibre-lagen voor snelheidsbordjes (idempotent). */
@@ -16187,7 +16191,6 @@
      * en capacity !== 0) en zet het middenpunt ervan in SPEED_SOURCE.
      */
     function updateSpeedSignLayer() {
-      if (!map.getSource(SPEED_SOURCE)) return;
       const overrides = new Map();
       for (const ch of pendingChanges) {
         if (ch._isLink) overrides.set(String(ch.linkId), ch);
@@ -16202,7 +16205,7 @@
         if (ch.capacity === 0) continue;  // afgesloten: verbodsbord heeft voorrang
         // Registreer icoon on-demand per unieke snelheidswaarde
         const iconId = `speed-sign-${ch.speed}`;
-        if (!map.hasImage(iconId))
+        if (map.getSource(SPEED_SOURCE) && !map.hasImage(iconId))
           map.addImage(iconId, createSpeedSignIcon(ch.speed, 64), { pixelRatio: 2 });
         const coords = f.geometry.coordinates;
         pts.push({
@@ -16211,7 +16214,42 @@
           properties: { speed: ch.speed },
         });
       }
-      map.getSource(SPEED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+      _speedSignPts = pts;
+      if (map.getSource(SPEED_SOURCE))
+        map.getSource(SPEED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+    }
+
+    // De MapLibre-symboollagen hierboven liggen in interleaved-modus altijd ónder
+    // de deck.gl-lagen (deck 8.9 schuift lagen zonder beforeId bij elke update naar
+    // de top), en worden in de DT dus bedekt door de wegen-in-meters. Daarom
+    // tekenen we dezelfde bordjes ook als deck.gl-IconLayer, als laatste laag.
+    function _editSignIcon(key, makeImageData) {
+      _editSignIcons = _editSignIcons || {};
+      if (!_editSignIcons[key]) {
+        const img = makeImageData();
+        const cv  = document.createElement('canvas');
+        cv.width = img.width; cv.height = img.height;
+        cv.getContext('2d').putImageData(img, 0, 0);
+        _editSignIcons[key] = { url: cv.toDataURL(), width: img.width, height: img.height,
+                                anchorX: img.width / 2, anchorY: img.height / 2, mask: false };
+      }
+      return _editSignIcons[key];
+    }
+    function makeEditSignLayer() {
+      const data = [...(_closedSignPts || []), ...(_speedSignPts || [])];
+      if (!data.length) return null;
+      return new IconLayer({
+        id:          'edit-signs-deck',
+        data,
+        billboard:   true,
+        sizeUnits:   'pixels',
+        getPosition: f => f.geometry.coordinates,
+        getIcon:     f => f.properties.speed != null
+                       ? _editSignIcon(`speed-${f.properties.speed}`, () => createSpeedSignIcon(f.properties.speed, 64))
+                       : _editSignIcon('closed', () => createNoEntryIcon(64)),
+        getSize:     32,
+        parameters:  { depthTest: false },
+      });
     }
     function updatePolygonDraw() {
       if (!map.getSource(POLY_SOURCE)) {
@@ -16958,7 +16996,150 @@
 
       updateClosedLinksLayer();
       updateSpeedSignLayer();
+      updateOverlay(true);   // deck.gl-bordjeslaag (makeEditSignLayer) bijwerken
     }
+
+    // ── Doorvoeren (adjust) ──────────────────────────────────────────────────
+
+    document.getElementById('applyChangesBtn').addEventListener('click', async () => {
+      if (!pendingChanges.length) return;
+      const btn    = document.getElementById('applyChangesBtn');
+      const status = document.getElementById('applyStatus');
+      btn.disabled = true;
+      status.style.display = 'block';
+      status.textContent   = T('applyStart');
+
+      // Verberg edit-schermpjes direct bij starten doorvoeren
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+      if (linkAddActive)  document.getElementById('linkAddBtn').click();
+
+      // Toon wacht-overlay over het netwerk
+      const overlay    = document.getElementById('calcOverlay');
+      const overlayMsg = document.getElementById('calcOverlayMsg');
+      overlay.style.display = 'flex';
+      overlayMsg.textContent = T('applyStart');
+
+      // Bouw changes-array op modus —
+      // MIXED: per modus één API-aanroep op basis van de link-modus in segments.
+      // Overige: één aanroep voor de gehele MODE.
+      const serializeChange = c => {
+        if (c._isLink) {
+          return c.speed != null ? { linkId: c.linkId, speed: c.speed }
+                                 : { linkId: c.linkId, capacity: c.capacity };
+        }
+        if (c._isLinkAdd) {
+          return { geometry: c.geometry, capacity: c.capacity, speed: c.speed, lanes: c.lanes };
+        }
+        if (c._isLinkFlow) {
+          return { linkId: c.linkId, flow: c.flow };
+        }
+        if (c._isOd) {
+          const obj = { fromZoneId: c.fromZoneId, toZoneId: c.toZoneId,
+                        tripFraction: c.tripFraction,
+                        originProduction: c.originProduction };
+          if (c.motifRatio) obj.motifRatio = c.motifRatio;
+          return obj;
+        }
+        const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
+        if (c.production != null) obj.production = c.production;
+        if (c.attraction != null) obj.attraction = c.attraction;
+        return obj;
+      };
+
+      const scenarioName = document.getElementById('scenarioNameInput').value.trim()
+                        || `${networkName} (${scenarioCounter})`;
+
+      // Bouw job-wachtrij: één invoer per getroffen modus
+      let jobQueue;
+      if (MODE === 'MIXED') {
+        // Bouw linkId → modus-map vanuit de netwerksegmenten
+        const linkModeMap = {};
+        for (const seg of segments) {
+          const lid = String(seg.props.linkId ?? seg.props.id ?? '');
+          if (lid) linkModeMap[lid] = (seg.props.mode || 'CAR').toUpperCase();
+        }
+        const constituentModes = [...new Set(Object.values(linkModeMap))];
+        // Verdeel wijzigingen per modus; zone/knoop-wijzigingen gelden voor alle modi
+        const changesByMode = {};
+        for (const c of pendingChanges) {
+          const affected = c._isLink
+            ? [linkModeMap[String(c.linkId)] ?? 'CAR']
+            : constituentModes;
+          for (const m of affected) {
+            (changesByMode[m] = changesByMode[m] ?? []).push(c);
+          }
+        }
+        jobQueue = Object.entries(changesByMode)
+          .map(([m, mChanges]) => ({ mode: m, changes: mChanges.map(serializeChange) }));
+      } else {
+        jobQueue = [{ mode: MODE, changes: pendingChanges.map(serializeChange) }];
+      }
+
+      // Hulpfunctie: poll een job tot gereed; geeft job_id terug bij succes
+      const pollJobPromise = job_id => new Promise((resolve, reject) => {
+        const POLL_DELAYS = [10000, 5000, 3000, 2000];
+        let pollStep = 0;
+        const schedulePoll = () => setTimeout(doPoll,
+          pollStep < POLL_DELAYS.length ? POLL_DELAYS[pollStep++] : 1000);
+        const doPoll = async () => {
+          try {
+            const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
+            if (sj.status === 'running' || sj.status === 'accepted') {
+              status.textContent = overlayMsg.textContent = T('applyRunning');
+              schedulePoll();
+            } else if (sj.status === 'successful') {
+              resolve(job_id);
+            } else {
+              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
+              reject(new Error(errLines.length
+                ? errLines.join('\n')
+                : T('applyError', sj.returncode)));
+            }
+          } catch (e) { reject(e); }
+        };
+        schedulePoll();
+      });
+
+      status.style.display = 'block';
+      try {
+        let lastResults = null;
+        for (let qi = 0; qi < jobQueue.length; qi++) {
+          const { mode: jobMode, changes: jobChanges } = jobQueue[qi];
+          const effectiveSource = qi === 0 ? AREA_ID : lastResults.new_area_id;
+          const res = await fetch('/processes/adjust/execution', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inputs: {
+              area_id: effectiveSource,
+              mode: jobMode,
+              changes: jobChanges,
+              scenario_name: scenarioName,
+              debug: document.getElementById('adjustDebug').checked,
+            }}),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const { jobID: job_id } = await res.json();
+          status.textContent = overlayMsg.textContent = T('applyRunning');
+          await pollJobPromise(job_id);
+          lastResults = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+        }
+        btn.disabled = false;
+        overlay.style.display = 'none';
+        scenarioCounter++;
+        clearHighlight();
+        _setChangesPanelReadOnly(false);
+        pendingChanges = [];
+        document.getElementById('scenarioNameInput').value = '';
+        renderChangesList();
+        await loadAdjustedResult(lastResults.new_area_id, lastResults.compare_url);
+      } catch (err) {
+        status.style.color = '#ff6b6b';
+        status.textContent = overlayMsg.textContent = err?.message || T('applyFetchError', String(err));
+        btn.disabled = false;
+        overlay.style.display = 'none';
+      }
+    });
 
     async function loadAdjustedResult(newAreaId, compareUrl) {
       // Nieuw scenario binnenkomen: 3D-weergaveopties altijd terug op UIT,
