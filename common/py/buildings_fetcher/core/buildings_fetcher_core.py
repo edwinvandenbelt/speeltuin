@@ -2,9 +2,10 @@
 
 Publieke API
 ------------
-    fetch_buildings_overpass(bbox, tile_cache_dir, fallback_tile_cache_dir)
-        Hoofdfunctie: verdeelt het gebied in tegels, raadpleegt de cache-hiërarchie
-        en doet zo nodig Overpass-verzoeken. Geeft een GeoJSON FeatureCollection terug.
+    fetch_buildings_overpass(bbox, tile_cache_dir, fallback_tile_cache_dir, osm_path)
+        Hoofdfunctie: leest bij voorkeur een lokaal .osm.pbf-extract; anders
+        verdeelt hij het gebied in tegels, raadpleegt de cache-hiërarchie en doet
+        zo nodig Overpass-verzoeken. Geeft een GeoJSON FeatureCollection terug.
 
     elements_to_building_features(elements)
         Converteert ruwe Overpass-elementen naar GeoJSON Feature-dicts.
@@ -35,6 +36,22 @@ from pathlib import Path
 OVERPASS_URL: str = os.environ.get(
     "OVERPASS_URL", "https://overpass-api.de/api/interpreter"
 )
+
+# Gedeelde Overpass-client (gmt_shared) kan een query ook tegen een lokaal
+# .osm.pbf-extract evalueren i.p.v. de remote API — zie fetch_buildings_overpass.
+# Optioneel: als gmt_shared niet geïnstalleerd is, werkt alles gewoon met de
+# hand-geschreven urllib-tiling hieronder (remote Overpass, zoals voorheen).
+try:
+    from gmt_shared.overpass import (
+        fetch_overpass as _shared_fetch_overpass,
+        _resolve_pbf_path as _resolve_osm_pbf_path,
+    )
+
+    _GMT_SHARED_OVERPASS_AVAILABLE = True
+except ImportError:
+    _shared_fetch_overpass = None  # type: ignore[assignment]
+    _resolve_osm_pbf_path = None  # type: ignore[assignment]
+    _GMT_SHARED_OVERPASS_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Constanten
@@ -344,6 +361,7 @@ def fetch_buildings_overpass(
     bbox: list,
     tile_cache_dir: Path | None = None,
     fallback_tile_cache_dir: Path | None = None,
+    osm_path: str | None = None,
 ) -> dict:
     """Haal gebouwen op via Overpass API en sla ze op als GeoJSON per tegel.
 
@@ -355,8 +373,16 @@ def fetch_buildings_overpass(
         Map voor de eigen tegel-cache van dit gebied (optioneel).
     fallback_tile_cache_dir:
         Tegel-cache van het bovenliggende basis-scenario (optioneel).
+    osm_path:
+        Pad naar een lokaal .osm.pbf-extract (optioneel). Als dit is opgegeven,
+        wordt de hele bbox in één keer lokaal gelezen via
+        gmt_shared.overpass.fetch_overpass — geen tiling, tegel-cache of
+        rate-limiting nodig, dat bestaat alleen om verzoeken aan de remote
+        Overpass-API klein te houden. OSM_PBF_PATH uit de omgeving wordt hier
+        bewust níet gelezen: de aanroeper bepaalt welk extract de bbox dekt.
 
-    Het gebied wordt opgesplitst in OVERPASS_GRID × OVERPASS_GRID tegels.
+    Zonder lokaal extract wordt het gebied opgesplitst in
+    OVERPASS_GRID × OVERPASS_GRID tegels.
     Per tegel geldt de volgende voorkeursvolgorde:
       1. Eigen tegel-cache (tile_cache_dir)
       2. Tegel-cache van het basis-scenario (fallback_tile_cache_dir)
@@ -370,6 +396,24 @@ def fetch_buildings_overpass(
     samengevoegd cachebestand geschreven door de aanroeper.
     """
     minLon, minLat, maxLon, maxLat = bbox
+
+    # Alleen een expliciet meegegeven osm_path: géén stille terugval op
+    # OSM_PBF_PATH uit de omgeving — de server controleert eerst of het extract
+    # de bbox echt dekt (een vaste provincie-PBF levert anders 0 gebouwen op).
+    if _GMT_SHARED_OVERPASS_AVAILABLE and osm_path:
+        try:
+            pbf_path = _resolve_osm_pbf_path(osm_path)
+        except ValueError:
+            pbf_path = None  # ongeldig pad: val terug op de remote Overpass-API
+        if pbf_path is not None:
+            b = f"{minLat},{minLon},{maxLat},{maxLon}"
+            data = _shared_fetch_overpass(overpass_query_for_bbox(b), osm_path=str(pbf_path))
+            return {
+                "type": "FeatureCollection",
+                "features": elements_to_building_features(data.get("elements", [])),
+                "properties": {"_qv": BUILDINGS_QUERY_VER},
+            }
+
     n = OVERPASS_GRID
     dLon = (maxLon - minLon) / n
     dLat = (maxLat - minLat) / n

@@ -190,6 +190,8 @@ from traffic_signs_fetcher.core.traffic_signs_fetcher_core import (  # noqa: E40
 try:
     from scripts.geofabrik_pbf import (
         resolve_or_download_pbf as _resolve_or_download_pbf,
+        find_covering_extracts as _find_covering_extracts,
+        OSM_PBF_ENV_VAR as _OSM_PBF_ENV_VAR,
         OSM_PBF_CACHE_DIR_ENV_VAR as _OSM_PBF_CACHE_DIR_ENV_VAR,
         DEFAULT_CACHE_DIR as _DEFAULT_PBF_CACHE_DIR,
     )
@@ -197,10 +199,50 @@ try:
     _GEOFABRIK_PBF_AVAILABLE = True
 except ImportError as _e:
     _resolve_or_download_pbf = None  # type: ignore[assignment]
+    _find_covering_extracts = None  # type: ignore[assignment]
+    _OSM_PBF_ENV_VAR = "OSM_PBF_PATH"
     _OSM_PBF_CACHE_DIR_ENV_VAR = "OSM_PBF_CACHE_DIR"
     _DEFAULT_PBF_CACHE_DIR = Path(tempfile.gettempdir()) / "geofabrik_pbf"
     _GEOFABRIK_PBF_AVAILABLE = False
     print(f"[server] WAARSCHUWING: geofabrik_pbf helper niet beschikbaar — {_e}")
+
+
+def _resolve_local_pbf(bbox: list) -> str | None:
+    """Kies een lokaal .osm.pbf-extract dat de bbox dekt, of None (→ Overpass).
+
+    Best-effort, voor de achtergrondjobs van gebouwen (en vegetatie):
+      1. OSM_PBF_PATH, tenzij de Geofabrik-provinciegrenzen aantonen dat de bbox
+         in een ander extract valt (naam-match op de slug, bv. 'gelderland';
+         fail-open als die check niets kan vaststellen). Zonder deze check levert
+         een vaste provincie-PBF voor een gebied daarbuiten stil 0 gebouwen op.
+      2. Het kleinste Geofabrik-extract dat de bbox dekt (gecachet in
+         OSM_PBF_CACHE_DIR, zo nodig gedownload).
+    """
+    if not _GEOFABRIK_PBF_AVAILABLE:
+        return None
+    pbf_cache_dir = Path(
+        os.environ.get(_OSM_PBF_CACHE_DIR_ENV_VAR, "") or _DEFAULT_PBF_CACHE_DIR
+    )
+    explicit = os.environ.get(_OSM_PBF_ENV_VAR, "").strip()
+    if explicit:
+        p = Path(explicit)
+        if p.is_file() and p.suffix.lower() == ".pbf":
+            try:
+                covering = _find_covering_extracts(*bbox, cache_dir=pbf_cache_dir)
+            except Exception:
+                covering = None
+            if not covering or any(e.slug in p.name.lower() for e in covering):
+                return str(p)
+            print(f"[server] OSM_PBF_PATH ({p.name}) dekt bbox {bbox} niet "
+                  f"(hoort bij {[e.slug for e in covering]}).")
+    try:
+        pbf_path_obj, _ = _resolve_or_download_pbf(
+            *bbox, cache_dir=pbf_cache_dir, ignore_explicit=True
+        )
+        return str(pbf_path_obj)
+    except Exception as exc:
+        print(f"[server] Geen lokaal OSM-extract voor bbox {bbox} ({exc}); val terug op Overpass.")
+        return None
 
 # ---------------------------------------------------------------------------
 # Configuratie
@@ -745,6 +787,91 @@ def _overpass_breaker_success(collection: str) -> None:
         _overpass_fail_counts.pop(collection, None)
 
 
+# area_id -> jobID van een lopende gebouwen-ophaaljob (beschermd door _jobs_lock),
+# zodat gelijktijdige requests voor hetzelfde gebied niet elk een eigen fetch starten.
+_buildings_jobs_by_area: dict = {}
+
+
+def _run_buildings_job(
+    job_id: str,
+    area_id: str,
+    area_dir: Path,
+    bbox: list,
+    tile_cache_dir: Path,
+    fallback_tile_cache_dir,
+    cache_path: Path,
+) -> None:
+    """Haal gebouwen op in een achtergrondthread (zelfde patroon als de
+    vegetatie-job): bij voorkeur uit een lokaal .osm.pbf-extract dat de bbox
+    dekt (_resolve_local_pbf), anders via de remote Overpass-API. Cachet het
+    resultaat als {area}-BUILDINGS.geojson zodra het compleet is."""
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+
+    osm_path = None
+    try:
+        osm_path = _resolve_local_pbf(bbox)
+        with _jobs_lock:
+            _jobs[job_id]["log"].append(
+                f"Lokale OSM-extract gebruikt: {Path(osm_path).name}"
+                if osm_path
+                else "Geen dekkend lokaal OSM-extract; val terug op Overpass API."
+            )
+        if osm_path:
+            data = _fetch_buildings_overpass(bbox, osm_path=osm_path)
+        else:
+            _overpass_breaker_check("buildings")
+            data = _fetch_buildings_overpass(
+                bbox,
+                tile_cache_dir=tile_cache_dir,
+                fallback_tile_cache_dir=fallback_tile_cache_dir,
+            )
+            _overpass_breaker_success("buildings")
+
+        # Cache opslaan — alleen als alle tegels succesvol waren
+        if not data.get("properties", {}).get("_partial"):
+            area_dir.mkdir(parents=True, exist_ok=True)
+            tmp_fd, tmp_name = tempfile.mkstemp(dir=area_dir, suffix=".tmp")
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False)
+            os.replace(tmp_name, cache_path)
+            if _s3_enabled():
+                try:
+                    _s3_write_bytes(
+                        _s3_key(area_id, cache_path.name),
+                        json.dumps(data, ensure_ascii=False).encode("utf-8"),
+                        "application/json",
+                    )
+                except Exception as _e:
+                    print(f"[s3] buildings-cache uploaden mislukt: {_e}")
+            with _jobs_lock:
+                _jobs[job_id]["log"].append(
+                    f"{len(data.get('features', []))} gebouwen opgehaald en opgeslagen."
+                )
+        else:
+            with _jobs_lock:
+                _jobs[job_id]["log"].append(
+                    "Overpass-resultaat was gedeeltelijk; niet gecachet, een volgende "
+                    "poging hergebruikt de tegel-cache."
+                )
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+    except Exception as exc:
+        if not osm_path:
+            _overpass_breaker_failure("buildings")
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["log"].append(
+                f"{'Lokale OSM-extract lezen' if osm_path else 'Overpass-query'} mislukt: {exc}"
+            )
+            _jobs[job_id]["finished"] = _now_iso()
+    finally:
+        with _jobs_lock:
+            _buildings_jobs_by_area.pop(area_id, None)
+
+
 def _run_vegetation_job(
     job_id: str,
     area_id: str,
@@ -760,29 +887,17 @@ def _run_vegetation_job(
         _jobs[job_id]["status"] = "running"
         _jobs[job_id]["started"] = _now_iso()
 
-    # Liever een lokaal .osm.pbf-extract dan de remote Overpass-API: zoek (en
-    # download zo nodig, gecached in OSM_PBF_CACHE_DIR) het kleinste Geofabrik-
-    # extract dat de bbox dekt. Lukt dat niet (geen dekkend extract, download
-    # mislukt, resolver niet beschikbaar), dan valt de fetch terug op de remote
-    # Overpass-API — dit is best-effort, geen harde vereiste voor vegetatie.
-    osm_path = None
-    if _GEOFABRIK_PBF_AVAILABLE:
-        try:
-            pbf_cache_dir = Path(
-                os.environ.get(_OSM_PBF_CACHE_DIR_ENV_VAR, "") or _DEFAULT_PBF_CACHE_DIR
-            )
-            pbf_path_obj, extract = _resolve_or_download_pbf(
-                bbox[0], bbox[1], bbox[2], bbox[3], cache_dir=pbf_cache_dir
-            )
-            osm_path = str(pbf_path_obj)
-            with _jobs_lock:
-                label = extract.name if extract else "expliciet OSM_PBF_PATH"
-                _jobs[job_id]["log"].append(f"Lokale OSM-extract gebruikt: {label} ({pbf_path_obj.name})")
-        except Exception as exc:
-            with _jobs_lock:
-                _jobs[job_id]["log"].append(
-                    f"Geen lokaal OSM-extract gevonden/gedownload ({exc}); val terug op Overpass API."
-                )
+    # Liever een lokaal .osm.pbf-extract dan de remote Overpass-API — mits het
+    # de bbox echt dekt (zie _resolve_local_pbf: een vaste provincie-PBF voor een
+    # gebied daarbuiten levert anders stil 0 features op). Lukt dat niet, dan
+    # valt de fetch terug op de remote Overpass-API (best-effort).
+    osm_path = _resolve_local_pbf(bbox)
+    with _jobs_lock:
+        _jobs[job_id]["log"].append(
+            f"Lokale OSM-extract gebruikt: {Path(osm_path).name}"
+            if osm_path
+            else "Geen dekkend lokaal OSM-extract; val terug op Overpass API."
+        )
 
     try:
         data = _fetch_vegetation_overpass(
@@ -2838,6 +2953,21 @@ def ogc_collection_items(collection_id):
                         break
                     except Exception as _e:
                         print(f"[s3] BUILDINGS-parquet download mislukt ({_key}): {_e}")
+        if prep_path is None and _GEOPANDAS_AVAILABLE:
+            # Scenario's kopiëren het BUILDINGS-parquet niet door: leen het van
+            # het dichtstbijzijnde basisscenario in de baseAreaId-keten (zelfde
+            # gebouwen), i.p.v. terug te vallen op een (trage) OSM-fetch.
+            visited = {area_id}
+            cur_id = _area_parent_id(area_id)
+            while cur_id and cur_id not in visited and prep_path is None:
+                visited.add(cur_id)
+                cur_dir = _find_area_dir(cur_id)
+                for _ext in _GEOPARQUET_EXTS:
+                    _pp = cur_dir / f"{cur_id}-BUILDINGS{_ext}"
+                    if _pp.exists():
+                        prep_path = _pp
+                        break
+                cur_id = _area_parent_id(cur_id)
         if prep_path is not None:
             try:
                 data = _read_geodata(prep_path)
@@ -2940,38 +3070,50 @@ def ogc_collection_items(collection_id):
         if not bbox:
             abort(404, "Geen bbox beschikbaar voor gebouwen-query")
 
-        try:
-            tile_cache_dir = area_dir / f"{area_id}-BUILDINGS-tiles"
-            _overpass_breaker_check("buildings")
-            data = _fetch_buildings_overpass(
+        # Geen (actuele) cache: start (of hergebruik) een achtergrondjob — een
+        # scan van een lokaal provincie-extract duurt al gauw minuten, te lang
+        # voor een synchrone request. Geef 201 + jobID terug zodat de frontend
+        # /jobs/{id} kan pollen en daarna opnieuw opvragen (zie vegetation).
+        job_id = str(uuid.uuid4())
+        with _jobs_lock:
+            existing_job_id = _buildings_jobs_by_area.get(area_id)
+            existing_job = _jobs.get(existing_job_id) if existing_job_id else None
+            if existing_job and existing_job["status"] in ("accepted", "running"):
+                return (
+                    {"jobID": existing_job_id, "status": existing_job["status"]},
+                    201,
+                    {"Location": f"/jobs/{existing_job_id}"},
+                )
+            _jobs[job_id] = {
+                "jobID": job_id,
+                "processID": "buildings-fetch",
+                "status": "accepted",
+                "log": [],
+                "returncode": None,
+                "created": _now_iso(),
+                "started": None,
+                "finished": None,
+                "_results": {},
+            }
+            _buildings_jobs_by_area[area_id] = job_id
+        threading.Thread(
+            target=_run_buildings_job,
+            args=(
+                job_id,
+                area_id,
+                area_dir,
                 bbox,
-                tile_cache_dir=tile_cache_dir,
-                fallback_tile_cache_dir=base_tile_cache_dir,
-            )
-            _overpass_breaker_success("buildings")
-        except Exception as exc:
-            _overpass_breaker_failure("buildings")
-            abort(502, f"Overpass-query mislukt: {exc}")
-
-        # Cache opslaan — alleen als alle tegels succesvol waren
-        try:
-            if not data.get("properties", {}).get("_partial"):
-                area_dir.mkdir(parents=True, exist_ok=True)
-                with open(cache_path, "w", encoding="utf-8") as fh:
-                    json.dump(data, fh, ensure_ascii=False)
-                if _s3_enabled():
-                    try:
-                        _s3_write_bytes(
-                            _s3_key(area_id, cache_path.name),
-                            json.dumps(data, ensure_ascii=False).encode("utf-8"),
-                            "application/json",
-                        )
-                    except Exception as _e:
-                        print(f"[s3] buildings-cache uploaden mislukt: {_e}")
-        except Exception:
-            pass
-
-        return _buildings_response(data)
+                area_dir / f"{area_id}-BUILDINGS-tiles",
+                base_tile_cache_dir,
+                cache_path,
+            ),
+            daemon=True,
+        ).start()
+        return (
+            {"jobID": job_id, "status": "accepted"},
+            201,
+            {"Location": f"/jobs/{job_id}"},
+        )
 
     # ── traffic_assets: verkeersobjecten uit geprepareerd TRAFFIC-ASSETS bestand ──
     if collection_id == "traffic_assets":

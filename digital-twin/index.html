@@ -5337,6 +5337,35 @@
     return { type: 'FeatureCollection', features, properties };
   }
 
+  // Haalt panden op (NDJSON met JSON-fallback). Bestaan ze nog niet, dan start de
+  // server een achtergrondjob en antwoordt 201 + jobID: poll /jobs/{id} tot die
+  // klaar is en vraag daarna opnieuw op (zelfde patroon als vegetatie).
+  // isStale(): true als het resultaat niet meer nodig is (bv. ander gebied).
+  async function _fetchBuildingsWithJob(url, isStale = () => false) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const data = await _fetchBuildingsNdjson(url + '&format=ndjson')
+        .catch(() => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null));
+      if (!data || !data.jobID || Array.isArray(data.features)) return data;
+      let done = false;
+      for (let i = 0; i < 200 && !done; i++) {      // 200 × 3s ≈ 10 minuten timeout
+        await new Promise(res => setTimeout(res, 3000));
+        if (isStale()) return null;
+        let job = null;
+        try {
+          const jr = await fetch(`/jobs/${data.jobID}`);
+          if (jr.ok) job = await jr.json();
+        } catch (_) { /* netwerkhapering: gewoon blijven pollen */ }
+        if (job?.status === 'failed') {
+          console.warn('[buildings] ophalen mislukt:', (job.log || []).join(' | '));
+          return null;
+        }
+        done = job?.status === 'successful';
+      }
+      if (!done) return null;   // time-out
+    }
+    return null;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
 
@@ -9828,10 +9857,14 @@
       // Verrijking vindt plaats zodra ook zones beschikbaar zijn.
       // Progressief via NDJSON (?format=ndjson), met fallback op de gewone JSON-respons.
       const _buildingsUrl = `/collections/buildings/items?areaId=${AREA_ID}`;
-      _fetchBuildingsNdjson(_buildingsUrl + '&format=ndjson')
-      .catch(() => fetch(_buildingsUrl).then(r => r.ok ? r.json() : null).catch(() => null))
+      const _buildingsArea = AREA_ID;
+      _fetchBuildingsWithJob(_buildingsUrl, () => AREA_ID !== _buildingsArea)
       .then(data => {
-        if (!data || !Array.isArray(data.features)) return;
+        if (!data || !Array.isArray(data.features)) {
+          // Mislukt/time-out (of ander gebied): een volgende keer opnieuw proberen.
+          if (AREA_ID === _buildingsArea) _buildingsLoadStarted = false;
+          return;
+        }
         // Verwijder brugpijlers en ondergrondse niet-parkeer objecten.
         // Parkeerlocaties (ook ondergronds) worden altijd bewaard maar krijgen hoogte 0.
         data.features = data.features.filter(f => {

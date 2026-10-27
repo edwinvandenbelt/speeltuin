@@ -240,11 +240,11 @@ def fetch_vegetation_overpass(
         Tegel-cache van het bovenliggende basis-scenario (optioneel).
     osm_path:
         Pad naar een lokaal .osm.pbf-extract (optioneel). Als dit is opgegeven,
-        of als OSM_PBF_PATH in de omgeving staat, wordt de hele bbox in één
-        keer lokaal gelezen — geen tiling, tegel-cache of rate-limiting nodig,
-        dat bestaat alleen om verzoeken aan de remote Overpass-API klein te
-        houden. Zie gmt_shared.overpass.fetch_overpass voor de resolutievolgorde
-        (expliciet argument > OSM_PBF_PATH env > remote Overpass-API).
+        wordt de hele bbox in één keer lokaal gelezen via
+        gmt_shared.overpass.fetch_overpass — geen tiling, tegel-cache of
+        rate-limiting nodig, dat bestaat alleen om verzoeken aan de remote
+        Overpass-API klein te houden. OSM_PBF_PATH uit de omgeving wordt hier
+        bewust níet gelezen: de aanroeper bepaalt welk extract de bbox dekt.
 
     Zonder lokaal extract wordt het gebied opgesplitst in
     OVERPASS_GRID × OVERPASS_GRID tegels. Per tegel geldt de voorkeursvolgorde:
@@ -258,8 +258,14 @@ def fetch_vegetation_overpass(
     """
     minLon, minLat, maxLon, maxLat = bbox
 
-    if _GMT_SHARED_OVERPASS_AVAILABLE:
-        pbf_path = _resolve_osm_pbf_path(osm_path)
+    # Alleen een expliciet meegegeven osm_path: géén stille terugval op
+    # OSM_PBF_PATH uit de omgeving — de server controleert eerst of het extract
+    # de bbox echt dekt (een vaste provincie-PBF levert anders 0 features op).
+    if _GMT_SHARED_OVERPASS_AVAILABLE and osm_path:
+        try:
+            pbf_path = _resolve_osm_pbf_path(osm_path)
+        except ValueError:
+            pbf_path = None  # ongeldig pad: val terug op de remote Overpass-API
         if pbf_path is not None:
             b = f"{minLat},{minLon},{maxLat},{maxLon}"
             data = _shared_fetch_overpass(overpass_query_for_bbox(b), osm_path=str(pbf_path))
