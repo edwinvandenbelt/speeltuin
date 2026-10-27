@@ -6111,6 +6111,7 @@
 
     let _buildingsGeoJson = null;
     let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
+    let _buildingsLoadPromise = null; // lopende/afgeronde ophaalactie (zie _ensureBuildingsLoaded)
     let _trafficAssetsNoFile = false;  // TRAFFIC-ASSETS bestand ontbreekt (Kruispunten-metriek)
     let _zonesForJoin     = null;   // zone-features beschikbaar voor ruimtelijke koppeling
     let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
@@ -6782,6 +6783,10 @@
 
       document.querySelectorAll('.lmp-motief-spinner').forEach(s => s.classList.remove('visible'));
 
+      // Panden pas ophalen zodra er een motief gekozen is; _tryZoneJoin roept
+      // deze functie opnieuw aan zodra de data verrijkt is.
+      if (purpose !== 'off' && !_buildingsGeoJson) _ensureBuildingsLoaded();
+
       if (purpose !== 'off' && _buildingsGeoJson && _NORM) {
         _doUpdateBuildingColors(purpose, false, false);
         if (map.getSource('buildings')) {
@@ -7269,69 +7274,78 @@
     }
     window._resetSceneryDisplayDefaults = _resetSceneryDisplayDefaults;
 
-    // Laad gebouwen asynchroon; verrijking vindt plaats zodra ook zones beschikbaar zijn.
+    // Laad gebouwen pas bij eerste gebruik ('Pand productie/attractie' ≠ uit, zie
+    // _applyBuildingDisplay); verrijking vindt plaats zodra ook zones beschikbaar zijn.
     // Progressief via NDJSON (?format=ndjson), met fallback op de gewone JSON-respons.
-    const _buildingsUrl = `/collections/buildings/items?areaId=${AREA_ID}`;
-    _fetchBuildingsNdjson(_buildingsUrl + '&format=ndjson')
-      .catch(() => fetch(_buildingsUrl).then(r => r.ok ? r.json() : null).catch(() => null))
-      .then(data => {
-        if (!data || !Array.isArray(data.features)) return;
-        // Verwijder brugpijlers en ondergrondse niet-parkeer objecten.
-        // Parkeerlocaties (ook ondergronds) worden altijd bewaard maar krijgen hoogte 0.
-        data.features = data.features.filter(f => {
-          const p     = f.properties;
-          const bldg  = (p.building || '').toLowerCase();
-          const isParking = (p.amenity || '').toLowerCase() === 'parking'
-            || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
-          if (p['bridge:support']) return false;
-          // Ondergronds: parkeren bewaren, rest verwijderen
-          if ((p.location || '').toLowerCase() === 'underground' && !isParking) return false;
-          // Negatief level: zelfde logica
-          const levelStr = String(p.level ?? '');
-          if (!isParking) {
-            if (levelStr.startsWith('-')) return false;
-            const lvl = parseFloat(levelStr);
-            if (!isNaN(lvl) && lvl < 0) return false;
-          }
-          return true;
-        });
-        // Hoogte toekennen (eenmalig; kleur wordt later berekend in _tryZoneJoin)
-        for (const f of data.features) {
-          const p       = f.properties;
-          const bldg    = (p.building || '').toLowerCase();
-          const amenity = (p.amenity  || '').toLowerCase();
-          const parking = (p.parking  || '').toLowerCase();
-          const isParking = amenity === 'parking'
-            || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
+    function _ensureBuildingsLoaded() {
+      if (_buildingsLoadPromise) return _buildingsLoadPromise;
+      const _buildingsUrl = `/collections/buildings/items?areaId=${AREA_ID}`;
+      _buildingsLoadPromise = _fetchBuildingsNdjson(_buildingsUrl + '&format=ndjson')
+        .catch(() => fetch(_buildingsUrl).then(r => r.ok ? r.json() : null).catch(() => null))
+        .then(data => {
+          if (!data || !Array.isArray(data.features)) return;
+          // Verwijder brugpijlers en ondergrondse niet-parkeer objecten.
+          // Parkeerlocaties (ook ondergronds) worden altijd bewaard maar krijgen hoogte 0.
+          data.features = data.features.filter(f => {
+            const p     = f.properties;
+            const bldg  = (p.building || '').toLowerCase();
+            const isParking = (p.amenity || '').toLowerCase() === 'parking'
+              || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
+            if (p['bridge:support']) return false;
+            // Ondergronds: parkeren bewaren, rest verwijderen
+            if ((p.location || '').toLowerCase() === 'underground' && !isParking) return false;
+            // Negatief level: zelfde logica
+            const levelStr = String(p.level ?? '');
+            if (!isParking) {
+              if (levelStr.startsWith('-')) return false;
+              const lvl = parseFloat(levelStr);
+              if (!isNaN(lvl) && lvl < 0) return false;
+            }
+            return true;
+          });
+          // Hoogte toekennen (eenmalig; kleur wordt later berekend in _tryZoneJoin)
+          for (const f of data.features) {
+            const p       = f.properties;
+            const bldg    = (p.building || '').toLowerCase();
+            const amenity = (p.amenity  || '').toLowerCase();
+            const parking = (p.parking  || '').toLowerCase();
+            const isParking = amenity === 'parking'
+              || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
 
-          // Ondergrondse parkeergarages en maaiveld-parkeerterreinen: altijd hoogte 0
-          const levelStr    = String(p.level ?? '');
-          const levelNeg    = levelStr.startsWith('-')
-            || (!isNaN(parseFloat(levelStr)) && parseFloat(levelStr) < 0);
-          const isUnderground = (p.location || '').toLowerCase() === 'underground'
-            || parking === 'underground' || (isParking && levelNeg);
-          const isSurface = isParking && !isUnderground
-            && parking !== 'multi-storey' && parking !== 'rooftop'
-            && !['garage','garages','multi-storey'].includes(bldg);
+            // Ondergrondse parkeergarages en maaiveld-parkeerterreinen: altijd hoogte 0
+            const levelStr    = String(p.level ?? '');
+            const levelNeg    = levelStr.startsWith('-')
+              || (!isNaN(parseFloat(levelStr)) && parseFloat(levelStr) < 0);
+            const isUnderground = (p.location || '').toLowerCase() === 'underground'
+              || parking === 'underground' || (isParking && levelNeg);
+            const isSurface = isParking && !isUnderground
+              && parking !== 'multi-storey' && parking !== 'rooftop'
+              && !['garage','garages','multi-storey'].includes(bldg);
 
-          if (isParking && (isUnderground || isSurface)) {
-            p.height = 0;
-          } else {
-            const hRaw = parseFloat(p.height);
-            if (p.height != null && !isNaN(hRaw)) {
-              p.height = Math.max(0, hRaw);
-            } else if (p['building:levels']) {
-              const lvls = parseFloat(p['building:levels']);
-              p.height = isNaN(lvls) ? 4 : Math.max(0, lvls) * 3;
+            if (isParking && (isUnderground || isSurface)) {
+              p.height = 0;
             } else {
-              p.height = 4;
+              const hRaw = parseFloat(p.height);
+              if (p.height != null && !isNaN(hRaw)) {
+                p.height = Math.max(0, hRaw);
+              } else if (p['building:levels']) {
+                const lvls = parseFloat(p['building:levels']);
+                p.height = isNaN(lvls) ? 4 : Math.max(0, lvls) * 3;
+              } else {
+                p.height = 4;
+              }
             }
           }
-        }
-        _buildingsRaw = data;
-        _tryZoneJoin();
-      })
-      .catch(() => {});  // gebouwen zijn optioneel; stil negeren bij fout
+          _buildingsRaw = data;
+          _tryZoneJoin();
+        })
+        .catch(() => {})  // gebouwen zijn optioneel; stil negeren bij fout
+        .finally(() => {
+          // Mislukt/leeg: volgende keer opnieuw proberen en de status-UI bijwerken
+          if (!_buildingsRaw) { _buildingsLoadPromise = null; _refreshBuildingsStatusUI(); }
+        });
+      return _buildingsLoadPromise;
+    }
 
     // Verzamelproperty-namen die in het netwerk bestaan, zodat we later kunnen
     // detecteren of toekomstige Snelheid-kolommen al geleverd zijn.
