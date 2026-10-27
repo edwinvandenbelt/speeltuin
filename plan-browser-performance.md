@@ -26,7 +26,21 @@ verschuiven tijdens het werk). Veel code is in beide bestanden gedupliceerd, dus
 
 ## Fase 1 — Quick wins (grootste effect, laag risico)
 
-### Stap 0 — Analyzer: panden pas ophalen bij gebruik
+### Stap 1 — Routes parsen: linklengte cachen (A + DT `_parseAndAddRoutes`)
+Gemeten in de Analyzer (66.406 routes): `_parseAndAddRoutes` 11.056 ms, `calibrateRouteProductions`
+931 ms; `TOTAL post-routes sync` 17.443 ms. Dat totaal bevat ook ~5,4 s download/parse, omdat `_tPost` vóór
+`await _rtFetch` start.
+Oorzaak: per route werd voor elke link `segmentLength(coords)` (haversine over alle coördinaten)
+opnieuw berekend, dus dezelfde link duizenden keren.
+- [x] De lengte wordt nu één keer per link berekend (`linkLenCache`, lokaal per aanroep). Het filter op
+      ontbrekende/korte geometrie en de `parseInt`-normalisatie zitten in dezelfde lus.
+- [x] Het `length`-attribuut uit het netwerkbestand gebruiken waar dat er is (`linkLengthM(f)`, naast
+      `segmentLength`). Dit gebeurt bij het opbouwen van `segments` (bij het laden en na een linkbewerking).
+      `linkLenCache` wordt voorgevuld met die segmentlengtes; haversine is alleen nog de fallback.
+- [ ] Testen: Analyzer en DT opnieuw laden en de `[perf]`-regels vergelijken. Het aantal routes
+      (`buildLinkRouteMap … routes:`) moet gelijk blijven (66.406).
+
+### Stap 2 — Analyzer: panden pas ophalen bij gebruik
 - [x] De panden worden niet meer bij het opstarten opgehaald, maar pas wanneer
       'Pand productie/attractie' ≠ uit (`_ensureBuildingsLoaded`, aangeroepen vanuit `_applyBuildingDisplay`).
       Daarmee vervallen bij het opstarten: de NDJSON-download, filter/hoogte, `_tryZoneJoin` (met de
@@ -34,7 +48,7 @@ verschuiven tijdens het werk). Veel code is in beide bestanden gedupliceerd, dus
       Bijeffect: de vloeroppervlak-uitsplitsing in de zone-tooltip verschijnt pas nadat de panden geladen zijn.
 - [ ] Testen.
 
-### Stap 1 — Dijkstra-schatting uit de cache halen
+### Stap 3 — Dijkstra-schatting uit de cache halen
 - [ ] In de zone-centroid-laag (A ~10894, DT ~13444) de aanroep `computeEstimatedLinkRouteData(selectedLinkId)`
       vervangen door een cache-lookup, zoals A ~11027 / DT ~13577 al doen:
       ```js
@@ -48,16 +62,27 @@ verschuiven tijdens het werk). Veel code is in beide bestanden gedupliceerd, dus
 - [ ] Testen: een link zonder routedata selecteren met de simulatie aan. De kaart blijft vloeiend en de
       tegenpool-zones zijn gelijk aan die vóór de fix.
 
-### Stap 2 — Analyzer: geen simulatie draaien die niet getekend wordt
-- [ ] In `animate()` (A ~12562–12934) de simulatie en `updateOverlay(true)` overslaan, tenzij er tellers
-      actief zijn die de simulatie nodig hebben. Bij de implementatie nagaan of de tellers in de Analyzer
-      zinvol zijn; zo niet, alles overslaan.
-- [ ] Bij het verlaten van een edit-modus (A ~15676, 15709, 15752, 15784, 15824) `paused` terugzetten
-      naar de vorige waarde in plaats van naar `false`.
-- [ ] Testen: een edit-modus openen en weer sluiten. In DevTools → Performance mogen er daarna geen
-      `updateOverlay`-aanroepen per frame meer zijn.
+### Stap 4 — Analyzer: autosimulatie volledig verwijderd
+De Analyzer toonde geen rijdende auto's (`makeCarLayers` gaf `[]` terug), maar bouwde en simuleerde ze wel.
+Bij het opstarten werden 66k routepaden opgebouwd (`buildCarList` → `buildPathFromLinks`, met haversine
+per link per route). Dat gebeurde opnieuw bij elke dagdeel- of klokwissel (2×). Daarnaast liep er een
+eeuwige `requestAnimationFrame`-lus die elke frame alle lagen opnieuw opbouwde.
+- [x] Verwijderd uit `analyzer/index.html` (~1.950 regels):
+      - het opbouwen van de auto's: `buildCarList`, `buildPathFromLinks`, `enforceInitialSpacing`,
+        `computeCarData`, `buildPathGroups`, `rebuildCars` en alle aanroepen daarvan;
+      - de simulatie zelf: `animate()` (car-following, voorrang, parkeren, productie) en `odGroups`;
+      - de 3D-weergave: voertuig-meshes, `makeCarLayers` en `SimpleMeshLayer`;
+      - de Voertuigteller (⊕): knop, paneel, CSS, i18n en passage-detectie;
+      - de instelling 'Initiële vulling' (LL/LD/CB) en de autostatistieken in het debugpaneel.
+- [x] `avgVehicleLengthForMode` (bezettingsgraad-metric) gebruikt nu vaste gewogen gemiddelden:
+      4,725 m voor auto's en 1,85 m voor fietsen. Dat zijn dezelfde waarden als voorheen.
+- [x] `paused`, de simulatieklok en het afspeelvinkje blijven bestaan, want ze sturen dagdeel en flows.
+- [x] Controle: `node --check` en `eslint no-undef` zijn schoon. Daarbij bleek `_linkIdsToCoords` nog nodig
+      te zijn; die is teruggezet.
+- [ ] Testen: opstarten (`[perf]`-regels en tijd tot het laadscherm verdwijnt), dagdeel/klok wisselen,
+      afspelen/pauzeren, edit-modi openen/sluiten, zone- en linkselectie, split-view en de debug-modus.
 
-### Stap 3 — Data-referenties stabiel houden (memoization)
+### Stap 5 — Data-referenties stabiel houden (memoization)
 deck.gl hergebruikt GPU-buffers alleen als `data` dezelfde referentie houdt.
 - [ ] Het MIXED-modusfilter op `geojson.features` cachen op `(MODE, visibleModes, netwerkversie)`.
       Plekken: A ~9960/10295/10368/10569/10674 en DT ~12510/12845/12918/13119/13224.
@@ -74,7 +99,7 @@ deck.gl hergebruikt GPU-buffers alleen als `data` dezelfde referentie houdt.
       niet per frame.
 - [ ] Testen: MIXED-filter, zone- en linkselectie, vegetatie en assets op zoom ≥ 16 werken ongewijzigd.
 
-### Stap 4 — Lichtere rendering ("demo-modus")
+### Stap 6 — Lichtere rendering ("demo-modus")
 - [ ] MapLibre standaard instellen op `pixelRatio: Math.min(window.devicePixelRatio, 1.5)`, voor de main- en
       de split-map (A ~5694/14871, DT ~5494/17268).
 - [ ] Een optie `?lite=1` toevoegen (of een toggle die in localStorage staat en bij het opstarten wordt gelezen;
@@ -86,7 +111,7 @@ deck.gl hergebruikt GPU-buffers alleen als `data` dezelfde referentie houdt.
 - [ ] Testen: in lite-modus is de kaart scherp genoeg, de panelen zijn leesbaar en de GPU-belasting is
       zichtbaar lager (Taakbeheer → GPU).
 
-### Stap 5 — Kleine opruimacties
+### Stap 7 — Kleine opruimacties
 - [ ] DT: de "TIJDELIJK" fetch-trace verwijderen (`setInterval` ~2559 + `console.log` per fetch, ~2535–2567).
 - [ ] DT: de `console.log` in `computeEstimatedLinkRouteData` (~10734) verwijderen.
 - [ ] NDJSON-readers (A ~5471/5521, DT ~5241–5284): niet meer per regel `buf.slice(nl+1)` doen, maar een
@@ -113,7 +138,7 @@ deck.gl hergebruikt GPU-buffers alleen als `data` dezelfde referentie houdt.
 - Laat de laptop aan de lader: in energiebesparingsmodus wordt de GPU teruggeschroefd.
 - Op een 4K/HiDPI-scherm het browservenster kleiner maken of 100% schaal gebruiken. Het aantal pixels
   schaalt kwadratisch mee.
-- Zolang stap 1 er niet in zit: selecteer geen link zonder routedata terwijl de simulatie loopt.
+- Zolang stap 3 er niet in zit: selecteer geen link zonder routedata terwijl de simulatie loopt.
 
 ## Verificatie (per stap en aan het eind)
 

@@ -9,7 +9,7 @@
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <link  href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet"/>
 
-  <!-- deck.gl (bevat MapboxOverlay, GeoJsonLayer, SimpleMeshLayer) -->
+  <!-- deck.gl (bevat MapboxOverlay, GeoJsonLayer, PathLayer, …) -->
   <script src="https://unpkg.com/deck.gl@8.9.0/dist.min.js"></script>
 
   <style>
@@ -135,7 +135,6 @@
     .tb-scale { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .tb-scale-lbl { font-size: 11px; color: #6a757c; white-space: nowrap; }
     .tb-scale-lbl b { color: #232931; font-weight: 600; }
-    #timeScale { width: 70px; accent-color: #00a5ab; cursor: pointer; }
     .sim-play-toggle {
       margin-left: auto; display: flex; align-items: center; gap: 4px;
       font-size: 11px; font-weight: 400; color: #4b5159; cursor: pointer;
@@ -555,8 +554,6 @@
       background: #f4f6f8 !important;
       color: #6a757c !important; border-color: #e3e6ea !important;
     }
-    .fillBtn { font-size: 11px; font-weight: 600; letter-spacing: -0.2px; }
-    .fillBtn.active { background: #de0058 !important; color: #ffffff !important; border-color: #de0058 !important; }
 
     /* ── Edit-modus knoppen ───────────────────────────────────────────── */
     .edit-btn {
@@ -1457,63 +1454,6 @@
     }
     .dbg-head:first-child { margin-top: 0; }
 
-    /* ── Voertuigteller-paneel ───────────────────────────────────── */
-    #counterPanel {
-      display: none;
-      position: fixed;
-      top: 52px;
-      z-index: 30;
-      width: 290px;
-      background: #ffffff;
-      border: 1px solid #e3e6ea;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
-      overflow: hidden;
-    }
-    #counterPanel.cp-visible { display: block; }
-    #cpHeader {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px;
-      background: rgba(0,165,171,0.06);
-      border-bottom: 1px solid #e3e6ea;
-      font-size: 12px; font-weight: 600; color: #00a5ab; letter-spacing: 0.3px;
-    }
-    #cpHeader button {
-      background: none; border: none; color: #6a757c; cursor: pointer;
-      font-size: 15px; padding: 0; line-height: 1; transition: color 0.15s;
-    }
-    #cpHeader button:hover { color: #232931; }
-    #cpBody { padding: 8px; max-height: 380px; overflow-y: auto; }
-    .cp-hint {
-      color: rgba(35,41,49,0.35); font-size: 11px;
-      padding: 10px 4px; text-align: center; line-height: 1.5;
-    }
-    .cp-counter {
-      background: #f4f6f8;
-      border: 1px solid #e3e6ea;
-      border-radius: 8px; margin-bottom: 6px; overflow: hidden;
-    }
-    .cp-counter-head {
-      display: flex; align-items: center; gap: 4px;
-      padding: 5px 8px 5px 10px;
-      background: rgba(0,165,171,0.06);
-      font-size: 11px; color: #00a5ab; font-weight: 600;
-    }
-    .cp-counter-head .cp-link-label { flex: 1; }
-    .cp-ctrl { background: none; border: none; cursor: pointer; padding: 1px 4px; line-height: 1; border-radius: 3px; font-size: 12px; }
-    .cp-ctrl.cp-reset { color: rgba(0,165,171,0.5); border: 1px solid rgba(0,165,171,0.2); font-size: 11px; }
-    .cp-ctrl.cp-reset:hover { background: rgba(0,165,171,0.12); color: #00a5ab; }
-    .cp-ctrl.cp-remove { color: rgba(35,41,49,0.3); font-size: 14px; }
-    .cp-ctrl.cp-remove:hover { color: #e63312; }
-    .cp-counter-rows { padding: 6px 10px 8px; }
-    .cp-row { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: rgba(35,41,49,0.82); padding: 1px 0; }
-    .cp-dir { color: #00a5ab; font-weight: 700; min-width: 14px; font-size: 13px; }
-    .cp-total { font-weight: 700; min-width: 30px; text-align: right; }
-    .cp-expected { color: rgba(35,41,49,0.5); font-size: 10px; min-width: 34px; }
-    .cp-modes { flex: 1; color: rgba(35,41,49,0.42); font-size: 10px; }
-    .cp-elapsed { font-size: 10px; color: rgba(35,41,49,0.28); padding-top: 3px; }
-
     /* ── maquette-modus (?maquette=true) ─────────────────────────────────── */
     body.maquette-mode #toolbar,
     body.maquette-mode #legendStrip,
@@ -1522,7 +1462,6 @@
     body.maquette-mode #editPanel,
     body.maquette-mode #flowScalerPanel,
     body.maquette-mode #settingsPanel,
-    body.maquette-mode #counterPanel,
     body.maquette-mode #purposeChartPanel,
     body.maquette-mode #whatifRcPanel,
     body.maquette-mode #odEditPanel,
@@ -1864,13 +1803,6 @@
          blijft in de DOM (verborgen) voor overige interne state-elementen. -->
 
 
-    <!-- Initiële vulmethode (verborgen, beheerd via instellingen-paneel) -->
-    <div id="fillBtns" style="display:none">
-      <button class="tb-btn fillBtn" data-fill="little" data-i18n="fillLlLabel" data-i18n-title="fillLlTitle" title="Little's Law">LL</button>
-      <button class="tb-btn fillBtn" data-fill="link"   data-i18n="fillLdLabel" data-i18n-title="fillLdTitle" title="Linkdichtheid">LD</button>
-      <button class="tb-btn fillBtn" data-fill="cap"    data-i18n="fillCbLabel" data-i18n-title="fillCbTitle" title="Capaciteitsbezetting">CB</button>
-    </div>
-
     <div class="tb-sep"></div>
 
     <!-- Modi aan/uit: knopjes tonen/verbergen welke modi in het netwerk zitten
@@ -1981,21 +1913,6 @@
     </div>
     <div id="spBody">
       <div class="sp-section">
-        <div class="sp-label" data-i18n="settingsFillLabel">Initiële vulling</div>
-        <label class="sp-row">
-          <input type="radio" name="spFill" id="spFillLittle" value="little">
-          <span data-i18n="spFillLl">Little's Law</span>
-        </label>
-        <label class="sp-row">
-          <input type="radio" name="spFill" id="spFillLink" value="link">
-          <span data-i18n="spFillLd">Linkdichtheid</span>
-        </label>
-        <label class="sp-row">
-          <input type="radio" name="spFill" id="spFillCap" value="cap">
-          <span data-i18n="spFillCb">Capaciteitsbezetting</span>
-        </label>
-      </div>
-      <div class="sp-section">
         <label class="sp-row">
           <input type="checkbox" id="spDebug">
           <span data-i18n="settingsDebugLabel">Debug-uitvoer</span>
@@ -2024,25 +1941,12 @@
     </div>
   </div>
 
-  <!-- Counter-paneel (voertuigtellers per wegvak) -->
-  <div id="counterPanel">
-    <div id="cpHeader">
-      <span data-i18n="counterPanelTitle">Voertuigtellers</span>
-      <button id="cpClose">×</button>
-    </div>
-    <div id="cpBody">
-      <div class="cp-hint" id="cpHint" data-i18n="counterHint">Klik op een wegvak om een teller te plaatsen.</div>
-    </div>
-  </div>
-
   <!-- Debug-paneel (rechts onder toolbar, verborgen tot DBG-knop) -->
   <div id="debugPanel">
     <div class="dbg-head">Gebied</div>
     <div id="dbgArea">—</div>
     <div class="dbg-head">Netwerk &amp; data</div>
     <div id="dbgNetwork">—</div>
-    <div class="dbg-head">Simulatie</div>
-    <div id="dbgSim">—</div>
   </div>
 
   <!-- Linker menu-paneel (bij areaId) -->
@@ -2306,7 +2210,6 @@
         <div class="lmp-block-body" id="analysisPanelBody">
           <div class="sim-row">
             <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
-            <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
           </div>
           <div class="sim-row">
             <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
@@ -2809,13 +2712,9 @@
       dpMrhLabel:'OS', dpMrhTitle:'Ochtendspits',
       dpErhLabel:'AS', dpErhTitle:'Avondspits',
       dpRestLabel:'RD', dpRestTitle:'Restdag',
-      fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
-      fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
-      settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
+      settingsTitle:'Instellingen', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
       settingsBasemapLabel:'Achtergronden', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Zwart', settingsBasemapWhite:'Wit',
-      spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
       metricTitle:'Kleur-metriek',
-      timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
       pauseTitle:'Pauzeer simulatie',
       simClockTitle:'Sleep de wijzer om de tijd aan te passen',
       simClockToggleTitle:'Klik om te wisselen tussen AM/PM',
@@ -3033,9 +2932,6 @@
       badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',
       // Selected Link Analysis
       selectedLinkTitle:'Herkomst/bestemming per wegvak',
-      counterBtnTitle:'Voertuigteller plaatsen/verwijderen',
-      counterPanelTitle:'Voertuigtellers',
-      counterHint:'Klik op een wegvak om een teller te plaatsen.',
       // What-if wegafsluiting
       whatifRcBtnTitle:'What-if wegafsluiting',
       whatifRcTitle:'What-if wegafsluiting',
@@ -3092,13 +2988,9 @@
       dpMrhLabel:'AM', dpMrhTitle:'Morning peak',
       dpErhLabel:'PM', dpErhTitle:'Evening peak',
       dpRestLabel:'OP', dpRestTitle:'Off-peak',
-      fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
-      fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
-      settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
+      settingsTitle:'Settings', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
       settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'Black', settingsBasemapWhite:'White',
-      spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
       metricTitle:'Color metric',
-      timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
       pauseTitle:'Pause simulation',
       simClockTitle:'Drag the hand to change the time',
       simClockToggleTitle:'Click to toggle AM/PM',
@@ -3303,9 +3195,6 @@
       badgeLeft:'Calculated scenario', badgeRight:'Source scenario',
       // Selected Link Analysis
       selectedLinkTitle:'Origin/destination per road link',
-      counterBtnTitle:'Place/remove vehicle counter',
-      counterPanelTitle:'Vehicle counters',
-      counterHint:'Click a road link to place a counter.',
       // What-if road closure
       whatifRcBtnTitle:'What-if road closure',
       whatifRcTitle:'What-if road closure',
@@ -3362,13 +3251,9 @@
       dpMrhLabel:'AR', dpMrhTitle:'Aamuruuhka',
       dpErhLabel:'IR', dpErhTitle:'Iltaruuhka',
       dpRestLabel:'MA', dpRestTitle:'Muu aika',
-      fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
-      fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
-      settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
+      settingsTitle:'Asetukset', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
       settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Musta', settingsBasemapWhite:'Valkoinen',
-      spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
       metricTitle:'V\xe4rimitta',
-      timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
       pauseTitle:'Pys\xe4yt\xe4 simulaatio',
       simClockTitle:'Ved\u00e4 viisaria aikaa muuttaaksesi',
       simClockToggleTitle:'Vaihda AM/PM napauttamalla',
@@ -3517,9 +3402,6 @@
       badgeLeft:'Laskettu skenaario', badgeRight:'Lähdeskenaario',
       // Selected Link Analysis
       selectedLinkTitle:'Lähtö/kohde tiejaksokohtaisesti',
-      counterBtnTitle:'Aseta/poista ajoneuvolaskuri',
-      counterPanelTitle:'Ajoneuvolaskurit',
-      counterHint:'Napsauta tiejaksoa asettaaksesi laskurin.',
       // What-if tiesulku
       whatifRcBtnTitle:'What-if tiesulku',
       whatifRcTitle:'What-if tiesulku',
@@ -4764,15 +4646,6 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  /**
-   * Berekent de kompassrichting (0=N, 90=O, 180=Z, 270=W) van c1 naar c2.
-   * Corrigeert voor Mercator (lengtegraden schalen met cos(lat)).
-   */
-  function segmentBearing([lon1, lat1], [lon2, lat2]) {
-    const cosLat = Math.cos((lat1 + lat2) * Math.PI / 360);
-    return (Math.atan2((lon2 - lon1) * cosLat, lat2 - lat1) * 180 / Math.PI + 360) % 360;
-  }
-
   function segmentLength(coords) {
     let total = 0;
     for (let i = 0; i < coords.length - 1; i++)
@@ -4780,30 +4653,11 @@
     return total;
   }
 
-  /**
-   * Geeft [lon, lat, bearing°] op fractie offset ∈ [0,1] langs een LineString.
-   * bearing = kompasrichting (0 = N, 90 = O, 180 = Z, 270 = W).
-   */
-  function interpolatePosition(coords, offset, totalLen) {
-    const target = Math.max(0, Math.min(1, offset)) * totalLen;
-    let acc = 0;
-    for (let i = 0; i < coords.length - 1; i++) {
-      const d = haversineM(coords[i], coords[i + 1]);
-      if (acc + d >= target || i === coords.length - 2) {
-        const t = d > 0 ? Math.min(1, (target - acc) / d) : 0;
-        const lon     = coords[i][0] + t * (coords[i + 1][0] - coords[i][0]);
-        const lat     = coords[i][1] + t * (coords[i + 1][1] - coords[i][1]);
-        const dLon    = coords[i + 1][0] - coords[i][0];
-        const dLat    = coords[i + 1][1] - coords[i][1];
-        // Corrigeer voor Mercator-projectie: lengtegraden zijn cos(lat) keer korter
-        const cosLat  = Math.cos(lat * Math.PI / 180);
-        const bearing = (Math.atan2(dLon * cosLat, dLat) * 180 / Math.PI + 360) % 360;
-        return [lon, lat, bearing];
-      }
-      acc += d;
-    }
-    const c = coords[coords.length - 1];
-    return [c[0], c[1], 0];
+  /** Lengte (m) van een netwerklink: het `length`-attribuut uit het netwerkbestand
+   *  als dat aanwezig is, anders berekend uit de geometrie. */
+  function linkLengthM(f) {
+    const L = f.properties?.length;
+    return L > 0 ? L : segmentLength(f.geometry.coordinates);
   }
 
   // ── Kleur- & dichtheidsfuncties ───────────────────────────────────────────
@@ -4968,432 +4822,16 @@
     return [r, g, b, 210];
   }
 
-  function flowToCarCount(flow) {
-    if (flow < 200)  return 0;
-    if (flow < 600)  return 1;
-    if (flow < 1200) return 2;
-    if (flow < 2000) return 3;
-    return 4;
-  }
-
-  /**
-   * Doelaantal auto's op basis van huidig zoom-niveau.
-   * Meer detail bij inzoomen, minder bij uitzoomen voor performance.
-   */
-  function targetCarCount(zoom) {
-    if (zoom < 12) return 400;
-    if (zoom < 13) return 800;
-    if (zoom < 14) return 1500;
-    if (zoom < 15) return 2500;
-    if (zoom < 16) return 4000;
-    return 5500;
-  }
-
-  // Autokleuren afgestemd op het Nederlandse wagenpark (bron: RDW kentekendatabank).
-  // Elk item: [R, G, B, A, gewicht]  — gewicht bepaalt de kans op selectie.
-  const CAR_PALETTE_WEIGHTED = [
-    [175, 178, 180, 255, 28],  // grijs        ~28 %
-    [ 28,  28,  30, 255, 22],  // zwart        ~22 %
-    [235, 235, 232, 255, 19],  // wit          ~19 %
-    [ 38,  72, 148, 255, 12],  // blauw        ~12 %
-    [185,  30,  30, 255,  8],  // rood          ~8 %
-    [ 38, 100,  48, 255,  4],  // groen         ~4 %
-    [160, 130,  90, 255,  4],  // bruin/beige   ~4 %
-    [200, 130,  30, 255,  3],  // overig/oranje ~3 %
-  ];
-
-  // Vooraf cumulatieve gewichtssom berekenen voor snelle gewogen loting
-  const _cpTotal = CAR_PALETTE_WEIGHTED.reduce((s, c) => s + c[4], 0);
-  const _cpCumul = (() => {
-    let acc = 0;
-    return CAR_PALETTE_WEIGHTED.map(c => { acc += c[4]; return acc; });
-  })();
-
-  /** Geeft een kleur [R,G,B,A] gewogen willekeurig terug */
-  function randomCarColor(vehicleMode = MODE) {
-    if (vehicleMode === 'BIKE') return BIKE_COLOR;
-    const r = Math.random() * _cpTotal;
-    const i = _cpCumul.findIndex(v => v > r);
-    const c = CAR_PALETTE_WEIGHTED[i < 0 ? CAR_PALETTE_WEIGHTED.length - 1 : i];
-    return [c[0], c[1], c[2], c[3]];
-  }
-
-  // ── Car-following parameters ──────────────────────────────────────────────
-  //   Gebaseerd op vereenvoudigd IDM-achtig model.
-  const CF_MIN_GAP  = 5;    // minimale bumper-to-bumper afstand (m)
-  const CAR_LENGTH  = 4.5;  // gemiddelde voertuiglengte (m)
-
-  // ── Parkeerparameters ─────────────────────────────────────────────────────
-  const MAX_VEHICLES = 5000;
-  const PARK_MEAN_S  = 5400;   // gemiddelde parkeertijd Nederland ~90 min (sec)
-  const PARK_STD_S   = 1800;   // standaarddeviatie parkeertijd (sec)
-  const PARK_MIN_S   = 120;    // minimale parkeertijd (sec)
-  // Aandeel initieel geparkeerde auto's per dagdeel
-  const PARK_RATIOS  = { mrh: 0.50, erh: 0.15, rest: 0.35 };
-
-  /** Box-Muller transform: normaalverdeeld getal met gegeven gemiddelde en std */
-  function normalRandom(mean, std) {
-    let u, v;
-    do { u = Math.random(); } while (u === 0);
-    do { v = Math.random(); } while (v === 0);
-    return mean + std * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  }
-
   // ── Applicatielogica ──────────────────────────────────────────────────────
 
-  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer, ScatterplotLayer, PathLayer, IconLayer, PolygonLayer } = deck;
+  const { MapboxOverlay, GeoJsonLayer, ScatterplotLayer, PathLayer, IconLayer, PolygonLayer } = deck;
 
-  // ── Mesh-hulpfuncties ────────────────────────────────────────────────────────
-
-  function makeBoxGeom(lx, ly, lz, cx, cy, cz) {
-    const hx = lx / 2, hy = ly / 2, hz = lz / 2;
-    const pos = new Float32Array([
-      cx+hx,cy-hy,cz-hz, cx+hx,cy+hy,cz-hz, cx+hx,cy+hy,cz+hz, cx+hx,cy-hy,cz+hz,
-      cx-hx,cy-hy,cz-hz, cx-hx,cy+hy,cz-hz, cx-hx,cy+hy,cz+hz, cx-hx,cy-hy,cz+hz,
-      cx-hx,cy+hy,cz-hz, cx+hx,cy+hy,cz-hz, cx+hx,cy+hy,cz+hz, cx-hx,cy+hy,cz+hz,
-      cx-hx,cy-hy,cz-hz, cx+hx,cy-hy,cz-hz, cx+hx,cy-hy,cz+hz, cx-hx,cy-hy,cz+hz,
-      cx-hx,cy-hy,cz+hz, cx+hx,cy-hy,cz+hz, cx+hx,cy+hy,cz+hz, cx-hx,cy+hy,cz+hz,
-      cx-hx,cy-hy,cz-hz, cx+hx,cy-hy,cz-hz, cx+hx,cy+hy,cz-hz, cx-hx,cy+hy,cz-hz,
-    ]);
-    const nor = new Float32Array([
-       1,0,0, 1,0,0, 1,0,0, 1,0,0,
-      -1,0,0,-1,0,0,-1,0,0,-1,0,0,
-       0,1,0, 0,1,0, 0,1,0, 0,1,0,
-       0,-1,0,0,-1,0,0,-1,0,0,-1,0,
-       0,0,1, 0,0,1, 0,0,1, 0,0,1,
-       0,0,-1,0,0,-1,0,0,-1,0,0,-1,
-    ]);
-    const uv = new Float32Array(48).fill(0);
-    const idx = new Uint32Array([
-       0,1,2, 0,2,3,   4,6,5, 4,7,6,
-       8,9,10, 8,10,11, 12,14,13, 12,15,14,
-      16,17,18,16,18,19, 20,22,21,20,23,22,
-    ]);
-    return { pos, nor, uv, idx, vc: 24 };
-  }
-
-  /**
-   * Schuin geplaatst glasvlak (voor- en achterruit).
-   *   w       = breedte (Y-as)
-   *   h       = hoogte  (Z-as)
-   *   tiltDx  = hoeveel de bovenkant opschuift in de -X richting (>0 = achterover)
-   *   cx,cy,cz = middelpunt van het vlak
-   * Beide zijden worden gerenderd zodat het glas van binnen en buiten zichtbaar is.
-   */
-  function makeTiltedPane(w, h, tiltDx, cx, cy, cz) {
-    const bx = cx + tiltDx / 2;   // onderkant-X (iets naar voren)
-    const tx = cx - tiltDx / 2;   // bovenkant-X (iets naar achter)
-    const yw = w / 2;
-    const zh = h / 2;
-    // Normaalvector: loodrecht op het vlak, naar voren gericht (+X component)
-    const len = Math.sqrt(h * h + tiltDx * tiltDx) || 1;
-    const nx = h / len, nz = tiltDx / len;
-    const pos = new Float32Array([
-      // Voorzijde
-      bx, cy - yw, cz - zh,  // 0 BO-links
-      bx, cy + yw, cz - zh,  // 1 BO-rechts
-      tx, cy + yw, cz + zh,  // 2 BO-rechts boven
-      tx, cy - yw, cz + zh,  // 3 BO-links boven
-      // Achterzijde (zelfde vertices, omgekeerde volgorde)
-      bx, cy - yw, cz - zh,  // 4
-      bx, cy + yw, cz - zh,  // 5
-      tx, cy + yw, cz + zh,  // 6
-      tx, cy - yw, cz + zh,  // 7
-    ]);
-    const nor = new Float32Array([
-       nx, 0,  nz,  nx, 0,  nz,  nx, 0,  nz,  nx, 0,  nz,
-      -nx, 0, -nz, -nx, 0, -nz, -nx, 0, -nz, -nx, 0, -nz,
-    ]);
-    const uv  = new Float32Array(16).fill(0);
-    const idx = new Uint32Array([
-      0, 1, 2,  0, 2, 3,   // voorzijde
-      4, 6, 5,  4, 7, 6,   // achterzijde
-    ]);
-    return { pos, nor, uv, idx, vc: 8 };
-  }
-
-  function makeCylinderGeom(radius, h, cx, cy, cz, seg = 12) {
-    const pos = [], nor = [], uv = [], idx = [];
-    const step = (2 * Math.PI) / seg;
-    for (let i = 0; i < seg; i++) {
-      const a0 = i * step, a1 = ((i + 1) % seg) * step;
-      const x0 = Math.cos(a0) * radius, z0 = Math.sin(a0) * radius;
-      const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
-      const b = pos.length / 3;
-      pos.push(cx+x0,cy-h/2,cz+z0, cx+x0,cy+h/2,cz+z0,
-               cx+x1,cy+h/2,cz+z1, cx+x1,cy-h/2,cz+z1);
-      nor.push(x0/radius,0,z0/radius, x0/radius,0,z0/radius,
-               x1/radius,0,z1/radius, x1/radius,0,z1/radius);
-      uv.push(0,0, 0,1, 1,1, 1,0);
-      idx.push(b,b+1,b+2, b,b+2,b+3);
-    }
-    const tc = pos.length / 3;
-    pos.push(cx, cy+h/2, cz); nor.push(0,1,0); uv.push(0.5,0.5);
-    for (let i = 0; i < seg; i++) {
-      const a = i * step;
-      pos.push(cx+Math.cos(a)*radius, cy+h/2, cz+Math.sin(a)*radius);
-      nor.push(0,1,0); uv.push(0,0);
-    }
-    for (let i = 1; i < seg; i++) idx.push(tc, tc+i, tc+i+1);
-    idx.push(tc, tc+seg, tc+1);
-    const bc = pos.length / 3;
-    pos.push(cx, cy-h/2, cz); nor.push(0,-1,0); uv.push(0.5,0.5);
-    for (let i = 0; i < seg; i++) {
-      const a = i * step;
-      pos.push(cx+Math.cos(a)*radius, cy-h/2, cz+Math.sin(a)*radius);
-      nor.push(0,-1,0); uv.push(0,0);
-    }
-    for (let i = 1; i < seg; i++) idx.push(bc, bc+i+1, bc+i);
-    idx.push(bc, bc+1, bc+seg);
-    const vc = pos.length / 3;
-    return { pos: new Float32Array(pos), nor: new Float32Array(nor),
-             uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
-  }
-
-  function mergeMeshes(parts) {
-    let tv = 0, ti = 0;
-    for (const p of parts) { tv += p.vc; ti += p.idx.length; }
-    const pos = new Float32Array(tv * 3);
-    const nor = new Float32Array(tv * 3);
-    const uv  = new Float32Array(tv * 2);
-    const idx = new Uint32Array(ti);
-    let vo = 0, io = 0;
-    for (const p of parts) {
-      pos.set(p.pos, vo * 3); nor.set(p.nor, vo * 3); uv.set(p.uv, vo * 2);
-      for (let i = 0; i < p.idx.length; i++) idx[io + i] = p.idx[i] + vo;
-      vo += p.vc; io += p.idx.length;
-    }
-    return {
-      attributes: {
-        positions: { value: pos, size: 3 },
-        normals:   { value: nor, size: 3 },
-        texCoords: { value: uv,  size: 2 },
-      },
-      indices: { value: idx, size: 1 },
-    };
-  }
-
-  // ── Voertuigtype-definities (5 typen, gewogen naar RDW-kentekenbestand) ──────
-  //
-  //  Coördinatenstelsel per mesh:
-  //    X = rijrichting (voor = +X)
-  //    Y = breedte     (rechts = +Y)
-  //    Z = hoogte      (omhoog = +Z, onderkant voertuig = Z 0)
-  //
-  //  Gewichten (benaderd naar RDW-voertuigpopulatie):
-  //    Personenauto  55 %  — sedan / hatchback
-  //    Stadsauto     15 %  — city car (kort, hoge daklijn)
-  //    SUV / MPV     15 %  — hoger en breder, grotere wielen
-  //    Bestelwagen   10 %  — rechthoekige laadruimte
-  //    Vrachtauto     5 %  — cabine + laadbak, 6 wielen
-
-  const VEHICLE_TYPES = (() => {
-
-    // 1 ── Personenauto (sedan / hatchback)
-    const personenauto = {
-      body: mergeMeshes([
-        makeBoxGeom(4.5,  2.0,  0.85,  0,     0,  0.425),  // carrosserie onderstuk
-        makeBoxGeom(2.25, 1.75, 0.55, -0.235, 0,  1.125),  // cabine (voor=0.89, achter=-1.36)
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.15, 2.05, 0.28,  2.3,  0,  0.29),   // voorbumper
-        makeBoxGeom(0.15, 2.05, 0.28, -2.3,  0,  0.29),   // achterbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(1.55, 0.44,  0.22,  1.0,  0,     1.12),  // voorruit (achterover ~27°)
-        makeTiltedPane(1.55, 0.38, -0.14, -1.43, 0,     1.10),  // achterruit (iets voorover)
-        makeBoxGeom(1.90, 0.04, 0.44, -0.2,   0.878, 1.12),     // rechter zijruit
-        makeBoxGeom(1.90, 0.04, 0.44, -0.2,  -0.878, 1.12),     // linker zijruit
-      ]),
-      wheels: mergeMeshes([
-        makeCylinderGeom(0.33, 0.22,  1.55, -1.0, 0.33),
-        makeCylinderGeom(0.33, 0.22,  1.55,  1.0, 0.33),
-        makeCylinderGeom(0.33, 0.22, -1.55, -1.0, 0.33),
-        makeCylinderGeom(0.33, 0.22, -1.55,  1.0, 0.33),
-      ]),
-      weight: 55,
-      length: 4.5,   // fysieke lengte (m) voor bezettingsgraad-berekening
-    };
-
-    // 2 ── Kleine stadsauto (city car — kort, hoge daklijn)
-    const stadsauto = {
-      body: mergeMeshes([
-        makeBoxGeom(3.2,  1.7,  0.85,  0,     0,  0.425),  // onderstuk
-        makeBoxGeom(1.82, 1.55, 0.65, -0.23,  0,  1.175),  // hoge cabine (voor=0.68, achter=-1.14)
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.12, 1.75, 0.24,  1.65,  0,  0.27),   // voorbumper
-        makeBoxGeom(0.12, 1.75, 0.24, -1.65,  0,  0.27),   // achterbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(1.35, 0.50,  0.24,  0.8,  0,     1.17),  // voorruit (steil achterover, city-car stijl)
-        makeTiltedPane(1.35, 0.42, -0.12, -1.2,  0,     1.15),  // achterruit
-        makeBoxGeom(1.80, 0.04, 0.54,  0,     0.778, 1.17),     // rechter zijruit
-        makeBoxGeom(1.80, 0.04, 0.54,  0,    -0.778, 1.17),     // linker zijruit
-      ]),
-      wheels: mergeMeshes([
-        makeCylinderGeom(0.28, 0.20,  1.1, -0.85, 0.28),
-        makeCylinderGeom(0.28, 0.20,  1.1,  0.85, 0.28),
-        makeCylinderGeom(0.28, 0.20, -1.1, -0.85, 0.28),
-        makeCylinderGeom(0.28, 0.20, -1.1,  0.85, 0.28),
-      ]),
-      weight: 15,
-      length: 3.2,
-    };
-
-    // 3 ── SUV / MPV (hoger, breder, grotere wielen)
-    const suv = {
-      body: mergeMeshes([
-        makeBoxGeom(4.8,  2.1,  1.0,   0,     0,  0.5),    // onderstuk
-        makeBoxGeom(3.49, 1.95, 0.75, -0.655, 0,  1.375),  // cabine doorlopend tot achterkant (voor=1.09, achter=-2.4)
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.15, 2.15, 0.32,  2.45,  0,  0.36),   // voorbumper
-        makeBoxGeom(0.15, 2.15, 0.32, -2.45,  0,  0.36),   // achterbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(1.75, 0.55,  0.22,  1.2,  0,     1.37),  // voorruit (achterover)
-        makeBoxGeom(0.04, 1.75, 0.55, -2.4,  0,     1.375),     // achterruit (verticaal, aan achterkant cabine)
-        makeBoxGeom(3.49, 0.04, 0.62,  -0.655, 0.978, 1.375),   // rechter zijruit
-        makeBoxGeom(3.49, 0.04, 0.62,  -0.655,-0.978, 1.375),   // linker zijruit
-      ]),
-      wheels: mergeMeshes([
-        makeCylinderGeom(0.40, 0.26,  1.65, -1.05, 0.40),
-        makeCylinderGeom(0.40, 0.26,  1.65,  1.05, 0.40),
-        makeCylinderGeom(0.40, 0.26, -1.65, -1.05, 0.40),
-        makeCylinderGeom(0.40, 0.26, -1.65,  1.05, 0.40),
-      ]),
-      weight: 15,
-      length: 4.8,
-    };
-
-    // 4 ── Bestelwagen (rechthoekige laadruimte, hoge dakrand)
-    const bestelwagen = {
-      body: mergeMeshes([
-        makeBoxGeom(5.5,  2.2,  2.2,   0,     0,  1.1),   // doos-carrosserie
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.12, 2.25, 0.38,  2.81,  0,  0.34),   // voorbumper
-        makeBoxGeom(0.12, 2.25, 0.38, -2.81,  0,  0.34),   // achterbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(1.95, 0.60,  0.10,  2.76, 0,     1.80),  // voorruit (licht achterover)
-        makeBoxGeom(0.55, 0.04, 0.50,  2.5,   1.12,  1.80),     // rechter cabine-zijraam
-        makeBoxGeom(0.55, 0.04, 0.50,  2.5,  -1.12,  1.80),     // linker cabine-zijraam
-      ]),
-      wheels: mergeMeshes([
-        makeCylinderGeom(0.36, 0.24,  2.0, -1.1, 0.36),
-        makeCylinderGeom(0.36, 0.24,  2.0,  1.1, 0.36),
-        makeCylinderGeom(0.36, 0.24, -1.9, -1.1, 0.36),
-        makeCylinderGeom(0.36, 0.24, -1.9,  1.1, 0.36),
-      ]),
-      weight: 10,
-      length: 5.5,
-    };
-
-    // 5 ── Vrachtauto (cabine voor + laadbak achter, 6 wielen)
-    //   Totale lengte ≈ 10 m; coördinaat-oorsprong op onderkant midden-voertuig.
-    //   Cabine: X van +2.5 → +5.0  (midden X = +3.75)
-    //   Laadbak: X van -5.0 → +2.5 (midden X = -1.25)
-    const vrachtauto = {
-      body: mergeMeshes([
-        makeBoxGeom(2.5,  2.5,  2.8,   3.75,  0,  1.4),   // cabine
-        makeBoxGeom(7.2,  2.45, 3.0,  -1.25,  0,  1.5),   // laadbak
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.15, 2.6,  0.42,  5.08,  0,  0.41),   // voorbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(2.1, 0.80,  0.12,  5.0,  0,     2.3),   // voorruit (licht achterover)
-        makeBoxGeom(0.65, 0.04, 0.65,  4.7,   1.26,  2.3),     // rechter zijraam
-        makeBoxGeom(0.65, 0.04, 0.65,  4.7,  -1.26,  2.3),     // linker zijraam
-      ]),
-      wheels: mergeMeshes([
-        // Vooras
-        makeCylinderGeom(0.48, 0.28,  3.8, -1.25, 0.48),
-        makeCylinderGeom(0.48, 0.28,  3.8,  1.25, 0.48),
-        // Aandrijfas 1
-        makeCylinderGeom(0.48, 0.28, -1.2, -1.35, 0.48),
-        makeCylinderGeom(0.48, 0.28, -1.2,  1.35, 0.48),
-        // Aandrijfas 2
-        makeCylinderGeom(0.48, 0.28, -3.0, -1.35, 0.48),
-        makeCylinderGeom(0.48, 0.28, -3.0,  1.35, 0.48),
-      ]),
-      weight: 5,
-      length: 10.0,
-    };
-
-    return [personenauto, stadsauto, suv, bestelwagen, vrachtauto];
-  })();
-
-  // ── Fiets (voor MODE=BIKE) ────────────────────────────────────────────────
-  // Eén type, één kleur — helder amber (goed zichtbaar op donkere kaart).
-  const BIKE_COLOR = [255, 185, 0, 255];
-
-  // Willekeurige kledingkleuren voor de fietser (torso + hoofd).
-  // Lichte, herkenbare tinten — goed zichtbaar op de donkere kaart.
-  const CLOTHING_PALETTE = [
-    [220,  50,  50, 230],  // rood
-    [ 50, 130, 220, 230],  // blauw
-    [ 40, 160,  70, 230],  // groen
-    [230, 140,  20, 230],  // oranje
-    [ 90,  60, 160, 230],  // paars
-    [200, 200, 200, 230],  // lichtgrijs
-    [ 30,  30,  30, 230],  // zwart
-    [240, 200,  60, 230],  // geel
-    [200,  90, 150, 230],  // roze
-    [ 60, 180, 180, 230],  // cyaan/teal
-  ];
-  function randomClothingColor() {
-    return CLOTHING_PALETTE[Math.floor(Math.random() * CLOTHING_PALETTE.length)];
-  }
-
-  const BIKE_VEHICLE_TYPES = (() => {
-    // Coördinatenstelsel: cx=voor/achter, cy=lateraal, cz=hoogte
-    const frame  = makeBoxGeom(1.50, 0.08, 0.08,  0,     0, 0.685); // hoofdbuis (bovenkant op 0.725m)
-    const zadel  = makeBoxGeom(0.28, 0.16, 0.04, -0.30,  0, 0.92);  // zadel (achter)
-    const stuur  = makeBoxGeom(0.08, 0.55, 0.04,  0.62,  0, 0.82);  // stuur (voor, breed)
-    const wheelF = makeCylinderGeom(0.28, 0.06,  0.65, 0, 0.28);    // voorwiel
-    const wheelR = makeCylinderGeom(0.28, 0.06, -0.65, 0, 0.28);    // achterwiel
-    // ── Fietser (zichtbaar bij zoom ≥ 15) ──────────────────────────────────
-    // Torso: licht voorovergebogen, van z=0.72m tot z=1.12m
-    const torso  = makeBoxGeom(0.30, 0.18, 0.42,  0.05,  0, 0.92);  // romp
-    const hoofd  = makeBoxGeom(0.22, 0.22, 0.24,  0.10,  0, 1.22);  // hoofd
-    return [{
-      body:    mergeMeshes([frame]),
-      bumpers: mergeMeshes([stuur, zadel]),
-      windows: mergeMeshes([torso, hoofd]),   // kledingkleur via clothingColor
-      wheels:  mergeMeshes([wheelF, wheelR]),
-      weight:  1,
-      length:  1.85,
-    }];
-  })();
-
-  // Gewogen type-loting (zelfde patroon als kleurpalet)
-  const _vtTotal = VEHICLE_TYPES.reduce((s, v) => s + v.weight, 0);
-  const _vtCumul = (() => {
-    let acc = 0;
-    return VEHICLE_TYPES.map(v => { acc += v.weight; return acc; });
-  })();
-
-  function randomVehicleType(vehicleMode = MODE) {
-    if (vehicleMode === 'BIKE') return MODE === 'MIXED' ? VEHICLE_TYPES.length : 0;
-    const r = Math.random() * _vtTotal;
-    const i = _vtCumul.findIndex(v => v > r);
-    return i < 0 ? VEHICLE_TYPES.length - 1 : i;
-  }
-
-  // ── Gewogen gemiddelde voertuiglengte (voor de bezettingsgraad-metric) ──────
-  // Fysieke lengte per type, gewogen naar de type-verdeling (weight).
-  const AVG_CAR_LEN = (() => {
-    const wl = VEHICLE_TYPES.reduce((s, v) => s + (v.length ?? 4.5) * v.weight, 0);
-    return _vtTotal > 0 ? wl / _vtTotal : 4.7;
-  })();
-  const AVG_BIKE_LEN = (() => {
-    const tot = BIKE_VEHICLE_TYPES.reduce((s, v) => s + v.weight, 0);
-    const wl  = BIKE_VEHICLE_TYPES.reduce((s, v) => s + (v.length ?? 1.85) * v.weight, 0);
-    return tot > 0 ? wl / tot : 1.85;
-  })();
+  // ── Gemiddelde voertuiglengte (voor de bezettingsgraad-metric) ──────────────
+  // Gewogen naar de typeverdeling (RDW-benadering): personenauto 55 % × 4,5 m,
+  // stadsauto 15 % × 3,2 m, SUV/MPV 15 % × 4,8 m, bestelwagen 10 % × 5,5 m,
+  // vrachtauto 5 % × 10 m → 4,725 m. Fiets: 1,85 m.
+  const AVG_CAR_LEN  = 4.725;
+  const AVG_BIKE_LEN = 1.85;
   function avgVehicleLengthForMode(mode) {
     return String(mode || MODE).toUpperCase() === 'BIKE' ? AVG_BIKE_LEN : AVG_CAR_LEN;
   }
@@ -5416,13 +4854,6 @@
 
   /** Welke transportmodi zichtbaar zijn. Alleen relevant in MIXED-modus. */
   const visibleModes = new Set(['CAR', 'BIKE', 'PEDESTRIAN']);
-
-  // OD-productie: voor elk OD-paar een set van paden gewogen op route.weight
-  let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
-  let lastProductionT      = 0;   // performance.now()/1000 van laatste productie-cyclus
-  let lastProductionSpawns = 0;   // aantal gespawnde auto's in de laatste productie-cyclus
-  let lastAttractionCount  = 0;   // aantal aangekomen (verdwenen) auto's in de laatste seconde
-  let attractionAccum      = 0;   // lopende teller aankomsten binnen huidig productie-interval
 
   /**
    * Haal een routes-collectie op als NDJSON-stream (?format=ndjson) en parse
@@ -5632,7 +5063,7 @@
      */
     let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
     let daypart         = 'mrh'; // idem — moet overeenkomen met de startklok (08:00)
-    // Stuurt verkeersintensiteiten aan (dpFlowOf, routeproductie, PARK_RATIOS, …).
+    // Stuurt verkeersintensiteiten aan (dpFlowOf, routeproductie, …).
     // Gelijk aan `daypart` tijdens afspelen; kan tijdens pauze afwijken (incl. 'etmaal',
     // een waarde die `daypart` zelf nooit aanneemt — gebouwen blijven dan op 'rest' staan).
     let flowDaypart     = 'mrh';
@@ -7268,7 +6699,6 @@
         btn.classList.remove('active');
         visibleModes.delete(btn.dataset.mode);
       });
-      rebuildCars();
       updateOverlay(true);
       updateLegend();
     }
@@ -7358,7 +6788,7 @@
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments    = features.map(f => ({
       coords:  f.geometry.coordinates,
-      length:  segmentLength(f.geometry.coordinates),
+      length:  linkLengthM(f),
       speedMs: f.properties.speed / 3.6,
       flow:    f.properties.flow,
       norm:    (f.properties.flow - minFlow) / flowRange,
@@ -8201,6 +7631,12 @@
      */
     function _parseAndAddRoutes(routesFc, vehicleMode) {
       if (!routesFc?.features) return;
+      // linkId → lengte (m); -1 = niet in linkGeomMap / < 2 coördinaten.
+      // Voorgevuld met de segmentlengtes (meestal het `length`-attribuut uit het netwerkbestand).
+      const linkLenCache = new Map();
+      for (const seg of segments) {
+        if (seg.coords?.length >= 2) linkLenCache.set(seg.props.linkId, seg.length);
+      }
       // Pass 1: bereken zone-totaal én OD-totaal voor de isAbsolute-detectie
       const zoneTripSumMap = new Map(); // fromZoneId → totaal r.trips
       const odTripSumMap   = new Map(); // "from_to"  → totaal r.trips voor dit OD-paar
@@ -8236,13 +7672,23 @@
           // Normaliseer linkPath IDs naar het type dat linkGeomMap gebruikt:
           // - string-keyed maps (bijv. Vreden: linkId is large_string met _N-suffix)
           // - number-keyed maps (bijv. Hasselt: linkId is int64)
-          const allIds  = r.linkPath.map(id => linkGeomMap.has(id) ? id : parseInt(id));
-          const linkIds = allIds.filter(id => linkGeomMap.get(id)?.length >= 2);
+          const linkIds = [];
+          let totalLen  = 0;
+          for (const raw of r.linkPath) {
+            const id = linkGeomMap.has(raw) ? raw : parseInt(raw);
+            // Linklengte één keer per link berekenen (haversine over alle
+            // coördinaten), niet opnieuw voor elke route die de link gebruikt.
+            let len = linkLenCache.get(id);
+            if (len === undefined) {
+              const c = linkGeomMap.get(id);
+              len = c?.length >= 2 ? segmentLength(c) : -1;  // -1 = geen bruikbare geometrie
+              linkLenCache.set(id, len);
+            }
+            if (len < 0) continue;
+            linkIds.push(id);
+            totalLen += len;
+          }
           if (!linkIds.length) continue;
-          const totalLen = linkIds.reduce((s, id) => {
-            const c = linkGeomMap.get(id);
-            return s + (c ? segmentLength(c) : 0);
-          }, 0);
           if (totalLen < 30) continue;
           routeList.push({
             linkIds,
@@ -8286,15 +7732,12 @@
     }
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
-     let timeScale = 1;
-     let threshold = 0;
      let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
      let selectedZoneId   = null;    // zoneId van geselecteerde zone (voor route-highlight)
      let hoveredZoneId    = null;    // zoneId onder de cursor (bijgehouden via onHover)
      let hoveredOdArrowZoneId   = null; // counterpartId van de OD-pijl onder de cursor (via onHover)
      let highlightedOdZoneId   = null; // counterpartId van de "vastgeklikte" OD-pijl: dimt overige pijlen/routes
     // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
-    let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
     const _tRlfm = performance.now();
     rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan)
     console.log('[perf] rebuildLinkFlowMap:', (performance.now() - _tRlfm).toFixed(0), 'ms');
@@ -8304,8 +7747,6 @@
     console.log('[perf] TOTAL post-routes sync:', (performance.now() - _tPost).toFixed(0), 'ms');
     let widthScale = false;
     let colorMetric = 'flow';
-    let cars      = [];
-    let carData   = [];
 
     // ── Afgeleide lagen (geluid / emissie) ────────────────────────────────────
     // Deze worden niet in het NETWORK-bestand meegeleverd, maar los opgehaald via
@@ -8512,9 +7953,6 @@
     /** Ververs het debug-paneel met actuele statistieken over data en simulatie. */
     function updateDebugPanel() {
       if (!window._debugMode) return;
-      const nMoving   = cars.filter(c => c.state === 'moving').length;
-      const nParked   = cars.filter(c => c.state === 'parked').length;
-      const nSpawning = cars.filter(c => c.state === 'spawning').length;
       const nBoundary = [...zoneMap.values()].filter(z => z.boundary).length;
       document.getElementById('dbgArea').innerHTML =
         `areaId: <b>${AREA_ID}</b><br>` +
@@ -8529,19 +7967,6 @@
           ? `route-modus, gewicht: <b>${Math.round(totalRouteWeight)}</b>`
           : `<b>segment-modus</b>`}<br>` +
         `globalMaxFlow: <b>${Math.round(currentFlowCeiling(false))}</b> vtg/u &mdash; flowDaypart: <b>${flowDaypart}</b>`;
-      document.getElementById('dbgSim').innerHTML =
-        `auto's: <b>${cars.length}</b> totaal &nbsp; (Little's Law: <b>${Math.round(
-          segments.reduce((s, sg) => {
-            const f = segFlow(sg), v = sg.speedMs || 10;
-            return s + (f > 0 ? f * sg.length / (v * 3600) : 0);
-          }, 0)
-        )}</b>)<br>` +
-        `rijdend: <b>${nMoving}</b> &nbsp;` +
-        `geparkeerd: <b>${nParked}</b> &nbsp;` +
-        (routeMode
-          ? `productie: <b>${lastProductionSpawns}</b>/s &nbsp;` +
-            `attractie: <b>${lastAttractionCount}</b>/s`
-          : `spawning: <b>${nSpawning}</b>`);
     }
     // Exporteer zodat de globale DBG-handler (buiten IIFE) het paneel kan verversen
     window._updateDebugPanel = updateDebugPanel;
@@ -8785,60 +8210,6 @@
     updateLegend();
 
     /**
-     * Bouw een path-object uit een array van link-segmenten.
-     *
-     * linkObjs: [{ coords: [[lon,lat],...], speedMs: number }, ...]
-     *
-     * Geeft terug:
-     *   coords      — samengevoegde coördinaten (voor rendering + interpolatePosition)
-     *   length      — totale lengte in meters
-     *   links       — [{ length, speedMs }, ...]  één entry per deellink
-     *   boundaries  — [0, d0, d0+d1, ..., total]  cumulatieve afstand per linkgrens
-     *   speedMs     — snelheid van de eerste link (fallback voor segment-modus)
-     */
-    function buildPathFromLinks(linkObjs) {
-      if (!linkObjs.length) return null;
-
-      const links           = [];
-      const boundaries      = [0];
-      const nodeIds         = [];   // nodeIds[i] = toNode van link i (null als onbekend)
-      const approachBearings = [];  // approachBearings[i] = echte aanrijrichting link i
-                                    // → op-één-na-laatste segment (vóór knik naar knooppunt)
-      const mergedCoords = [...linkObjs[0].coords];
-
-      for (let i = 0; i < linkObjs.length; i++) {
-        const lo    = linkObjs[i];
-        const coords = lo.coords;
-        const len   = segmentLength(coords);
-        links.push({ length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0 });
-        boundaries.push(boundaries[boundaries.length - 1] + len);
-        nodeIds.push(lo.toNode ?? null);
-        if (i > 0) mergedCoords.push(...coords.slice(1));
-
-        // Aanrijrichting: gebruik op-één-na-laatste segment om de kunstmatige knik
-        // naar het knooppuntmiddelpunt (diamantvorm) te vermijden.
-        // coords.length >= 3 → neem coords[n-3]→coords[n-2]  (vóór de knik)
-        // coords.length == 2 → neem het enige beschikbare segment
-        if (coords.length >= 3) {
-          approachBearings.push(segmentBearing(coords[coords.length - 3], coords[coords.length - 2]));
-        } else {
-          approachBearings.push(segmentBearing(coords[0], coords[coords.length - 1]));
-        }
-      }
-
-      const totalLength = boundaries[boundaries.length - 1];
-      return {
-        coords:          mergedCoords,
-        length:          totalLength,
-        links,
-        boundaries,
-        nodeIds,
-        approachBearings,
-        speedMs:         links[0].speedMs,  // fallback
-      };
-    }
-
-    /**
      * Bouw een vlakke [lon,lat][] uit een reeks link-ID's via linkGeomMap.
      * Het eerste punt van elke volgende link (dubbel eindpunt) wordt overgeslagen.
      * Opeenvolgende identieke punten worden gededupliceerd (zelfde als Python _path_to_linestring).
@@ -8862,576 +8233,6 @@
         if (!last || pt[0] !== last[0] || pt[1] !== last[1]) deduped.push(pt);
       }
       return deduped;
-    }
-
-    /**
-     * Geeft de doelsnelheid voor een auto op basis van zijn huidige positie:
-     *   - 90 % van de linksnelheid bij vrij rijden
-     *   - lineair teruggebracht naar 50 % in de laatste SLOW_ZONE meter van de link
-     *
-     * Voor paden zonder per-link data (segment-modus fallback):
-     *   altijd 90 % van path.speedMs.
-     */
-    const SLOW_ZONE = 30;   // meters voor het linkeinde waarop wordt afgereden
-
-    function computeLinkTargetSpeed(car) {
-      const path = car.path;
-
-      // Segment-modus of pad zonder link-info: vaste 90%
-      if (!path.boundaries || path.boundaries.length < 2) {
-        return path.speedMs * 0.9;
-      }
-
-      const distM = car.offset * path.length;
-      const bnd   = path.boundaries;
-
-      // Binary search: zoek linkIdx zodat bnd[linkIdx] <= distM < bnd[linkIdx+1]
-      let lo = 0, hi = bnd.length - 2;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (bnd[mid] <= distM) lo = mid; else hi = mid - 1;
-      }
-      const linkIdx    = Math.min(lo, path.links.length - 1);
-      const linkSpeedMs = path.links[linkIdx].speedMs;
-      const distToEnd  = bnd[linkIdx + 1] - distM;
-
-      if (distToEnd <= SLOW_ZONE) {
-        // Lineair: 90% op 30m voor einde → 50% op het einde
-        const t = distToEnd / SLOW_ZONE;          // 1.0 = ver weg, 0.0 = op eindpunt
-        return linkSpeedMs * (0.50 + 0.40 * t);
-      }
-      return linkSpeedMs * 0.90;
-    }
-
-    /**
-     * Bouw de auto-lijst opnieuw op.
-     *
-     * Route-modus:
-     *   - Filter routes op minimum trips-gewicht (threshold / 10000).
-     *   - Verdeel N = targetCarCount(zoom) auto's over routes naar rato van weight.
-     *   - Elke auto heeft car.path = route-object.
-     *
-     * Segment-modus (fallback):
-     *   - Filter segmenten op flow >= threshold.
-     *   - Auto-aantallen via flowToCarCount (ongewijzigd gedrag).
-     *   - Elke auto heeft car.path = segment-object.
-     */
-    /** Geeft het tijdsinterval (in gesimuleerde seconden) waarbinnen auto's op een route
-     *  gespreid vertrekken. Schaalt mee met timeScale zodat het er bij lage snelheid
-     *  ook goed uitziet. */
-    function parkDepartInterval() { return 60; }
-
-    /**
-     * Gewogen willekeurig sample: geef index terug op basis van weights-array.
-     * weights: array van niet-negatieve getallen.
-     */
-    function weightedSample(weights) {
-      const total = weights.reduce((s, w) => s + w, 0);
-      if (total <= 0) return Math.floor(Math.random() * weights.length);
-      let r = Math.random() * total;
-      for (let i = 0; i < weights.length; i++) {
-        r -= weights[i];
-        if (r <= 0) return i;
-      }
-      return weights.length - 1;
-    }
-
-    /**
-     * Bouw een pad-object + bijbehorende initiële offset, gewogen naar flow×length per link.
-     * Geeft { path, offset } of null als het pad ongeldig is.
-     * allLinkObjs: [{ coords, speedMs, flow }]
-     */
-    function buildWeightedPath(allLinkObjs) {
-      const path = buildPathFromLinks(allLinkObjs);
-      if (!path || path.length < 30) return null;
-
-      // Gewichten per link: flow × length
-      const linkWeights = path.links.map(l => Math.max(0, (l.flow || 0) * l.length));
-      const totalW = linkWeights.reduce((s, w) => s + w, 0);
-
-      let offset;
-      if (totalW > 0) {
-        // Kies een link proportioneel aan flow×length
-        const li = weightedSample(linkWeights);
-        // Kies een random positie binnen die link
-        const linkStart = path.boundaries[li] / path.length;
-        const linkEnd   = path.boundaries[li + 1] / path.length;
-        offset = linkStart + Math.random() * (linkEnd - linkStart);
-      } else {
-        offset = Math.random();
-      }
-      return { path, offset: Math.min(Math.max(offset, 0), 0.999) };
-    }
-
-    /**
-     * Bouw de auto-lijst opnieuw op.
-     *
-     * Route-modus:
-     *   - Totaal voertuigen via Little's Law: Σ(flow×length/speed) × 0.80, capped op MAX_VEHICLES
-     *   - Initiële verdeling (geparkeerd/rijdend/spawning) op basis van dagdeel (PARK_RATIOS)
-     *   - Gewogen plaatsing op links via flow×length
-     *   - ~30% krijgt route-chaining (pendingPath)
-     *
-     * Segment-modus (fallback):
-     *   - Filter segmenten op flow >= threshold.
-     *   - Aantal auto's via Little's Law: N = round(flow × lengte / (speedMs × 3600)).
-     *   - Spawn-vertraging per auto: N × (3600/flow) − traversaalTijd → effectieve doorvoer = flow.
-     *   - Auto's starten gespreid over één cyclus (geen burst bij initialisatie).
-     */
-    function buildCarList(thresh) {
-      const list = [];
-
-      if (routeMode) {
-        const minWeight = thresh / 10000;
-
-        // Stap 1: bouw alle route-paden
-        const routePaths = [];  // { path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount }
-        for (const route of routeList) {
-          if (route.weight < minWeight) continue;
-          if (!visibleModes.has(route.vehicleMode ?? MODE)) continue;
-
-          // Bouw link-objecten op uit het volledige linkpad (voedingslinks al gefilterd in _parseAndAddRoutes)
-          const allLinkObjs = route.linkIds.map(id => {
-            const coords  = linkGeomMap.get(id);
-            const speedMs = linkSpeedMap.get(id) ?? 10;
-            const flow    = linkFlowMap.get(id) ?? 0;
-            const nodes   = nodeLinkMap.get(id);
-            return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
-          }).filter(Boolean);
-
-          if (!allLinkObjs.length) continue;
-
-          const innerLinkPairs = allLinkObjs;
-          const approachCount  = 0;
-
-          const path = buildPathFromLinks(allLinkObjs);
-          if (!path || path.length < 30) continue;
-
-          const isBoundary = false;
-          const canPark    = path.speedMs <= (50 / 3.6);
-          routePaths.push({ path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount });
-        }
-
-        if (!routePaths.length) return list;
-
-        // Stap 3b: sla OD-groepen op voor het productiemechanisme (altijd nodig, ongeacht vulmethode).
-        // totalFlow [veh/u] = originProduction × DP_FRACTION[daypart] × r.trips
-        //   • originProduction: gekalibreerde dagproductie uit het routebestand (veh/dag,
-        //     zelfde eenheid als flow24hrs) — geldig voor zowel CBS-zones als boundary-zones.
-        //     Gebruik NIET zone.production uit ZONE-bestand: dat is CBS-demografisch en
-        //     kan honderden keren groter zijn dan de werkelijke gemodelleerde stroom.
-        //   • DP_FRACTION[daypart]: conversiefactor dagproductie → uurproductie voor dit dagdeel
-        //   • r.trips: aandeel van die productie dat via dit specifieke routepad gaat [0–1]
-        odGroups.clear();
-        for (const rp of routePaths) {
-          const key = `${rp.route.vehicleMode ?? MODE}:${rp.route.fromZoneId}→${rp.route.toZoneId}`;
-          if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
-          const g            = odGroups.get(key);
-          const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[flowDaypart] ?? (1 / 14.4));
-          g.totalFlow += productionDp * rp.route.weight * (rp.route.calib ?? 1);
-          g.paths.push(rp);
-        }
-
-        // Preprocessing gedeeld door LD en CB: bouw per inner-link een route-map en
-        // per route-pad een offset-tabel (path.boundaries[approachCount + j]).
-        let innerLinkRouteMap = null;
-        if (initFillMethod === 'link' || initFillMethod === 'cap') {
-          innerLinkRouteMap = new Map(); // linkId → [{rp, weight}]
-          for (const rp of routePaths) {
-            const w = (rp.route.originProduction ?? 0) * (rp.route.weight ?? 0);
-            if (w <= 0) continue;
-            rp.innerLinkOffsets = new Map(); // linkId → {startOffset [m], linkLength [m]}
-            for (let j = 0; j < rp.innerLinkPairs.length; j++) {
-              const { id: linkId } = rp.innerLinkPairs[j];
-              const startOffset    = rp.path.boundaries[rp.approachCount + j];
-              const linkLength     = rp.path.links[rp.approachCount + j].length;
-              if (linkLength > 0) rp.innerLinkOffsets.set(linkId, { startOffset, linkLength });
-              if (!innerLinkRouteMap.has(linkId)) innerLinkRouteMap.set(linkId, []);
-              innerLinkRouteMap.get(linkId).push({ rp, weight: w });
-            }
-          }
-        }
-
-        if (initFillMethod === 'link') {
-          // ── Methode LD: Linkdichtheid ───────────────────────────────────────
-          // k = q/v → N_link = flow [veh/u] × linkLength [m] / (speedMs [m/s] × 3600)
-          // linkFlowMap is al dagdeel-geschaald (via rebuildLinkFlowMap).
-          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
-          let totalLd = 0;
-          for (const [linkId, entries] of innerLinkRouteMap) {
-            if (totalLd >= MAX_VEHICLES) break;
-            const flow    = linkFlowMap.get(linkId) ?? 0;
-            const speedMs = linkSpeedMap.get(linkId) ?? 10;
-            if (flow <= 0) continue;
-            const firstOffsets = entries[0].rp.innerLinkOffsets.get(linkId);
-            if (!firstOffsets || firstOffsets.linkLength <= 0) continue;
-            const linkLength = firstOffsets.linkLength;
-            const density    = flow * linkLength / (speedMs * 3600);
-            const n_s        = Math.floor(density) + (Math.random() < (density % 1) ? 1 : 0);
-            if (n_s < 1) continue;
-
-            // Normaliseer sampling-gewichten (DP_FRACTION valt weg bij normalisatie)
-            const totalW = entries.reduce((s, e) => s + e.weight, 0);
-            if (totalW <= 0) continue;
-
-            for (let i = 0; i < n_s; i++) {
-              if (totalLd >= MAX_VEHICLES) break;
-              // Sample route proportioneel aan originProduction × weight
-              let r = Math.random() * totalW;
-              let chosen = entries[entries.length - 1];
-              for (const entry of entries) { r -= entry.weight; if (r <= 0) { chosen = entry; break; } }
-              const rp      = chosen.rp;
-              const offsets = rp.innerLinkOffsets.get(linkId);
-              if (!offsets) continue;
-              // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
-              const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
-              const offset      = Math.min(posInMetres / rp.path.length, 0.999);
-              const isParked    = rp.canPark && Math.random() < parkRatio;
-              const pendingPath = null;
-              const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
-              list.push({
-                path:          rp.path,
-                offset,
-                speed:         rp.path.speedMs * 0.9,
-                color:         randomCarColor(rp.route.vehicleMode),
-                clothingColor: randomClothingColor(),
-                typeIdx:       randomVehicleType(rp.route.vehicleMode),
-                vehicleMode:   rp.route.vehicleMode ?? MODE,
-                state:         isParked ? 'parked' : 'moving',
-                departAt,
-                canPark:   rp.canPark,
-                noRespawn: true,
-                pendingPath,
-                spawnRate:  null,
-                spawnDelay: null,
-                waitingAtNode:      null,
-                waitStartT:         null,
-                yieldOverrideUntil: null,
-                stopTarget:         null,
-              });
-              totalLd++;
-            }
-          }
-        } else if (initFillMethod === 'cap') {
-          // ── Methode CB: Capaciteitsbezetting ──────────────────────────────
-          // safeSpacingM = speedKmh/2 × 1.1 = speedMs × 3.6/2 × 1.1 = speedMs × 1.98
-          // occupancy    = flow / capacity  (gecapped op 1.0)
-          // n_s          = round(linkLength / safeSpacingM × occupancy)
-          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
-          let totalCb = 0;
-          for (const [linkId, entries] of innerLinkRouteMap) {
-            if (totalCb >= MAX_VEHICLES) break;
-            const flow     = linkFlowMap.get(linkId) ?? 0;
-            const speedMs  = linkSpeedMap.get(linkId) ?? 10;
-            const capacity = linkCapacityMap.get(linkId) ?? 1800;
-            if (flow <= 0 || capacity <= 0) continue;
-            const firstOffsets = entries[0].rp.innerLinkOffsets.get(linkId);
-            if (!firstOffsets || firstOffsets.linkLength <= 0) continue;
-            const linkLength   = firstOffsets.linkLength;
-            const safeSpacingM = speedMs * 1.98;        // speedKmh/2 × 1.1
-            const occupancy    = Math.min(flow / capacity, 1.0);
-            const raw          = (linkLength / safeSpacingM) * occupancy;
-            const n_s          = Math.floor(raw) + (Math.random() < (raw % 1) ? 1 : 0);
-            if (n_s < 1) continue;
-
-            // Normaliseer sampling-gewichten (DP_FRACTION valt weg bij normalisatie)
-            const totalW = entries.reduce((s, e) => s + e.weight, 0);
-            if (totalW <= 0) continue;
-
-            for (let i = 0; i < n_s; i++) {
-              if (totalCb >= MAX_VEHICLES) break;
-              // Sample route proportioneel aan originProduction × weight
-              let r = Math.random() * totalW;
-              let chosen = entries[entries.length - 1];
-              for (const entry of entries) { r -= entry.weight; if (r <= 0) { chosen = entry; break; } }
-              const rp      = chosen.rp;
-              const offsets = rp.innerLinkOffsets.get(linkId);
-              if (!offsets) continue;
-              // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
-              const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
-              const offset      = Math.min(posInMetres / rp.path.length, 0.999);
-              const isParked    = rp.canPark && Math.random() < parkRatio;
-              const pendingPath = null;
-              const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
-              list.push({
-                path:          rp.path,
-                offset,
-                speed:         rp.path.speedMs * 0.9,
-                color:         randomCarColor(rp.route.vehicleMode),
-                clothingColor: randomClothingColor(),
-                typeIdx:       randomVehicleType(rp.route.vehicleMode),
-                vehicleMode:   rp.route.vehicleMode ?? MODE,
-                state:         isParked ? 'parked' : 'moving',
-                departAt,
-                canPark:   rp.canPark,
-                noRespawn: true,
-                pendingPath,
-                spawnRate:  null,
-                spawnDelay: null,
-                waitingAtNode:      null,
-                waitStartT:         null,
-                yieldOverrideUntil: null,
-                stopTarget:         null,
-              });
-              totalCb++;
-            }
-          }
-        } else {
-          // ── Methode LL: Little's Law (standaard) ────────────────────────────
-          // Stap 2: Little's Law – netwerk-totaal N = Σ(flow × lengte / (speedMs × 3600))
-          // Dit is het verwachte aantal voertuigen dat tegelijkertijd op het hele netwerk rijdt.
-          let littlesN = 0;
-          for (const seg of segments) {
-            const flow    = segFlow(seg);
-            const speedMs = seg.speedMs || 10;
-            if (flow > 0) littlesN += (flow * seg.length) / (speedMs * 3600);
-          }
-          const N = Math.max(1, Math.min(Math.round(littlesN), MAX_VEHICLES));
-
-          // Stap 3: OD-gebaseerde Little's Law density per route.
-          // density = originProduction × DP_FRACTION × r.trips × reistijd
-          // Gebruik de OD-specifieke flow (niet de totale linkflow) zodat de initiële verdeling
-          // consistent is met het productiemechanisme. Gedeelde links worden hierdoor niet
-          // dubbel geteld. N uit Stap 2 blijft het anker voor het totale voertuigaantal.
-          for (const rp of routePaths) {
-            const odFlowVehHr = (rp.route.originProduction ?? 0)
-                              * (DP_FRACTION[flowDaypart] ?? (1 / 14.4))
-                              * (rp.route.weight ?? 0)
-                              * (rp.route.calib ?? 1);
-            let travelTime = 0;
-            for (const lo of rp.allLinkObjs) {
-              travelTime += segmentLength(lo.coords) / (lo.speedMs || 10);
-            }
-            rp.density = odFlowVehHr * travelTime / 3600;
-          }
-          const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
-
-          // Verdeel N proportioneel; probabilistische afronding zodat Σ count ≈ N.
-          for (const rp of routePaths) {
-            const share  = rp.density / totalRouteDensity;
-            const routeN = N * share;
-            rp.count = Math.floor(routeN) + (Math.random() < (routeN % 1) ? 1 : 0);
-          }
-          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
-
-          for (const rp of routePaths) {
-            const count = rp.count;
-
-            for (let i = 0; i < count; i++) {
-              const isParked = rp.canPark && Math.random() < parkRatio;
-
-              // Gewogen startpositie (ook voor geparkeerde auto's — verspreid over de route)
-              const wp = buildWeightedPath(rp.allLinkObjs);
-              if (!wp) continue;
-
-              const pendingPath = null;
-
-              // Geparkeerde auto's: resterende wachttijd uniform verdeeld over [0, PARK_MEAN_S].
-              // Ze staan er al een tijdje — niet allemaal tegelijk vertrekken.
-              const departAt = isParked
-                ? Math.random() * PARK_MEAN_S / timeScale
-                : 0;
-
-              list.push({
-                path:          rp.path,
-                offset:        wp.offset,
-                speed:         rp.path.speedMs * 0.9,
-                color:         randomCarColor(rp.route.vehicleMode),
-                clothingColor: randomClothingColor(),
-                typeIdx:       randomVehicleType(rp.route.vehicleMode),
-                vehicleMode:   rp.route.vehicleMode ?? MODE,
-                state:         isParked ? 'parked' : 'moving',
-                departAt,
-                canPark:   rp.canPark,
-                noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
-                pendingPath,
-                spawnRate:  null,             // niet meer gebruikt (noRespawn=true)
-                spawnDelay: null,
-                waitingAtNode:      null,
-                waitStartT:         null,
-                yieldOverrideUntil: null,
-                stopTarget:         null,
-              });
-            }
-          }
-        }
-      } else {
-        // Segment-modus: één link per pad.
-        // Aantal auto's via Little's Law: N = flow × traversaalTijd / 3600
-        // Spawn-vertraging: N × (3600/flow) − traversaalTijd  → auto verschijnt precies met
-        // tussentijd 3600/flow seconden, zodat de zichtbare doorvoer overeenkomt met de flow.
-        const now = performance.now() / 1000;
-        for (const seg of segments) {
-          if (seg.length < 30 || segFlow(seg) < thresh) continue;
-          const flow          = segFlow(seg);
-          const traversalTime = seg.length / seg.speedMs;          // seconden
-          // Probabilistische afronding: density 0.1 → 10% kans op 1 auto (i.p.v. altijd 0)
-          const density = flow * traversalTime / 3600;
-          const count   = Math.floor(density) + (Math.random() < (density % 1) ? 1 : 0);
-          if (count < 1) continue;
-          const path       = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs, flow }]);
-          // Tijd dat de auto onzichtbaar is (spawning) zodat effectieve doorvoer = flow
-          const spawnDelay = Math.max(0, count * (3600 / flow) - traversalTime);
-          const cycleTime  = traversalTime + spawnDelay;
-          for (let i = 0; i < count; i++) {
-            // Spreid N auto's gelijkmatig over één cyclus
-            const departAt = now + (i / count) * cycleTime / timeScale;
-            const segVehicleMode = MODE === 'MIXED' ? ((seg.props.mode || 'CAR').toUpperCase()) : MODE;
-            if (!visibleModes.has(segVehicleMode)) continue;
-            list.push({
-              path,
-              offset:        0,
-              speed:         0,
-              color:         randomCarColor(segVehicleMode),
-              clothingColor: randomClothingColor(),
-              typeIdx:       randomVehicleType(segVehicleMode),
-              vehicleMode:   segVehicleMode,
-              state:    'spawning',
-              departAt,
-              canPark:  false,     // geen parkeren in segment-modus
-              spawnDelay,
-              pendingPath:        null,
-              waitingAtNode:      null,
-              waitStartT:         null,
-              yieldOverrideUntil: null,
-              stopTarget:         null,
-            });
-          }
-        }
-      }
-
-      return list;
-    }
-
-    // ── Productie-helpers ─────────────────────────────────────────────────────
-
-    /** Kies een route-pad gewogen op route.weight × route.calib (proportioneel aan de gekalibreerde fractie). */
-    function pickWeightedRoute(paths) {
-      const wOf = rp => rp.route.weight * (rp.route.calib ?? 1);
-      const totalW = paths.reduce((s, rp) => s + wOf(rp), 0) || 1;
-      let r = Math.random() * totalW;
-      for (const rp of paths) {
-        r -= wOf(rp);
-        if (r <= 0) return rp;
-      }
-      return paths[paths.length - 1];
-    }
-
-    /**
-     * Spawnt één productie-auto aan het begin (offset=0) van het gegeven route-pad.
-     * De auto start bij het beginpunt van de route (herkomst) en rijdt naar de bestemming.
-     * Bij aankomst verdwijnt de auto (noRespawn=true); nieuwe auto's worden door het
-     * productiemechanisme aangemaakt.
-     */
-    function spawnProductionCar(rp) {
-      const vm          = rp.route.vehicleMode ?? MODE;
-      if (!visibleModes.has(vm)) return;
-      const pendingPath = null;
-
-      cars.push({
-        path:        rp.path,
-        offset:      0,
-        speed:       0,
-        color:       randomCarColor(vm),
-        typeIdx:     randomVehicleType(vm),
-        vehicleMode: vm,
-        state:     'moving',
-        departAt:  0,
-        canPark:   rp.canPark,
-        noRespawn: true,
-        pendingPath,
-        spawnRate:  null,
-        spawnDelay: null,
-        waitingAtNode:      null,
-        waitStartT:         null,
-        yieldOverrideUntil: null,
-        stopTarget:         null,
-      });
-    }
-
-    /** Na buildCarList: herpositioneer auto's per pad zodat ze minimaal MIN_GAP uit elkaar staan */
-    function enforceInitialSpacing(list) {
-      const byPath = new Map();
-      for (const car of list) {
-        let g = byPath.get(car.path);
-        if (!g) { g = []; byPath.set(car.path, g); }
-        g.push(car);
-      }
-      for (const [path, group] of byPath) {
-        group.sort((a, b) => a.offset - b.offset);
-        const minOff  = (CF_MIN_GAP + CAR_LENGTH) / path.length;
-        const maxCars = Math.max(1, Math.floor(1.0 / minOff));
-        // Verwijder overtollige auto's als het pad te kort is
-        if (group.length > maxCars) group.splice(maxCars);
-        // Herpositioneer gelijkmatig met kleine jitter; bewaar bestaande state
-        const step = 1.0 / group.length;
-        for (let i = 0; i < group.length; i++) {
-          // Geparkeerde auto's blijven op hun offset; rijdende auto's worden herverdeeld
-          if (group[i].state !== 'parked') {
-            group[i].offset = (i * step + Math.random() * step * 0.25) % 1.0;
-            group[i].speed  = path.speedMs * 0.9;
-          }
-        }
-      }
-      const kept = new Set();
-      for (const g of byPath.values()) for (const car of g) kept.add(car);
-      return list.filter(car => kept.has(car));
-    }
-
-    /** Bereken positie/oriëntatie per auto vanuit car.path (unified interface) */
-    function computeCarData() {
-      if (carData.length !== cars.length) carData = new Array(cars.length);
-      const PARK_OFFSET_M = 3.5;
-      const BIKE_OFFSET_M = 0.4;  // fietsen rijden rechts van het wegmidden (max fietspad-halfbreedte = 0.6 m)
-      for (let i = 0; i < cars.length; i++) {
-        const c = cars[i];
-        if (c.state === 'spawning') {
-          // Onzichtbaar: buiten beeld plaatsen
-          carData[i] = { position: [0, 0, -9999], orientation: [0, 0, 0], color: [0,0,0,0], clothingColor: [0,0,0,0], typeIdx: c.typeIdx };
-          continue;
-        }
-        const [lon, lat, bearing] = interpolatePosition(
-          c.path.coords, c.offset, c.path.length
-        );
-        let pLon = lon, pLat = lat;
-        if (c.state === 'parked') {
-          const bearRad = (bearing + 90) * Math.PI / 180;
-          const cosLat  = Math.cos(lat * Math.PI / 180);
-          pLon = lon + (PARK_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
-          pLat = lat + (PARK_OFFSET_M / 110540) * Math.cos(bearRad);
-        } else if ((c.vehicleMode ?? MODE) === 'BIKE') {
-          // Fiets: 1.5 m naar rechts (bearing + 90° = loodrecht rechts)
-          const bearRad = (bearing + 90) * Math.PI / 180;
-          const cosLat  = Math.cos(lat * Math.PI / 180);
-          pLon = lon + (BIKE_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
-          pLat = lat + (BIKE_OFFSET_M / 110540) * Math.cos(bearRad);
-        }
-        carData[i] = {
-          position:     [pLon, pLat, (c.vehicleMode ?? MODE) === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
-          orientation:  [0, 90 - bearing, 0],
-          color:        c.color,
-          clothingColor: c.clothingColor ?? [100, 100, 100, 230],
-          typeIdx:      c.typeIdx,
-        };
-      }
-    }
-
-    /**
-     * Groepeer auto's per pad en sorteer op offset.
-     * @param {boolean} movingOnly  - als true, alleen auto's met state='moving'
-     */
-    function buildPathGroups(movingOnly = false) {
-      const groups = new Map();
-      for (const car of cars) {
-        if (movingOnly && car.state !== 'moving') continue;
-        let g = groups.get(car.path);
-        if (!g) { g = []; groups.set(car.path, g); }
-        g.push(car);
-      }
-      for (const g of groups.values()) {
-        g.sort((a, b) => a.offset - b.offset);
-      }
-      return groups;
     }
 
     // ── OD-paar bewerking — state ────────────────────────────────────────────
@@ -9629,7 +8430,7 @@
 
     // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
 
-    // ── ScenarioVergelijker — state (vóór makeCarLayers zodat er geen TDZ-fout optreedt) ──
+    // ── ScenarioVergelijker — state ──
     let splitViewActive    = false;
     let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
     var diffPlotActive     = false;  // verschilplot actief
@@ -9757,11 +8558,6 @@
     let hoveredLinkId      = null;    // linkId onder de cursor (bijgehouden via onHover)
     const _estimatedRouteCache = new Map(); // linkId → {pathData, flowByFromZone, flowByToZone} (Dijkstra-schatting)
 
-    // ── Voertuigtellers ───────────────────────────────────────────────────────
-    let _counterList      = [];           // [{ id, linkId, line, bearing, midLon, midLat, counts, startTime }]
-    let _counterPlaceMode = false;        // true terwijl plaatsings-modus actief is
-    let _counterIdSeq     = 0;            // oplopende teller voor counter-ID's
-    const _counterPrevPos = new WeakMap(); // car → { pos:[lon,lat], path } vorige frame
     let nodeSelectMode   = 'click';  // 'click' | 'polygon'
     let polygonVertices  = [];       // [[lon, lat], ...]
     let polygonNodesInside = [];     // zone-knopen binnen de gesloten polygon
@@ -11988,257 +10784,6 @@
       });
     }
 
-    // ── Voertuigteller: hulpfuncties ─────────────────────────────────────────
-
-    /**
-     * Berekent de geometrie van de tellerslijn loodrecht op een wegvak.
-     * Geeft { midLon, midLat, bearing, line: [[lon,lat],[lon,lat]] }
-     */
-    function _computeCounterGeom(coords) {
-      const totalLen = segmentLength(coords);
-      const [midLon, midLat, bearing] = interpolatePosition(coords, 0.5, totalLen);
-      const halfLen    = 20; // m — halve breedte van de tellerslijn
-      const perpBr     = (bearing + 90) % 360;
-      const cosLat     = Math.cos(midLat * Math.PI / 180);
-      const offLon = b => (halfLen / 111320) / cosLat * Math.sin(b * Math.PI / 180);
-      const offLat = b => (halfLen / 110540) * Math.cos(b * Math.PI / 180);
-      return {
-        midLon, midLat, bearing,
-        line: [
-          [midLon + offLon(perpBr),           midLat + offLat(perpBr)],
-          [midLon + offLon((perpBr + 180) % 360), midLat + offLat((perpBr + 180) % 360)],
-        ],
-      };
-    }
-
-    /**
-     * Geeft true als lijnstuk [a,b] het lijnstuk [c,d] snijdt (2D, lon/lat als vlak).
-     */
-    function _segmentsIntersect(a, b, c, d) {
-      function cross(o, u, v) {
-        return (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
-      }
-      const d1 = cross(c, d, a), d2 = cross(c, d, b);
-      const d3 = cross(a, b, c), d4 = cross(a, b, d);
-      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
-      function onSeg(p, q, r) {
-        return Math.min(p[0], q[0]) <= r[0] && r[0] <= Math.max(p[0], q[0]) &&
-               Math.min(p[1], q[1]) <= r[1] && r[1] <= Math.max(p[1], q[1]);
-      }
-      if (d1 === 0 && onSeg(c, d, a)) return true;
-      if (d2 === 0 && onSeg(c, d, b)) return true;
-      if (d3 === 0 && onSeg(a, b, c)) return true;
-      if (d4 === 0 && onSeg(a, b, d)) return true;
-      return false;
-    }
-
-    /** Plaatst een nieuwe teller op het gegeven wegvak (linkId). */
-    function _placeCounter(linkId) {
-      const numId  = Number(linkId);
-      const coords = linkGeomMap.get(numId) ?? linkGeomMap.get(linkId);
-      if (!coords) return;
-      const geom = _computeCounterGeom(coords);
-      _counterList.push({
-        id:        ++_counterIdSeq,
-        linkId:    isNaN(numId) ? linkId : numId,
-        line:      geom.line,
-        bearing:   geom.bearing,
-        midLon:    geom.midLon,
-        midLat:    geom.midLat,
-        counts: {
-          forward:  { total: 0, CAR: 0, BIKE: 0, OTHER: 0 },
-          backward: { total: 0, CAR: 0, BIKE: 0, OTHER: 0 },
-        },
-        simElapsed: 0,
-      });
-      _updateCounterPanel();
-    }
-
-    /** Verwijdert de teller met het gegeven id. */
-    function _removeCounter(id) {
-      _counterList = _counterList.filter(c => c.id !== id);
-      _updateCounterPanel();
-    }
-
-    /** Herrendert het teller-paneel op basis van _counterList. */
-    function _updateCounterPanel() {
-      const body  = document.getElementById('cpBody');
-      const hint  = document.getElementById('cpHint');
-      if (!body) return;
-
-      // Hint: zichtbaar als er geen tellers zijn EN de modus actief is
-      if (hint) hint.style.display = (_counterList.length === 0) ? '' : 'none';
-
-      const modeStr = counts => {
-        const parts = [];
-        if (counts.CAR)   parts.push(`auto:${counts.CAR}`);
-        if (counts.BIKE)  parts.push(`fiets:${counts.BIKE}`);
-        if (counts.OTHER) parts.push(`overig:${counts.OTHER}`);
-        return parts.length ? parts.join(' · ') : '';
-      };
-
-      const elapsed = ct => {
-        const s = Math.max(0, ct.simElapsed ?? 0);
-        return s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
-      };
-
-      // Verwacht aantal passages gegeven de gemeten uurintensiteit en verstreken simtijd:
-      //   verwacht = flow[vtg/u] × simElapsed[s] / 3600
-      // Forward = eigen richting-specifieke link, backward = tegenrichting (-linkId).
-      const expected = (ct, dir) => {
-        const numId = Number(ct.linkId);
-        const key   = dir === 'forward' ? numId : -numId;
-        const flow  = linkFlowMap.get(key) ?? linkFlowMap.get(String(key)) ?? 0;
-        const s     = Math.max(0, ct.simElapsed ?? 0);
-        return flow * s / 3600;
-      };
-
-      // Verwijder rijen voor tellers die niet meer bestaan
-      body.querySelectorAll('.cp-counter').forEach(el => {
-        if (!_counterList.find(c => c.id === +el.dataset.id)) el.remove();
-      });
-
-      for (const ct of _counterList) {
-        const existing = body.querySelector(`.cp-counter[data-id="${ct.id}"]`);
-        const fwd = ct.counts.forward, bwd = ct.counts.backward;
-        const fModes = modeStr(fwd), bModes = modeStr(bwd);
-        const expF = expected(ct, 'forward'), expB = expected(ct, 'backward');
-        const html = `
-          <div class="cp-counter-head">
-            <span class="cp-link-label">wegvak ${ct.linkId}</span>
-          </div>
-          <div class="cp-counter-rows">
-            <div class="cp-row">
-              <span class="cp-dir">→</span>
-              <span class="cp-total">${fwd.total}</span>
-              <span class="cp-expected" title="verwacht o.b.v. gemeten uurintensiteit × verstreken simtijd">/ ~${Math.round(expF)}</span>
-              <span class="cp-modes">${fModes}</span>
-            </div>
-            <div class="cp-row">
-              <span class="cp-dir">←</span>
-              <span class="cp-total">${bwd.total}</span>
-              <span class="cp-expected" title="verwacht o.b.v. gemeten uurintensiteit × verstreken simtijd">/ ~${Math.round(expB)}</span>
-              <span class="cp-modes">${bModes}</span>
-            </div>
-            <div class="cp-elapsed">${elapsed(ct)} verstreken (sim) · geteld / verwacht</div>
-          </div>`;
-        if (existing) {
-          existing.innerHTML = html;
-        } else {
-          const el = document.createElement('div');
-          el.className = 'cp-counter';
-          el.dataset.id = ct.id;
-          el.innerHTML  = html;
-          body.appendChild(el);
-        }
-      }
-    }
-
-    /**
-     * Deck.gl PathLayer met alle geplaatste tellers + eventueel een preview-lijn.
-     * Geplaatste tellers: cyaan (#00ff78). Preview: geel (#ffdc00).
-     */
-    function makeCounterLayer() {
-      const lines = _counterList.map(ct => ({ path: ct.line, preview: false }));
-
-      // Preview-lijn: toon loodrecht op het wegvak waarover de cursor zweeft
-      if (_counterPlaceMode && hoveredLinkId !== null) {
-        const numId  = Number(hoveredLinkId);
-        const coords = linkGeomMap.get(numId) ?? linkGeomMap.get(hoveredLinkId);
-        if (coords) {
-          const geom = _computeCounterGeom(coords);
-          lines.push({ path: geom.line, preview: true });
-        }
-      }
-
-      return new PathLayer({
-        id:             'counters',
-        data:           lines,
-        getPath:        d => d.path,
-        getColor:       d => d.preview ? [255, 220, 0, 200] : [0, 255, 120, 230],
-        getWidth:       3,
-        widthUnits:     'pixels',
-        widthMinPixels: 2,
-        pickable:       false,
-      });
-    }
-
-    function makeCarLayers(data) {
-      // GMT Analyzer: geen 3D-voertuigrendering (dichtheid-als-auto's hoort bij
-      // de klok-gedreven live 3D-weergave van GMT Digital Twin).
-      return [];
-      const vtypes = MODE === 'BIKE'  ? BIKE_VEHICLE_TYPES :
-                     MODE === 'MIXED' ? [...VEHICLE_TYPES, ...BIKE_VEHICLE_TYPES] :
-                                        VEHICLE_TYPES;
-      const layers = [];
-
-      // Zoom-gebaseerde LOD-drempels voor fietsen
-      const zoom           = map.getZoom();
-      const bikeFirstIdx   = VEHICLE_TYPES.length;   // in MIXED: index van het fietstype
-      const showBikeDetail = zoom >= 13;   // wielen + stuur/zadel zichtbaar
-      const showBikeRider  = zoom >= 15;   // fietser (torso + hoofd) zichtbaar
-
-      for (let ti = 0; ti < vtypes.length; ti++) {
-        const vt       = vtypes[ti];
-        const typeData = data.filter(d => d.typeIdx === ti);
-        if (!typeData.length) continue;
-
-        // Is dit het fietstype?
-        const isBikeType = (MODE === 'BIKE') || (MODE === 'MIXED' && ti >= bikeFirstIdx);
-
-        const baseVisible = colorMetric !== 'compare' && !splitViewActive;
-        const shared = {
-          data:           typeData,
-          visible:        baseVisible,
-          getPosition:    d => d.position,
-          getOrientation: d => d.orientation,
-          sizeScale: 1,
-          pickable:  false,
-        };
-        layers.push(
-          new SimpleMeshLayer({
-            ...shared,
-            id:       `cars-body-${ti}`,
-            mesh:     vt.body,
-            getColor: d => d.color,
-            material: { ambient: 0.55, diffuse: 0.85, shininess: 60, specularColor: [80, 80, 80] },
-          }),
-          new SimpleMeshLayer({
-            ...shared,
-            // Voor fietsen: fietser (clothingColor) zichtbaar bij zoom ≥ 15
-            // Voor auto's: ruiten altijd zichtbaar
-            id:       `cars-windows-${ti}`,
-            visible:  baseVisible && (!isBikeType || showBikeRider),
-            mesh:     vt.windows,
-            getColor: isBikeType ? (d => d.clothingColor ?? [100, 100, 100, 230]) : [12, 28, 72, 210],
-            material: isBikeType
-              ? { ambient: 0.5, diffuse: 0.8, shininess: 20, specularColor: [60, 60, 60] }
-              : { ambient: 0.3, diffuse: 0.5, shininess: 120, specularColor: [160, 200, 255] },
-          }),
-          new SimpleMeshLayer({
-            ...shared,
-            // Wielen: altijd voor auto's, bij zoom ≥ 13 voor fietsen
-            id:       `cars-wheels-${ti}`,
-            visible:  baseVisible && (!isBikeType || showBikeDetail),
-            mesh:     vt.wheels,
-            getColor: [22, 22, 24, 255],
-            material: { ambient: 0.4, diffuse: 0.6, shininess: 20, specularColor: [30, 30, 30] },
-          }),
-          new SimpleMeshLayer({
-            ...shared,
-            // Stuur/zadel: altijd voor auto's, bij zoom ≥ 13 voor fietsen
-            id:       `cars-bumpers-${ti}`,
-            visible:  baseVisible && (!isBikeType || showBikeDetail),
-            mesh:     vt.bumpers,
-            getColor: [28, 28, 28, 255],
-            material: { ambient: 0.35, diffuse: 0.5, shininess: 15, specularColor: [20, 20, 20] },
-          }),
-        );
-      }
-      return layers;
-    }
-
      function makeTooltip({ object, layer }) {
        if (!object) return null;
 
@@ -12318,9 +10863,6 @@
 
     // ── 6. Initialisatie ────────────────────────────────────────────────────
 
-    cars = enforceInitialSpacing(buildCarList(threshold));
-    computeCarData();
-
     let pendingChanges        = [];       // [{ nodeId, zoneId, production, attraction, label }]
     let _changesPanelReadOnly = false;   // true = geopend via ☰-knop (alleen-lezen)
     let _historicalChanges    = [];      // Properties-objecten van /collections/changes/items
@@ -12333,7 +10875,7 @@
 
     const overlay = new MapboxOverlay({
       interleaved: true,
-      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneStudyFillLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
+      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneStudyFillLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers()],
       getTooltip: makeTooltip,
       getCursor: ({ isDragging, isHovering }) => {
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
@@ -12396,12 +10938,6 @@
         // Toon "Afronden"-popup zodra we >= 2 vertices hebben
         if (linkAddVertices.length >= 2)
           document.getElementById('linkAddFinishPopup').style.display = 'block';
-        return;
-      }
-      // Teller plaatsen: hogere prioriteit dan link-selectie
-      if (_counterPlaceMode && hoveredLinkId !== null) {
-        _placeCounter(hoveredLinkId);
-        updateOverlay(true);
         return;
       }
       // Flow per wegvak wijzigen via hoveredLinkId (deck.gl onClick onbetrouwbaar)
@@ -12512,12 +11048,7 @@
       map.on('idle', _onMapReady);
     }
 
-      function updateOverlay(withCars = true) {
-         // Gepauzeerd betekent altijd "geen auto's in beeld", ongeacht wat de
-         // aanroeper meegeeft — anders duikt de bevroren auto-positie weer op
-         // zodra een ongerelateerde update (camera, assets, …) hier met de
-         // standaardwaarde `true` doorheen loopt.
-         const showCars = withCars && !paused;
+      function updateOverlay() {
          overlay.setProps({ layers: [
            makeSpeedBumpLayer(),
           makeNetworkLayer(),
@@ -12535,8 +11066,6 @@
           makeZoneRoutesLayer(),
           makeZoneFeedLinksLayer(),
           ...makeZoneOdArrowLayers(),
-          makeCounterLayer(),
-          ...makeCarLayers(showCars ? [...carData] : []),
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
         if (splitViewActive && overlay2) {
@@ -12545,8 +11074,7 @@
       }
 
 
-    // ── 7. Animatielus ──────────────────────────────────────────────────────
-    let lastT  = null;
+    // ── 7. Pauzestatus simulatieklok ───────────────────────────────────────
     let paused = false;
     // Welk tijdvak is gekozen op de klok terwijl gepauzeerd ('etmaal'|'mrh'|'rest'|'erh');
     // null = niet gepauzeerd / geen selectie-modus actief.
@@ -12563,395 +11091,6 @@
       document.getElementById('fspPurpose').disabled = isPaused;
       document.querySelectorAll('#simTempBtns .sim-opt-btn, #simWeatherBtns .sim-opt-btn')
         .forEach(btn => { btn.disabled = isPaused; });
-    }
-
-    // ── Kruispunt rechts-voor-links parameters ────────────────────────────
-    const YIELD_ZONE      = 25;   // meter: afstand tot kruispunt waarbinnen rechts-voorrang geldt
-    const DEADLOCK_WAIT_S =  3.0; // seconden: maximale wachttijd voor patstelling-doorbraak
-
-    // ── Periodieke hervalidatie van stilstaande auto's ────────────────────
-    let lastRevalidateT = 0;      // real-time (performance.now()/1000) van laatste hervalidatie
-    const REVALIDATE_INTERVAL = 2.0; // elke 2 seconden
-
-    function animate() {
-      const now = performance.now() / 1000;
-      if (!paused && lastT !== null) {
-        const dt  = Math.min(now - lastT, 0.05) * timeScale;
-        const t   = now;   // huidige tijd in seconden (performance.now()/1000)
-
-        // ── Toestandsovergangen ──────────────────────────────────────────
-        for (const car of cars) {
-          if (car.state === 'parked' && t >= car.departAt) {
-            if (car.noRespawn) {
-              // Productie- / warmup-auto: na parkeren verdwijnen (geen herstart)
-              car.state = 'done';
-            } else {
-              // Herhalende auto: vertrek vanuit parkeerstand
-              car.state = 'moving';
-              car.speed = 0;
-            }
-          } else if (car.state === 'spawning' && t >= car.departAt) {
-            // Snelwegauto / boundary: verschijn aan het begin van de route
-            car.offset = 0;
-            car.state  = 'moving';
-            car.speed  = 0;
-          } else if (car.state === 'moving' && car.offset >= 1.0) {
-            // Vervolgroute (route-chaining)?
-            if (car.pendingPath) {
-              car.path       = car.pendingPath;
-              car.pendingPath = null;
-              car.offset     = 0;
-              car.speed      = 0;
-            } else if (car.noRespawn) {
-              // Productie- / warmup-auto: bij aankomst bestemming verdwijnen
-              car.state = 'done';
-              attractionAccum++;
-            } else if (car.canPark) {
-              // Herhalende stadsweg-auto: parkeer aan het einde en wacht voor volgende rit
-              car.offset   = 0.99;
-              car.speed    = 0;
-              car.state    = 'parked';
-              car.departAt = t + Math.max(PARK_MIN_S, normalRandom(PARK_MEAN_S, PARK_STD_S)) / timeScale;
-            } else {
-              // Herhalende snelweg / boundary / segment-modus: opnieuw spawnen aan het begin.
-              car.offset = 0;
-              car.speed  = 0;
-              car.state  = 'spawning';
-              if (car.spawnDelay != null) {
-                // Segment-modus: vaste cycletijd garandeert dat doorvoer = flow klopt.
-                car.departAt = t + car.spawnDelay / timeScale;
-              } else {
-                // Route-modus: exponentieel verdeelde tussenkomstijden (Poisson-aankomstproces).
-                const meanS    = (car.spawnRate > 0) ? (3600 / car.spawnRate) : 20;
-                const delaySec = -Math.log(Math.random() || 1e-9) * meanS;
-                car.departAt   = t + Math.max(0.5, delaySec) / timeScale;
-              }
-            }
-          }
-        }
-
-        // ── Snelheid instellen (alleen rijdende auto's) ──────────────────
-        for (const car of cars) {
-          if (car.state === 'moving') {
-            car.speed = computeLinkTargetSpeed(car);
-          }
-        }
-
-        // ── Kruispunt: wachtrijen per rijstrook + rechts-voor-links ─────
-        {
-          const realNow        = performance.now() / 1000;
-          const STOP_CLEARANCE = 2;                   // m vóór knooppunt (stoplijn)
-          const SLOT_SIZE      = CAR_LENGTH + CF_MIN_GAP; // m per wachtrij-slot
-
-          // nodeApproach: nodeId → Map(path → [{car, distToNode, bearing, bnd, linkIdx}])
-          // Alle rijdende auto's die binnen YIELD_ZONE van hun volgende knooppunt zijn.
-          const nodeApproach = new Map();
-          for (const car of cars) {
-            if (car.state !== 'moving') continue;
-            const path = car.path;
-            if (!path.nodeIds || !path.boundaries || path.boundaries.length < 2) continue;
-
-            const distM = car.offset * path.length;
-            const bnd   = path.boundaries;
-            let lo2 = 0, hi2 = bnd.length - 2;
-            while (lo2 < hi2) {
-              const mid = (lo2 + hi2 + 1) >> 1;
-              if (bnd[mid] <= distM) lo2 = mid; else hi2 = mid - 1;
-            }
-            const linkIdx    = Math.min(lo2, path.links.length - 1);
-            const nodeId     = path.nodeIds[linkIdx];
-            const distToNode = bnd[linkIdx + 1] - distM;
-            if (nodeId == null || distToNode > YIELD_ZONE) continue;
-
-            // Gebruik de vooraf berekende aanrijrichting van dit wegvak —
-            // gebaseerd op het op-één-na-laatste segment, vóór de kunstmatige
-            // knik naar het knooppuntmiddelpunt (vermijdt diamantvorm-artefact).
-            const bearing = path.approachBearings
-              ? path.approachBearings[linkIdx]
-              : interpolatePosition(path.coords, car.offset, path.length)[2];
-
-            if (!nodeApproach.has(nodeId)) nodeApproach.set(nodeId, new Map());
-            const laneMap = nodeApproach.get(nodeId);
-            if (!laneMap.has(path)) laneMap.set(path, []);
-            laneMap.get(path).push({ car, distToNode, bearing, bnd, linkIdx });
-          }
-
-          // Verwerk elk kruispunt
-          for (const [nodeId, laneMap] of nodeApproach) {
-            // Sorteer elke rijstrook: index 0 = voorste auto (dichtst bij knooppunt)
-            for (const queue of laneMap.values()) {
-              queue.sort((a, b) => a.distToNode - b.distToNode);
-            }
-
-            // Front-auto per rijstrook (voor rechts-voor-links check)
-            const frontEntries = [...laneMap.values()].map(q => q[0]);
-
-            if (frontEntries.length < 2) {
-              // Slechts één rijstrook nadert: geen voorrang-conflict
-              for (const queue of laneMap.values()) {
-                for (const { car } of queue) {
-                  car.waitingAtNode = null;
-                  car.waitStartT    = null;
-                  car.stopTarget    = null;
-                }
-              }
-              continue;
-            }
-
-            // Rechts-voor-links: bepaal per front-auto of die moet wachten
-            const mustYieldMap = new Map(); // frontCar → bool
-            for (const { car, bearing } of frontEntries) {
-              if (car.yieldOverrideUntil && realNow < car.yieldOverrideUntil) {
-                mustYieldMap.set(car, false);
-                car.waitingAtNode = null;
-                continue;
-              }
-              const mustYield = frontEntries.some(other => {
-                if (other.car === car) return false;
-                // relAngle ∈ [30°,150°] → andere auto rijdt duidelijk van rechts in
-                const relAngle = (other.bearing - bearing + 540) % 360;
-                return relAngle >= 30 && relAngle <= 150;
-              });
-              mustYieldMap.set(car, mustYield);
-            }
-
-            // Wachtrij-beheer per rijstrook
-            for (const [path, queue] of laneMap) {
-              const frontCar   = queue[0].car;
-              const mustYield  = mustYieldMap.get(frontCar) ?? false;
-              const { bnd, linkIdx } = queue[0];
-              const nodeDistM  = bnd[linkIdx + 1]; // pad-afstand t/m het knooppunt
-
-              if (mustYield) {
-                // ── Wachtrij actief ──────────────────────────────────────
-                if (frontCar.waitingAtNode !== nodeId) {
-                  frontCar.waitingAtNode = nodeId;
-                  frontCar.waitStartT    = realNow;
-                }
-
-                for (let i = 0; i < queue.length; i++) {
-                  const { car } = queue[i];
-
-                  // Bereken exacte stoppositie voor deze wachtrij-sleuf
-                  const stopDistFromNode = STOP_CLEARANCE + i * SLOT_SIZE;
-                  const stopOffset = Math.max(0,
-                    (nodeDistM - stopDistFromNode) / path.length);
-                  car.stopTarget = stopOffset;
-
-                  // Rem lineair naar stoppositie (remzone = 10 m)
-                  const distToStop = (stopOffset - car.offset) * path.length;
-                  if (distToStop <= 0) {
-                    car.speed = 0;
-                  } else {
-                    const vRef = path.links[linkIdx].speedMs * 0.9;
-                    car.speed  = Math.min(car.speed,
-                      vRef * Math.min(1, distToStop / 10));
-                  }
-
-                  // Volgers ook in wachtstatus boeken
-                  if (i > 0 && car.waitingAtNode !== nodeId) {
-                    car.waitingAtNode = nodeId;
-                    car.waitStartT    = realNow;
-                  }
-                }
-
-              } else {
-                // ── Vrije doorgang: wis wachtrij-status voor hele rijstrook ─
-                for (const { car } of queue) {
-                  car.waitingAtNode = null;
-                  car.waitStartT    = null;
-                  car.stopTarget    = null;
-                }
-              }
-            }
-
-            // Patstelling: alle front-auto's wachten te lang → forceer de oudste
-            const allWaiting = frontEntries.every(({ car }) =>
-              mustYieldMap.get(car) === true &&
-              car.waitingAtNode === nodeId &&
-              car.waitStartT != null &&
-              (realNow - car.waitStartT) >= DEADLOCK_WAIT_S
-            );
-            if (allWaiting) {
-              const oldest = frontEntries.reduce((a, b) =>
-                (a.car.waitStartT ?? Infinity) < (b.car.waitStartT ?? Infinity) ? a : b
-              );
-              oldest.car.waitingAtNode      = null;
-              oldest.car.waitStartT         = null;
-              oldest.car.stopTarget         = null;
-              oldest.car.yieldOverrideUntil = realNow + 8;
-              oldest.car.speed = computeLinkTargetSpeed(oldest.car);
-            }
-          }
-
-          // Auto's waarvan het knooppunt niet meer in nodeApproach zit: status wissen
-          for (const car of cars) {
-            if (car.waitingAtNode != null && !nodeApproach.has(car.waitingAtNode)) {
-              car.waitingAtNode = null;
-              car.waitStartT    = null;
-              car.stopTarget    = null;
-            }
-          }
-
-          // Voorste auto's die langer dan 8 seconden wachten verdwijnen; wachtrij schuift op
-          const carsToRemove = new Set();
-          for (const [, laneMap] of nodeApproach) {
-            for (const queue of laneMap.values()) {
-              const { car } = queue[0];
-              if (
-                car.waitingAtNode != null &&
-                car.waitStartT    != null &&
-                (realNow - car.waitStartT) >= 8
-              ) {
-                carsToRemove.add(car);
-              }
-            }
-          }
-          if (carsToRemove.size > 0) {
-            for (let i = cars.length - 1; i >= 0; i--) {
-              if (carsToRemove.has(cars[i])) cars.splice(i, 1);
-            }
-          }
-        }
-
-        // ── Posities bijwerken (alleen rijdende auto's) ──────────────────
-        for (const car of cars) {
-          if (car.state !== 'moving') continue;
-          const next = car.offset + (car.speed * dt) / car.path.length;
-          car.offset = isFinite(next) ? Math.min(next, 1.0) : car.offset;
-        }
-
-        // ── Minimale volgafstand afdwingen (alleen rijdende auto's) ──────
-        const groups = buildPathGroups(true);   // true = alleen 'moving'
-        for (const [path, group] of groups) {
-          const n = group.length;
-          if (n < 2) continue;
-          const minOff = (CF_MIN_GAP + CAR_LENGTH) / path.length;
-          for (let i = 0; i < n; i++) {
-            const car    = group[i];
-            const leader = group[(i + 1) % n];
-            if (i < n - 1) {
-              let leaderOff = leader.offset;
-              if (leaderOff < car.offset) leaderOff += 1.0;
-              const gap = leaderOff - car.offset;
-              if (gap < minOff) {
-                car.offset = Math.max(0, leaderOff - minOff);
-                car.speed  = Math.min(car.speed, leader.speed);
-              }
-            }
-          }
-        }
-
-        // ── Periodieke hervalidatie: stilstaande auto's die vrij zijn mogen rijden ─
-        if (now - lastRevalidateT >= REVALIDATE_INTERVAL) {
-          lastRevalidateT = now;
-
-          // Bouw per pad een gesorteerde lijst van rijdende auto's
-          const revalGroups = buildPathGroups(true);
-
-          for (const car of cars) {
-            if (car.state !== 'moving' || car.speed > 0) continue;
-
-            // Controleer of er een auto direct voor staat (gap-blokkering)
-            const group = revalGroups.get(car.path);
-            let blockedByLeader = false;
-            if (group && group.length > 1) {
-              const minOff = (CF_MIN_GAP + CAR_LENGTH) / car.path.length;
-              const idx    = group.indexOf(car);
-              if (idx >= 0 && idx < group.length - 1) {
-                const leader    = group[idx + 1];
-                let leaderOff   = leader.offset;
-                if (leaderOff < car.offset) leaderOff += 1.0;
-                blockedByLeader = (leaderOff - car.offset) < minOff * 1.5;
-              }
-            }
-
-            // Niet geblokkeerd door voorganger: wis wachtstatus en herstel snelheid
-            if (!blockedByLeader) {
-              car.waitingAtNode      = null;
-              car.waitStartT         = null;
-              car.yieldOverrideUntil = null;
-              car.stopTarget         = null;
-              car.speed = computeLinkTargetSpeed(car);
-            }
-          }
-        }
-
-        // ── Ruim 'done' auto's op (achteruit lopen om splice-indices te bewaren) ──
-        for (let ci = cars.length - 1; ci >= 0; ci--) {
-          if (cars[ci].state === 'done') cars.splice(ci, 1);
-        }
-
-        // ── Productie: 1× per reële seconde auto's spawnen aan OD-beginpunten ──
-        // Voor elk OD-paar: verwacht aankomsten = (totalFlow/3600) × timeScale × dt_reëel
-        // Probabilistische afronding zodat de gemiddelde doorvoer exact klopt.
-        if (odGroups.size > 0) {
-          if (lastProductionT === 0) {
-            lastProductionT = now;   // initialiseer op het eerste frame
-          } else if (now - lastProductionT >= 1.0) {
-            const dtReal = Math.min(now - lastProductionT, 2.0);  // max 2s om burst te beperken
-            lastProductionT = now;
-            let cycleSpawns = 0;
-            for (const od of odGroups.values()) {
-              if (cars.length >= MAX_VEHICLES) break;
-              const expected = (od.totalFlow / 3600) * timeScale * dtReal;
-              const count = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);
-              for (let ci = 0; ci < count && cars.length < MAX_VEHICLES; ci++) {
-                spawnProductionCar(pickWeightedRoute(od.paths));
-                cycleSpawns++;
-              }
-            }
-            lastProductionSpawns = cycleSpawns;
-            lastAttractionCount  = attractionAccum;
-            attractionAccum      = 0;
-          }
-        }
-
-        computeCarData();
-
-        // ── Voertuigtellers: passage-detectie ────────────────────────────────
-        if (_counterList.length > 0) {
-          for (const ct of _counterList) ct.simElapsed = (ct.simElapsed ?? 0) + dt;
-          for (let i = 0; i < cars.length; i++) {
-            const c  = cars[i];
-            if (c.state !== 'moving') { _counterPrevPos.delete(c); continue; }
-            const cd = carData[i];
-            if (!cd || cd.position[2] === -9999) { _counterPrevPos.delete(c); continue; }
-            const curPos  = [cd.position[0], cd.position[1]];
-            const prevData = _counterPrevPos.get(c);
-            if (prevData && prevData.path === c.path) {
-              const prevPos = prevData.pos;
-              for (const ct of _counterList) {
-                if (_segmentsIntersect(prevPos, curPos, ct.line[0], ct.line[1])) {
-                  // Richting: dot-product van bewegingsvector met link-richting
-                  const dx    = curPos[0] - prevPos[0];
-                  const dy    = curPos[1] - prevPos[1];
-                  const brRad = ct.bearing * Math.PI / 180;
-                  const dir   = (dx * Math.sin(brRad) + dy * Math.cos(brRad)) >= 0
-                    ? 'forward' : 'backward';
-                  const vm     = c.vehicleMode ?? MODE;
-                  const bucket = vm === 'CAR' ? 'CAR' : vm === 'BIKE' ? 'BIKE' : 'OTHER';
-                  ct.counts[dir].total++;
-                  ct.counts[dir][bucket]++;
-                }
-              }
-            }
-            _counterPrevPos.set(c, { pos: curPos, path: c.path });
-          }
-          _updateCounterPanel();
-        }
-
-        updateOverlay(true);
-      }
-      if (paused) lastT = null; else lastT = now;
-      requestAnimationFrame(animate);
-    }
-
-    /** Herbouw auto-lijst (bij zoom-wijziging of drempel-aanpassing) */
-    function rebuildCars() {
-      lastProductionT = 0;   // reset productie-timer zodat er geen burst optreedt na rebuild
-      cars = enforceInitialSpacing(buildCarList(threshold));
-      computeCarData();
     }
 
     // Onderdruk 'Image X could not be loaded'-waarschuwingen van OpenFreeMap's sprite-sheet
@@ -12992,10 +11131,7 @@
             try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
           });
       }
-      if (!_mapReady) {
-        animate();
-        _mapReady = true;
-      }
+      _mapReady = true;
       _tryAddBuildings();
       // Wegnummer-schildjes (N346 e.d.) worden standaard erg vaak langs de weg
       // herhaald. Vergroot symbol-spacing op de shield-symboollagen zodat ze
@@ -14588,7 +12724,7 @@
       segments.length = 0;
       newFeatures.forEach(f => segments.push({
         coords:  f.geometry.coordinates,
-        length:  segmentLength(f.geometry.coordinates),
+        length:  linkLengthM(f),
         speedMs: f.properties.speed / 3.6,
         flow:    f.properties.flow,
         norm:    (f.properties.flow - newMinFlow) / newRange,
@@ -14707,7 +12843,6 @@
       updateLegend();
       updateClosedLinksLayer();
       updateSpeedSignLayer();
-      rebuildCars();
       updateOverlay(true);
 
       // AREA_ID bijwerken zodat vervolgacties (doorvoeren, adjust) het nieuwe gebied gebruiken
@@ -14866,7 +13001,7 @@
         origSegments.length = 0;
         origFeatures.forEach(f => origSegments.push({
           coords:  f.geometry.coordinates,
-          length:  segmentLength(f.geometry.coordinates),
+          length:  linkLengthM(f),
           speedMs: f.properties.speed / 3.6,
           flow:    f.properties.flow,
           norm:    (f.properties.flow - origMinFlow) / origRange,
@@ -15665,8 +13800,6 @@
       if (nodeEditActive) {
         // Stop animatie en verwijder voertuigen uit beeld
         paused = true;
-        cars   = [];
-        carData = [];
         updateOverlay(false);
         _setSimPausedUI(true);
         map.once('idle', addNodeLayer);
@@ -15689,7 +13822,6 @@
         // Hervat animatie
         paused = false;
         _setSimPausedUI(false);
-        rebuildCars();
       }
     });
 
@@ -15711,8 +13843,6 @@
       if (zoneExplodeActive) {
         // Stop animatie en verwijder voertuigen uit beeld (zelfde als node-edit)
         paused = true;
-        cars   = [];
-        carData = [];
         updateOverlay(false);
         _setSimPausedUI(true);
         map.once('idle', addNodeLayer);
@@ -15722,7 +13852,6 @@
         map.getCanvas().style.cursor = '';
         paused = false;
         _setSimPausedUI(false);
-        rebuildCars();
       }
     });
 
@@ -15742,8 +13871,6 @@
 
       if (linkEditActive) {
         paused = true;
-        cars   = [];
-        carData = [];
         updateOverlay(false);
         _setSimPausedUI(true);
         map.once('idle', addLinkLayer);
@@ -15766,7 +13893,6 @@
         paused = false;
         _setSimPausedUI(false);
         updateOverlay(false);
-        rebuildCars();
       }
     });
 
@@ -15786,8 +13912,6 @@
 
       if (linkFlowEditActive) {
         paused = true;
-        cars   = [];
-        carData = [];
         updateOverlay(false);
         _setSimPausedUI(true);
         map.once('idle', addLinkLayer);
@@ -15798,7 +13922,6 @@
         paused = false;
         _setSimPausedUI(false);
         updateOverlay(false);
-        rebuildCars();
       }
     });
 
@@ -15816,7 +13939,7 @@
         : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>';
 
       if (linkAddActive) {
-        paused = true; cars = []; carData = [];
+        paused = true;
         updateOverlay(false);
         _setSimPausedUI(true);
         map.once('idle', () => {
@@ -15838,7 +13961,6 @@
         paused = false;
         _setSimPausedUI(false);
         updateOverlay(false);
-        rebuildCars();
       }
     });
 
@@ -16250,7 +14372,6 @@
             btn.classList.add('active');
             visibleModes.add(btn.dataset.mode);
           });
-          rebuildCars();
           updateLegend();
           pending = _exitSimPaused();
         } else {
@@ -16278,9 +14399,6 @@
        updateLegend();
        rebuildLinkFlowMap();
        calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
-       // Altijd herbouwen: in route-modus schaalt het dagdeel het auto-aantal,
-       // in segment-modus bepaalt het de flow-drempel per segment.
-       rebuildCars();
        updateOverlay(!paused);
        updateDebugPanel();
        // Gebouwkleur (grondvlak) synchroniseren met het geselecteerde dagdeel.
@@ -16299,11 +14417,9 @@
      }
 
     // ── Modi aan/uit (auto/fiets/voetganger-lagen) ──────────────────────────
-    // Ook buiten MIXED-modus: het vinkje bepaalt of auto's daadwerkelijk
-    // geplaatst worden. De netwerklaag zelf blijft altijd zichtbaar (die
-    // filtert niet op visibleModes buiten MIXED-modus, zie de GeoJsonLayer's
-    // "MODE !== 'MIXED' ? geojson.features : …filter(...)"); alleen
-    // buildCarList/spawnProductionCar respecteren visibleModes in elke modus.
+    // Knoppen van modi die niet in het netwerk voorkomen worden verborgen.
+    // De netwerklaag filtert alleen in MIXED-modus op visibleModes (zie de
+    // GeoJsonLayer's "MODE !== 'MIXED' ? geojson.features : …filter(...)").
     {
       // Bepaal welke modi daadwerkelijk in het netwerk aanwezig zijn.
       const networkModes = new Set(
@@ -16319,7 +14435,6 @@
         visibleModes.delete(m);
         btn.style.display = networkModes.has(m) ? '' : 'none';
       });
-      rebuildCars();
       updateOverlay(true);
       updateLegend();
       document.getElementById('modeBtns').style.display = 'flex';
@@ -16334,24 +14449,10 @@
           visibleModes.add(m);
           btn.classList.add('active');
         }
-        rebuildCars();
         updateOverlay(true);
         updateLegend();
       });
     }
-
-      document.getElementById('fillBtns').addEventListener('click', e => {
-        const btn = e.target.closest('.fillBtn');
-        if (!btn) return;
-        initFillMethod = btn.dataset.fill;
-        localStorage.setItem('initFillMethod', initFillMethod);
-        document.querySelectorAll('.fillBtn').forEach(b => b.classList.toggle('active', b === btn));
-        rebuildCars();
-      });
-      // Initiële actieve staat op basis van localStorage
-      document.querySelectorAll('.fillBtn').forEach(b =>
-        b.classList.toggle('active', b.dataset.fill === initFillMethod)
-      );
 
       // ── Instellingen-paneel (gear-knop) ──────────────────────────────────────
       (function () {
@@ -16360,8 +14461,6 @@
 
         function openSettings() {
           // Synchroniseer paneel met huidige toestand
-          const radio = settingsPanel.querySelector(`input[name="spFill"][value="${initFillMethod}"]`);
-          if (radio) radio.checked = true;
           document.getElementById('spDebug').checked = !!window._debugMode;
           const curLang = document.getElementById('langSelect').value;
           const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
@@ -16384,15 +14483,6 @@
         }
 
         function closeSettings() {
-          // Lees nieuwe vulmethode en pas toe als gewijzigd
-          const newFill = settingsPanel.querySelector('input[name="spFill"]:checked')?.value || initFillMethod;
-          if (newFill !== initFillMethod) {
-            initFillMethod = newFill;
-            localStorage.setItem('initFillMethod', initFillMethod);
-            document.querySelectorAll('.fillBtn').forEach(b =>
-              b.classList.toggle('active', b.dataset.fill === initFillMethod));
-            rebuildCars();
-          }
           // Lees nieuwe debug-instelling en pas toe als gewijzigd
           const newDebug = document.getElementById('spDebug').checked;
           if (newDebug !== !!window._debugMode) {
@@ -16446,45 +14536,6 @@
      });
 
      document.getElementById('buildingPurpose').addEventListener('change', _applyBuildingDisplay);
-
-    // ── Voertuigteller-paneel ────────────────────────────────────────────────
-
-    const counterBtn   = document.getElementById('counterBtn');
-    const counterPanel = document.getElementById('counterPanel');
-
-    function _openCounterPanel() {
-      const r = counterBtn.getBoundingClientRect();
-      counterPanel.style.top  = (r.bottom + 4) + 'px';
-      counterPanel.style.left = Math.min(r.left, window.innerWidth - 302) + 'px';
-      counterPanel.classList.add('cp-visible');
-      _updateCounterPanel();
-    }
-
-    function _closeCounterPanel() {
-      counterPanel.classList.remove('cp-visible');
-      _counterPlaceMode = false;
-      counterBtn.classList.remove('active');
-      // Alle geplaatste tellers verwijderen bij het sluiten van het paneel
-      for (const ct of [..._counterList]) _removeCounter(ct.id);
-      updateOverlay(true);
-    }
-
-    counterBtn.addEventListener('click', () => {
-      if (counterPanel.classList.contains('cp-visible')) {
-        // Paneel open: knop togglet plaatsings-modus
-        _counterPlaceMode = !_counterPlaceMode;
-        counterBtn.classList.toggle('active', _counterPlaceMode);
-        updateOverlay(true);
-      } else {
-        // Paneel gesloten: open paneel en activeer plaatsings-modus
-        _openCounterPanel();
-        _counterPlaceMode = true;
-        counterBtn.classList.add('active');
-        updateOverlay(true);
-      }
-    });
-
-    document.getElementById('cpClose').addEventListener('click', _closeCounterPanel);
 
     // ── Analoge simulatieklok ─────────────────────────────────────────────────
 
@@ -16869,7 +14920,6 @@
         _fspActiveLabel = dateTime ? `${dateVal} ${hour}:00` : T('fspTitleValue');
         updateSunLight();
 
-        rebuildCars();
         updateLegend();
         updateOverlay(!paused);
 

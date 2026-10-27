@@ -4591,6 +4591,13 @@
     return total;
   }
 
+  /** Lengte (m) van een netwerklink: het `length`-attribuut uit het netwerkbestand
+   *  als dat aanwezig is, anders berekend uit de geometrie. */
+  function linkLengthM(f) {
+    const L = f.properties?.length;
+    return L > 0 ? L : segmentLength(f.geometry.coordinates);
+  }
+
   /**
    * Geeft [lon, lat, bearing°] op fractie offset ∈ [0,1] langs een LineString.
    * bearing = kompasrichting (0 = N, 90 = O, 180 = Z, 270 = W).
@@ -9905,7 +9912,7 @@
     // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
     const segments    = features.map(f => ({
       coords:  f.geometry.coordinates,
-      length:  segmentLength(f.geometry.coordinates),
+      length:  linkLengthM(f),
       speedMs: f.properties.speed / 3.6,
       flow:    f.properties.flow,
       norm:    (f.properties.flow - minFlow) / flowRange,
@@ -10755,6 +10762,12 @@
      */
     function _parseAndAddRoutes(routesFc, vehicleMode) {
       if (!routesFc?.features) return;
+      // linkId → lengte (m); -1 = niet in linkGeomMap / < 2 coördinaten.
+      // Voorgevuld met de segmentlengtes (meestal het `length`-attribuut uit het netwerkbestand).
+      const linkLenCache = new Map();
+      for (const seg of segments) {
+        if (seg.coords?.length >= 2) linkLenCache.set(seg.props.linkId, seg.length);
+      }
       // Pass 1: bereken zone-totaal én OD-totaal voor de isAbsolute-detectie
       const zoneTripSumMap = new Map(); // fromZoneId → totaal r.trips
       const odTripSumMap   = new Map(); // "from_to"  → totaal r.trips voor dit OD-paar
@@ -10790,13 +10803,23 @@
           // Normaliseer linkPath IDs naar het type dat linkGeomMap gebruikt:
           // - string-keyed maps (bijv. Vreden: linkId is large_string met _N-suffix)
           // - number-keyed maps (bijv. Hasselt: linkId is int64)
-          const allIds  = r.linkPath.map(id => linkGeomMap.has(id) ? id : parseInt(id));
-          const linkIds = allIds.filter(id => linkGeomMap.get(id)?.length >= 2);
+          const linkIds = [];
+          let totalLen  = 0;
+          for (const raw of r.linkPath) {
+            const id = linkGeomMap.has(raw) ? raw : parseInt(raw);
+            // Linklengte één keer per link berekenen (haversine over alle
+            // coördinaten), niet opnieuw voor elke route die de link gebruikt.
+            let len = linkLenCache.get(id);
+            if (len === undefined) {
+              const c = linkGeomMap.get(id);
+              len = c?.length >= 2 ? segmentLength(c) : -1;  // -1 = geen bruikbare geometrie
+              linkLenCache.set(id, len);
+            }
+            if (len < 0) continue;
+            linkIds.push(id);
+            totalLen += len;
+          }
           if (!linkIds.length) continue;
-          const totalLen = linkIds.reduce((s, id) => {
-            const c = linkGeomMap.get(id);
-            return s + (c ? segmentLength(c) : 0);
-          }, 0);
           if (totalLen < 30) continue;
           routeList.push({
             linkIds,
@@ -16963,7 +16986,7 @@
       segments.length = 0;
       newFeatures.forEach(f => segments.push({
         coords:  f.geometry.coordinates,
-        length:  segmentLength(f.geometry.coordinates),
+        length:  linkLengthM(f),
         speedMs: f.properties.speed / 3.6,
         flow:    f.properties.flow,
         norm:    (f.properties.flow - newMinFlow) / newRange,
@@ -17249,7 +17272,7 @@
         origSegments.length = 0;
         origFeatures.forEach(f => origSegments.push({
           coords:  f.geometry.coordinates,
-          length:  segmentLength(f.geometry.coordinates),
+          length:  linkLengthM(f),
           speedMs: f.properties.speed / 3.6,
           flow:    f.properties.flow,
           norm:    (f.properties.flow - origMinFlow) / origRange,
