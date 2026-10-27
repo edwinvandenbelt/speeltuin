@@ -131,7 +131,7 @@ except ImportError as _e:
     print(f"[server] WAARSCHUWING: adjust niet beschikbaar — {_e}")
 
 try:
-    from network_link_inserter.core.network_link_inserter_core import (
+    from gmt_network_core.network_link_inserter.core.network_link_inserter_core import (
         insert_links as _insert_links,
     )
 
@@ -166,6 +166,7 @@ except ImportError as _e:
 from buildings_fetcher.core.buildings_fetcher_core import (  # noqa: E402
     BUILDINGS_QUERY_VER as _BUILDINGS_QUERY_VER,
     fetch_buildings_overpass as _fetch_buildings_overpass,
+    filter_features_to_zone_class as _filter_features_to_zone_class,
 )
 
 from vegetation_fetcher.core.vegetation_fetcher_core import (  # noqa: E402
@@ -2144,8 +2145,8 @@ def _run_adjust_with_inserts_job(
     herberekent daarna alle routes via Dijkstra en start vervolgens de normale
     adjust-pipeline voor eventuele resterende wijzigingen (cap/speed/flow/OD).
     """
-    from shared.geoparquet import from_geoparquet, to_geoparquet  # type: ignore[import]
-    from route_explorer.core.route_explorer_core import (  # type: ignore[import]
+    from gmt_shared.geoparquet import from_geoparquet, to_geoparquet  # type: ignore[import]
+    from gmt_routing.route_explorer.core.route_explorer_core import (  # type: ignore[import]
         recompute_routes_for_pairs,
     )
 
@@ -2791,6 +2792,23 @@ def ogc_collection_items(collection_id):
         _format_nd = request.args.get("format", "").strip().lower() == "ndjson"
 
         def _buildings_response(data):
+            # Beperk tot gebouwen binnen de STUDY-zone(s): de bbox waarmee buildings
+            # geprepareerd worden dekt (bewust) ook de veel bredere invloedsgebied-
+            # zones (voor OD-productie/attractie-berekeningen), maar die gebouwen
+            # horen niet thuis in de 3D-viewer. Fail-open als er geen ZONE-bestand
+            # met STUDY-zones gevonden wordt (zie filter_features_to_zone_class).
+            zone_paths = list(area_dir.glob(f"{area_id}-ZONE-*.geojson"))
+            if not zone_paths and _GEOPANDAS_AVAILABLE:
+                for _ext in _GEOPARQUET_EXTS:
+                    zone_paths = list(area_dir.glob(f"{area_id}-ZONE-*{_ext}"))
+                    if zone_paths:
+                        break
+            if zone_paths:
+                try:
+                    zone_fc = _read_geodata(zone_paths[0])
+                    data = _filter_features_to_zone_class(data, zone_fc, "STUDY")
+                except Exception:
+                    pass  # ZONE-bestand onleesbaar: ongefilterd doorgeven
             if _format_nd:
                 return _ndjson_stream_response("buildings", data)
             return _ogc_items_response("buildings", data, self_url)

@@ -288,6 +288,9 @@
       flex: none;
     }
     .lmp-asset-spinner.visible { display: inline-block; }
+    /* Aantal opgehaalde objecten tussen haakjes achter een checkbox in het
+       '3D weergave'-blok (verkeersobjecten / bomen). */
+    .lmp-asset-count { color: #6a757c; }
 
     /* Statusregel onder 'Pand weergave': laat zien of panden nog opgehaald
        moeten worden, al onderweg zijn, of beschikbaar zijn. */
@@ -2131,12 +2134,12 @@
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="signs"> <span>Borden &amp; signalen</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="paths"> <span>Voet-/fietspaden</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="height"> <span>Kunstwerken (viaduct/brug/tunnel)</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="furniture"> <span>Straatmeubilair</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="bumps"> <span>Drempels</span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" id="lmpVegetation"> <span>Bomen</span> <span class="lmp-asset-spinner" id="lmpVegetationSpinner"></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="signs"> <span>Borden &amp; signalen</span><span class="lmp-asset-count" data-ta-count="signs"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="paths"> <span>Voet-/fietspaden</span><span class="lmp-asset-count" data-ta-count="paths"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="height"> <span>Kunstwerken (viaduct/brug/tunnel)</span><span class="lmp-asset-count" data-ta-count="height"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="furniture"> <span>Straatmeubilair</span><span class="lmp-asset-count" data-ta-count="furniture"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="bumps"> <span>Drempels</span><span class="lmp-asset-count" data-ta-count="bumps"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" id="lmpVegetation"> <span>Bomen</span><span class="lmp-asset-count" id="lmpVegetationCount"></span> <span class="lmp-asset-spinner" id="lmpVegetationSpinner"></span></label>
         </div>
       </div>
 
@@ -9316,6 +9319,14 @@
       if (el) el.classList.toggle('visible', show);
     });
 
+    /** Werkt het aantal opgehaalde bomen tussen haakjes bij achter de
+     *  'Bomen'-checkbox; leeg zolang de checkbox uit staat. */
+    function _updateVegetationCount() {
+      const el = document.getElementById('lmpVegetationCount');
+      if (!el) return;
+      el.textContent = _vegetationVisible ? ` (${_vegTreeFeatures.length})` : '';
+    }
+
     // Wacht tot een server-side vegetatie-generatiejob (gestart na een 201 op
     // /collections/vegetation/items) klaar is, door /jobs/<id> te pollen. Zelfde
     // vorm als pollWegenscanJob: vaste wachttijd + begrensd aantal pogingen i.p.v.
@@ -9388,6 +9399,7 @@
           _vegTrees = null;   // opnieuw afleiden bij volgende render
           _vegBushes = null;
           _vegAreaTrees = null;
+          _updateVegetationCount();
           updateOverlay(true);
           return;
         }
@@ -9559,6 +9571,7 @@
       if (!feats.length) return;
       _taSpeedBumpFeatures = feats;
       _lastAssetBboxSpeedBump = [ -180, -90, 180, 90 ]; // markeer als globaal compleet
+      _updateTrafficAssetCounts();
     }
 
     // Laad-indicator naast de 'Verkeersobjecten'-checkboxen (borden/paden/
@@ -9566,6 +9579,26 @@
     const _setTrafficAssetSpinner = _makeMinDurationSpinner(show => {
       document.querySelectorAll('[data-ta-spinner]').forEach(el => el.classList.toggle('visible', show));
     });
+
+    /** Werkt het aantal opgehaalde objecten tussen haakjes bij, achter elke
+     *  aangevinkte checkbox in het '3D weergave'-blok. Een uitgevinkte
+     *  categorie toont geen aantal (de array kan nog gevulde, oude data
+     *  bevatten totdat de categorie weer wordt aangezet). */
+    function _updateTrafficAssetCounts() {
+      const counts = {
+        signs:     _taSignFeatures.length + _taSignalFeatures.length + _taMarkFeatures.length
+                 + _taGiveWayMarkFeatures.length + _taBusStopFeatures.length,
+        paths:     _taFootPathFeatures.length + _taCyclePathFeatures.length,
+        height:    _taViaductFeatures.length + _taBridgeFeatures.length + _taTunnelFeatures.length
+                 + _taCulvertFeatures.length + _taUnderpassFeatures.length,
+        furniture: Object.values(_taFurniture).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0),
+        bumps:     _taSpeedBumpFeatures.length,
+      };
+      document.querySelectorAll('[data-ta-count]').forEach(el => {
+        const cat = el.getAttribute('data-ta-count');
+        el.textContent = _trafficAssetCategories[cat] ? ` (${counts[cat]})` : '';
+      });
+    }
 
     // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
     async function loadTrafficAssetsInView() {
@@ -9672,6 +9705,7 @@
         // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
         // ondertussen tonen borden alvast hun paal.
         _taEnsurePlates(_taSignFeatures);
+        _updateTrafficAssetCounts();
       } catch (e) {
         console.error('loadTrafficAssetsInView: fout bij verwerken traffic assets', e);
       }
@@ -9699,6 +9733,7 @@
       _trafficAssetsVisible = Object.values(_trafficAssetCategories).some(Boolean);
       window._trafficAssetCategories = _trafficAssetCategories;
       updateOverlay(true);
+      _updateTrafficAssetCounts();
       if (_trafficAssetsVisible) {
         loadTrafficAssetsInView();
       }
@@ -9708,6 +9743,7 @@
     function _setVegetationVisibility(vis) {
       _vegetationVisible = vis;
       updateOverlay(true);
+      _updateVegetationCount();
       if (vis) loadVegetationInView();
     }
     window._setVegetationVisibility = _setVegetationVisibility;

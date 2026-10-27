@@ -9,6 +9,11 @@ Publieke API
     elements_to_building_features(elements)
         Converteert ruwe Overpass-elementen naar GeoJSON Feature-dicts.
 
+    filter_features_to_zone_class(data, zone_fc, zone_class)
+        Houdt alleen features over met een representatief punt binnen een zone
+        van de opgegeven klasse (bv. "STUDY"), zodat gebouwen uit de (veel
+        bredere) invloedsgebied-zones niet in de viewer belanden.
+
 Constanten
 ----------
     BUILDINGS_QUERY_VER   — verhoog dit getal om alle caches te invalideren.
@@ -142,6 +147,125 @@ def py_pip(px: float, py: float, ring: list) -> bool:
             inside = not inside
         j = i
     return inside
+
+
+# ---------------------------------------------------------------------------
+# Filteren op zone-klasse (bv. STUDY), zodat alleen gebouwen binnen het
+# eigenlijke studiegebied worden teruggegeven — niet de (veel bredere)
+# invloedsgebied-zones die wél meetellen voor de OD-productie/attractie maar
+# niet bedoeld zijn om als 3D-laag getoond te worden.
+# ---------------------------------------------------------------------------
+
+
+def _polygon_rings(geometry: dict) -> list:
+    """Geeft de polygonen van een Polygon- of MultiPolygon-geometrie terug, elk
+    als lijst van rings (buitenring gevolgd door eventuele gat-rings). Andere
+    geometrietypen (Point, LineString, …) geven een lege lijst."""
+    gtype = geometry.get("type")
+    coords = geometry.get("coordinates")
+    if not coords:
+        return []
+    if gtype == "Polygon":
+        return [coords]
+    if gtype == "MultiPolygon":
+        return coords
+    return []
+
+
+def _ring_bbox(ring: list) -> tuple:
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def point_in_polygons(px: float, py: float, polygons: list) -> bool:
+    """True als (px, py) binnen één van de polygonen ligt. Elke polygon is een
+    lijst rings (buitenring + eventuele gaten, zoals geleverd door `_polygon_rings`);
+    een punt telt mee als het wél in de buitenring maar in geen enkel gat ligt."""
+    for rings in polygons:
+        if not rings or not rings[0]:
+            continue
+        if not py_pip(px, py, rings[0]):
+            continue
+        if any(py_pip(px, py, hole) for hole in rings[1:]):
+            continue
+        return True
+    return False
+
+
+def feature_representative_point(feature: dict):
+    """Representatief punt (gemiddelde van de buitenring, of het punt zelf) voor
+    een GeoJSON-feature. Geeft None terug voor niet-ondersteunde geometrietypen
+    (bv. LineString) of lege geometrie. Zelfde aanpak als de centroid-berekening
+    in `elements_to_building_features` hierboven (bedoeld voor de landuse-join)."""
+    geom = feature.get("geometry") or {}
+    gtype = geom.get("type")
+    coords = geom.get("coordinates")
+    if not coords:
+        return None
+    if gtype == "Point":
+        return coords[0], coords[1]
+    if gtype == "Polygon":
+        ring = coords[0]
+    elif gtype == "MultiPolygon":
+        ring = max((poly[0] for poly in coords if poly), key=len, default=None)
+        if ring is None:
+            return None
+    else:
+        return None
+    n = len(ring) - 1 if len(ring) > 1 and ring[0] == ring[-1] else len(ring)
+    if n <= 0:
+        return None
+    return (
+        sum(p[0] for p in ring[:n]) / n,
+        sum(p[1] for p in ring[:n]) / n,
+    )
+
+
+def zone_class_polygons(zone_fc: dict | None, zone_class: str) -> list:
+    """Geeft alle polygonen (met voorberekende bbox) van zones met de opgegeven
+    `zoneClass` terug, als lijst van {"rings": [...], "bbox": (minx,miny,maxx,maxy)}."""
+    out = []
+    for feat in (zone_fc or {}).get("features", []):
+        if (feat.get("properties") or {}).get("zoneClass") != zone_class:
+            continue
+        for rings in _polygon_rings(feat.get("geometry") or {}):
+            if not rings or not rings[0]:
+                continue
+            out.append({"rings": rings, "bbox": _ring_bbox(rings[0])})
+    return out
+
+
+def filter_features_to_zone_class(data: dict, zone_fc: dict | None, zone_class: str) -> dict:
+    """Beperkt `data["features"]` tot features waarvan het representatieve punt
+    binnen een zone van `zone_class` ligt (bv. de STUDY-zones van het gebied).
+
+    Fail-open: als er geen zones van die klasse gevonden worden (geen ZONE-bestand,
+    oud bestand zonder zoneClass-metadata, …) wordt `data` ongewijzigd teruggegeven
+    in plaats van alles weg te filteren.
+
+    Muteert `data` niet: geeft een nieuwe FeatureCollection-dict terug met dezelfde
+    top-level properties en een nieuwe (gefilterde) features-lijst.
+    """
+    zones = zone_class_polygons(zone_fc, zone_class)
+    if not zones:
+        return data
+    kept = []
+    for feat in data.get("features", []):
+        pt = feature_representative_point(feat)
+        if pt is None:
+            continue
+        px, py = pt
+        for z in zones:
+            minx, miny, maxx, maxy = z["bbox"]
+            if px < minx or px > maxx or py < miny or py > maxy:
+                continue
+            if point_in_polygons(px, py, [z["rings"]]):
+                kept.append(feat)
+                break
+    result = dict(data)
+    result["features"] = kept
+    return result
 
 
 # ---------------------------------------------------------------------------
