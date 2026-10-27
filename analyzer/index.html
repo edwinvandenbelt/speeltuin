@@ -135,24 +135,17 @@
     .tb-scale { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .tb-scale-lbl { font-size: 11px; color: #6a757c; white-space: nowrap; }
     .tb-scale-lbl b { color: #232931; font-weight: 600; }
-    .sim-play-toggle {
-      margin-left: auto; display: flex; align-items: center; gap: 4px;
-      font-size: 11px; font-weight: 400; color: #4b5159; cursor: pointer;
-    }
-    .sim-play-toggle input { accent-color: #00a5ab; cursor: pointer; margin: 0; }
     #simBlockHeader .lmp-block-arrow { margin-left: 0; }
     /* ── Analoge simulatieklok ────────────────────────────────────────────── */
     .sim-clock-row { display: flex; align-items: center; gap: 8px; }
     .sim-clock {
       flex: 0 0 80px; display: flex; align-items: center; justify-content: center;
-      cursor: grab; touch-action: none; user-select: none;
+      user-select: none;
     }
-    /* Tijdvak-indicator op de gepauzeerde klok: ronde pijl i.p.v. de wijzer. */
+    /* Tijdvak-indicator op de klok: ronde pijl langs de rand. */
     .sim-dp-arc { display: none; pointer-events: none; fill: none; stroke: #00a5ab; stroke-width: 5; stroke-linecap: round; }
     .sim-dp-arrow { display: none; pointer-events: none; fill: #00a5ab; }
-    .sim-clock-paused #simClockHand { display: none; }
     .sim-clock-paused .sim-dp-arc, .sim-clock-paused .sim-dp-arrow { display: block; }
-    .sim-clock:active { cursor: grabbing; }
     .sim-clock-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
     .sim-time-box {
       height: 26px; font-size: 11px; font-weight: 600; padding: 0 4px 0 6px; border: 1px solid #e3e6ea;
@@ -533,7 +526,7 @@
     }
     #calcOverlay p { color: #00a5ab; font-size: 14px; font-family: 'Segoe UI', sans-serif; }
     /* Laad-indicator over de kaart tijdens een dagdeel-/simulatie-overgang op de
-       achtergrond (klok-klik, AM/PM-knop, afspelen/pauzeren) — niet-blokkerend,
+       achtergrond (dagdeel-knop op de klok) — niet-blokkerend,
        alleen zichtbaar rechts van het linker menu-paneel. */
     #simBusyOverlay {
       position: fixed; top: 0; left: 300px; right: 0; bottom: 0; z-index: 15;
@@ -1963,17 +1956,11 @@
       <div class="lmp-block" data-block="simulation">
         <div class="lmp-block-header" id="simBlockHeader">
           <span>Simulatie</span>
-          <!-- GMT Analyzer: geen doorlopende/levende klok, dus geen afspeel-toggle
-               (element blijft in de DOM — verborgen — zodat de bestaande
-               event-listener op #simPlayCheckbox geen null-referentie wordt). -->
-          <label class="sim-play-toggle" data-i18n-title="pauseTitle" title="Simulatie afspelen/pauzeren" onclick="event.stopPropagation()" style="display:none">
-            <input type="checkbox" id="simPlayCheckbox"/>
-          </label>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body" id="simPanelBody">
           <div class="sim-row sim-clock-row">
-            <div id="simClock" class="sim-clock" data-i18n-title="simClockTitle" title="Sleep de wijzer om de tijd aan te passen">
+            <div id="simClock" class="sim-clock">
               <svg id="simClockSvg" viewBox="0 0 100 100" width="60" height="60">
                 <circle cx="50" cy="50" r="47" fill="#fff" stroke="#232931" stroke-width="2"/>
                 <g stroke="#232931" stroke-width="2">
@@ -1986,15 +1973,14 @@
                      buitenrand i.p.v. de wijzer; geometrie wordt per selectie door JS gezet. -->
                 <path id="simDpArc" class="sim-dp-arc"/>
                 <path id="simDpArrow" class="sim-dp-arrow" d="M0,-4 L0,4 L6.4,0 Z"/>
-                <line id="simClockHand" x1="50" y1="50" x2="50" y2="20" stroke="#00a5ab" stroke-width="4" stroke-linecap="round" style="transition: transform 4.7s linear"/>
                 <circle cx="50" cy="50" r="3.5" fill="#232931"/>
               </svg>
             </div>
             <div class="sim-clock-info">
               <div id="simClockDigital" class="sim-time-box">
-                <span id="simClockTimeText">08:00</span>
+                <span id="simClockTimeText">24 uur</span>
                 <button type="button" id="simClockModeBtn" class="sim-clock-mode-btn"
-                        data-i18n-title="simClockToggleTitle" title="Klik om te wisselen tussen AM/PM">AM</button>
+                        data-i18n-title="simClockCycleTitle" title="Klik om te wisselen tussen 24 uur / ochtendspits / restdag / avondspits">&gt;</button>
               </div>
               <input type="date" id="fspDate" class="fsp-input sim-date-input"/>
             </div>
@@ -2715,9 +2701,6 @@
       settingsTitle:'Instellingen', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
       settingsBasemapLabel:'Achtergronden', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Zwart', settingsBasemapWhite:'Wit',
       metricTitle:'Kleur-metriek',
-      pauseTitle:'Pauzeer simulatie',
-      simClockTitle:'Sleep de wijzer om de tijd aan te passen',
-      simClockToggleTitle:'Klik om te wisselen tussen AM/PM',
       simClockCycleTitle:'Klik om te wisselen tussen 24 uur / ochtendspits / restdag / avondspits',
       nodeEditTitle:'Productie/attractie per knoop wijzigen',
       linkEditTitle:'Capaciteit per wegvak wijzigen',
@@ -2991,9 +2974,6 @@
       settingsTitle:'Settings', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
       settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'Black', settingsBasemapWhite:'White',
       metricTitle:'Color metric',
-      pauseTitle:'Pause simulation',
-      simClockTitle:'Drag the hand to change the time',
-      simClockToggleTitle:'Click to toggle AM/PM',
       simClockCycleTitle:'Click to cycle through 24 hours / morning peak / off-peak / evening peak',
       nodeEditTitle:'Edit production/attraction per node',
       linkEditTitle:'Edit capacity per road link',
@@ -3254,9 +3234,6 @@
       settingsTitle:'Asetukset', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
       settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Musta', settingsBasemapWhite:'Valkoinen',
       metricTitle:'V\xe4rimitta',
-      pauseTitle:'Pys\xe4yt\xe4 simulaatio',
-      simClockTitle:'Ved\u00e4 viisaria aikaa muuttaaksesi',
-      simClockToggleTitle:'Vaihda AM/PM napauttamalla',
       simClockCycleTitle:'Napauta vaihtaaksesi 24 tuntia / aamuruuhka / muu aika / iltaruuhka',
       nodeEditTitle:'Muokkaa solmupisteen tuotantoa/houkuttelevuutta',
       linkEditTitle:'Muokkaa tiejakson kapasiteettia',
@@ -11074,24 +11051,11 @@
       }
 
 
-    // ── 7. Pauzestatus simulatieklok ───────────────────────────────────────
-    let paused = false;
+    // ── 7. Dagdeelklok ──────────────────────────────────────────────────────
     // Welk tijdvak is gekozen op de klok terwijl gepauzeerd ('etmaal'|'mrh'|'rest'|'erh');
     // null = niet gepauzeerd / geen selectie-modus actief.
     let simPausedSelection = null;
     const SIM_DP_CYCLE = ['etmaal', 'mrh', 'rest', 'erh'];
-
-    /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus. */
-    function _setSimPausedUI(isPaused) {
-      const cb = document.getElementById('simPlayCheckbox');
-      if (cb) cb.checked = !isPaused;
-      // Datum, temperatuur, weer en motief (reisdoel) hebben alleen betekenis
-      // terwijl de simulatie speelt; zolang ze gepauzeerd staat, gedisabled.
-      document.getElementById('fspDate').disabled = isPaused;
-      document.getElementById('fspPurpose').disabled = isPaused;
-      document.querySelectorAll('#simTempBtns .sim-opt-btn, #simWeatherBtns .sim-opt-btn')
-        .forEach(btn => { btn.disabled = isPaused; });
-    }
 
     // Onderdruk 'Image X could not be loaded'-waarschuwingen van OpenFreeMap's sprite-sheet
     // Onderdruk 'Image X could not be loaded'-waarschuwingen van de sprite-sheet
@@ -13798,10 +13762,7 @@
         : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><polygon points="12,3 21,8.5 21,15.5 12,21 3,15.5 3,8.5"/></svg>';
 
       if (nodeEditActive) {
-        // Stop animatie en verwijder voertuigen uit beeld
-        paused = true;
         updateOverlay(false);
-        _setSimPausedUI(true);
         map.once('idle', addNodeLayer);
         // Toon selectiemodus popup; reset naar klik-modus
         nodeSelectMode = 'click';
@@ -13819,9 +13780,6 @@
         clearPolygonDraw();
         nodeSelectMode = 'click';
         map.getCanvas().style.cursor = '';
-        // Hervat animatie
-        paused = false;
-        _setSimPausedUI(false);
       }
     });
 
@@ -13841,17 +13799,12 @@
         : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 3h7.5v7.5H3z"/><path d="M13.5 3H21v7.5h-7.5z"/><path d="M3 13.5h18V21H3z"/></svg>';
 
       if (zoneExplodeActive) {
-        // Stop animatie en verwijder voertuigen uit beeld (zelfde als node-edit)
-        paused = true;
         updateOverlay(false);
-        _setSimPausedUI(true);
         map.once('idle', addNodeLayer);
       } else {
         removeNodeLayer();
         closeZoneExplodeDialog();
         map.getCanvas().style.cursor = '';
-        paused = false;
-        _setSimPausedUI(false);
       }
     });
 
@@ -13870,9 +13823,7 @@
         linkEditActive ? '✕' : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="28" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h48l33 10h23"/><path d="M8 48h48l33-10h23"/><path d="M8 32h104" stroke-dasharray="5 5" stroke-width="1.5" opacity=".75"/></svg>';
 
       if (linkEditActive) {
-        paused = true;
         updateOverlay(false);
-        _setSimPausedUI(true);
         map.once('idle', addLinkLayer);
         // Toon selectiemodus popup; reset naar klik-modus
         linkSelectMode = 'click';
@@ -13890,8 +13841,6 @@
         clearLinkPolygonDraw();
         linkSelectMode = 'click';
         map.getCanvas().style.cursor = '';
-        paused = false;
-        _setSimPausedUI(false);
         updateOverlay(false);
       }
     });
@@ -13911,16 +13860,12 @@
           : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 28h34M15 36h34"/><path d="M32 8v12M26 14h12M26 50h12"/></svg>';
 
       if (linkFlowEditActive) {
-        paused = true;
         updateOverlay(false);
-        _setSimPausedUI(true);
         map.once('idle', addLinkLayer);
       } else {
         removeLinkLayer();
         closeLinkFlowDialog();
         map.getCanvas().style.cursor = '';
-        paused = false;
-        _setSimPausedUI(false);
         updateOverlay(false);
       }
     });
@@ -13939,9 +13884,7 @@
         : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>';
 
       if (linkAddActive) {
-        paused = true;
         updateOverlay(false);
-        _setSimPausedUI(true);
         map.once('idle', () => {
           initLinkAddLayers();
           clearLinkAddDraw();
@@ -13958,8 +13901,6 @@
         document.getElementById('linkAddFinishPopup').style.display = 'none';
         document.getElementById('linkAddHintEl').style.display      = 'none';
         document.getElementById('linkAddDialog').style.display      = 'none';
-        paused = false;
-        _setSimPausedUI(false);
         updateOverlay(false);
       }
     });
@@ -14350,41 +14291,6 @@
       if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
     });
 
-    document.getElementById('simPlayCheckbox').addEventListener('change', async e => {
-      // Spinner blijft staan vanaf het omzetten van het vinkje tot alle lagen
-      // (flow-scaler, auto's, overlay) volledig zijn bijgewerkt — vandaar de
-      // extra busy-markering hier, los van de interne markeringen van
-      // scheduleSimApply/applyFlowScaler die pas later in de keten starten.
-      // Eerst laten schilderen, pas dán het (zware, synchrone) werk starten —
-      // anders verschijnt de spinner pas ná die blokkerende rebuilds.
-      _setSimClockBusy(true);
-      await _yieldToPaint();
-      try {
-        paused = !e.target.checked;
-        _setSimPausedUI(paused);
-        let pending;
-        if (e.target.checked) {
-          // Eén vinkje moet volstaan: bij afspelen meteen alle in dit netwerk
-          // aanwezige modi aanzetten, i.p.v. ook nog apart een modus-knopje
-          // (🚗/🚲/🚶) te moeten aanklikken om auto's te zien.
-          document.querySelectorAll('.modeBtn').forEach(btn => {
-            if (btn.style.display === 'none') return;
-            btn.classList.add('active');
-            visibleModes.add(btn.dataset.mode);
-          });
-          updateLegend();
-          pending = _exitSimPaused();
-        } else {
-          pending = _enterSimPaused();
-        }
-        // Auto's tonen/verbergen: bij pauze verdwijnen de auto's uit beeld.
-        updateOverlay(!paused);
-        await pending;
-      } finally {
-        _setSimClockBusy(false);
-      }
-    });
-
     document.getElementById('viewChangesBtn').addEventListener('click', () => {
       _setChangesPanelReadOnly(!_changesPanelReadOnly);
     });
@@ -14399,7 +14305,7 @@
        updateLegend();
        rebuildLinkFlowMap();
        calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
-       updateOverlay(!paused);
+       updateOverlay();
        updateDebugPanel();
        // Gebouwkleur (grondvlak) synchroniseren met het geselecteerde dagdeel.
        // De color_${daypart}-eigenschap is door _applyBuildingDisplay al op grijs
@@ -14542,55 +14448,7 @@
     // Standaard datum = vandaag
     document.getElementById('fspDate').value = new Date().toISOString().split('T')[0];
 
-    let simHour = 8;           // fractionele klokstand (0–24), start op 08:00
     let _simApplyTimer = null; // debounce-timer voor het toepassen van de flow-scaler
-    const SIM_TICK_MS         = 5000;  // elke 5 seconden een stapje
-    const SIM_HOURS_PER_TICK  = 1 / 12; // 12 stappen × 5s = 1 simulatie-uur per echte minuut (5 sim-minuten per stap)
-
-    /** Bepaal het dagdeel (mrh/erh/rest) dat bij een klokuur hoort. */
-    function daypartForHour(h) {
-      if (h >= 6  && h < 10) return 'mrh';
-      if (h >= 15 && h < 19) return 'erh';
-      return 'rest';
-    }
-
-    /** Werk de wijzerplaat, het digitale label en het uur-inputveld bij. */
-    function updateClockUI(instant) {
-      const hand = document.getElementById('simClockHand');
-      hand.style.transition = instant ? 'none' : '';
-      const angle = (simHour % 12) * 30; // 30° per uur op een 12-uurs wijzerplaat (vloeiend, ook binnen het uur)
-      hand.setAttribute('transform', `rotate(${angle} 50 50)`);
-      const wholeHour = Math.floor(simHour) % 24;
-      const minutes   = Math.floor((simHour % 1) * 60);
-      const ampm = wholeHour < 12 ? 'AM' : 'PM';
-      const h12  = (wholeHour % 12 === 0) ? 12 : (wholeHour % 12);
-      document.getElementById('simClockTimeText').textContent =
-        String(h12).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
-      document.getElementById('simClockModeBtn').textContent = ampm;
-      document.getElementById('fspHour').value = wholeHour;
-    }
-
-    /** Verwerk de nevenwerkingen wanneer de klok een nieuw heel uur bereikt. */
-    function _onWholeHourChanged(prevSimHour) {
-      const prevWhole = Math.floor(prevSimHour) % 24;
-      const newWhole  = Math.floor(simHour) % 24;
-      if (newWhole === prevWhole) return false;
-      const dp = daypartForHour(newWhole);
-      if (dp !== daypart) applyDaypartSideEffects(dp);
-      updateSunLight();
-      return true;
-    }
-
-    /** Zet de simulatieklok op een specifiek (heel) uur en pas de scaling direct toe. */
-    function setSimHour(h, { immediate = true } = {}) {
-      const prev = simHour;
-      simHour = (((h % 24) + 24) % 24);
-      updateClockUI(true);
-      _onWholeHourChanged(prev);
-      updateSunLight();
-      return immediate ? scheduleSimApply() : Promise.resolve();
-    }
-
     // ── Laad-indicator tijdens een dagdeel-/simulatie-overgang ──────────────────
     // Tellertje i.p.v. boolean: applyFlowScaler-aanroepen kunnen overlappen
     // (bv. snel doorklikken), dan moet de spinner pas verdwijnen na de laatste.
@@ -14632,7 +14490,7 @@
       return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     }
 
-    /** Debounce: voorkomt overmatig fetch-verkeer bij het slepen van de wijzer.
+    /** Debounce: voorkomt overmatig fetch-verkeer bij snel doorklikken.
      *  De spinner gaat al aan zodra de aanroep gepland wordt (bv. bij het aan-/
      *  uitzetten van de simulatie), i.p.v. pas na afloop van de debounce-wachttijd. */
     function scheduleSimApply() {
@@ -14729,65 +14587,43 @@
       return _pendingApply;
     }
 
-    /** Simulatie gepauzeerd: wijzer verbergen, tijdvak-indicator tonen, standaard op '24 uur'. */
+    /** Dagdeelstand: tijdvak-indicator tonen, standaard op '24 uur'. */
     function _enterSimPaused() {
       simPausedSelection = 'etmaal';
       document.getElementById('simClockSvg').classList.add('sim-clock-paused');
-      const modeBtn = document.getElementById('simClockModeBtn');
-      modeBtn.dataset.i18nTitle = 'simClockCycleTitle';
-      modeBtn.title = T('simClockCycleTitle');
       return _applySimPausedSelection();
     }
 
-    /** GMT Analyzer heeft geen doorlopende/levende klok (die hoort bij GMT
-     *  Digital Twin, incl. weer/temperatuur/motief). De klok blijft daarom
-     *  altijd in de gepauzeerde dagdeel-stand (OS/AS/RD/24hr), ook als iets
-     *  deze functie aanroept. */
-    function _exitSimPaused() {
-      return _enterSimPaused();
-    }
 
-    updateClockUI();
-
-    // Scenario-binnenkomst: de simulatie start standaard UIT (zie modi-default
-    // hierboven), dus de klok moet meteen in dezelfde gepauzeerde 'etmaal'-toestand
-    // beginnen i.p.v. pas na een handmatige aan/uit-klik (anders loopt de wijzer al
-    // terwijl de rest van de UI een gepauzeerde staat laat zien).
-    paused = true;
-    _setSimPausedUI(true);
+    // De klok staat altijd in de dagdeelstand (24 uur / ochtendspits / restdag /
+    // avondspits), beginnend op 24 uur. Datum en reisdoel zijn niet te wijzigen.
+    document.getElementById('fspDate').disabled = true;
+    document.getElementById('fspPurpose').disabled = true;
     _enterSimPaused();
 
-    // GMT Analyzer: geen handmatig sleepbare klok-wijzer (hoort bij de
-    // doorlopende klok van GMT Digital Twin). De wijzer blijft in de
-    // gepauzeerde dagdeel-stand; alleen de vier dagdeel-knoppen bedienen hem.
-
-    // Klik op het knopje in het tijdsblokje: gepauzeerd doorloopt dit de tijdvak-cyclus
-    // (24 uur → ochtendspits → restdag → avondspits → …); spelend wisselt het AM/PM.
+    // Klik op het knopje in het tijdsblokje: doorloopt de dagdeel-cyclus
+    // (24 uur → ochtendspits → restdag → avondspits → …).
     document.getElementById('simClockModeBtn').addEventListener('click', async () => {
       if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
       // Zelfde redenering als bij het afspeel-vinkje: de spinner moet al staan
-      // vóór het (mogelijk zware) synchrone werk in _applySimPausedSelection/
-      // setSimHour, niet pas zodra die zelf scheduleSimApply/applyFlowScaler bereiken.
+      // vóór het (mogelijk zware) synchrone werk in _applySimPausedSelection,
+      // niet pas zodra die zelf scheduleSimApply/applyFlowScaler bereikt.
       // Eerst laten schilderen, pas dán dat werk starten.
       _setSimClockBusy(true);
       await _yieldToPaint();
       try {
-        let pending;
-        if (paused) {
-          const idx = SIM_DP_CYCLE.indexOf(simPausedSelection);
-          simPausedSelection = SIM_DP_CYCLE[(idx + 1) % SIM_DP_CYCLE.length];
-          pending = _applySimPausedSelection();
-        } else {
-          pending = setSimHour(simHour + 12);
-        }
-        await pending;
+        const idx = SIM_DP_CYCLE.indexOf(simPausedSelection);
+        simPausedSelection = SIM_DP_CYCLE[(idx + 1) % SIM_DP_CYCLE.length];
+        await _applySimPausedSelection();
       } finally {
         _setSimClockBusy(false);
       }
     });
 
     // Datum-, temperatuur-, weer- en reisdoel-wijzigingen passen de simulatie direct toe.
-    document.getElementById('fspDate').addEventListener('change', () => { updateSunLight(); scheduleSimApply(); });
+    document.getElementById('fspDate').addEventListener('change', () => {
+      if (simPausedSelection === 'mrh' || simPausedSelection === 'erh') scheduleSimApply();
+    });
     document.getElementById('fspPurpose').addEventListener('change', scheduleSimApply);
 
     function _wireOptButtonGroup(containerIds, hiddenSelectId) {
@@ -14802,28 +14638,6 @@
     }
     _wireOptButtonGroup(['simTempBtns'], 'fspTemp');
     _wireOptButtonGroup(['simWeatherBtns'], 'fspWeather');
-
-    // Simulatielus: elke 10 seconden schuift de wijzer een stukje op (1 simulatie-uur per echte minuut).
-    // GMT Analyzer heeft geen doorlopende/levende klok (zie _exitSimPaused hierboven) —
-    // deze lus mag daarom nooit draaien. `paused` wordt elders (node-/link-/zone-edit
-    // aan/uit) ook gebruikt om alleen de auto's te tonen/verbergen en kan dus `false`
-    // worden terwijl de klok toch op een tijdvak (OS/AS/RD/24u) moet blijven staan.
-    setInterval(() => {
-      if (paused || simPausedSelection !== null) return;
-      const prev = simHour;
-      let next = simHour + SIM_HOURS_PER_TICK;
-      if (next >= 24) {
-        next -= 24;
-        const d = new Date((document.getElementById('fspDate').value || new Date().toISOString().split('T')[0]) + 'T00:00:00');
-        d.setDate(d.getDate() + 1);
-        document.getElementById('fspDate').value = d.toISOString().split('T')[0];
-      }
-      simHour = next;
-      updateClockUI();
-
-      if (_onWholeHourChanged(prev)) scheduleSimApply();
-
-    }, SIM_TICK_MS);
 
     /** Vraag de backend om geschaalde flows en patch de in-memory segmenten.
      *  `omitDate`: sla de datum/uur-parameter over zodat de backend het ongeschaalde
@@ -14921,7 +14735,7 @@
         updateSunLight();
 
         updateLegend();
-        updateOverlay(!paused);
+        updateOverlay();
 
       } catch (err) {
         console.error('[flow-scaler] toepassen mislukt:', err);

@@ -82,6 +82,18 @@ eeuwige `requestAnimationFrame`-lus die elke frame alle lagen opnieuw opbouwde.
 - [ ] Testen: opstarten (`[perf]`-regels en tijd tot het laadscherm verdwijnt), dagdeel/klok wisselen,
       afspelen/pauzeren, edit-modi openen/sluiten, zone- en linkselectie, split-view en de debug-modus.
 
+### Stap 4b — Analyzer: klok alleen nog dagdelen
+- [x] Bug: na het verlaten van een bewerkmodus werd `paused = false`. Daarna wisselde het klokknopje AM/PM,
+      verscheen er een kloktijd (`08:00`) en werd het datumveld actief. `paused` en de verborgen afspeel-toggle
+      zijn verwijderd, dus de klok kent alleen nog 24 uur → ochtendspits → restdag → avondspits.
+- [x] Opgeruimd: de wijzer, `simHour`, de tick-lus (5 s), `updateClockUI`/`setSimHour`/`daypartForHour`, de
+      AM/PM-tekst, de tooltip "Sleep de wijzer…" en de bijbehorende CSS en i18n.
+- [x] Datumveld blijft staan (keuze gebruiker), maar blijft niet aanpasbaar zoals voorheen. Ochtend- en
+      avondspits worden nog als `datum 08:00` / `datum 17:00` opgevraagd. Een datumwijziging herberekent
+      alleen tijdens een spits.
+- [ ] Testen: door de 4 dagdelen klikken. Een bewerkmodus openen en sluiten en daarna opnieuw klikken:
+      er mag geen AM/PM of kloktijd verschijnen.
+
 ### Stap 5 — Data-referenties stabiel houden (memoization)
 deck.gl hergebruikt GPU-buffers alleen als `data` dezelfde referentie houdt.
 - [ ] Het MIXED-modusfilter op `geojson.features` cachen op `(MODE, visibleModes, netwerkversie)`.
