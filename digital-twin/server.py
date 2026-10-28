@@ -265,7 +265,7 @@ _DEFAULT_DATA_DIR = (
 parser.add_argument(
     "--data",
     default=_DEFAULT_DATA_DIR,
-    help="Map met GeoJSON-bestanden (standaard: gedeelde ../work bij analyzer/+digital-twin/+common/ naast elkaar, anders scriptmap)",
+    help="Basismap; scenario's in <map>/work tenzij DATA_DIR in .env staat (standaard: repo-root bij analyzer/+digital-twin/+common/ naast elkaar, anders scriptmap)",
 )
 parser.add_argument(
     # Afwijkende standaardpoort t.o.v. analyzer/server.py (5000), zodat beide
@@ -290,7 +290,12 @@ parser.add_argument(
 )
 args, _ = parser.parse_known_args()
 
-DATA_DIR = Path(args.data).resolve()
+# Basismap (--data): bevat o.a. ndw_traffic_signs.json; scenario's staan in work/.
+# DATA_DIR in .env overschrijft de scenario-map: die wijst dan rechtstreeks naar
+# de map met scenario-submappen (geen "work" erachter), net als in analyzer.
+BASE_DIR = Path(args.data).resolve()
+_ENV_DATA_DIR = os.environ.get("DATA_DIR", "").strip()
+DATA_DIR = Path(_ENV_DATA_DIR).resolve() if _ENV_DATA_DIR else BASE_DIR / "work"
 STATIC_DIR = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
 # Gedeelde statische/data-bestanden (common/js, common/data). Bestaan niet in
 # een geflatten deployment (zie _COMMON_PY_DIR hierboven) — dan staan die
@@ -301,10 +306,9 @@ _SAFE_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
 def _work_dir() -> Path:
-    """Submap van DATA_DIR waar alle gegenereerde bestanden worden opgeslagen."""
-    d = DATA_DIR / "work"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """DATA_DIR zelf: de map waarin alle gegenereerde bestanden worden opgeslagen."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR
 
 
 def _areas_cache_path() -> Path:
@@ -1003,7 +1007,7 @@ _ndw_error: "str | None" = None
 def _ensure_ndw_data() -> None:
     """Controleer of het NDW-bestand aanwezig is; download het indien nodig."""
     global _ndw_error
-    p = DATA_DIR / "ndw_traffic_signs.json"
+    p = BASE_DIR / "ndw_traffic_signs.json"
     if p.exists():
         _ndw_ready.set()
         return
@@ -1652,8 +1656,8 @@ def _get_area_name(area_id: str) -> str:
 
 
 def _find_local_file(filename: str) -> "Path | None":
-    """Zoek bestand in DATA_DIR, STATIC_DIR en COMMON_DATA_DIR; geeft None als niet gevonden."""
-    for base in (DATA_DIR, STATIC_DIR, COMMON_DATA_DIR):
+    """Zoek bestand in BASE_DIR, STATIC_DIR en COMMON_DATA_DIR; geeft None als niet gevonden."""
+    for base in (BASE_DIR, STATIC_DIR, COMMON_DATA_DIR):
         p = base / filename
         if p.exists():
             return p
@@ -3612,7 +3616,7 @@ def ogc_collection_items(collection_id):
             _ndw_ready.wait()
             if _ndw_error:
                 abort(502, f"NDW-dataset niet beschikbaar: {_ndw_error}")
-            ndw_path = DATA_DIR / "ndw_traffic_signs.json"
+            ndw_path = BASE_DIR / "ndw_traffic_signs.json"
             if not ndw_path.exists():
                 abort(503, "NDW-dataset nog niet beschikbaar, probeer later opnieuw")
             try:

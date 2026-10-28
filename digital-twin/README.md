@@ -75,6 +75,10 @@ Opties:
 | `--port`   | `5000`            | TCP-poort van de server                    |
 | `--data`   | scriptmap         | Map met de gegevens (bevat submap `work/`) |
 
+Met `DATA_DIR=<map>` in `.env` wijs je de scenario-map direct aan: die map bevat
+dan zelf de scenario-submappen (er komt geen `work/` achter). Dit gaat vóór
+`--data`/`work`; `ndw_traffic_signs.json` blijft in de `--data`-map staan.
+
 Open daarna de browser op:
 
 ```
