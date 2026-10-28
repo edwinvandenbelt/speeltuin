@@ -14,3 +14,5 @@ nul
 temp
 ndw_traffic_signs.json
 digital-twin/ndw_traffic_signs.json
+analyzer/test-deploy/*
+digital-twin/test-deploy/*

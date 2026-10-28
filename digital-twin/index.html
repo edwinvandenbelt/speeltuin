@@ -9458,23 +9458,40 @@
       _vegPollJobId = jobId;
       _vegPollAreaId = areaId;
       try {
-        for (let i = 0; i < 200; i++) {               // 200 × 3s ≈ 10 minuten timeout
-          if (AREA_ID !== areaId) return false;
-          await new Promise(res => setTimeout(res, 3000));
-          if (AREA_ID !== areaId) return false;
-          try {
-            const jr = await fetch(`/jobs/${jobId}`);
-            if (!jr.ok) continue;
-            const job = await jr.json();
-            if (job.status === 'successful') return true;
-            if (job.status === 'failed') return false;
-          } catch (_) { /* netwerkhapering: gewoon blijven pollen */ }
-        }
-        return false;   // time-out
+        return await _pollJob(jobId, areaId);
       } finally {
         _vegPollJobId = null;
         _vegPollAreaId = null;
       }
+    }
+
+    /** Poll /jobs/<id> tot de server-side generatiejob klaar is. true bij
+     *  succes; false bij mislukken, time-out (≈10 min) of gebiedswissel. */
+    async function _pollJob(jobId, areaId) {
+      for (let i = 0; i < 200; i++) {               // 200 × 3s ≈ 10 minuten timeout
+        if (AREA_ID !== areaId) return false;
+        await new Promise(res => setTimeout(res, 3000));
+        if (AREA_ID !== areaId) return false;
+        try {
+          const jr = await fetch(`/jobs/${jobId}`);
+          if (!jr.ok) continue;
+          const job = await jr.json();
+          if (job.status === 'successful') return true;
+          if (job.status === 'failed') return false;
+        } catch (_) { /* netwerkhapering: gewoon blijven pollen */ }
+      }
+      return false;   // time-out
+    }
+
+    // Eén gedeelde wachtlus per verkeersobjecten-ophaaljob: telverzoeken van
+    // meerdere categorieën kunnen dezelfde jobID krijgen (één job per gebied).
+    const _taJobWaits = new Map();   // jobID -> Promise<boolean>
+    function _waitForTaJobShared(jobId, areaId) {
+      if (!_taJobWaits.has(jobId)) {
+        _taJobWaits.set(jobId, _pollJob(jobId, areaId)
+          .finally(() => _taJobWaits.delete(jobId)));
+      }
+      return _taJobWaits.get(jobId);
     }
 
     // Eén gedeelde wachtlus per generatiejob: het telverzoek en de bbox-load
@@ -9754,7 +9771,7 @@
       let feats;
       _setTaCatLoading('bumps', true);
       try {
-        feats = await _fetchOgcPaged(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump`);
+        feats = await _fetchOgcPaged(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump&fetch=0`);
       } catch (e) {
         if (e instanceof OgcHttpError && e.status === 404) _trafficAssetsNoFile = true;
         else console.debug('[TA] speedBump fetch mislukt', e);
@@ -9773,6 +9790,7 @@
     // _taTotalsArea; bij een gebiedswissel worden de totalen opnieuw opgevraagd.
     let _taTotals        = {};   // cat -> aantal
     let _taTotalsPending = {};   // cat -> true zolang het telverzoek loopt
+    let _taTotalsFailed  = {};   // cat -> true als het ophalen van de bron mislukte
     let _taTotalsArea    = null;
 
     // Laad-indicator per categorie: telt lopende requests (telverzoek, bbox-load,
@@ -9793,30 +9811,51 @@
       _refreshTaCatSpinner(cat);
     }
 
-    /** Vraag (eenmalig per gebied) het totaal van een categorie op. */
+    /** Vraag (eenmalig per gebied) het totaal van een categorie op. Ontbreekt
+     *  de bron nog (201 + jobID), dan haalt de server die op; de spinner blijft
+     *  draaien tot de job klaar is, daarna wordt opnieuw geteld en geladen. */
     async function _ensureTaTotal(cat) {
       if (_taTotalsArea !== AREA_ID) {
         _taTotals = {};
         _taTotalsPending = {};
+        _taTotalsFailed = {};
         _taTotalsArea = AREA_ID;
       }
       if (cat in _taTotals || _taTotalsPending[cat]) return;
       const area = AREA_ID;
       _taTotalsPending[cat] = true;
+      delete _taTotalsFailed[cat];
       _setTaCatLoading(cat, true);
       try {
-        const n = await _fetchOgcCount(
-          `/collections/traffic_assets/items?areaId=${area}&assetType=${_TA_CATEGORY_TYPES[cat].join(',')}`);
-        if (area === _taTotalsArea) _taTotals[cat] = n;
-      } catch (e) {
-        if (e instanceof OgcHttpError && e.status === 404) {
-          // Geen TRAFFIC-ASSETS bestand: borden komen uit de NDW/Overpass-
-          // fallback (totaal = aantal fallback-borden), de rest is er niet.
-          _trafficAssetsNoFile = true;
-          if (area === _taTotalsArea && cat !== 'signs') _taTotals[cat] = 0;
-          if (cat === 'signs') _loadTrafficSignsFallback();
-        } else {
-          console.debug('[TA] telverzoek mislukt', cat, e);
+        // Meerdere pogingen: een lopende job van een andere categorie kan
+        // eerst klaar zijn, waarna voor deze categorie nog een job volgt.
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            const n = await _fetchOgcCount(
+              `/collections/traffic_assets/items?areaId=${area}&assetType=${_TA_CATEGORY_TYPES[cat].join(',')}`);
+            if (area === _taTotalsArea) _taTotals[cat] = n;
+            return;
+          } catch (e) {
+            if (e instanceof OgcHttpError && e.status === 201 && e.body?.jobID) {
+              const ready = await _waitForTaJobShared(e.body.jobID, area);
+              if (!ready) {
+                if (area === _taTotalsArea) _taTotalsFailed[cat] = true;
+                return;
+              }
+              _reloadTrafficAssetsInView();   // nieuwe bron → beeld opnieuw laden
+              continue;
+            }
+            if (e instanceof OgcHttpError && e.status === 404) {
+              // Geen TRAFFIC-ASSETS bestand en server kan niet ophalen: borden
+              // komen uit de NDW/Overpass-fallback, de rest is er niet.
+              _trafficAssetsNoFile = true;
+              if (area === _taTotalsArea && cat !== 'signs') _taTotals[cat] = 0;
+              if (cat === 'signs') _loadTrafficSignsFallback();
+            } else {
+              console.debug('[TA] telverzoek mislukt', cat, e);
+            }
+            return;
+          }
         }
       } finally {
         if (area === _taTotalsArea) delete _taTotalsPending[cat];
@@ -9841,7 +9880,9 @@
         el.textContent = on && typeof total === 'number' ? ` (${total})` : '';
         const zoomHint = on && belowZoom && total > 0;
         el.classList.toggle('lmp-asset-count-dim', zoomHint);
-        el.title = zoomHint ? 'Zoom verder in om te tonen' : '';
+        const failed = on && _taTotalsArea === AREA_ID && _taTotalsFailed[cat];
+        el.title = failed ? 'Ophalen van deze objecten mislukt'
+                 : zoomHint ? 'Zoom verder in om te tonen' : '';
       });
     }
 
@@ -9956,8 +9997,11 @@
       cats.forEach(c => _setTaCatLoading(c, true));
       try {
         console.debug('[TA] fetch traffic_assets', bbox);
+        // fetch=0: alleen tonen wat er is; ontbrekende bronnen worden via de
+        // telverzoeken van de aangevinkte categorieën opgehaald (_ensureTaTotal).
+        // Wel alle types, want de Snelheid-/Kruispuntlagen gebruiken ze ook.
         const url = `/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`
-                  + `&assetType=${_TA_ALL_3D_TYPES.join(',')}`;
+                  + `&assetType=${_TA_ALL_3D_TYPES.join(',')}&fetch=0`;
         const features = await _fetchOgcPaged(url, {
           signal: ctrl.signal,
           onPage: feats => { if (_taLoadAbort === ctrl) _applyTrafficAssetFeatures(feats); },
@@ -9977,6 +10021,14 @@
         cats.forEach(c => _setTaCatLoading(c, false));
         if (_taLoadAbort === ctrl) { _taLoadAbort = null; _taLoadingBbox = null; }
       }
+    }
+
+    /** Na het ophalen van een nieuwe bron: lopende load afbreken en het beeld
+     *  opnieuw laden (de bbox-cache dekt de nieuwe objecten nog niet). */
+    function _reloadTrafficAssetsInView() {
+      if (_taLoadAbort) { _taLoadAbort.abort(); _taLoadAbort = null; _taLoadingBbox = null; }
+      _lastAssetBbox = null;
+      loadTrafficAssetsInView();
     }
 
     function _setTrafficAssetsVisibility(vis) {

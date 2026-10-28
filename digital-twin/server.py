@@ -182,6 +182,24 @@ from traffic_signs_fetcher.core.traffic_signs_fetcher_core import (  # noqa: E40
     fetch_traffic_signs_overpass as _fetch_traffic_signs_overpass,
 )
 
+# Bronnenregister + per-bron ophalen van verkeersobjecten (gmt-calculation-lib):
+# hiermee kan een gebied dat zonder extra bronnen is geprepareerd later alsnog
+# OSM/BGT/borden/verkeerslichten krijgen, zonder de andere bronnen te overschrijven.
+try:
+    from prepare.core.traffic_asset_sources import (
+        add_traffic_asset_sources as _add_traffic_asset_sources,
+        read_sources as _read_traffic_asset_sources,
+        sources_for_asset_types as _ta_sources_for_types,
+    )
+
+    _TA_SOURCES_AVAILABLE = True
+except ImportError as _e:
+    _add_traffic_asset_sources = None  # type: ignore[assignment]
+    _read_traffic_asset_sources = None  # type: ignore[assignment]
+    _ta_sources_for_types = None  # type: ignore[assignment]
+    _TA_SOURCES_AVAILABLE = False
+    print(f"[server] WAARSCHUWING: traffic_asset_sources niet beschikbaar — {_e}")
+
 # Geofabrik-PBF-resolver (zelfde helper als analyzer/server.py): vindt/downloadt
 # het kleinste Geofabrik-extract dat een bbox dekt, zodat Overpass-achtige
 # fetchers (zoals vegetation) lokaal kunnen lezen i.p.v. de remote Overpass-API
@@ -959,6 +977,219 @@ def _run_vegetation_job(
     finally:
         with _jobs_lock:
             _vegetation_jobs_by_area.pop(area_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Verkeersobjecten: ontbrekende bronnen on-demand ophalen
+# ---------------------------------------------------------------------------
+
+_TA_SUFFIX = "-TRAFFIC-ASSETS.parquet"
+# owner-area_id -> jobID van een lopende bronnen-ophaaljob (beschermd door _jobs_lock).
+# Eén job tegelijk per bestand, zodat merges elkaar niet overschrijven.
+_traffic_assets_jobs_by_area: dict = {}
+# Pad -> (mtime, register): read_sources leest bij oude bestanden zonder register
+# ook kolommen, dat willen we niet bij elk (bbox-)request.
+_ta_sources_cache: dict = {}
+# owner-area_id -> (bbox, in_nl)
+_ta_area_geo_cache: dict = {}
+_ta_cache_lock = threading.Lock()
+
+
+def _area_network_path(area_id: str) -> "Path | None":
+    """Eerste NETWORK-bestand van een gebied (GeoJSON heeft voorrang op GeoParquet)."""
+    area_dir = _find_area_dir(area_id)
+    nw_list = list(area_dir.glob(f"{area_id}-NETWORK-*.geojson"))
+    if not nw_list and _GEOPANDAS_AVAILABLE:
+        for ext in _GEOPARQUET_EXTS:
+            nw_list = list(area_dir.glob(f"{area_id}-NETWORK-*{ext}"))
+            if nw_list:
+                break
+    return nw_list[0] if nw_list else None
+
+
+def _traffic_assets_owner(area_id: str, path: "Path | None") -> "tuple[str, Path] | None":
+    """Gebied + parquet-pad waar de TRAFFIC-ASSETS van *area_id* staan of komen.
+
+    Bestaat er al een bestand (eventueel geleend van het basisscenario), dan is
+    dat het doel. Anders het wortelgebied van de baseAreaId-keten, zodat alle
+    scenario's het opgehaalde bestand erven. None als het bestand geen parquet
+    is (dan kan het register niet worden bijgewerkt).
+    """
+    if path is not None:
+        if not path.name.endswith(_TA_SUFFIX):
+            return None
+        return path.name[: -len(_TA_SUFFIX)], path
+    visited = {area_id}
+    cur_id = area_id
+    for _ in range(8):
+        parent_id = _area_parent_id(cur_id)
+        if not parent_id or parent_id in visited:
+            break
+        visited.add(parent_id)
+        cur_id = parent_id
+    return cur_id, _find_area_dir(cur_id) / f"{cur_id}{_TA_SUFFIX}"
+
+
+def _ta_area_geo(owner_id: str) -> "tuple[list, bool] | None":
+    """(bbox, in_nl) van een gebied uit zijn NETWORK-bestand, gecachet."""
+    with _ta_cache_lock:
+        hit = _ta_area_geo_cache.get(owner_id)
+    if hit:
+        return hit
+    net_path = _area_network_path(owner_id)
+    bbox = _network_bbox(net_path) if net_path else None
+    if not bbox:
+        return None
+    geo = (bbox, bool(_is_netherlands(bbox)))
+    with _ta_cache_lock:
+        _ta_area_geo_cache[owner_id] = geo
+    return geo
+
+
+def _traffic_assets_sources_cached(path: Path) -> dict:
+    """Bronnenregister van een TRAFFIC-ASSETS-bestand, gecachet op mtime."""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return {}
+    with _ta_cache_lock:
+        hit = _ta_sources_cache.get(str(path))
+    if hit and hit[0] == mtime:
+        return hit[1]
+    register = _read_traffic_asset_sources(path)
+    with _ta_cache_lock:
+        _ta_sources_cache[str(path)] = (mtime, register)
+    return register
+
+
+def _ensure_traffic_asset_sources(area_id: str, path: "Path | None", asset_types):
+    """Start (of hergebruik) een ophaaljob als bronnen voor *asset_types* ontbreken.
+
+    Geeft een 201-respons (jobID) terug, of None als alles er al is, de bronnen
+    niet ophaalbaar zijn, of de circuit breaker open staat — dan wordt gewoon
+    geserveerd wat er is.
+    """
+    owner = _traffic_assets_owner(area_id, path)
+    if owner is None:
+        return None
+    owner_id, ta_path = owner
+    geo = _ta_area_geo(owner_id)
+    if geo is None:
+        return None
+    bbox, in_nl = geo
+    needed = _ta_sources_for_types(asset_types, in_nl)
+    have = _traffic_assets_sources_cached(ta_path) if ta_path.exists() else {}
+    missing = sorted(needed - set(have))
+    if not missing:
+        return None
+    with _overpass_breaker_lock:
+        if _overpass_fail_counts.get("traffic-assets", 0) >= _OVERPASS_FAIL_THRESHOLD:
+            return None
+
+    with _jobs_lock:
+        existing_id = _traffic_assets_jobs_by_area.get(owner_id)
+        existing = _jobs.get(existing_id) if existing_id else None
+        if existing and existing["status"] in ("accepted", "running"):
+            return (
+                {"jobID": existing_id, "status": existing["status"]},
+                201,
+                {"Location": f"/jobs/{existing_id}"},
+            )
+        job_id = str(uuid.uuid4())
+        _jobs[job_id] = {
+            "jobID": job_id,
+            "processID": "traffic-assets-fetch",
+            "status": "accepted",
+            "log": [f"Ontbrekende bronnen: {', '.join(missing)}"],
+            "returncode": None,
+            "created": _now_iso(),
+            "started": None,
+            "finished": None,
+            "_results": {},
+        }
+        _traffic_assets_jobs_by_area[owner_id] = job_id
+    threading.Thread(
+        target=_run_traffic_assets_job,
+        args=(job_id, owner_id, ta_path, bbox, in_nl, missing),
+        daemon=True,
+    ).start()
+    return ({"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"})
+
+
+def _run_traffic_assets_job(
+    job_id: str,
+    owner_id: str,
+    ta_path: Path,
+    bbox: list,
+    in_nl: bool,
+    sources: list,
+) -> None:
+    """Haal ontbrekende verkeersobject-bronnen op en voeg ze samen in TRAFFIC-ASSETS.
+
+    Alleen het TRAFFIC-ASSETS-bestand wordt bijgewerkt (atomair, met register);
+    de NETWORK blijft ongemoeid en dient alleen voor linkId-koppeling.
+    """
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "running"
+        _jobs[job_id]["started"] = _now_iso()
+
+    osm_path = None
+    uses_osm = bool({"osm", "signals", "parking"} & set(sources)) or (
+        "signs" in sources and not in_nl
+    )
+    try:
+        if uses_osm:
+            osm_path = _resolve_local_pbf(bbox)
+            with _jobs_lock:
+                _jobs[job_id]["log"].append(
+                    f"Lokale OSM-extract gebruikt: {Path(osm_path).name}"
+                    if osm_path
+                    else "Geen dekkend lokaal OSM-extract; val terug op Overpass API."
+                )
+        ndw_uri = None
+        if "signs" in sources and in_nl:
+            _ndw_ready.wait()
+            ndw_path = BASE_DIR / "ndw_traffic_signs.json"
+            if ndw_path.exists():
+                ndw_uri = str(ndw_path)
+        net_path = _area_network_path(owner_id)
+        network_fc = _read_geodata(net_path) if net_path else None
+
+        ta_path.parent.mkdir(parents=True, exist_ok=True)
+        register = _add_traffic_asset_sources(
+            ta_path,
+            area_id=owner_id,
+            bbox=bbox,
+            sources=sources,
+            network_fc=network_fc,
+            osm_path=osm_path,
+            ndw_data_uri=ndw_uri,
+            in_nl=in_nl,
+        )
+        if uses_osm and not osm_path:
+            _overpass_breaker_success("traffic-assets")
+        if _s3_enabled():
+            try:
+                _s3_write_bytes(_s3_key(owner_id, ta_path.name), ta_path.read_bytes())
+            except Exception as _e:
+                print(f"[s3] traffic-assets uploaden mislukt: {_e}")
+        with _jobs_lock:
+            _jobs[job_id]["log"].append(
+                "Opgehaald: "
+                + ", ".join(f"{s} ({register.get(s, {}).get('count', 0)})" for s in sources)
+            )
+            _jobs[job_id]["status"] = "successful"
+            _jobs[job_id]["finished"] = _now_iso()
+    except Exception as exc:
+        if uses_osm and not osm_path:
+            _overpass_breaker_failure("traffic-assets")
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["log"].append(f"Ophalen verkeersobjecten mislukt: {exc}")
+            _jobs[job_id]["finished"] = _now_iso()
+    finally:
+        with _jobs_lock:
+            _traffic_assets_jobs_by_area.pop(owner_id, None)
 
 
 # SSE follow-modus: area_id → set van queue.SimpleQueue-objecten voor verbonden browsers
@@ -3257,18 +3488,31 @@ def ogc_collection_items(collection_id):
         if not _safe(area_id):
             abort(400, "Ongeldige parameter: areaId")
 
-        area_dir = _find_area_dir(area_id)
-        # Scenario's erven TRAFFIC-ASSETS van hun basisscenario als ze het zelf
-        # niet hebben (wordt bij het aanmaken niet altijd doorgekopieerd).
-        path = _find_prepared_with_base_fallback(area_id, "TRAFFIC-ASSETS")
-        if path is None:
-            abort(404, "Geen TRAFFIC-ASSETS bestand voor dit gebied")
-
         # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
         bbox = _bbox_query_arg()
 
         # Optioneel assetType-filter (komma-gescheiden lijst, b.v. speedBump).
         asset_types = _csv_query_arg("assetType")
+
+        # Scenario's erven TRAFFIC-ASSETS van hun basisscenario als ze het zelf
+        # niet hebben (wordt bij het aanmaken niet altijd doorgekopieerd).
+        path = _find_prepared_with_base_fallback(area_id, "TRAFFIC-ASSETS")
+
+        # Ontbreken de bronnen voor de gevraagde types (b.v. prepare zonder extra
+        # bronnen), dan ophalen in een achtergrondjob: 201 + jobID, zoals bij
+        # vegetatie. De frontend pollt /jobs/<id> en vraagt daarna opnieuw op.
+        # Met fetch=0 (bbox-loads van de kaart) wordt alleen geserveerd wat er
+        # is; alleen de aangevinkte categorieën starten een ophaaljob.
+        if _TA_SOURCES_AVAILABLE and request.args.get("fetch", "1") != "0":
+            job_response = _ensure_traffic_asset_sources(area_id, path, asset_types)
+            if job_response is not None:
+                return job_response
+        if path is None:
+            if not _TA_SOURCES_AVAILABLE:
+                abort(404, "Geen TRAFFIC-ASSETS bestand voor dit gebied")
+            # Niets op te halen voor deze types (b.v. kunstwerken buiten NL).
+            empty = {"type": "FeatureCollection", "features": []}
+            return _ogc_items_response("traffic_assets", empty, self_url)
 
         # Minimale property-set die de frontend echt gebruikt. Dit scheelt
         # aanzienlijk in payload (veel lege / ongebruikte BGT/OSM-kolommen).
