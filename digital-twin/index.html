@@ -291,6 +291,8 @@
     /* Aantal opgehaalde objecten tussen haakjes achter een checkbox in het
        '3D weergave'-blok (verkeersobjecten / bomen). */
     .lmp-asset-count { color: #6a757c; }
+    /* Totaal bekend, maar onder de minimale zoom wordt (nog) niets getekend. */
+    .lmp-asset-count.lmp-asset-count-dim { opacity: 0.55; font-style: italic; }
 
     /* Statusregel onder 'Pand weergave': laat zien of panden nog opgehaald
        moeten worden, al onderweg zijn, of beschikbaar zijn. */
@@ -2147,11 +2149,11 @@
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="signs"> <span>Borden &amp; signalen</span><span class="lmp-asset-count" data-ta-count="signs"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="paths"> <span>Voet-/fietspaden</span><span class="lmp-asset-count" data-ta-count="paths"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="height"> <span>Kunstwerken (viaduct/brug/tunnel)</span><span class="lmp-asset-count" data-ta-count="height"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="furniture"> <span>Straatmeubilair</span><span class="lmp-asset-count" data-ta-count="furniture"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
-          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="bumps"> <span>Drempels</span><span class="lmp-asset-count" data-ta-count="bumps"></span> <span class="lmp-asset-spinner" data-ta-spinner></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="signs"> <span>Borden &amp; signalen</span><span class="lmp-asset-count" data-ta-count="signs"></span> <span class="lmp-asset-spinner" data-ta-spinner="signs"></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="paths"> <span>Voet-/fietspaden</span><span class="lmp-asset-count" data-ta-count="paths"></span> <span class="lmp-asset-spinner" data-ta-spinner="paths"></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="height"> <span>Kunstwerken (viaduct/brug/tunnel)</span><span class="lmp-asset-count" data-ta-count="height"></span> <span class="lmp-asset-spinner" data-ta-spinner="height"></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="furniture"> <span>Straatmeubilair</span><span class="lmp-asset-count" data-ta-count="furniture"></span> <span class="lmp-asset-spinner" data-ta-spinner="furniture"></span></label>
+          <label class="lmp-radio-row"><input type="checkbox" name="lmpTrafficAsset" value="bumps"> <span>Drempels</span><span class="lmp-asset-count" data-ta-count="bumps"></span> <span class="lmp-asset-spinner" data-ta-spinner="bumps"></span></label>
           <label class="lmp-radio-row"><input type="checkbox" id="lmpVegetation"> <span>Bomen</span><span class="lmp-asset-count" id="lmpVegetationCount"></span> <span class="lmp-asset-spinner" id="lmpVegetationSpinner"></span></label>
         </div>
       </div>
@@ -9006,6 +9008,9 @@
     let _lastVegBbox     = null;
     let _vegPollJobId    = null;    // jobID van een lopende vegetatie-generatie (server haalt via Overpass op), of null
     let _vegPollAreaId   = null;    // AREA_ID waarvoor die job gestart is
+    let _vegLoading      = 0;       // aantal lopende items-requests/generatiejobs
+    let _vegLoaded       = false;   // er is minstens één keer vegetatiedata binnengekomen
+    let _vegLoadFailed   = false;   // laatste generatiejob mislukt of time-out
 
     // Struikvlakken (scrub) worden gevuld met verspreide lage struik-meshes.
     // Bosvlakken (forest/wood) krijgen verspreide volwaardige bomen (zoals OSM).
@@ -9346,34 +9351,117 @@
       };
     }
 
+    // Welke assetTypes horen bij welke checkbox in het '3D weergave'-blok. Dient
+    // zowel voor het totaal tussen haakjes (telverzoek per categorie) als voor de
+    // bbox-fetch, die alleen deze types opvraagt (dus geen parkingArea).
+    const _TA_CATEGORY_TYPES = {
+      signs:     ['trafficSign', 'trafficSignal', 'pedestrianCrossing', 'stopSign', 'giveWay', 'busStop'],
+      paths:     ['footPath', 'cyclePath'],
+      height:    ['viaduct', 'bridge', 'tunnel', 'bak', 'culvert', 'underpass', 'screen', 'retainingWall'],
+      furniture: ['mailbox', 'busShelter', 'mast', 'streetLight', 'bikeGate', 'infoBoard', 'trashBin'],
+      bumps:     ['speedBump'],
+    };
+    // Types die geen eigen checkbox hebben maar wel gerenderd/gebruikt worden
+    // (rijstrookpijlen, vluchtheuvels voor de snelheids-/kruispuntlogica).
+    const _TA_EXTRA_TYPES = ['laneMarkArrow', 'refugeAreaCrossing', 'refugeAreaTraffic'];
+    const _TA_ALL_3D_TYPES = [...Object.values(_TA_CATEGORY_TYPES).flat(), ..._TA_EXTRA_TYPES];
+
+    /** Fout van een OGC-items-request met de HTTP-status (en eventueel de
+     *  geparste body, b.v. de jobID bij een 201), zodat aanroepers 404/201
+     *  zelf kunnen afhandelen. */
+    class OgcHttpError extends Error {
+      constructor(status, body) {
+        super(`OGC-request mislukt (HTTP ${status})`);
+        this.status = status;
+        this.body = body;
+      }
+    }
+
+    async function _ogcGetJson(url, signal) {
+      const r = await fetch(url, { signal });
+      if (r.status !== 200) {
+        const body = await r.json().catch(() => null);
+        throw new OgcHttpError(r.status, body);
+      }
+      return r.json();
+    }
+
+    /**
+     * Haal alle features van een OGC API Features items-URL op in pagina's van
+     * `pageSize` (limit/offset), door de `rel=next`-links te volgen. Na elke
+     * pagina wordt `onPage(alleFeaturesTotNuToe, numberMatched)` aangeroepen
+     * zodat de aanroeper progressief kan renderen. Geeft alle features terug.
+     * Gooit OgcHttpError bij een niet-200 status (ook 201 = generatiejob).
+     */
+    async function _fetchOgcPaged(url, { pageSize = 2000, onPage, signal } = {}) {
+      const sep = url.includes('?') ? '&' : '?';
+      let next = `${url}${sep}limit=${pageSize}&offset=0`;
+      const all = [];
+      while (next) {
+        const page = await _ogcGetJson(next, signal);
+        if (Array.isArray(page.features)) all.push(...page.features);
+        if (onPage) onPage(all, page.numberMatched);
+        const link = (page.links || []).find(l => l.rel === 'next');
+        next = link ? link.href : null;
+      }
+      return all;
+    }
+
+    /** Totaal aantal features voor een items-URL (`limit=0` → numberMatched). */
+    async function _fetchOgcCount(url, { signal } = {}) {
+      const sep = url.includes('?') ? '&' : '?';
+      const page = await _ogcGetJson(`${url}${sep}limit=0`, signal);
+      return typeof page.numberMatched === 'number' ? page.numberMatched : 0;
+    }
+
     // Laad-indicator naast de 'Bomen'-checkbox terwijl vegetatiedata wordt opgehaald.
     const _setVegetationSpinner = _makeMinDurationSpinner(show => {
       const el = document.getElementById('lmpVegetationSpinner');
       if (el) el.classList.toggle('visible', show);
     });
 
-    /** Werkt het aantal opgehaalde bomen tussen haakjes bij achter de
-     *  'Bomen'-checkbox; leeg zolang de checkbox uit staat. */
+    // Totaal aantal bomen (vegType=tree) in het HELE gebied, via een OGC-
+    // telverzoek (limit=0); los van wat er in beeld geladen is.
+    let _vegTotal        = undefined;
+    let _vegTotalArea    = null;
+    let _vegTotalPending = false;
+
+    /** Toont het totaal aantal bomen in het gebied tussen haakjes achter de
+     *  'Bomen'-checkbox; leeg zolang de checkbox uit staat of het totaal nog
+     *  niet bekend is (anders suggereert "(0)" tijdens het ophalen "geen
+     *  bomen"). Onder de minimale zoom gedimd, met een zoom-hint. */
     function _updateVegetationCount() {
       const el = document.getElementById('lmpVegetationCount');
       if (!el) return;
-      el.textContent = _vegetationVisible ? ` (${_vegTreeFeatures.length})` : '';
+      const total = _vegTotalArea === AREA_ID ? _vegTotal : undefined;
+      el.textContent = _vegetationVisible && typeof total === 'number' ? ` (${total})` : '';
+      const zoomHint = _vegetationVisible && total > 0 && map.getZoom() < _VEG_MINZOOM;
+      el.classList.toggle('lmp-asset-count-dim', zoomHint);
+      el.title = _vegetationVisible && _vegLoadFailed ? 'Ophalen van bomen mislukt'
+               : zoomHint ? 'Zoom verder in om te tonen' : '';
+    }
+
+    /** Laadstatus + spinner; de spinner is alleen zichtbaar als de checkbox aan staat. */
+    function _setVegLoading(v) {
+      _vegLoading = Math.max(0, _vegLoading + (v ? 1 : -1));
+      _setVegetationSpinner(_vegLoading > 0 && _vegetationVisible);
     }
 
     // Wacht tot een server-side vegetatie-generatiejob (gestart na een 201 op
     // /collections/vegetation/items) klaar is, door /jobs/<id> te pollen. Zelfde
     // vorm als pollWegenscanJob: vaste wachttijd + begrensd aantal pogingen i.p.v.
     // een ongelimiteerde lus. Stopt vroegtijdig (zonder de job zelf te annuleren —
-    // die loopt op de server gewoon door) zodra de gebruiker van gebied wisselt of
-    // de 'Bomen'-checkbox weer uitzet.
+    // die loopt op de server gewoon door) zodra de gebruiker van gebied wisselt.
+    // Uitzetten van de 'Bomen'-checkbox stopt de poll níet: anders valt een
+    // snelle her-aanvink weg op de _vegPollJobId-guard en laadt er niets.
     async function _waitForVegetationJob(jobId, areaId) {
       _vegPollJobId = jobId;
       _vegPollAreaId = areaId;
       try {
         for (let i = 0; i < 200; i++) {               // 200 × 3s ≈ 10 minuten timeout
-          if (AREA_ID !== areaId || !_vegetationVisible) return false;
+          if (AREA_ID !== areaId) return false;
           await new Promise(res => setTimeout(res, 3000));
-          if (AREA_ID !== areaId || !_vegetationVisible) return false;
+          if (AREA_ID !== areaId) return false;
           try {
             const jr = await fetch(`/jobs/${jobId}`);
             if (!jr.ok) continue;
@@ -9389,6 +9477,75 @@
       }
     }
 
+    // Eén gedeelde wachtlus per generatiejob: het telverzoek en de bbox-load
+    // kunnen allebei een 201 met dezelfde jobID krijgen (de server hergebruikt
+    // een lopende job per gebied).
+    const _vegJobWaits = new Map();   // jobID -> Promise<boolean>
+    function _waitForVegetationJobShared(jobId, areaId) {
+      if (!_vegJobWaits.has(jobId)) {
+        _vegJobWaits.set(jobId, _waitForVegetationJob(jobId, areaId)
+          .finally(() => _vegJobWaits.delete(jobId)));
+      }
+      return _vegJobWaits.get(jobId);
+    }
+
+    /** Vraag (eenmalig per gebied) het totaal aantal bomen op. Bestaat het
+     *  VEGETATION-bestand nog niet (201 + jobID), dan blijft de spinner draaien
+     *  tot de generatiejob klaar is en wordt daarna opnieuw geteld. */
+    async function _ensureVegTotal() {
+      if (_vegTotalArea !== AREA_ID) {
+        _vegTotal = undefined;
+        _vegTotalPending = false;
+        _vegTotalArea = AREA_ID;
+      }
+      if (typeof _vegTotal === 'number' || _vegTotalPending) return;
+      const area = AREA_ID;
+      _vegTotalPending = true;
+      _setVegLoading(true);
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const n = await _fetchOgcCount(`/collections/vegetation/items?areaId=${area}&vegType=tree`);
+            if (area === _vegTotalArea) _vegTotal = n;
+            return;
+          } catch (e) {
+            if (!(e instanceof OgcHttpError) || e.status !== 201 || !e.body?.jobID) {
+              if (area === AREA_ID) _vegLoadFailed = true;
+              return;
+            }
+            const ready = await _waitForVegetationJobShared(e.body.jobID, area);
+            if (!ready) { if (area === AREA_ID) _vegLoadFailed = true; return; }
+            loadVegetationInView();   // bbox-load wachtte (via _vegPollJobId) op deze job
+          }
+        }
+      } finally {
+        if (area === _vegTotalArea) _vegTotalPending = false;
+        _setVegLoading(false);
+        _updateVegetationCount();
+      }
+    }
+
+    /** Verdeel vegetatie-features over bomen (punten/rijen) en vlakken en hertekenen.
+     *  Idempotent, zodat dit na elke binnengekomen pagina kan (progressief renderen). */
+    function _applyVegetationFeatures(features) {
+      const trees = [];
+      const polys = [];
+      for (const f of features) {
+        const t = (f.geometry || {}).type;
+        if (t === 'Point' || t === 'LineString' || t === 'MultiLineString') trees.push(f);
+        else if (t === 'Polygon' || t === 'MultiPolygon') polys.push(f);
+      }
+      _vegTreeFeatures = trees;
+      _vegPolyFeatures = polys;
+      _vegTrees = null;   // opnieuw afleiden bij volgende render
+      _vegBushes = null;
+      _vegAreaTrees = null;
+      _vegLoaded = true;
+      updateOverlay(true);
+    }
+
+    let _vegLoadAbort   = null;   // AbortController van de lopende bbox-load
+    let _vegLoadingBbox = null;
     async function loadVegetationInView() {
       if (!_mapReady || !_vegetationVisible) return;
       if (_vegPollJobId) return;   // generatie loopt al; wacht tot die klaar is
@@ -9396,48 +9553,45 @@
       const b  = map.getBounds();
       const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
       if (_bboxContains(_lastVegBbox, vw)) return;
+      if (_vegLoadAbort && _bboxContains(_vegLoadingBbox, vw)) return;   // wordt al geladen
       const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
       const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
       const requestedForArea = AREA_ID;
 
-      _setVegetationSpinner(true);
+      if (_vegLoadAbort) _vegLoadAbort.abort();
+      const ctrl = new AbortController();
+      _vegLoadAbort = ctrl;
+      _vegLoadingBbox = bbox;
+      _setVegLoading(true);
+      _vegLoadFailed = false;
+      _updateVegetationCount();
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
-          let r;
           try {
-            r = await fetch(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`);
-          } catch { return; }
-
-          if (r.status === 201) {
-            const body = await r.json().catch(() => ({}));
-            if (!body.jobID) return;
-            const ready = await _waitForVegetationJob(body.jobID, requestedForArea);
-            if (!ready) return;   // mislukt, time-out, of ondertussen van gebied/zichtbaarheid gewisseld
-            continue;             // bestand zou er nu moeten staan → nog eenmaal proberen
+            await _fetchOgcPaged(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`, {
+              signal: ctrl.signal,
+              onPage: feats => { if (_vegLoadAbort === ctrl) _applyVegetationFeatures(feats); },
+            });
+            _lastVegBbox = bbox;
+            return;
+          } catch (e) {
+            if (e.name === 'AbortError') return;
+            if (!(e instanceof OgcHttpError) || e.status !== 201 || !e.body?.jobID) {
+              _vegLoadFailed = true;
+              return;
+            }
+            const ready = await _waitForVegetationJobShared(e.body.jobID, requestedForArea);
+            if (!ready) {         // mislukt, time-out, of ondertussen van gebied gewisseld
+              if (AREA_ID === requestedForArea) _vegLoadFailed = true;
+              return;
+            }
+            // bestand zou er nu moeten staan → nog eenmaal proberen
           }
-          if (!r.ok) return;
-
-          const data = await r.json();
-          if (!data || !Array.isArray(data.features)) return;
-          _lastVegBbox = bbox;
-          const trees = [];
-          const polys = [];
-          for (const f of data.features) {
-            const t = (f.geometry || {}).type;
-            if (t === 'Point' || t === 'LineString' || t === 'MultiLineString') trees.push(f);
-            else if (t === 'Polygon' || t === 'MultiPolygon') polys.push(f);
-          }
-          _vegTreeFeatures = trees;
-          _vegPolyFeatures = polys;
-          _vegTrees = null;   // opnieuw afleiden bij volgende render
-          _vegBushes = null;
-          _vegAreaTrees = null;
-          _updateVegetationCount();
-          updateOverlay(true);
-          return;
         }
       } finally {
-        _setVegetationSpinner(false);
+        _setVegLoading(false);
+        if (_vegLoadAbort === ctrl) { _vegLoadAbort = null; _vegLoadingBbox = null; }
+        _updateVegetationCount();
       }
     }
 
@@ -9541,16 +9695,17 @@
       _taEnsurePlates(_taSignFeatures);   // async: bumpt + hertekent zodra klaar
       _taRebuildGiveWayMarks();           // haaientanden (B6) opnieuw koppelen aan het netwerk
       updateOverlay(true);                // toon direct (palen), platen volgen
+      _updateTrafficAssetCounts();        // totaal 'Borden' = alle fallback-borden van het gebied
     }
 
     function _loadTrafficSignsFallback() {
       if (_trafficSignsGeoJson) { _tryAddTrafficSigns(); return; }
       if (_signsFallbackFetching) return;
       _signsFallbackFetching = true;
+      _setTaCatLoading('signs', true);   // NDW-dataset kan bij serverstart nog downloaden
       fetch(`/collections/traffic_signs/items?areaId=${AREA_ID}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-          _signsFallbackFetching = false;
           if (!data || !Array.isArray(data.features)) return;
           for (const f of data.features) {
             if (f.properties?.blackCode) {
@@ -9560,7 +9715,11 @@
           _trafficSignsGeoJson = data;
           _tryAddTrafficSigns();
         })
-        .catch(() => { _signsFallbackFetching = false; });
+        .catch(() => {})
+        .finally(() => {
+          _signsFallbackFetching = false;
+          _setTaCatLoading('signs', false);
+        });
     }
 
     const _TRAFFIC_ASSET_MINZOOM = _TA_MINZOOM;
@@ -9592,14 +9751,16 @@
         return;
       }
       if (_trafficAssetsNoFile) return;
-      const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump&f=ndgeojson`);
-      if (r.status === 404) { _trafficAssetsNoFile = true; return; }
-      if (!r.ok) { console.debug('[TA] speedBump fetch niet ok, status=', r.status); return; }
-      const text = await r.text();
-      const feats = [];
-      for (const line of text.split(/\r?\n/)) {
-        if (!line.trim()) continue;
-        try { feats.push(JSON.parse(line)); } catch (_) {}
+      let feats;
+      _setTaCatLoading('bumps', true);
+      try {
+        feats = await _fetchOgcPaged(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump`);
+      } catch (e) {
+        if (e instanceof OgcHttpError && e.status === 404) _trafficAssetsNoFile = true;
+        else console.debug('[TA] speedBump fetch mislukt', e);
+        return;
+      } finally {
+        _setTaCatLoading('bumps', false);
       }
       if (!feats.length) return;
       _taSpeedBumpFeatures = feats;
@@ -9607,70 +9768,92 @@
       _updateTrafficAssetCounts();
     }
 
-    // Laad-indicator naast de 'Verkeersobjecten'-checkboxen (borden/paden/
-    // kunstwerken/meubilair/drempels delen allemaal dezelfde fetch hieronder).
-    const _setTrafficAssetSpinner = _makeMinDurationSpinner(show => {
-      document.querySelectorAll('[data-ta-spinner]').forEach(el => el.classList.toggle('visible', show));
-    });
+    // Totaal aantal objecten per categorie in het HELE gebied (niet alleen het
+    // beeld), opgehaald met een OGC-telverzoek (limit=0). Geldt voor
+    // _taTotalsArea; bij een gebiedswissel worden de totalen opnieuw opgevraagd.
+    let _taTotals        = {};   // cat -> aantal
+    let _taTotalsPending = {};   // cat -> true zolang het telverzoek loopt
+    let _taTotalsArea    = null;
 
-    /** Werkt het aantal opgehaalde objecten tussen haakjes bij, achter elke
-     *  aangevinkte checkbox in het '3D weergave'-blok. Een uitgevinkte
-     *  categorie toont geen aantal (de array kan nog gevulde, oude data
-     *  bevatten totdat de categorie weer wordt aangezet). */
+    // Laad-indicator per categorie: telt lopende requests (telverzoek, bbox-load,
+    // drempel-/bordenfetch). Alleen zichtbaar als die categorie is aangevinkt.
+    const _taCatLoading  = {};
+    const _taCatSpinners = {};
+    for (const cat of Object.keys(_TA_CATEGORY_TYPES)) {
+      _taCatLoading[cat]  = 0;
+      _taCatSpinners[cat] = _makeMinDurationSpinner(show => {
+        document.querySelectorAll(`[data-ta-spinner="${cat}"]`).forEach(el => el.classList.toggle('visible', show));
+      });
+    }
+    function _refreshTaCatSpinner(cat) {
+      _taCatSpinners[cat](_taCatLoading[cat] > 0 && !!_trafficAssetCategories[cat]);
+    }
+    function _setTaCatLoading(cat, on) {
+      _taCatLoading[cat] = Math.max(0, _taCatLoading[cat] + (on ? 1 : -1));
+      _refreshTaCatSpinner(cat);
+    }
+
+    /** Vraag (eenmalig per gebied) het totaal van een categorie op. */
+    async function _ensureTaTotal(cat) {
+      if (_taTotalsArea !== AREA_ID) {
+        _taTotals = {};
+        _taTotalsPending = {};
+        _taTotalsArea = AREA_ID;
+      }
+      if (cat in _taTotals || _taTotalsPending[cat]) return;
+      const area = AREA_ID;
+      _taTotalsPending[cat] = true;
+      _setTaCatLoading(cat, true);
+      try {
+        const n = await _fetchOgcCount(
+          `/collections/traffic_assets/items?areaId=${area}&assetType=${_TA_CATEGORY_TYPES[cat].join(',')}`);
+        if (area === _taTotalsArea) _taTotals[cat] = n;
+      } catch (e) {
+        if (e instanceof OgcHttpError && e.status === 404) {
+          // Geen TRAFFIC-ASSETS bestand: borden komen uit de NDW/Overpass-
+          // fallback (totaal = aantal fallback-borden), de rest is er niet.
+          _trafficAssetsNoFile = true;
+          if (area === _taTotalsArea && cat !== 'signs') _taTotals[cat] = 0;
+          if (cat === 'signs') _loadTrafficSignsFallback();
+        } else {
+          console.debug('[TA] telverzoek mislukt', cat, e);
+        }
+      } finally {
+        if (area === _taTotalsArea) delete _taTotalsPending[cat];
+        _setTaCatLoading(cat, false);
+        _updateTrafficAssetCounts();
+      }
+    }
+
+    /** Toont het TOTAAL aantal objecten in het gebied tussen haakjes achter
+     *  elke aangevinkte checkbox in het '3D weergave'-blok. Onder de
+     *  minimale zoom wordt (nog) niets getekend: dan staat het totaal er
+     *  gedimd, met een tooltip dat verder inzoomen nodig is. */
     function _updateTrafficAssetCounts() {
-      const counts = {
-        signs:     _taSignFeatures.length + _taSignalFeatures.length + _taMarkFeatures.length
-                 + _taGiveWayMarkFeatures.length + _taBusStopFeatures.length,
-        paths:     _taFootPathFeatures.length + _taCyclePathFeatures.length,
-        height:    _taViaductFeatures.length + _taBridgeFeatures.length + _taTunnelFeatures.length
-                 + _taCulvertFeatures.length + _taUnderpassFeatures.length,
-        furniture: Object.values(_taFurniture).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0),
-        bumps:     _taSpeedBumpFeatures.length,
-      };
+      const belowZoom = map.getZoom() < _TRAFFIC_ASSET_MINZOOM;
       document.querySelectorAll('[data-ta-count]').forEach(el => {
         const cat = el.getAttribute('data-ta-count');
-        el.textContent = _trafficAssetCategories[cat] ? ` (${counts[cat]})` : '';
+        let total = _taTotalsArea === AREA_ID ? _taTotals[cat] : undefined;
+        if (cat === 'signs' && _trafficAssetsNoFile && _trafficSignsGeoJson) {
+          total = (_trafficSignsGeoJson.features || []).length;
+        }
+        const on = !!_trafficAssetCategories[cat];
+        el.textContent = on && typeof total === 'number' ? ` (${total})` : '';
+        const zoomHint = on && belowZoom && total > 0;
+        el.classList.toggle('lmp-asset-count-dim', zoomHint);
+        el.title = zoomHint ? 'Zoom verder in om te tonen' : '';
       });
     }
 
-    // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
-    async function loadTrafficAssetsInView() {
-      console.debug('[TA] loadTrafficAssetsInView called', { ready: _mapReady, visible: _trafficAssetsVisible, noFile: _trafficAssetsNoFile, zoom: map.getZoom(), minzoom: _TRAFFIC_ASSET_MINZOOM });
-      if (!_mapReady)            { console.debug('[TA] skip: map niet ready'); return; }
-      if (!_trafficAssetsVisible){ console.debug('[TA] skip: _trafficAssetsVisible=false (checkbox/localStorage)'); return; }
-      if (_trafficAssetsNoFile) { console.debug('[TA] skip: _trafficAssetsNoFile=true (eerdere 404) → fallback NDW-borden'); _loadTrafficSignsFallback(); return; }
-      if (map.getZoom() < _TRAFFIC_ASSET_MINZOOM) { console.debug(`[TA] skip: zoom ${map.getZoom().toFixed(2)} < minzoom ${_TRAFFIC_ASSET_MINZOOM}`); return; }
-
-      const b  = map.getBounds();
-      const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-      if (_bboxContains(_lastAssetBbox, vw)) { console.debug('[TA] skip: bbox al gedekt door vorige load'); return; }  // al gedekt → geen request
-
-      const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
-      const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
-
-      _setTrafficAssetSpinner(true);
-      try {
-      let data;
-      try {
-        console.debug('[TA] fetch traffic_assets', bbox);
-        const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}&f=ndgeojson`);
-        if (r.status === 404) { console.debug('[TA] 404 → traffic_assets bestand ontbreekt, fallback NDW-borden'); _trafficAssetsNoFile = true; _loadTrafficSignsFallback(); return; }
-        if (!r.ok) { console.debug('[TA] fetch niet ok, status=', r.status); return; }
-        const text = await r.text();
-        data = { type: 'FeatureCollection', features: [] };
-        for (const line of text.split(/\r?\n/)) {
-          if (!line.trim()) continue;
-          try { data.features.push(JSON.parse(line)); } catch (_) {}
-        }
-        console.log('[TA] features ontvangen:', data.features.length);
-      } catch (e) { console.debug('[TA] fetch exception', e); return; }
-      if (!data || !Array.isArray(data.features)) { console.debug('[TA] skip: geen geldige features array'); return; }
-
-      _lastAssetBbox = bbox;
+    /** Verdeel opgehaalde verkeersobjecten per assetType over de data-stores
+     *  van de deck.gl-lagen en hertekenen. Idempotent (alle stores worden
+     *  opnieuw toegewezen), zodat dit na elke binnengekomen pagina met alle
+     *  features tot dan toe aangeroepen kan worden (progressief renderen). */
+    function _applyTrafficAssetFeatures(features) {
       _speedAssetsEverLoaded = true;
       try {
         const byType = {};
-        for (const f of data.features) {
+        for (const f of features) {
           const p = f.properties || {};
           if (p.blackCode) p.blackCode = p.blackCode.trim().replace(/,/g, '.');
           const t = p.assetType;
@@ -9743,8 +9926,56 @@
         console.error('loadTrafficAssetsInView: fout bij verwerken traffic assets', e);
       }
       updateOverlay(true);
+    }
+
+    // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
+    // Gepagineerd via OGC API Features (limit/offset, rel=next); alleen de
+    // assetTypes die de 3D-weergave gebruikt (dus geen parkingArea).
+    let _taLoadAbort = null;    // AbortController van de lopende bbox-load
+    let _taLoadingBbox = null;  // bbox die nu geladen wordt
+    async function loadTrafficAssetsInView() {
+      console.debug('[TA] loadTrafficAssetsInView called', { ready: _mapReady, visible: _trafficAssetsVisible, noFile: _trafficAssetsNoFile, zoom: map.getZoom(), minzoom: _TRAFFIC_ASSET_MINZOOM });
+      if (!_mapReady)            { console.debug('[TA] skip: map niet ready'); return; }
+      if (!_trafficAssetsVisible){ console.debug('[TA] skip: _trafficAssetsVisible=false (checkbox/localStorage)'); return; }
+      if (_trafficAssetsNoFile) { console.debug('[TA] skip: _trafficAssetsNoFile=true (eerdere 404) → fallback NDW-borden'); _loadTrafficSignsFallback(); return; }
+      if (map.getZoom() < _TRAFFIC_ASSET_MINZOOM) { console.debug(`[TA] skip: zoom ${map.getZoom().toFixed(2)} < minzoom ${_TRAFFIC_ASSET_MINZOOM}`); return; }
+
+      const b  = map.getBounds();
+      const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      if (_bboxContains(_lastAssetBbox, vw)) { console.debug('[TA] skip: bbox al gedekt door vorige load'); return; }  // al gedekt → geen request
+      if (_taLoadAbort && _bboxContains(_taLoadingBbox, vw)) { console.debug('[TA] skip: bbox wordt al geladen'); return; }
+
+      const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
+      const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
+
+      if (_taLoadAbort) _taLoadAbort.abort();   // vorige (nu verouderde) bbox-load afbreken
+      const ctrl = new AbortController();
+      _taLoadAbort = ctrl;
+      _taLoadingBbox = bbox;
+      const cats = Object.keys(_TA_CATEGORY_TYPES);
+      cats.forEach(c => _setTaCatLoading(c, true));
+      try {
+        console.debug('[TA] fetch traffic_assets', bbox);
+        const url = `/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`
+                  + `&assetType=${_TA_ALL_3D_TYPES.join(',')}`;
+        const features = await _fetchOgcPaged(url, {
+          signal: ctrl.signal,
+          onPage: feats => { if (_taLoadAbort === ctrl) _applyTrafficAssetFeatures(feats); },
+        });
+        console.log('[TA] features ontvangen:', features.length);
+        _lastAssetBbox = bbox;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+        if (e instanceof OgcHttpError && e.status === 404) {
+          console.debug('[TA] 404 → traffic_assets bestand ontbreekt, fallback NDW-borden');
+          _trafficAssetsNoFile = true;
+          _loadTrafficSignsFallback();
+          return;
+        }
+        console.debug('[TA] fetch mislukt', e);
       } finally {
-        _setTrafficAssetSpinner(false);
+        cats.forEach(c => _setTaCatLoading(c, false));
+        if (_taLoadAbort === ctrl) { _taLoadAbort = null; _taLoadingBbox = null; }
       }
     }
 
@@ -9767,6 +9998,8 @@
       window._trafficAssetCategories = _trafficAssetCategories;
       updateOverlay(true);
       _updateTrafficAssetCounts();
+      _refreshTaCatSpinner(cat);          // een load kan al lopen (andere categorie)
+      if (vis) _ensureTaTotal(cat);       // totaal in het hele gebied, los van de zoom
       if (_trafficAssetsVisible) {
         loadTrafficAssetsInView();
       }
@@ -9777,7 +10010,11 @@
       _vegetationVisible = vis;
       updateOverlay(true);
       _updateVegetationCount();
-      if (vis) loadVegetationInView();
+      _setVegetationSpinner(vis && _vegLoading > 0);   // job kan nog lopen van een eerdere aanvink
+      if (vis) {
+        _ensureVegTotal();       // totaal in het hele gebied, los van de zoom
+        loadVegetationInView();
+      }
     }
     window._setVegetationVisibility = _setVegetationVisibility;
     window._getVegetationVisible = () => _vegetationVisible;
@@ -9843,7 +10080,13 @@
     let _assetMoveTimer = null;
     function _scheduleAssetLoad() {
       if (_assetMoveTimer) clearTimeout(_assetMoveTimer);
-      _assetMoveTimer = setTimeout(() => { _assetMoveTimer = null; loadTrafficAssetsInView(); loadVegetationInView(); }, 300);
+      _assetMoveTimer = setTimeout(() => {
+        _assetMoveTimer = null;
+        _updateTrafficAssetCounts();   // zoom-hint (gedimd totaal) bijwerken
+        _updateVegetationCount();
+        loadTrafficAssetsInView();
+        loadVegetationInView();
+      }, 300);
     }
     map.on('moveend', _scheduleAssetLoad);
 

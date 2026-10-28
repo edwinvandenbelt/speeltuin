@@ -1718,6 +1718,37 @@ def _job_to_status(job: dict) -> dict:
     }
 
 
+def _ogc_paging_args():
+    """Lees OGC-paging-parameters ``limit``/``offset`` uit de request.
+
+    Geeft ``(limit, offset)`` terug; ``limit`` is ``None`` als de parameter
+    ontbreekt (= alles). Ongeldige of negatieve waarden geven een 400.
+    """
+    def _int_arg(name):
+        raw = request.args.get(name, "").strip()
+        if not raw:
+            return None
+        try:
+            val = int(raw)
+        except ValueError:
+            abort(400, f"Ongeldige parameter: {name} moet een geheel getal zijn")
+        if val < 0:
+            abort(400, f"Ongeldige parameter: {name} mag niet negatief zijn")
+        return val
+
+    return _int_arg("limit"), _int_arg("offset") or 0
+
+
+def _url_with_args(url: str, **overrides) -> str:
+    """Geef *url* terug met de opgegeven query-parameters vervangen/toegevoegd."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in overrides]
+    query.extend((k, str(v)) for k, v in overrides.items())
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 def _ogc_items_response(
     collection_id: str, data, self_url: str, *, as_ndgeojson: bool = False
 ):
@@ -1747,26 +1778,47 @@ def _ogc_items_response(
         resp.headers["Content-Type"] = "application/x-ndgeo+json"
         return resp
 
+    # OGC API Features paging (limit/offset). Zonder limit komen — compatibel
+    # met bestaande aanroepers — alle features in één keer terug; limit=0 is
+    # een goedkoop telverzoek (alleen numberMatched, geen features).
+    limit, offset = _ogc_paging_args()
+    number_matched = len(features)
+    page = features
+    links = [
+        {
+            "href": self_url,
+            "rel": "self",
+            "type": "application/geo+json",
+            "title": "Dit document",
+        },
+        {
+            "href": f"/collections/{collection_id}",
+            "rel": "collection",
+            "type": "application/json",
+            "title": "Collectiebeschrijving",
+        },
+    ]
+    if limit is not None:
+        page = features[offset : offset + limit]
+        if limit > 0 and offset + limit < number_matched:
+            links.append(
+                {
+                    "href": _url_with_args(self_url, offset=offset + limit, limit=limit),
+                    "rel": "next",
+                    "type": "application/geo+json",
+                    "title": "Volgende pagina",
+                }
+            )
+    elif offset:
+        page = features[offset:]
+
     result: dict = {
         "type": "FeatureCollection",
-        "features": features,
-        "links": [
-            {
-                "href": self_url,
-                "rel": "self",
-                "type": "application/geo+json",
-                "title": "Dit document",
-            },
-            {
-                "href": f"/collections/{collection_id}",
-                "rel": "collection",
-                "type": "application/json",
-                "title": "Collectiebeschrijving",
-            },
-        ],
+        "features": page,
+        "links": links,
         "timeStamp": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-        "numberMatched": len(features),
-        "numberReturned": len(features),
+        "numberMatched": number_matched,
+        "numberReturned": len(page),
     }
     if merged:
         result["properties"] = merged
@@ -1803,6 +1855,84 @@ def _ndjson_stream_response(collection_id: str, data):
     resp.headers["Cache-Control"] = "no-cache"
     resp.headers["X-Accel-Buffering"] = "no"  # Nginx: geen buffering
     return resp
+
+
+def _bbox_query_arg():
+    """Lees de optionele OGC ``bbox=minLon,minLat,maxLon,maxLat``; None als afwezig."""
+    bbox_arg = request.args.get("bbox", "").strip()
+    if not bbox_arg:
+        return None
+    parts = bbox_arg.split(",")
+    if len(parts) != 4:
+        abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
+    try:
+        return [float(p) for p in parts]
+    except ValueError:
+        abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
+
+
+def _csv_query_arg(name: str):
+    """Lees een optionele komma-gescheiden filterlijst als set; None als afwezig."""
+    raw = request.args.get(name, "").strip()
+    if not raw:
+        return None
+    return {t.strip() for t in raw.split(",") if t.strip()}
+
+
+def _geom_bbox(coords):
+    """Bounding box (minX, minY, maxX, maxY) van geneste GeoJSON-coördinaten, of None."""
+    lo_x = lo_y = float("inf")
+    hi_x = hi_y = float("-inf")
+    stack = [coords]
+    while stack:
+        cur = stack.pop()
+        if not isinstance(cur, list) or not cur:
+            continue
+        if isinstance(cur[0], (int, float)) and len(cur) >= 2:
+            x, y = cur[0], cur[1]
+            if x < lo_x:
+                lo_x = x
+            if x > hi_x:
+                hi_x = x
+            if y < lo_y:
+                lo_y = y
+            if y > hi_y:
+                hi_y = y
+        else:
+            stack.extend(cur)
+    if lo_x == float("inf"):
+        return None
+    return lo_x, lo_y, hi_x, hi_y
+
+
+def _filter_features_by_bbox(features: list, bbox: list) -> list:
+    """Houd features over waarvan de geometrie-bounding-box de query-bbox overlapt.
+
+    Niet op één representatief punt filteren: een lang pad of groot vlak
+    waarvan het eerste hoekpunt buiten beeld valt zou dan volledig
+    verdwijnen (flikkeren bij pannen).
+    """
+    min_lon, min_lat, max_lon, max_lat = bbox
+    out = []
+    for feat in features:
+        gb = _geom_bbox((feat.get("geometry") or {}).get("coordinates"))
+        if gb is None:
+            continue
+        if gb[0] <= max_lon and gb[2] >= min_lon and gb[1] <= max_lat and gb[3] >= min_lat:
+            out.append(feat)
+    return out
+
+
+def _read_geodata_cached(path: Path) -> dict:
+    """``_read_geodata`` met de in-memory ``_geodata_cache`` (sleutel: pad + mtime).
+
+    Het resultaat wordt gedeeld tussen requests: niet muteren.
+    """
+    data = _geodata_cache_get(path)
+    if data is None:
+        data = _read_geodata(path)
+        _geodata_cache_set(path, data)
+    return data
 
 
 def _now_iso() -> str:
@@ -3131,22 +3261,10 @@ def ogc_collection_items(collection_id):
             abort(404, "Geen TRAFFIC-ASSETS bestand voor dit gebied")
 
         # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
-        bbox = None
-        bbox_arg = request.args.get("bbox", "").strip()
-        if bbox_arg:
-            parts = bbox_arg.split(",")
-            if len(parts) != 4:
-                abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
-            try:
-                bbox = [float(p) for p in parts]
-            except ValueError:
-                abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
+        bbox = _bbox_query_arg()
 
         # Optioneel assetType-filter (komma-gescheiden lijst, b.v. speedBump).
-        asset_types = None
-        asset_type_arg = request.args.get("assetType", "").strip()
-        if asset_type_arg:
-            asset_types = {t.strip() for t in asset_type_arg.split(",") if t.strip()}
+        asset_types = _csv_query_arg("assetType")
 
         # Minimale property-set die de frontend echt gebruikt. Dit scheelt
         # aanzienlijk in payload (veel lege / ongebruikte BGT/OSM-kolommen).
@@ -3219,7 +3337,7 @@ def ogc_collection_items(collection_id):
         }
 
         try:
-            data = _read_geodata(path)
+            data = _read_geodata_cached(path)
         except Exception as exc:
             abort(500, f"Fout bij lezen TRAFFIC-ASSETS: {exc}")
 
@@ -3251,22 +3369,7 @@ def ogc_collection_items(collection_id):
             ]
 
         if bbox is not None:
-            min_lon, min_lat, max_lon, max_lat = bbox
-            filtered = []
-            for feat in feats:
-                geom = feat.get("geometry") or {}
-                coords = geom.get("coordinates")
-                # Neem het eerste vertex als representatief punt; werkt voor
-                # Point/LineString/Polygon/Multi* (speedBump = Polygon).
-                pt = coords
-                while isinstance(pt, list) and pt and isinstance(pt[0], list):
-                    pt = pt[0]
-                if not pt or len(pt) < 2:
-                    continue
-                lon, lat = pt[0], pt[1]
-                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
-                    filtered.append(feat)
-            feats = filtered
+            feats = _filter_features_by_bbox(feats, bbox)
 
         # Strip ongebruikte/lege properties en laat geometry intact.
         slim_feats = []
@@ -3298,39 +3401,15 @@ def ogc_collection_items(collection_id):
             abort(404, "Geen HEIGHTS bestand voor dit gebied")
 
         # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
-        bbox = None
-        bbox_arg = request.args.get("bbox", "").strip()
-        if bbox_arg:
-            parts = bbox_arg.split(",")
-            if len(parts) != 4:
-                abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
-            try:
-                bbox = [float(p) for p in parts]
-            except ValueError:
-                abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
+        bbox = _bbox_query_arg()
 
         try:
-            data = _read_geodata(path)
+            data = _read_geodata_cached(path)
         except Exception as exc:
             abort(500, f"Fout bij lezen HEIGHTS: {exc}")
 
         if bbox is not None:
-            min_lon, min_lat, max_lon, max_lat = bbox
-            feats = []
-            for feat in data.get("features", []):
-                geom = feat.get("geometry") or {}
-                coords = geom.get("coordinates")
-                # Neem het eerste vertex als representatief punt; werkt voor
-                # Point/LineString/Polygon/Multi*.
-                pt = coords
-                while isinstance(pt, list) and pt and isinstance(pt[0], list):
-                    pt = pt[0]
-                if not pt or len(pt) < 2:
-                    continue
-                lon, lat = pt[0], pt[1]
-                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
-                    feats.append(feat)
-            data = {**data, "features": feats}
+            data = {**data, "features": _filter_features_by_bbox(data.get("features", []), bbox)}
 
         return _ogc_items_response("heights", data, self_url)
 
@@ -3345,16 +3424,10 @@ def ogc_collection_items(collection_id):
         area_dir = _find_area_dir(area_id)
 
         # Optionele bbox-filtering (OGC API Features): bbox=minLon,minLat,maxLon,maxLat
-        bbox = None
-        bbox_arg = request.args.get("bbox", "").strip()
-        if bbox_arg:
-            parts = bbox_arg.split(",")
-            if len(parts) != 4:
-                abort(400, "Ongeldige bbox: verwacht minLon,minLat,maxLon,maxLat")
-            try:
-                bbox = [float(p) for p in parts]
-            except ValueError:
-                abort(400, "Ongeldige bbox: waarden moeten numeriek zijn")
+        bbox = _bbox_query_arg()
+        # Optioneel vegType-filter (komma-gescheiden lijst, b.v. tree) — o.a.
+        # voor het telverzoek ``vegType=tree&limit=0`` achter de Bomen-checkbox.
+        veg_types = _csv_query_arg("vegType")
 
         prep_path = _find_prepared_with_base_fallback(area_id, "VEGETATION")
         if prep_path is None:
@@ -3465,57 +3538,20 @@ def ogc_collection_items(collection_id):
             )
 
         try:
-            data = _read_geodata(prep_path)
+            data = _read_geodata_cached(prep_path)
         except Exception as exc:
             abort(500, f"Fout bij lezen VEGETATION: {exc}")
 
-        # bbox-filter op de response. Voor vlakken (Polygon/MultiPolygon) en
-        # lijnen mag NIET op één representatief punt gefiltert worden: een groot
-        # bosvlak waarvan het eerste hoekpunt buiten beeld valt zou dan volledig
-        # verdwijnen (flikkeren bij pannen). We testen daarom of de geometrie-
-        # bounding-box de query-bbox overlapt.
+        feats = data.get("features", [])
+        if veg_types is not None:
+            feats = [
+                f for f in feats if (f.get("properties") or {}).get("vegType") in veg_types
+            ]
+        # bbox-filter op geometrie-overlap (zie _filter_features_by_bbox): een
+        # groot bosvlak met het eerste hoekpunt buiten beeld moet blijven staan.
         if bbox is not None:
-            min_lon, min_lat, max_lon, max_lat = bbox
-
-            def _geom_bbox(coords):
-                lo_x = lo_y = float("inf")
-                hi_x = hi_y = float("-inf")
-                stack = [coords]
-                while stack:
-                    cur = stack.pop()
-                    if not isinstance(cur, list) or not cur:
-                        continue
-                    if isinstance(cur[0], (int, float)) and len(cur) >= 2:
-                        x, y = cur[0], cur[1]
-                        if x < lo_x:
-                            lo_x = x
-                        if x > hi_x:
-                            hi_x = x
-                        if y < lo_y:
-                            lo_y = y
-                        if y > hi_y:
-                            hi_y = y
-                    else:
-                        stack.extend(cur)
-                if lo_x == float("inf"):
-                    return None
-                return lo_x, lo_y, hi_x, hi_y
-
-            feats = []
-            for feat in data.get("features", []):
-                geom = feat.get("geometry") or {}
-                gb = _geom_bbox(geom.get("coordinates"))
-                if gb is None:
-                    continue
-                g_min_lon, g_min_lat, g_max_lon, g_max_lat = gb
-                # Rechthoek-overlap (geen disjunctie).
-                if (
-                    g_min_lon <= max_lon
-                    and g_max_lon >= min_lon
-                    and g_min_lat <= max_lat
-                    and g_max_lat >= min_lat
-                ):
-                    feats.append(feat)
+            feats = _filter_features_by_bbox(feats, bbox)
+        if veg_types is not None or bbox is not None:
             data = {**data, "features": feats}
 
         return _ogc_items_response("vegetation", data, self_url)
