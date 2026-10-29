@@ -4929,6 +4929,58 @@
     return { pos, nor, uv, idx, vc: 8 };
   }
 
+  /**
+   * Georiënteerde box: middelpunt c en drie onderling loodrechte halve-assen
+   * ax, ay, az (vectoren). az moet gelijk gericht zijn aan ax × ay.
+   */
+  function makeOrientedBoxGeom(c, ax, ay, az) {
+    const pos = [], nor = [], idx = [];
+    const add = (p, s, q, r) => {
+      // Vlak op c + s·p, opgespannen door q en r (CCW gezien van buitenaf)
+      const l = Math.hypot(p[0], p[1], p[2]) || 1;
+      const n = [s * p[0] / l, s * p[1] / l, s * p[2] / l];
+      const corners = s > 0 ? [[-1,-1],[1,-1],[1,1],[-1,1]] : [[-1,-1],[-1,1],[1,1],[1,-1]];
+      const b = pos.length / 3;
+      for (const [i, j] of corners) {
+        for (let k = 0; k < 3; k++) pos.push(c[k] + s * p[k] + i * q[k] + j * r[k]);
+        nor.push(...n);
+      }
+      idx.push(b, b+1, b+2, b, b+2, b+3);
+    };
+    for (const s of [1, -1]) { add(ax, s, ay, az); add(ay, s, az, ax); add(az, s, ax, ay); }
+    return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+             uv: new Float32Array(48), idx: new Uint32Array(idx), vc: 24 };
+  }
+
+  /** Balk (buis/ledemaat) van punt p0 naar p1 met doorsnede w (lateraal) × h. */
+  function makeBeamGeom(p0, p1, w, h = w) {
+    const d = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
+    const len = Math.hypot(...d) || 1e-6;
+    const dx = d.map(v => v / len);
+    // Referentie-as: Y (lateraal) tenzij de balk zelf vrijwel lateraal loopt
+    const ref = Math.abs(dx[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    let up = [dx[1]*ref[2]-dx[2]*ref[1], dx[2]*ref[0]-dx[0]*ref[2], dx[0]*ref[1]-dx[1]*ref[0]];
+    const ul = Math.hypot(...up); up = up.map(v => v / ul);
+    const side = [up[1]*dx[2]-up[2]*dx[1], up[2]*dx[0]-up[0]*dx[2], up[0]*dx[1]-up[1]*dx[0]];
+    const c = [(p0[0]+p1[0])/2, (p0[1]+p1[1])/2, (p0[2]+p1[2])/2];
+    return makeOrientedBoxGeom(c, dx.map(v => v * len / 2), side.map(v => v * w / 2), up.map(v => v * h / 2));
+  }
+
+  /** Wielband: ring in het XZ-vlak rond (cx, cy, cz), opgebouwd uit seg balkjes. */
+  function makeRingGeom(radius, tube, width, cx, cy, cz, seg = 16) {
+    const parts = [];
+    const ext = 1 + tube / radius;   // segmenten iets verlengen zodat de naden dicht zijn
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * 2 * Math.PI, a1 = ((i + 1) / seg) * 2 * Math.PI;
+      const am = (a0 + a1) / 2, half = (a1 - a0) / 2 * ext;
+      parts.push(makeBeamGeom(
+        [cx + Math.cos(am - half) * radius, cy, cz + Math.sin(am - half) * radius],
+        [cx + Math.cos(am + half) * radius, cy, cz + Math.sin(am + half) * radius],
+        width, tube));
+    }
+    return parts;
+  }
+
   function makeCylinderGeom(radius, h, cx, cy, cz, seg = 12) {
     const pos = [], nor = [], uv = [], idx = [];
     const step = (2 * Math.PI) / seg;
@@ -5147,40 +5199,111 @@
   // Eén type, één kleur — helder amber (goed zichtbaar op donkere kaart).
   const BIKE_COLOR = [255, 185, 0, 255];
 
-  // Willekeurige kledingkleuren voor de fietser (torso + hoofd).
-  // Lichte, herkenbare tinten — goed zichtbaar op de donkere kaart.
+  // Shirtkleuren voor de fietser (romp + armen) — gedempte "jersey"-tinten,
+  // overgenomen uit de Montreal-cyclistlaag. Ondoorzichtig (alpha 255).
   const CLOTHING_PALETTE = [
-    [220,  50,  50, 230],  // rood
-    [ 50, 130, 220, 230],  // blauw
-    [ 40, 160,  70, 230],  // groen
-    [230, 140,  20, 230],  // oranje
-    [ 90,  60, 160, 230],  // paars
-    [200, 200, 200, 230],  // lichtgrijs
-    [ 30,  30,  30, 230],  // zwart
-    [240, 200,  60, 230],  // geel
-    [200,  90, 150, 230],  // roze
-    [ 60, 180, 180, 230],  // cyaan/teal
+    [201,  78,  62, 255],  // steenrood
+    [ 40, 107, 156, 255],  // staalblauw
+    [227, 168,  59, 255],  // oker
+    [104,  81, 152, 255],  // paars
+    [ 56, 135, 109, 255],  // groen
+    [214, 118, 150, 255],  // roze
+    [231, 226, 205, 255],  // gebroken wit
   ];
   function randomClothingColor() {
     return CLOTHING_PALETTE[Math.floor(Math.random() * CLOTHING_PALETTE.length)];
   }
 
   const BIKE_VEHICLE_TYPES = (() => {
-    // Coördinatenstelsel: cx=voor/achter, cy=lateraal, cz=hoogte
-    const frame  = makeBoxGeom(1.50, 0.08, 0.08,  0,     0, 0.685); // hoofdbuis (bovenkant op 0.725m)
-    const zadel  = makeBoxGeom(0.28, 0.16, 0.04, -0.30,  0, 0.92);  // zadel (achter)
-    const stuur  = makeBoxGeom(0.08, 0.55, 0.04,  0.62,  0, 0.82);  // stuur (voor, breed)
-    const wheelF = makeCylinderGeom(0.28, 0.06,  0.65, 0, 0.28);    // voorwiel
-    const wheelR = makeCylinderGeom(0.28, 0.06, -0.65, 0, 0.28);    // achterwiel
+    // Coördinatenstelsel: X = voor, Y = rechts, Z = omhoog (meters).
+    // Rechtop zittende (stads)fietser; trappers in stand voor/achter.
+    const R = 0.34;                       // wielstraal (28")
+    const hubR = [-0.52, 0, R], hubF = [0.52, 0, R];
+    const bb   = [-0.06, 0, 0.30];        // trapas
+    const seatTop = [-0.22, 0, 0.80], seatStay = [-0.20, 0, 0.74];
+    const headTop = [ 0.38, 0, 0.80], headBot  = [ 0.42, 0, 0.64];
+    const T = 0.045;                      // buisdikte frame
+
+    // Frame (kleur = metriek/fietskleur)
+    const frame = [
+      makeBeamGeom(seatTop, headTop, T),          // bovenbuis
+      makeBeamGeom(bb, headBot, T),               // onderbuis
+      makeBeamGeom(bb, seatTop, T),               // zitbuis
+      makeBeamGeom(headBot, headTop, T * 1.3),    // balhoofd
+      makeBeamGeom([bb[0], 0.05, bb[2]], [hubR[0], 0.05, R], T * 0.8),   // liggende achtervork
+      makeBeamGeom([bb[0],-0.05, bb[2]], [hubR[0],-0.05, R], T * 0.8),
+      makeBeamGeom([seatStay[0], 0.04, seatStay[2]], [hubR[0], 0.05, R], T * 0.8),  // staande achtervork
+      makeBeamGeom([seatStay[0],-0.04, seatStay[2]], [hubR[0],-0.05, R], T * 0.8),
+      makeBeamGeom([headBot[0], 0.04, headBot[2]], [hubF[0], 0.05, R], T * 0.8),    // voorvork
+      makeBeamGeom([headBot[0],-0.04, headBot[2]], [hubF[0],-0.05, R], T * 0.8),
+    ];
+
+    // Donkere onderdelen: zadelpen, zadel, stuurpen, stuur, crank
+    const hands = [0.30, 0.25, 1.00];
+    const parts = [
+      makeBeamGeom(seatTop, [-0.25, 0, 0.92], 0.03),            // zadelpen
+      makeBoxGeom(0.26, 0.14, 0.05, -0.26, 0, 0.94),            // zadel
+      makeBeamGeom(headTop, [0.36, 0, 0.98], 0.035),            // stuurpen
+      makeBeamGeom([0.36, -0.27, 0.99], [0.36, 0.27, 0.99], 0.03),   // stuur
+      makeBeamGeom([0.36, 0.27, 0.99], [hands[0], 0.27, 1.00], 0.035), // handvat
+      makeBeamGeom([0.36,-0.27, 0.99], [hands[0],-0.27, 1.00], 0.035),
+      makeBeamGeom([bb[0], 0.07, bb[2]], [bb[0] + 0.17, 0.07, bb[2]], 0.03),  // crank voor
+      makeBeamGeom([bb[0],-0.07, bb[2]], [bb[0] - 0.17,-0.07, bb[2]], 0.03),  // crank achter
+    ];
+
+    // Wielen: band als ring + naaf + twee spaken-kruisen
+    const wheels = [];
+    for (const h of [hubR, hubF]) {
+      wheels.push(...makeRingGeom(R - 0.02, 0.045, 0.045, h[0], 0, h[2]));
+      wheels.push(makeBoxGeom(0.06, 0.10, 0.06, h[0], 0, h[2]));
+      wheels.push(makeBeamGeom([h[0] - R + 0.04, 0, h[2]], [h[0] + R - 0.04, 0, h[2]], 0.012));
+      wheels.push(makeBeamGeom([h[0], 0, h[2] - R + 0.04], [h[0], 0, h[2] + R - 0.04], 0.012));
+    }
+
     // ── Fietser (zichtbaar bij zoom ≥ 15) ──────────────────────────────────
-    // Torso: licht voorovergebogen, van z=0.72m tot z=1.12m
-    const torso  = makeBoxGeom(0.30, 0.18, 0.42,  0.05,  0, 0.92);  // romp
-    const hoofd  = makeBoxGeom(0.22, 0.22, 0.24,  0.10,  0, 1.22);  // hoofd
+    // Knie via twee-segment IK: heup → knie → voet, knie naar voren gebogen.
+    const knee = (hip, foot, l1 = 0.46, l2 = 0.47) => {
+      const dx = foot[0] - hip[0], dz = foot[2] - hip[2];
+      const d  = Math.min(Math.hypot(dx, dz), l1 + l2 - 1e-3);
+      const a  = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+      const hh = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+      const ux = dx / d, uz = dz / d;
+      return [hip[0] + ux * a - uz * hh, (hip[1] + foot[1]) / 2, hip[2] + uz * a + ux * hh];
+    };
+    const hipL = [-0.24,-0.10, 1.00], hipR = [-0.24, 0.10, 1.00];
+    const footR = [bb[0] + 0.17, 0.11, bb[2] + 0.02];   // trapper voor
+    const footL = [bb[0] - 0.17,-0.11, bb[2] + 0.02];   // trapper achter
+    const kneeR = knee(hipR, footR), kneeL = knee(hipL, footL);
+    const shL = [-0.10,-0.19, 1.47], shR = [-0.10, 0.19, 1.47];
+    const elL = [ 0.08,-0.24, 1.22], elR = [ 0.08, 0.24, 1.22];
+
+    // Shirt (clothingColor): romp licht voorovergebogen + armen
+    const shirt = [
+      makeOrientedBoxGeom([-0.17, 0, 1.24],              // romp, ~17° voorover
+        [ 0.09 * Math.cos(0.30), 0, -0.09 * Math.sin(0.30)],
+        [0, 0.19, 0],
+        [ 0.27 * Math.sin(0.30), 0,  0.27 * Math.cos(0.30)]),
+      makeBeamGeom(shL, elL, 0.085), makeBeamGeom(elL, [hands[0], -0.25, hands[2]], 0.075),
+      makeBeamGeom(shR, elR, 0.085), makeBeamGeom(elR, [hands[0],  0.25, hands[2]], 0.075),
+    ];
+
+    // Broek, schoenen en hoofd/helm (donker)
+    const rider = [
+      makeBoxGeom(0.24, 0.30, 0.14, -0.22, 0, 1.00),           // bekken
+      makeBeamGeom(hipR, kneeR, 0.13), makeBeamGeom(kneeR, footR, 0.10),
+      makeBeamGeom(hipL, kneeL, 0.13), makeBeamGeom(kneeL, footL, 0.10),
+      makeBoxGeom(0.22, 0.09, 0.07, footR[0] + 0.03, footR[1], footR[2]),   // schoenen
+      makeBoxGeom(0.22, 0.09, 0.07, footL[0] + 0.03, footL[1], footL[2]),
+      makeBeamGeom([-0.08, 0, 1.49], [-0.06, 0, 1.58], 0.09),  // nek
+      makeBoxGeom(0.22, 0.18, 0.22, -0.04, 0, 1.69),           // hoofd
+    ];
+
     return [{
-      body:    mergeMeshes([frame]),
-      bumpers: mergeMeshes([stuur, zadel]),
-      windows: mergeMeshes([torso, hoofd]),   // kledingkleur via clothingColor
-      wheels:  mergeMeshes([wheelF, wheelR]),
+      body:    mergeMeshes(frame),
+      bumpers: mergeMeshes(parts),
+      windows: mergeMeshes(shirt),   // kledingkleur via clothingColor
+      rider:   mergeMeshes(rider),   // broek/hoofd — alleen fietsers
+      wheels:  mergeMeshes(wheels),
       weight:  1,
       length:  1.85,
     }];
@@ -15106,7 +15229,7 @@
             id:       `cars-windows-${ti}`,
             visible:  baseVisible && (!isBikeType || showBikeRider),
             mesh:     vt.windows,
-            getColor: isBikeType ? (d => d.clothingColor ?? [100, 100, 100, 230]) : [12, 28, 72, 210],
+            getColor: isBikeType ? (d => d.clothingColor ?? [100, 100, 100, 255]) : [12, 28, 72, 210],
             material: isBikeType
               ? { ambient: 0.5, diffuse: 0.8, shininess: 20, specularColor: [60, 60, 60] }
               : { ambient: 0.3, diffuse: 0.5, shininess: 120, specularColor: [160, 200, 255] },
@@ -15130,6 +15253,17 @@
             material: { ambient: 0.35, diffuse: 0.5, shininess: 15, specularColor: [20, 20, 20] },
           }),
         );
+        if (vt.rider) {
+          layers.push(new SimpleMeshLayer({
+            ...shared,
+            // Fietser: broek, schoenen, hoofd — samen met het shirt bij zoom ≥ 15
+            id:       `cars-rider-${ti}`,
+            visible:  baseVisible && showBikeRider,
+            mesh:     vt.rider,
+            getColor: [44, 48, 58, 255],
+            material: { ambient: 0.45, diffuse: 0.7, shininess: 15, specularColor: [30, 30, 30] },
+          }));
+        }
       }
       return layers;
     }
