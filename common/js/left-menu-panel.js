@@ -31,6 +31,7 @@
     settingsBasemapSat:   'Luchtfoto',
     settingsBasemapNone:  'Zwart',
     settingsBasemapWhite: 'Wit',
+    settingsBasemapMontreal: 'Kaart 2',
   };
   function t(key) {
     let val = typeof T === 'function' ? T(key) : null;
@@ -55,6 +56,8 @@
       { value: 'satellite', key: 'settingsBasemapSat' },
       { value: 'none',      key: 'settingsBasemapNone' },
       { value: 'white',     key: 'settingsBasemapWhite' },
+      // Alleen tonen in apps waarvan _applyBasemapStyle 'montreal' kent (analyzer).
+      ...(window._basemapSupportsMontreal ? [{ value: 'montreal', key: 'settingsBasemapMontreal' }] : []),
     ];
 
     const current = window._basemapStyleSafe || localStorage.getItem('basemapStyle') || 'map';

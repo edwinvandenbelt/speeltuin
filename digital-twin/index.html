@@ -5980,7 +5980,10 @@
     let _isScaledMode      = false; // true wanneer geschaalde hoogte-modus actief is
     let _libertyFillLayerIds = null; // Liberty fill/background/raster layer IDs (verborgen in satellietmodus)
     let _libertyAllLayerIds  = null; // Alle Liberty layer IDs (verborgen in geen-kaart-modus)
-    let basemapStyle       = localStorage.getItem('basemapStyle') || 'map'; // 'map' | 'satellite' | 'none'
+    // 'map' | 'satellite' | 'none' | 'white'. 'map' is hier de Montréal-ondergrond;
+    // een uit de analyzer meegekomen 'montreal' valt daarom samen met 'map'.
+    let basemapStyle       = localStorage.getItem('basemapStyle') || 'map';
+    if (basemapStyle === 'montreal') basemapStyle = 'map';
     window._basemapStyleSafe = basemapStyle;
 
     // Gebouwclassificatie op basis van OSM-tags
@@ -6758,6 +6761,7 @@
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
     // Liberty lijnlagen (roads) en symboollagen (labels) blijven zichtbaar als overlay.
     function _applyBasemapStyle(style) {
+      if (style === 'montreal') style = 'map';
       basemapStyle = style;
       window._basemapStyleSafe = style;
       localStorage.setItem('basemapStyle', style);
@@ -6768,6 +6772,9 @@
       const isSat   = style === 'satellite';
       const isNone  = style === 'none';
       const isWhite = style === 'white';
+      // 'Kaart' toont in de digital twin de Montréal-ondergrond (mtl-*-lagen,
+      // zie common/js/montreal-basemap.js) i.p.v. de Liberty-ondergrond.
+      const isMtl   = style === 'map';
       // 'none' (zwart) en 'white' (wit) verbergen allebei de Liberty-kaartlagen;
       // alleen de achtergrondkleur van de container verschilt.
       const hideMap = isNone || isWhite;
@@ -6798,15 +6805,23 @@
         // zichtbaarheid wordt uitsluitend bepaald door de 'Gebouw weergave'/
         // 'Gebouw productie/attractie'-radio's (zie _applyBuildingDisplay), niet
         // door de achtergrondkeuze.
+        // Montréal-modus: alle Liberty-lagen behalve de labels (symbol) uit;
+        // de 'mtl-*'-lagen tekenen de ondergrond.
         if (_libertyAllLayerIds) {
+          const mtlHidden = isMtl ? window.MontrealBasemap.hiddenBaseLayerIds(m) : null;
           for (const id of _libertyAllLayerIds) {
             if (id === 'building' || id === 'building-3d' || id.startsWith('buildings')) continue;
-            try { m.setLayoutProperty(id, 'visibility', hideMap ? 'none' : 'visible'); } catch (_) {}
+            const show = !hideMap && !(mtlHidden && mtlHidden.has(id));
+            try { m.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none'); } catch (_) {}
           }
         }
+        try {
+          if (isMtl) window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+          window.MontrealBasemap.setVisible(m, isMtl);
+        } catch (e) { console.warn('Montréal-ondergrond:', e); }
         m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
         // Satelliet: verberg ook de Liberty fill/background lagen
-        if (!hideMap && _libertyFillLayerIds) {
+        if (!hideMap && !isMtl && _libertyFillLayerIds) {
           for (const id of _libertyFillLayerIds) {
             try { m.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
           }
@@ -6836,7 +6851,9 @@
     // water/wegen/gebouwen worden daarna getekend en blijven dus ongewijzigd
     // van kleur.
     function _applyGroundNightTint(isDay) {
-      const wantTint = !isDay && basemapStyle === 'map';
+      // Uit: 'map' is hier de Montréal-ondergrond; de tint ligt (vóór Liberty
+      // 'water') boven alle mtl-*-lagen en zou ook water/wegen donker maken.
+      const wantTint = false;
 
       function _applyToMap(m) {
         if (!m) return;
@@ -16011,7 +16028,8 @@
       }
 
       // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite', 'none' of 'white' had gekozen)
-      if (basemapStyle !== 'map') _applyBasemapStyle(basemapStyle);
+      // Altijd toepassen: ook 'map' (Montréal) moet lagen toevoegen/omschakelen.
+      _applyBasemapStyle(basemapStyle);
     }
 
     map.on('load', _onMapStyleLoad);
@@ -17822,7 +17840,7 @@
           try { if (map2.getLayer('building'))    map2.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
           // Zon/sky en achtergrond gelijkstellen aan linkerkaart
           updateSunLight();
-          if (basemapStyle && basemapStyle !== 'map') _applyBasemapStyle(basemapStyle);
+          if (basemapStyle) _applyBasemapStyle(basemapStyle);
         });
 
         // ── Camera-sync ────────────────────────────────────────────────────
@@ -19816,6 +19834,7 @@
   </div>
 
   <!-- Achtergronden-blok in linker menu-paneel (los module, na de hoofdscript) -->
+  <script src="montreal-basemap.js"></script>
   <script src="left-menu-panel.js"></script>
   <script src="maquette-calibration.js"></script>
   <script src="maquette-monitor.js"></script>
