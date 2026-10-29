@@ -12,6 +12,8 @@
  *      window.MontrealBasemap.setVisible(map, bool)
  *      window.MontrealBasemap.hiddenBaseLayerIds(map)
  *        → Set met Liberty-lagen die in Montréal-modus uit moeten.
+ *      window.MontrealBasemap.setNetworkRoads(map, features)
+ *        → tekent NETWORK-links op werkelijke breedte (na ensure()).
  */
 (function () {
   'use strict';
@@ -118,5 +120,108 @@
     }
   }
 
-  window.MontrealBasemap = { palettes: _MTL_PALETTES, ensure, setVisible, hiddenBaseLayerIds };
+  // ── Netwerkwegen op werkelijke breedte ──────────────────────────────────
+  // Wegen uit het NETWORK-bestand, getekend boven de OFM-wegen (mtl-roads) met
+  // hun breedte in meters. Breedte: afgerond op 10 cm (netWidthM); verharding:
+  // categorische klasse (netSurface) voor kleur/patroon.
+
+  const _NET_WIDTH_MIN_M = 2;
+  const _NET_WIDTH_MAX_M = 12;
+  const _NET_EDGE_M      = 0.6;   // extra breedte van de randlijn (totaal, beide kanten)
+
+  // Kleur per verhardingsklasse; ontbrekende klassen vallen terug op p.road.
+  const _MTL_SURFACE = {
+    day:   { onbekend: _MTL_PALETTES.day.road },
+    night: { onbekend: _MTL_PALETTES.night.road },
+  };
+
+  // Verhardingsklasse van een link. Er is nog geen bron in het NETWORK-bestand.
+  function _surfaceClass(props) {
+    return 'onbekend';
+  }
+
+  // Totale wegbreedte (m): gemiddelde van min/max, anders 2× rijbaanbreedte,
+  // anders 3 m per rijstrook (×2 bij een tegenrichting).
+  function _netWidthM(props, hasOpposite) {
+    const lo = props.roadWidthMinM, hi = props.roadWidthMaxM;
+    let w;
+    if (lo != null && hi != null) w = (lo + hi) / 2;
+    else if (props.roadWidthM != null) w = props.roadWidthM * 2;
+    else w = (props.lanes || 1) * 3 * (hasOpposite ? 2 : 1);
+    w = Math.min(_NET_WIDTH_MAX_M, Math.max(_NET_WIDTH_MIN_M, w));
+    return Math.round(w * 10) / 10;
+  }
+
+  // Features → ontdubbelde FeatureCollection met alleen de stijl-properties,
+  // plus de gemiddelde breedtegraad (voor de meter→pixel-omrekening).
+  const _netCache = new WeakMap();
+  function _buildNetwork(features) {
+    const cached = _netCache.get(features);
+    if (cached) return cached;
+    const ids = new Set(features.map(f => f.properties?.linkId));
+    const seen = new Set();
+    const out = [];
+    let latSum = 0, latN = 0;
+    for (const f of features) {
+      const p = f.properties || {};
+      const absId = Math.abs(p.linkId ?? 0);
+      if (absId && seen.has(absId)) continue;
+      if (absId) seen.add(absId);
+      const hasOpposite = p.linkId != null && ids.has(-p.linkId);
+      out.push({
+        type: 'Feature',
+        geometry: f.geometry,
+        properties: { linkId: p.linkId, netWidthM: _netWidthM(p, hasOpposite), netSurface: _surfaceClass(p) },
+      });
+      const c = f.geometry?.coordinates?.[0];
+      if (Array.isArray(c) && typeof c[1] === 'number') { latSum += c[1]; latN++; }
+    }
+    const result = { fc: { type: 'FeatureCollection', features: out }, lat: latN ? latSum / latN : 52 };
+    _netCache.set(features, result);
+    return result;
+  }
+
+  // line-width (px) voor een breedte in meters, op elke zoom correct
+  // (512px-tiles: m/px = 78271,5·cos(lat) / 2^z).
+  function _metersToPx(lat, extraM) {
+    const k = z => Math.pow(2, z) / (78271.517 * Math.cos(lat * Math.PI / 180));
+    const w = ['+', ['get', 'netWidthM'], extraM];
+    return ['interpolate', ['exponential', 2], ['zoom'], 10, ['*', w, k(10)], 22, ['*', w, k(22)]];
+  }
+
+  // Vereist dat ensure() al gedraaid heeft (de lagen komen boven mtl-roads);
+  // anders gebeurt er niets en moet de aanroeper het na ensure() herhalen.
+  function setNetworkRoads(m, features, theme = 'day') {
+    if (!m || !Array.isArray(features) || !m.getLayer('mtl-roads')) return;
+    const { fc, lat } = _buildNetwork(features);
+    const p = _MTL_PALETTES[theme] || _MTL_PALETTES.day;
+    const surf = _MTL_SURFACE[theme] || _MTL_SURFACE.day;
+    const surfaceColor = ['match', ['get', 'netSurface'],
+      ...Object.entries(surf).flat(), p.road];
+
+    const src = m.getSource('mtl-network');
+    if (src) src.setData(fc);
+    else m.addSource('mtl-network', { type: 'geojson', data: fc });
+
+    // Direct boven mtl-roads (onder de OFM-markeringen en alle eigen lagen).
+    const layers = m.getStyle().layers;
+    const roadsIdx = layers.findIndex(l => l.id === 'mtl-roads');
+    const beforeId = roadsIdx >= 0 ? layers[roadsIdx + 1]?.id : undefined;
+    const visibility = m.getLayoutProperty('mtl-roads', 'visibility') || 'visible';
+    const layout = { 'line-cap': 'round', 'line-join': 'round', visibility };
+
+    const defs = [
+      { id: 'mtl-net-edge', paint: { 'line-color': p.line,       'line-width': _metersToPx(lat, _NET_EDGE_M) } },
+      { id: 'mtl-net-road', paint: { 'line-color': surfaceColor, 'line-width': _metersToPx(lat, 0) } },
+    ];
+    for (const { id, paint } of defs) {
+      if (m.getLayer(id)) {
+        for (const [k, v] of Object.entries(paint)) m.setPaintProperty(id, k, v);
+      } else {
+        m.addLayer({ id, type: 'line', source: 'mtl-network', layout, paint }, beforeId);
+      }
+    }
+  }
+
+  window.MontrealBasemap = { palettes: _MTL_PALETTES, ensure, setVisible, hiddenBaseLayerIds, setNetworkRoads };
 })();

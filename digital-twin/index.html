@@ -3381,6 +3381,7 @@
   const LINK_ID_PARAM = _params.get('linkId');
   const NODE_ID_PARAM = _params.get('nodeId');
   let _networkFeatures = []; // gevuld zodra netwerk geladen is; gebruikt door maquette highlight
+  let _kaart2Src = null, _kaart2Feats = null; // cache van _kaart2NetworkFeatures (MIXED-filter)
 
   // Vlag-parameters soepel lezen: ?x=true, ?x=1, ?x=yes en ?x tellen allemaal.
   // Een typfout als ?maquette=1 schakelde anders stilzwijgend de hele
@@ -5795,6 +5796,12 @@
        f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
      );
      _networkFeatures = features; // beschikbaar stellen voor maquette highlight
+     // Montréal-ondergrond: netwerkwegen op werkelijke breedte. Doet niets als
+     // de mtl-lagen er nog niet zijn; _applyBasemapStyle doet het dan bij load.
+     for (const m of [map, map2]) {
+       try { if (m) window.MontrealBasemap?.setNetworkRoads(m, _kaart2NetworkFeatures()); }
+       catch (e) { console.warn('Montréal-netwerkwegen:', e); }
+     }
 
     const flowValues = features.map(f => f.properties.flow);
     const minFlow    = Math.min(...flowValues);
@@ -6868,6 +6875,17 @@
       if (spinEl) spinEl.classList.toggle('visible', fetching);
     }
 
+    // Netwerklinks die de Montréal-ondergrond op werkelijke breedte tekent
+    // (MontrealBasemap.setNetworkRoads). Bij MIXED alleen de autowegen.
+    function _kaart2NetworkFeatures() {
+      if (MODE !== 'MIXED') return _networkFeatures;
+      if (_kaart2Src !== _networkFeatures) {
+        _kaart2Src   = _networkFeatures;
+        _kaart2Feats = _networkFeatures.filter(f => (f.properties.mode ?? 'CAR').toUpperCase() === 'CAR');
+      }
+      return _kaart2Feats;
+    }
+
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
     // Liberty lijnlagen (roads) en symboollagen (labels) blijven zichtbaar als overlay.
     function _applyBasemapStyle(style) {
@@ -6926,7 +6944,10 @@
           }
         }
         try {
-          if (isMtl) window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+          if (isMtl) {
+            window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+            window.MontrealBasemap.setNetworkRoads(m, _kaart2NetworkFeatures());
+          }
           window.MontrealBasemap.setVisible(m, isMtl);
         } catch (e) { console.warn('Montréal-ondergrond:', e); }
         m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
