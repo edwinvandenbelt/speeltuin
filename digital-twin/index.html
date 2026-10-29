@@ -5057,93 +5057,80 @@
   //    Vrachtauto     5 %  — cabine + laadbak, 6 wielen
 
   const VEHICLE_TYPES = (() => {
+    const GROUND_CLEARANCE = 0.30;   // bodemplaat boven de grond (m); wielen blijven op Z 0
 
-    // 1 ── Personenauto (sedan / hatchback)
-    const personenauto = {
-      body: mergeMeshes([
-        makeBoxGeom(4.5,  2.0,  0.85,  0,     0,  0.425),  // carrosserie onderstuk
-        makeBoxGeom(2.25, 1.75, 0.55, -0.235, 0,  1.125),  // cabine (voor=0.89, achter=-1.36)
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.15, 2.05, 0.28,  2.3,  0,  0.29),   // voorbumper
-        makeBoxGeom(0.15, 2.05, 0.28, -2.3,  0,  0.29),   // achterbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(1.55, 0.44,  0.22,  1.0,  0,     1.12),  // voorruit (achterover ~27°)
-        makeTiltedPane(1.55, 0.38, -0.14, -1.43, 0,     1.10),  // achterruit (iets voorover)
-        makeBoxGeom(1.90, 0.04, 0.44, -0.2,   0.878, 1.12),     // rechter zijruit
-        makeBoxGeom(1.90, 0.04, 0.44, -0.2,  -0.878, 1.12),     // linker zijruit
-      ]),
-      wheels: mergeMeshes([
-        makeCylinderGeom(0.33, 0.22,  1.55, -1.0, 0.33),
-        makeCylinderGeom(0.33, 0.22,  1.55,  1.0, 0.33),
-        makeCylinderGeom(0.33, 0.22, -1.55, -1.0, 0.33),
-        makeCylinderGeom(0.33, 0.22, -1.55,  1.0, 0.33),
-      ]),
-      weight: 55,
-      length: 4.5,   // fysieke lengte (m) voor bezettingsgraad-berekening
-    };
+    // Personenauto's naar het Montréal-automodel (vehicle-mesh `i()`):
+    // onderbak + smallere cabine met donker dak, staande ruiten, bumpers en
+    // lampen. Montréal gebruikt X = lateraal, Y = voor; hier omgezet naar
+    // X = voor, Y = lateraal. bodyH is gemeten vanaf 0.04 m (Montréal); de
+    // bodemplaat ligt op GROUND_CLEARANCE, de daklijn blijft gelijk. Wielen raken Z 0.
+    function makeMontrealCar({ L, W, bodyH, cabL, cabW, cabH, cabX, wheelR, wheelX, wheelW, length, weight }) {
+      const bodyBot = GROUND_CLEARANCE, bodyTop = 0.04 + bodyH;
+      const cabBot  = bodyTop - 0.04, cabZ = cabBot + cabH / 2;
+      const bumperZ = (bodyBot + bodyTop) / 2;
+      const lightZ  = bumperZ + 0.12, lightY = W / 2 - 0.18;
+      return {
+        body: mergeMeshes([
+          makeBoxGeom(L,    W,    bodyTop - bodyBot, 0, 0, (bodyBot + bodyTop) / 2),   // onderbak
+          makeBoxGeom(cabL, cabW, cabH,  cabX, 0, cabZ),                  // cabine
+        ]),
+        bumpers: mergeMeshes([   // dak + bumpers (trimColor)
+          makeBoxGeom(cabL + 0.10, cabW + 0.08, 0.07, cabX, 0, cabBot + cabH + 0.045),
+          makeBoxGeom(0.12, W - 0.16, 0.22,  L / 2 + 0.05, 0, bumperZ),
+          makeBoxGeom(0.12, W - 0.16, 0.22, -L / 2 - 0.05, 0, bumperZ),
+        ]),
+        windows: mergeMeshes([
+          makeBoxGeom(0.03, cabW + 0.05, cabH - 0.05, cabX + cabL / 2,        0, cabZ),         // voorruit
+          makeBoxGeom(0.03, cabW,        cabH - 0.10, cabX - cabL / 2 - 0.05, 0, cabZ - 0.02),  // achterruit
+          makeBoxGeom(cabL - 0.05, 0.03, cabH - 0.05, cabX,  cabW / 2 + 0.015, cabZ),           // zijruiten
+          makeBoxGeom(cabL - 0.05, 0.03, cabH - 0.05, cabX, -cabW / 2 - 0.015, cabZ),
+        ]),
+        headlights: mergeMeshes([
+          makeBoxGeom(0.05, 0.28, 0.16, L / 2 + 0.07,  lightY, lightZ),
+          makeBoxGeom(0.05, 0.28, 0.16, L / 2 + 0.07, -lightY, lightZ),
+        ]),
+        taillights: mergeMeshes([
+          makeBoxGeom(0.05, 0.24, 0.16, -L / 2 - 0.07,  lightY, lightZ),
+          makeBoxGeom(0.05, 0.24, 0.16, -L / 2 - 0.07, -lightY, lightZ),
+        ]),
+        wheels: mergeMeshes([
+          makeCylinderGeom(wheelR, wheelW,  wheelX, -(W / 2 - 0.02), wheelR, 16),
+          makeCylinderGeom(wheelR, wheelW,  wheelX,  (W / 2 - 0.02), wheelR, 16),
+          makeCylinderGeom(wheelR, wheelW, -wheelX, -(W / 2 - 0.02), wheelR, 16),
+          makeCylinderGeom(wheelR, wheelW, -wheelX,  (W / 2 - 0.02), wheelR, 16),
+        ]),
+        trimColor: [86, 95, 100, 255],   // Montréal 0x565F64
+        weight,
+        length,   // fysieke lengte (m) voor bezettingsgraad-berekening
+      };
+    }
+
+    // 1 ── Personenauto (sedan / hatchback) — maten van het Montréal-model
+    const personenauto = makeMontrealCar({
+      L: 4.3, W: 1.76, bodyH: 0.92, cabL: 2.15, cabW: 1.50, cabH: 0.60, cabX: -0.15,
+      wheelR: 0.33, wheelX: 1.40, wheelW: 0.20, length: 4.5, weight: 55,
+    });
 
     // 2 ── Kleine stadsauto (city car — kort, hoge daklijn)
-    const stadsauto = {
-      body: mergeMeshes([
-        makeBoxGeom(3.2,  1.7,  0.85,  0,     0,  0.425),  // onderstuk
-        makeBoxGeom(1.82, 1.55, 0.65, -0.23,  0,  1.175),  // hoge cabine (voor=0.68, achter=-1.14)
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.12, 1.75, 0.24,  1.65,  0,  0.27),   // voorbumper
-        makeBoxGeom(0.12, 1.75, 0.24, -1.65,  0,  0.27),   // achterbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(1.35, 0.50,  0.24,  0.8,  0,     1.17),  // voorruit (steil achterover, city-car stijl)
-        makeTiltedPane(1.35, 0.42, -0.12, -1.2,  0,     1.15),  // achterruit
-        makeBoxGeom(1.80, 0.04, 0.54,  0,     0.778, 1.17),     // rechter zijruit
-        makeBoxGeom(1.80, 0.04, 0.54,  0,    -0.778, 1.17),     // linker zijruit
-      ]),
-      wheels: mergeMeshes([
-        makeCylinderGeom(0.28, 0.20,  1.1, -0.85, 0.28),
-        makeCylinderGeom(0.28, 0.20,  1.1,  0.85, 0.28),
-        makeCylinderGeom(0.28, 0.20, -1.1, -0.85, 0.28),
-        makeCylinderGeom(0.28, 0.20, -1.1,  0.85, 0.28),
-      ]),
-      weight: 15,
-      length: 3.2,
-    };
+    const stadsauto = makeMontrealCar({
+      L: 3.3, W: 1.66, bodyH: 0.85, cabL: 1.90, cabW: 1.44, cabH: 0.68, cabX: -0.20,
+      wheelR: 0.29, wheelX: 1.05, wheelW: 0.18, length: 3.5, weight: 15,
+    });
 
-    // 3 ── SUV / MPV (hoger, breder, grotere wielen)
-    const suv = {
-      body: mergeMeshes([
-        makeBoxGeom(4.8,  2.1,  1.0,   0,     0,  0.5),    // onderstuk
-        makeBoxGeom(3.49, 1.95, 0.75, -0.655, 0,  1.375),  // cabine doorlopend tot achterkant (voor=1.09, achter=-2.4)
-      ]),
-      bumpers: mergeMeshes([
-        makeBoxGeom(0.15, 2.15, 0.32,  2.45,  0,  0.36),   // voorbumper
-        makeBoxGeom(0.15, 2.15, 0.32, -2.45,  0,  0.36),   // achterbumper
-      ]),
-      windows: mergeMeshes([
-        makeTiltedPane(1.75, 0.55,  0.22,  1.2,  0,     1.37),  // voorruit (achterover)
-        makeBoxGeom(0.04, 1.75, 0.55, -2.4,  0,     1.375),     // achterruit (verticaal, aan achterkant cabine)
-        makeBoxGeom(3.49, 0.04, 0.62,  -0.655, 0.978, 1.375),   // rechter zijruit
-        makeBoxGeom(3.49, 0.04, 0.62,  -0.655,-0.978, 1.375),   // linker zijruit
-      ]),
-      wheels: mergeMeshes([
-        makeCylinderGeom(0.40, 0.26,  1.65, -1.05, 0.40),
-        makeCylinderGeom(0.40, 0.26,  1.65,  1.05, 0.40),
-        makeCylinderGeom(0.40, 0.26, -1.65, -1.05, 0.40),
-        makeCylinderGeom(0.40, 0.26, -1.65,  1.05, 0.40),
-      ]),
-      weight: 15,
-      length: 4.8,
-    };
+    // 3 ── SUV / MPV (hoger, breder, grotere wielen, lange cabine)
+    const suv = makeMontrealCar({
+      L: 4.6, W: 1.90, bodyH: 1.05, cabL: 2.90, cabW: 1.70, cabH: 0.72, cabX: -0.45,
+      wheelR: 0.40, wheelX: 1.55, wheelW: 0.24, length: 4.8, weight: 15,
+    });
 
     // 4 ── Bestelwagen (rechthoekige laadruimte, hoge dakrand)
     const bestelwagen = {
       body: mergeMeshes([
-        makeBoxGeom(5.5,  2.2,  2.2,   0,     0,  1.1),   // doos-carrosserie
+        makeBoxGeom(5.5,  2.2,  1.9,   0,     0,  1.25),  // doos-carrosserie (0.3 → 2.2 m)
       ]),
       bumpers: mergeMeshes([
-        makeBoxGeom(0.12, 2.25, 0.38,  2.81,  0,  0.34),   // voorbumper
-        makeBoxGeom(0.12, 2.25, 0.38, -2.81,  0,  0.34),   // achterbumper
+        makeBoxGeom(0.12, 2.25, 0.38,  2.81,  0,  0.45),   // voorbumper
+        makeBoxGeom(0.12, 2.25, 0.38, -2.81,  0,  0.45),   // achterbumper
       ]),
       windows: mergeMeshes([
         makeTiltedPane(1.95, 0.60,  0.10,  2.76, 0,     1.80),  // voorruit (licht achterover)
@@ -5166,11 +5153,11 @@
     //   Laadbak: X van -5.0 → +2.5 (midden X = -1.25)
     const vrachtauto = {
       body: mergeMeshes([
-        makeBoxGeom(2.5,  2.5,  2.8,   3.75,  0,  1.4),   // cabine
-        makeBoxGeom(7.2,  2.45, 3.0,  -1.25,  0,  1.5),   // laadbak
+        makeBoxGeom(2.5,  2.5,  2.5,   3.75,  0,  1.55),  // cabine  (0.3 → 2.8 m)
+        makeBoxGeom(7.2,  2.45, 2.7,  -1.25,  0,  1.65),  // laadbak (0.3 → 3.0 m)
       ]),
       bumpers: mergeMeshes([
-        makeBoxGeom(0.15, 2.6,  0.42,  5.08,  0,  0.41),   // voorbumper
+        makeBoxGeom(0.15, 2.6,  0.42,  5.08,  0,  0.51),   // voorbumper
       ]),
       windows: mergeMeshes([
         makeTiltedPane(2.1, 0.80,  0.12,  5.0,  0,     2.3),   // voorruit (licht achterover)
@@ -12432,7 +12419,7 @@
           pLat = lat + (BIKE_OFFSET_M / 110540) * Math.cos(bearRad);
         }
         carData[i] = {
-          position:     [pLon, pLat, (c.vehicleMode ?? MODE) === 'BIKE' ? 0 : (c.state === 'parked' ? 0.3 : 0.75)],
+          position:     [pLon, pLat, 0],   // meshes staan zelf op Z 0 (wielen raken de grond)
           orientation:  [0, 90 - bearing, 0],
           color:        c.color,
           clothingColor: c.clothingColor ?? [100, 100, 100, 230],
@@ -15249,10 +15236,25 @@
             id:       `cars-bumpers-${ti}`,
             visible:  baseVisible && (!isBikeType || showBikeDetail),
             mesh:     vt.bumpers,
-            getColor: [28, 28, 28, 255],
+            getColor: vt.trimColor ?? [28, 28, 28, 255],
             material: { ambient: 0.35, diffuse: 0.5, shininess: 15, specularColor: [20, 20, 20] },
           }),
         );
+        // Koplampen / achterlichten (Montréal-personenauto's): volle ambient,
+        // geen diffuus — lichten op ongeacht zonnestand.
+        const lampMaterial = { ambient: 1.0, diffuse: 0.0, shininess: 0, specularColor: [0, 0, 0] };
+        if (vt.headlights) {
+          layers.push(new SimpleMeshLayer({
+            ...shared, id: `cars-headlights-${ti}`, mesh: vt.headlights,
+            getColor: [255, 241, 193, 255], material: lampMaterial,
+          }));
+        }
+        if (vt.taillights) {
+          layers.push(new SimpleMeshLayer({
+            ...shared, id: `cars-taillights-${ti}`, mesh: vt.taillights,
+            getColor: [200, 45, 35, 255], material: lampMaterial,
+          }));
+        }
         if (vt.rider) {
           layers.push(new SimpleMeshLayer({
             ...shared,
