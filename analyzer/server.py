@@ -894,6 +894,30 @@ def _slim_derived_fc(fc: dict, prop_names, include_geometry: bool) -> dict:
     return {"type": "FeatureCollection", "features": feats}
 
 
+def _current_bgt_features(feats: list) -> list:
+    """Alleen actuele BGT-objecten: features met ``eind_registratie`` of
+    ``termination_date`` vallen af, en per (``lokaal_id``, ``assetType``) blijft
+    de laatste ``tijdstip_registratie`` over (één wegdeel kan zowel voetpad als
+    drempel zijn). Features zonder die velden (OSM, NDW) blijven staan."""
+    latest: dict = {}
+    out = []
+    for feat in feats:
+        props = feat.get("properties") or {}
+        if props.get("eind_registratie") or props.get("termination_date"):
+            continue
+        lid = props.get("lokaal_id")
+        if lid:
+            key = (lid, props.get("assetType"))
+            prev = latest.get(key)
+            ts = str(props.get("tijdstip_registratie") or "")
+            if prev is None or ts >= prev[0]:
+                latest[key] = (ts, feat)
+            continue
+        out.append(feat)
+    out.extend(f for _, f in latest.values())
+    return out
+
+
 def _read_geodata(path: Path) -> dict:
     """Lees een GeoJSON of GeoParquet bestand en geef een GeoJSON FeatureCollection dict terug.
 
@@ -4964,7 +4988,10 @@ def ogc_collection_items(collection_id):
         except Exception as exc:
             abort(500, f"Fout bij lezen TRAFFIC-ASSETS: {exc}")
 
-        feats = data.get("features", [])
+        # Historische BGT-versies (eind_registratie gezet) eruit; bestanden van
+        # vóór gmt-shared 0.5.4 bevatten die nog. Zelfde regels als
+        # wegenscan_assets._active.
+        feats = _current_bgt_features(data.get("features", []))
 
         def _slim_traffic_props(props: dict) -> dict:
             if not isinstance(props, dict):

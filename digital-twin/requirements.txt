@@ -3,10 +3,10 @@
 # gmt_calculation_lib hangt hard af van onderstaande 5 private wheels; die staan
 # niet op PyPI, dus moeten expliciet hier staan, anders faalt de dependency-resolutie.
 # Digital Twin draait geen prepare/adjust-pipelines zelf, dus zonder [prepare]-extra.
-gmt_shared-0.5.3-py3-none-any.whl
+gmt_shared-0.5.4-py3-none-any.whl
 gmt_network_core-0.5.3-py3-none-any.whl
 gmt_routing-0.5.1-py3-none-any.whl
-gmt_network_enrichment-0.6.0-py3-none-any.whl
+gmt_network_enrichment-0.6.1-py3-none-any.whl
 gmt_zone_core-0.5.2-py3-none-any.whl
 gmt_utils-0.5.0-py3-none-any.whl
 gmt_calculation_lib-0.5.9-py3-none-any.whl
