@@ -15345,9 +15345,9 @@
                <div><span style="color:#6a757c">${T('tooltipZoneClass')}: </span>
                  <b>${classLabel}</b></div>
                <div><span style="color:#6a757c">${T('tooltipZoneProd')}: </span>
-                 <b>${(d.production).toLocaleString(loc)}\u202f${T('tooltipZoneProdUnit')}</b></div>
+                 <b>${(d.production).toLocaleString(loc, { maximumFractionDigits: 0 })}\u202f${T('tooltipZoneProdUnit')}</b></div>
                 <div><span style="color:#6a757c">${T('tooltipZoneAttr')}: </span>
-                  <b>${(d.attraction).toLocaleString(loc)}\u202f${T('tooltipZoneAttrUnit')}</b></div>
+                  <b>${(d.attraction).toLocaleString(loc, { maximumFractionDigits: 0 })}\u202f${T('tooltipZoneAttrUnit')}</b></div>
                 ${flowRow}
                 ${floorSection}
              </div>`,
