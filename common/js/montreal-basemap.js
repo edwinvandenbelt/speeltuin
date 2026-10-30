@@ -21,9 +21,11 @@
 
   const _MTL_PALETTES = {
     day:   { land:'#e6e9dc', water:'#8fc7ca', green:'#b8c99e', forest:'#acbf97', road:'#c9cec5',
-             sidewalk:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3' },
+             sidewalk:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
+             railBed:'#bdb5aa', railTie:'#8c8073', rail:'#5b6066' },
     night: { land:'#111c29', water:'#081321', green:'#162b29', forest:'#142522', road:'#26313b',
-             sidewalk:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c' },
+             sidewalk:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
+             railBed:'#2c3238', railTie:'#3a3530', rail:'#7a838c' },
   };
 
   // roadSrc: source voor de transportation-lagen (mtl-ofm-roads, met de
@@ -49,6 +51,8 @@
     const round = { 'line-cap': 'round', 'line-join': 'round' };
     const butt  = { 'line-cap': 'butt',  'line-join': 'round' };
     const tr = { source: roadSrc, 'source-layer': 'transportation' };
+    const rail = { source: src, 'source-layer': 'transportation' };
+    const railOf = cls => ['all', ['==', '$type', 'LineString'], ['==', 'class', cls], ['!=', 'brunnel', 'tunnel']];
     return [
       { id: 'mtl-ground', type: 'background', paint: { 'background-color': p.land } },
       { id: 'mtl-woodland', type: 'fill', source: src, 'source-layer': 'landcover',
@@ -90,6 +94,25 @@
         filter: ['all', oneWay, ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor']],
         paint: { 'line-color': p.laneMarking, 'line-opacity': 0.94, 'line-dasharray': [6, 5],
                  'line-width': ['interpolate', ['linear'], ['zoom'], 17, 1, 19, 1.9] } },
+      // Spoor (boven de wegen, dus ook over overwegen en bruggen): treinspoor
+      // met ballastbedding, dwarsliggers en twee rails; tram/metro ('transit')
+      // alleen rails. Breedtes ≈ werkelijke maten op z19 (bedding ~4,5 m,
+      // dwarsligger ~2,6 m, spoorwijdte 1,435 m), grondtal 2 schaalt mee.
+      { id: 'mtl-rail-bed', type: 'line', ...rail, filter: railOf('rail'), layout: round,
+        paint: { 'line-color': p.railBed,
+                 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 12, 0.8, 15, 3, 19, 48, 22, 384] } },
+      { id: 'mtl-rail-ties', type: 'line', ...rail, filter: railOf('rail'), minzoom: 16.5, layout: butt,
+        paint: { 'line-color': p.railTie, 'line-dasharray': [0.1, 0.13],
+                 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 16.5, 4.8, 19, 28, 22, 224] } },
+      { id: 'mtl-rail-line', type: 'line', ...rail, maxzoom: 16, layout: round,
+        filter: ['any', railOf('rail'), railOf('transit')],
+        paint: { 'line-color': p.rail, 'line-opacity': 0.8,
+                 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 16, 1.2] } },
+      { id: 'mtl-rails', type: 'line', ...rail, minzoom: 16, layout: butt,
+        filter: ['any', railOf('rail'), railOf('transit')],
+        paint: { 'line-color': p.rail,
+                 'line-width':     ['interpolate', ['exponential', 2], ['zoom'], 16, 0.4, 19, 1.4, 22, 11],
+                 'line-gap-width': ['interpolate', ['exponential', 2], ['zoom'], 16, 2, 19, 15, 22, 120] } },
     ];
   }
 

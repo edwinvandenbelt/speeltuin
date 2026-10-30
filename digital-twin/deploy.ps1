@@ -59,7 +59,7 @@ $commonDataFiles = @(
     "common/data/purpose_index.json"
 )
 # Door index.html ingeladen; zonder deze bestanden is de pagina (of Kaart 2) stuk.
-$commonJsFiles = @("common/js/left-menu-panel.js", "common/js/montreal-basemap.js")
+$commonJsFiles = @("common/js/left-menu-panel.js", "common/js/montreal-basemap.js", "common/js/animated-water.js")
 
 # ── Dynamisch: wheels en release-notes (versienummer kan wijzigen) ───────────
 $dynamicFiles = @()

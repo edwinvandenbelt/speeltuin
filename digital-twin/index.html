@@ -5605,6 +5605,7 @@
       _sunIsDay = sun.isDay;
       _applyGroundNightTint(_sunIsDay);
       _sunState = sun;
+      window.AnimatedWater?.setSun(sun);
       // 3D BAG-panden kleuren mee met de zon (zie _b3SunTint); vroeg in de
       // init bestaan de BAG-variabelen nog niet → try.
       try { if (_bag3dActive()) _bag3dRefreshOverlay(); } catch (_) {}
@@ -6971,7 +6972,12 @@
           }
         }
         try {
-          if (isMtl) window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+          if (isMtl) {
+            window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+            // Bewegend water boven 'mtl-water' (common/js/animated-water.js);
+            // tekent alleen zolang 'mtl-water' zichtbaar is.
+            try { window.AnimatedWater?.ensure(m); } catch (e) { console.warn('Bewegend water:', e); }
+          }
           window.MontrealBasemap.setVisible(m, isMtl);
         } catch (e) { console.warn('Montréal-ondergrond:', e); }
         m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
@@ -20483,6 +20489,7 @@
 
   <!-- Achtergronden-blok in linker menu-paneel (los module, na de hoofdscript) -->
   <script src="montreal-basemap.js"></script>
+  <script src="animated-water.js"></script>
   <script src="left-menu-panel.js"></script>
   <script src="maquette-calibration.js"></script>
   <script src="maquette-monitor.js"></script>
