@@ -90,6 +90,8 @@ checkboxes per stap hieronder, en per stap stoppen voor akkoord.
 - [x] 4. i18n NL/EN/FI
 - [x] 6. (Aanvulling) Buitenste panel 'Netwerk' om de vijf panels, met 'Geen' bovenaan;
       de geneste panels grijs/vlak; actieve laag (of 'Geen') in de kop van 'Netwerk'.
+- [x] 7. (Aanvulling) Etmaal (24 uur): I/C en Bezettingsgraad (ook geschaald) uitgeschakeld;
+      staat zo'n laag aan bij de wissel naar etmaal, dan springt de kaart naar 'Geen'.
 - [ ] 5. Testen
 
 ## Verificatie

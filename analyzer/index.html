@@ -284,6 +284,8 @@
       cursor: pointer;
       font-size: 13px; color: #232931;
     }
+    .lmp-radio-row:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
+    .lmp-radio-row input[type=radio]:disabled { cursor: not-allowed; }
     .lmp-radio-row input[type=radio] {
       width: 16px; height: 16px; margin: 0;
       accent-color: #de0058; cursor: pointer;
@@ -2798,7 +2800,7 @@
       metricIC:'I/C', metricICScaled:'I/C (geschaald)',
       metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricPriorityRoads:'Voorrangswegen', metricNone:'Geen', metricCompare:'Vergelijking tonen',
       metricSafety:'Veiligheid',
-      layersNetwork:'Netwerk', layersTraffic:'Verkeer', layersSafety:'Veiligheid', layersNoise:'Geluid', layersEmission:'Uitstoot', layersDesign:'Inrichting',
+      layersNetwork:'Netwerk', layerNotFor24h:'Niet beschikbaar bij etmaal (24 uur): geen uurcapaciteit', layersTraffic:'Verkeer', layersSafety:'Veiligheid', layersNoise:'Geluid', layersEmission:'Uitstoot', layersDesign:'Inrichting',
       metricSafetyTotal:'Totaal',
       scoreGood:'Goed', scoreFair:'Redelijk', scoreModerate:'Matig', scorePoor:'Slecht', scoreNA:'n.v.t.',
       catSignal:'Verkeerslicht', catRoundabout:'Rotonde', catSpeedBump:'Verkeersdrempel',
@@ -3089,7 +3091,7 @@
       metricIC:'V/C', metricICScaled:'V/C (scaled)',
       metricSpeed:'Speed', metricCapacity:'Capacity', metricPriorityRoads:'Priority roads', metricNone:'None', metricCompare:'Show comparison',
       metricSafety:'Safety',
-      layersNetwork:'Network', layersTraffic:'Traffic', layersSafety:'Safety', layersNoise:'Noise', layersEmission:'Emissions', layersDesign:'Road design',
+      layersNetwork:'Network', layerNotFor24h:'Not available for 24 hours: no hourly capacity', layersTraffic:'Traffic', layersSafety:'Safety', layersNoise:'Noise', layersEmission:'Emissions', layersDesign:'Road design',
       metricSafetyTotal:'Overall',
       scoreGood:'Good', scoreFair:'Fair', scoreModerate:'Moderate', scorePoor:'Poor', scoreNA:'n/a',
       catSignal:'Traffic light', catRoundabout:'Roundabout', catSpeedBump:'Speed bump',
@@ -3368,7 +3370,7 @@
       metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
       metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricPriorityRoads:'Etuoikeutetut tiet', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
       metricSafety:'Turvallisuus',
-      layersNetwork:'Verkko', layersTraffic:'Liikenne', layersSafety:'Turvallisuus', layersNoise:'Melu', layersEmission:'Päästöt', layersDesign:'Katusuunnittelu',
+      layersNetwork:'Verkko', layerNotFor24h:'Ei käytettävissä vuorokaudelle (24 h): ei tuntikapasiteettia', layersTraffic:'Liikenne', layersSafety:'Turvallisuus', layersNoise:'Melu', layersEmission:'Päästöt', layersDesign:'Katusuunnittelu',
       metricSafetyTotal:'Kokonais',
       scoreGood:'Hyvä', scoreFair:'Kohtalainen', scoreModerate:'Välttävä', scorePoor:'Huono', scoreNA:'ei koske',
       catSignal:'Liikennevalo', catRoundabout:'Kiertoliittymä', catSpeedBump:'Hidaste',
@@ -14671,6 +14673,25 @@
       _setChangesPanelReadOnly(!_changesPanelReadOnly);
     });
 
+     /** Lagen die een uurintensiteit tegen de uurcapaciteit zetten. */
+     const HOURLY_CAPACITY_METRICS = new Set(['occupancy', 'occupancy_scaled', 'coverage', 'coverage_scaled']);
+
+     /** Bij 'etmaal' (24 uur) zijn I/C en bezettingsgraad zinloos: radio's uitschakelen
+      *  en, als zo'n laag actief is, naar 'Geen' springen. */
+     function _syncHourlyCapacityLayers() {
+       const is24h = flowDaypart === 'etmaal';
+       document.querySelectorAll('input[name="lmpMetric"]').forEach(radio => {
+         if (!HOURLY_CAPACITY_METRICS.has(radio.value)) return;
+         radio.disabled = is24h;
+         radio.closest('label').title = is24h ? T('layerNotFor24h') : '';
+       });
+       if (is24h && HOURLY_CAPACITY_METRICS.has(colorMetric)) {
+         const select = document.getElementById('colorMetric');
+         select.value = 'none';
+         select.dispatchEvent(new Event('change'));
+       }
+     }
+
      /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …).
       *  `flowDp` stuurt verkeersintensiteiten aan en kan tijdens pauze afwijken van `dp`
       *  (incl. 'etmaal', dat `dp`/gebouwen zelf nooit aannemen — zie simPausedSelection). */
@@ -14678,6 +14699,7 @@
        daypart = dp;
        flowDaypart = flowDp;
        document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === dp));
+       _syncHourlyCapacityLayers();
        updateLegend();
        rebuildLinkFlowMap();
        calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
