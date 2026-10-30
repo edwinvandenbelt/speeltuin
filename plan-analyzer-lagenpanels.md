@@ -19,7 +19,8 @@ Inrichting. Er is altijd maximaal één laag tegelijk zichtbaar.
 - Alle radio's houden `name="lmpMetric"` → de browser zorgt al dat er maar één aan staat.
 - Ingeklapt panel met de actieve laag: kop krijgt een accentstreep (`#de0058`) en rechts de
   naam van de actieve laag in klein grijs, zodat je ook dichtgeklapt ziet wát er aanstaat.
-- **Uitzetten**: nogmaals klikken op de actieve radio → `none`. De losse 'Geen'-regel vervalt.
+- **Uitzetten**: nogmaals klikken op de actieve radio → `none`, of 'Geen' bovenaan in het
+  buitenste panel 'Netwerk' (zie stap 6).
 - Legenda blijft in de bestaande `#legendStrip` onderaan; categorale lagen krijgen daar
   kleurvakjes met labels (generaliseren van de bestaande `speed_intersections`-code).
 - Veiligheid **gegroepeerd**: Totaal, dan kopjes Wegvak / Voetganger / Fiets / Parkeren & bus / Overig.
@@ -87,6 +88,8 @@ checkboxes per stap hieronder, en per stap stoppen voor akkoord.
 - [x] 2. Veiligheid: KPI-lagen (render, legenda, tooltip, klik)
 - [x] 3. Inrichting: verharding, breedte, stoepen (+ export `surfaceClass`)
 - [x] 4. i18n NL/EN/FI
+- [x] 6. (Aanvulling) Buitenste panel 'Netwerk' om de vijf panels, met 'Geen' bovenaan;
+      de geneste panels grijs/vlak; actieve laag (of 'Geen') in de kop van 'Netwerk'.
 - [ ] 5. Testen
 
 ## Verificatie

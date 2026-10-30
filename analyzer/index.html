@@ -261,6 +261,17 @@
     .lmp-active-name + .lmp-block-arrow { margin-left: 0; }
     .lmp-layer-block:not(.collapsed) .lmp-active-name { display: none; }
     .lmp-layer-block:not(.collapsed) .lmp-active-name + .lmp-block-arrow { margin-left: auto; }
+    .lmp-network-block > .lmp-block-body { gap: 6px; }
+    .lmp-network-block:not(.collapsed) > .lmp-block-header .lmp-active-name { display: none; }
+    .lmp-network-block:not(.collapsed) > .lmp-block-header .lmp-block-arrow { margin-left: auto; }
+    .lmp-network-block .lmp-block {
+      background: #f4f6f8; box-shadow: none; border-radius: 10px;
+    }
+    .lmp-network-block .lmp-block .lmp-block-header {
+      background: transparent; padding: 10px 12px; font-size: 13px;
+    }
+    .lmp-network-block .lmp-block .lmp-block-header:hover { background: #eaedf0; }
+    .lmp-network-block .lmp-block .lmp-block-body { padding: 0 12px 12px 12px; }
     .lmp-subhead {
       margin: 8px 0 0 0; padding-top: 6px;
       border-top: 1px solid rgba(35,41,49,0.08);
@@ -2233,85 +2244,95 @@
         </div>
       </div>
 
-      <!-- ── Kaartlagen: vijf panels (accordeon, max. één open). Alle radio's
-           delen name="lmpMetric", dus er staat er hooguit één aan. Nogmaals
-           klikken op de actieve laag zet hem uit ('none'). ── -->
-      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-traffic">
+      <!-- ── Netwerk: kaartlagen op het netwerk. Daarbinnen vijf panels (accordeon,
+           max. één open). Alle radio's delen name="lmpMetric", dus er staat er
+           hooguit één aan. Nogmaals klikken op de actieve laag zet hem uit ('none'). ── -->
+      <div class="lmp-block lmp-network-block collapsed" data-block="network">
         <div class="lmp-block-header">
-          <span data-i18n="layersTraffic">Verkeer</span>
+          <span data-i18n="layersNetwork">Netwerk</span>
           <span class="lmp-active-name"></span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow" checked> <span data-i18n="metricFlow">Intensiteit</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow_scaled"> <span data-i18n="metricFlowScaled">Intensiteit (geschaald)</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="occupancy"> <span data-i18n="metricIC">I/C</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="occupancy_scaled"> <span data-i18n="metricICScaled">I/C (geschaald)</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="coverage"> <span data-i18n="metricOccupancy">Bezettingsgraad</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="coverage_scaled"> <span data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed"> <span data-i18n="metricSpeed">Snelheid</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="capacity"> <span data-i18n="metricCapacity">Capaciteit</span></label>
-        </div>
-      </div>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="none"> <span data-i18n="metricNone">Geen</span></label>
+          <div class="lmp-block lmp-layer-block collapsed" data-block="layers-traffic">
+            <div class="lmp-block-header">
+              <span data-i18n="layersTraffic">Verkeer</span>
+              <span class="lmp-active-name"></span>
+              <span class="lmp-block-arrow">▾</span>
+            </div>
+            <div class="lmp-block-body">
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow" checked> <span data-i18n="metricFlow">Intensiteit</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow_scaled"> <span data-i18n="metricFlowScaled">Intensiteit (geschaald)</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="occupancy"> <span data-i18n="metricIC">I/C</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="occupancy_scaled"> <span data-i18n="metricICScaled">I/C (geschaald)</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="coverage"> <span data-i18n="metricOccupancy">Bezettingsgraad</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="coverage_scaled"> <span data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed"> <span data-i18n="metricSpeed">Snelheid</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="capacity"> <span data-i18n="metricCapacity">Capaciteit</span></label>
+            </div>
+          </div>
 
-      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-safety">
-        <div class="lmp-block-header">
-          <span data-i18n="layersSafety">Veiligheid</span>
-          <span class="lmp-active-name"></span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body" id="lmpSafetyBody">
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="safety" id="lmpSafetyOption"> <span data-i18n="metricSafetyTotal">Totaal</span></label>
-          <!-- KPI-lagen (safety:&lt;kpi&gt;) worden gegenereerd uit SAFETY_KPI_GROUPS -->
-        </div>
-      </div>
+          <div class="lmp-block lmp-layer-block collapsed" data-block="layers-safety">
+            <div class="lmp-block-header">
+              <span data-i18n="layersSafety">Veiligheid</span>
+              <span class="lmp-active-name"></span>
+              <span class="lmp-block-arrow">▾</span>
+            </div>
+            <div class="lmp-block-body" id="lmpSafetyBody">
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="safety" id="lmpSafetyOption"> <span data-i18n="metricSafetyTotal">Totaal</span></label>
+              <!-- KPI-lagen (safety:&lt;kpi&gt;) worden gegenereerd uit SAFETY_KPI_GROUPS -->
+            </div>
+          </div>
 
-      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-noise">
-        <div class="lmp-block-header">
-          <span data-i18n="layersNoise">Geluid</span>
-          <span class="lmp-active-name"></span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lden"> <span data-i18n="metricNoiseLden">Geluid (Lden)</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lnight"> <span data-i18n="metricNoiseLnight">Geluid (Lnight)</span></label>
-        </div>
-      </div>
+          <div class="lmp-block lmp-layer-block collapsed" data-block="layers-noise">
+            <div class="lmp-block-header">
+              <span data-i18n="layersNoise">Geluid</span>
+              <span class="lmp-active-name"></span>
+              <span class="lmp-block-arrow">▾</span>
+            </div>
+            <div class="lmp-block-body">
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lden"> <span data-i18n="metricNoiseLden">Geluid (Lden)</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lnight"> <span data-i18n="metricNoiseLnight">Geluid (Lnight)</span></label>
+            </div>
+          </div>
 
-      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-emission">
-        <div class="lmp-block-header">
-          <span data-i18n="layersEmission">Uitstoot</span>
-          <span class="lmp-active-name"></span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_co2"> <span data-i18n="metricCo2">CO₂-uitstoot</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_nox"> <span data-i18n="metricNox">NOₓ-uitstoot</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_pm10"> <span data-i18n="metricPm10">Fijnstof (PM10)</span></label>
-        </div>
-      </div>
+          <div class="lmp-block lmp-layer-block collapsed" data-block="layers-emission">
+            <div class="lmp-block-header">
+              <span data-i18n="layersEmission">Uitstoot</span>
+              <span class="lmp-active-name"></span>
+              <span class="lmp-block-arrow">▾</span>
+            </div>
+            <div class="lmp-block-body">
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_co2"> <span data-i18n="metricCo2">CO₂-uitstoot</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_nox"> <span data-i18n="metricNox">NOₓ-uitstoot</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_pm10"> <span data-i18n="metricPm10">Fijnstof (PM10)</span></label>
+            </div>
+          </div>
 
-      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-design">
-        <div class="lmp-block-header">
-          <span data-i18n="layersDesign">Inrichting</span>
-          <span class="lmp-active-name"></span>
-          <span class="lmp-block-arrow">▾</span>
-        </div>
-        <div class="lmp-block-body">
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="priority_roads"> <span data-i18n="metricPriorityRoads">Voorrangswegen</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_crossings"> <span data-i18n="metricSpeedCrossings">Zebrapaden</span></label>
-          <!--label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_cycle_crossings" style="display:none"> <span data-i18n="metricSpeedCycleCrossings">Fietsoversteek</span></label-->
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_intersections"> <span data-i18n="metricSpeedIntersections">Kruispunten</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_yield"> <span data-i18n="metricSpeedYield">Haaientanden/stopstrepen</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_refuge"> <span data-i18n="metricSpeedRefuge">Vluchtheuvels (midden op de weg)</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_from_right"> <span data-i18n="metricSpeedFromRight">Verkeer van rechts</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_left_turn"> <span data-i18n="metricSpeedLeftTurn">Linksaf-hinder</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_oncoming"> <span data-i18n="metricSpeedOncoming">Tegenliggerhinder</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_elevation"> <span data-i18n="metricSpeedElevation">Hellingen</span></label>
-          <div class="lmp-subhead" data-i18n="designGroupRoad">Wegprofiel</div>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="surface_class"> <span data-i18n="metricSurface">Verharding</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="width_class"> <span data-i18n="metricWidthClass">Breedte</span></label>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="sidewalks"> <span data-i18n="metricSidewalks">Stoepen</span></label>
+          <div class="lmp-block lmp-layer-block collapsed" data-block="layers-design">
+            <div class="lmp-block-header">
+              <span data-i18n="layersDesign">Inrichting</span>
+              <span class="lmp-active-name"></span>
+              <span class="lmp-block-arrow">▾</span>
+            </div>
+            <div class="lmp-block-body">
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="priority_roads"> <span data-i18n="metricPriorityRoads">Voorrangswegen</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_crossings"> <span data-i18n="metricSpeedCrossings">Zebrapaden</span></label>
+              <!--label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_cycle_crossings" style="display:none"> <span data-i18n="metricSpeedCycleCrossings">Fietsoversteek</span></label-->
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_intersections"> <span data-i18n="metricSpeedIntersections">Kruispunten</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_yield"> <span data-i18n="metricSpeedYield">Haaientanden/stopstrepen</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_refuge"> <span data-i18n="metricSpeedRefuge">Vluchtheuvels (midden op de weg)</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_from_right"> <span data-i18n="metricSpeedFromRight">Verkeer van rechts</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_left_turn"> <span data-i18n="metricSpeedLeftTurn">Linksaf-hinder</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_oncoming"> <span data-i18n="metricSpeedOncoming">Tegenliggerhinder</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_elevation"> <span data-i18n="metricSpeedElevation">Hellingen</span></label>
+              <div class="lmp-subhead" data-i18n="designGroupRoad">Wegprofiel</div>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="surface_class"> <span data-i18n="metricSurface">Verharding</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="width_class"> <span data-i18n="metricWidthClass">Breedte</span></label>
+              <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="sidewalks"> <span data-i18n="metricSidewalks">Stoepen</span></label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2777,7 +2798,7 @@
       metricIC:'I/C', metricICScaled:'I/C (geschaald)',
       metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricPriorityRoads:'Voorrangswegen', metricNone:'Geen', metricCompare:'Vergelijking tonen',
       metricSafety:'Veiligheid',
-      layersTraffic:'Verkeer', layersSafety:'Veiligheid', layersNoise:'Geluid', layersEmission:'Uitstoot', layersDesign:'Inrichting',
+      layersNetwork:'Netwerk', layersTraffic:'Verkeer', layersSafety:'Veiligheid', layersNoise:'Geluid', layersEmission:'Uitstoot', layersDesign:'Inrichting',
       metricSafetyTotal:'Totaal',
       scoreGood:'Goed', scoreFair:'Redelijk', scoreModerate:'Matig', scorePoor:'Slecht', scoreNA:'n.v.t.',
       catSignal:'Verkeerslicht', catRoundabout:'Rotonde', catSpeedBump:'Verkeersdrempel',
@@ -3068,7 +3089,7 @@
       metricIC:'V/C', metricICScaled:'V/C (scaled)',
       metricSpeed:'Speed', metricCapacity:'Capacity', metricPriorityRoads:'Priority roads', metricNone:'None', metricCompare:'Show comparison',
       metricSafety:'Safety',
-      layersTraffic:'Traffic', layersSafety:'Safety', layersNoise:'Noise', layersEmission:'Emissions', layersDesign:'Road design',
+      layersNetwork:'Network', layersTraffic:'Traffic', layersSafety:'Safety', layersNoise:'Noise', layersEmission:'Emissions', layersDesign:'Road design',
       metricSafetyTotal:'Overall',
       scoreGood:'Good', scoreFair:'Fair', scoreModerate:'Moderate', scorePoor:'Poor', scoreNA:'n/a',
       catSignal:'Traffic light', catRoundabout:'Roundabout', catSpeedBump:'Speed bump',
@@ -3347,7 +3368,7 @@
       metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
       metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricPriorityRoads:'Etuoikeutetut tiet', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
       metricSafety:'Turvallisuus',
-      layersTraffic:'Liikenne', layersSafety:'Turvallisuus', layersNoise:'Melu', layersEmission:'Päästöt', layersDesign:'Katusuunnittelu',
+      layersNetwork:'Verkko', layersTraffic:'Liikenne', layersSafety:'Turvallisuus', layersNoise:'Melu', layersEmission:'Päästöt', layersDesign:'Katusuunnittelu',
       metricSafetyTotal:'Kokonais',
       scoreGood:'Hyvä', scoreFair:'Kohtalainen', scoreModerate:'Välttävä', scorePoor:'Huono', scoreNA:'ei koske',
       catSignal:'Liikennevalo', catRoundabout:'Kiertoliittymä', catSpeedBump:'Hidaste',
@@ -4368,6 +4389,11 @@
       const nameEl = block.querySelector('.lmp-active-name');
       if (nameEl) nameEl.textContent = checked ? checked.closest('label').textContent.trim() : '';
     });
+    const netName = panel.querySelector('.lmp-network-block > .lmp-block-header .lmp-active-name');
+    if (netName) {
+      const checked = panel.querySelector('.lmp-layer-block input[name="lmpMetric"]:checked');
+      netName.textContent = checked ? checked.closest('label').textContent.trim() : T('metricNone');
+    }
   }
 
   // ── Linker menu-paneel in-/uitschakelen ─────────────────────────────────
