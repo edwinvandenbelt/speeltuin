@@ -5589,6 +5589,7 @@
     let flowDaypart     = 'mrh';
     let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
     let _sunIsDay       = true;  // idem — laatst berekende dag/nacht-status (updateSunLight)
+    let _sunState       = null;  // idem — laatst berekende zonnestand (o.a. 3D BAG-kleuren)
     function updateSunLight() {
       if (!map || !map.isStyleLoaded()) return;
 
@@ -5603,6 +5604,10 @@
       const sun = _getSunState(month, hour);
       _sunIsDay = sun.isDay;
       _applyGroundNightTint(_sunIsDay);
+      _sunState = sun;
+      // 3D BAG-panden kleuren mee met de zon (zie _b3SunTint); vroeg in de
+      // init bestaan de BAG-variabelen nog niet → try.
+      try { if (_bag3dActive()) _bag3dRefreshOverlay(); } catch (_) {}
 
       const lightProps = {
         anchor:    'map',
@@ -5637,6 +5642,9 @@
       'OSM-verrijking (gebouwen, groen, verkeersobjecten) ' +
       '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> ' +
       'contributors (ODbL)';
+    // 3D BAG-panden (stand '3D' van 'Pand weergave', zie makeBag3dLayers).
+    const BAG3D_ATTRIBUTION =
+      '3D BAG &copy; <a href="https://3dbag.nl" target="_blank" rel="noopener">TU Delft 3D geoinformation</a> (CC BY 4.0)';
     const map = new maplibregl.Map({
       container: 'map',
       style:     'https://tiles.openfreemap.org/styles/liberty',
@@ -5649,7 +5657,7 @@
       // OSM/ODbL-attributie voor de OSM-afgeleide lagen (gebouwen, groen,
       // verkeersobjecten). Deze worden deels via deck.gl gerenderd en zouden
       // anders niet in de standaard-attributie verschijnen.
-      attributionControl: { customAttribution: OSM_ATTRIBUTION },
+      attributionControl: { customAttribution: [OSM_ATTRIBUTION, BAG3D_ATTRIBUTION] },
     });
     window.map = map;
 
@@ -6830,7 +6838,12 @@
       try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
       try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
 
-      if (display === 'uit') {
+      // 3D BAG-panden (echte dakvormen) in de stand '3D'; zolang die laden of
+      // niet beschikbaar zijn (buiten NL, netwerkfout) blijft de extrusie staan.
+      if (display === 'normaal') _loadBag3dIfNeeded();
+      _bag3dRefreshOverlay();
+
+      if (display === 'uit' || _bag3dActive()) {
         if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
       } else if (map.getLayer('buildings-3d')) {
         map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
@@ -6869,8 +6882,24 @@
       const display   = document.getElementById('buildingDisplay')?.value ?? 'uit';
       const available = !!(_buildingsGeoJson && _NORM);
       const fetching  = !available && display !== 'uit';
-      textEl.textContent = available ? 'beschikbaar' : (fetching ? 'ophalen' : 'nog niet opgehaald');
-      if (spinEl) spinEl.classList.toggle('visible', fetching);
+      let text = available ? 'beschikbaar' : (fetching ? 'ophalen' : 'nog niet opgehaald');
+      let busy = fetching;
+      // Stand '3D': toon ook de status van de 3D BAG-panden.
+      if (available && display === 'normaal') {
+        if (_bag3dState === 'indexing') {
+          text = '3D BAG: tegels zoeken…';
+          busy = true;
+        } else if (_bag3dState === 'ready') {
+          const nf = _bag3dPanden.toLocaleString('nl-NL');
+          if (_bag3dBusy) { text = `3D BAG: ${nf} panden, laden…`; busy = true; }
+          else if (!_bag3dTiles.length && map.getZoom() < _BAG3D_MIN_ZOOM) text = '3D BAG: zoom in om panden te laden';
+          else text = `3D BAG: ${nf} panden`;
+        } else if (_bag3dState === 'unavailable') {
+          text = 'beschikbaar (geen 3D BAG)';
+        }
+      }
+      textEl.textContent = text;
+      if (spinEl) spinEl.classList.toggle('visible', busy);
     }
 
     // Netwerklinks waarmee de Montréal-ondergrond de wegen breedte en
@@ -7271,6 +7300,450 @@
         });
       }
     }
+
+    // ─── 3D BAG-panden (LoD2.2, echte dakvormen) ──────────────────────────────
+    //
+    // In de stand '3D' van 'Pand weergave' vervangen de 3D BAG-panden (TU Delft)
+    // de platte fill-extrusion van 'buildings-3d', mits het gebied in NL ligt en
+    // het laden lukt; anders blijft de extrusie (terugvalpad, bv. Tampere).
+    //
+    // deck.gl's Tile3DLayer is hier onbruikbaar (8.9 kent geen 3D Tiles 1.1;
+    // loaders.gl 4 negeert de byteStride van de interleaved meshopt-bufferView),
+    // dus een eigen minimale loader: tileset-index binnen de bbox van de panden →
+    // per kaartbeeld de tegels in beeld ophalen (dichtstbijzijnde eerst, zoals
+    // F4) → .glb parsen → meshopt decoderen → ECEF → lokale ENU-meters per tegel
+    // → SimpleMeshLayer, met een opkomst-animatie per tegel.
+    // Zie plan-f4-gebouwen.md.
+    //
+    // Tegels komen via de server-proxy /3dbag/ (cache op schijf/S3, versie in
+    // server.py: _BAG3D_VERSION); lukt die niet, dan rechtstreeks van de 3D BAG.
+    const _BAG3D_TILESET_PROXY  = '/3dbag/tileset.json';
+    // Terugval — versie gelijk houden met _BAG3D_VERSION in server.py.
+    const _BAG3D_TILESET_DIRECT = 'https://data.3dbag.nl/v20250903/cesium3dtiles/lod22/tileset.json';
+    const _BAG3D_MESHOPT = 'https://cdn.jsdelivr.net/npm/meshoptimizer@1.3.0/meshopt_decoder.mjs';
+    const _BAG3D_NL_BBOX = [3.2, 50.7, 7.3, 53.6];
+    const _BAG3D_MIN_ZOOM    = 13;   // daaronder geen nieuwe tegels ophalen
+    const _BAG3D_CONCURRENCY = 6;    // tegels zijn ~1–3 MB elk
+    // Kleur per vlak-klasse: gevel, schuin dak (pannen), plat dak (bitumen/grind).
+    // deck.gl 8.9 overschrijft vertex-'colors' van een mesh, dus één laag per klasse.
+    const _BAG3D_COLORS = [[236, 226, 210], [172, 94, 70], [156, 153, 148]];
+    let _bag3dState   = 'idle';   // idle | indexing | ready | unavailable
+    let _bag3dIndex   = [];       // [{ url, bounds, center, status: todo|loading|done|failed }]
+    let _bag3dTiles   = [];       // { id, origin:[lon,lat], meshes:[3], features:[…], born }
+    let _bag3dPanden  = 0;        // aantal getoonde panden (na STUDY-filter)
+    let _bag3dBusy    = 0;        // aantal tegels dat nu geladen wordt
+    let _bag3dFailed  = 0;        // aantal mislukte tegels
+    let _bag3dDecoder = null;     // MeshoptDecoder (lazy import)
+    let _bag3dKeep    = null;     // (lon, lat) → ligt in het studiegebied?
+
+    /** True als de 3D BAG-laag de 3D-weergave verzorgt (anders: extrusie).
+     *  Delen van het beeld waarvan de tegel nog onderweg is blijven even leeg
+     *  en 'groeien' zodra die binnen is. */
+    function _bag3dActive() {
+      const display = document.getElementById('buildingDisplay')?.value ?? 'uit';
+      return display === 'normaal' && _bag3dState === 'ready' && !_MAQUETTE;
+    }
+
+    /** Overlay verversen; vroeg in de init (panden binnen vóórdat de deck.gl-
+     *  overlay bestaat) is dat nog niet mogelijk — dan pakt de eerste
+     *  updateOverlay() de BAG-lagen vanzelf mee. */
+    function _bag3dRefreshOverlay() {
+      try { updateOverlay(true); } catch (_) {}
+    }
+
+    // ── Opkomst-animatie (panden en bomen 'groeien' bij binnenkomst, zoals F4) ──
+    // Elk object krijgt een geboortetijd; de schaal loopt in _GROW_MS van ~0 naar
+    // 1 (easeOutBack: schiet iets door en zakt terug). Zolang er iets groeit,
+    // ververst een rAF-lus de overlay; daarna staat alles stil (geen kosten).
+    const _GROW_MS = 900;
+    const _GROW_ON = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    let _growUntil = 0, _growTick = 0, _growRaf = 0;
+    function _growFactor(born, now) {
+      if (!_GROW_ON || born == null) return 1;
+      const t = (now - born) / _GROW_MS;
+      if (t >= 1) return 1;
+      if (t <= 0) return 0.001;
+      const c = 1.4, u = t - 1;
+      return Math.max(0.001, 1 + (c + 1) * u * u * u + c * u * u);
+    }
+    function _growKick(born) {
+      if (!_GROW_ON) return;
+      _growUntil = Math.max(_growUntil, born + _GROW_MS + 50);
+      if (!_growRaf) _growRaf = requestAnimationFrame(_growStep);
+    }
+    function _growStep() {
+      _growTick++;
+      _growRaf = performance.now() < _growUntil ? requestAnimationFrame(_growStep) : 0;
+      _bag3dRefreshOverlay();
+    }
+
+    /** Kleurfactor uit de zonnestand (updateSunLight): overdag wit → warm bij
+     *  lage zon, 's nachts gedempt blauwig. */
+    function _b3SunTint() {
+      const sun = _sunState;
+      if (!sun) return [1, 1, 1];
+      // Nacht: gedempt blauwig, maar niet te donker — de lichte ondergrond
+      // (Montréal-kaart) wordt 's nachts nauwelijks donkerder.
+      if (!sun.isDay) return [0.58, 0.61, 0.72];
+      const hex = sun.lightColor || '#ffffff';
+      const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const b = 0.74 + 0.26 * Math.min(1, Math.max(0, (sun.intensity - 0.35) / 0.55));
+      return rgb.map(c => b * (0.86 + 0.14 * c));
+    }
+
+    function makeBag3dLayers() {
+      if (!_bag3dActive() || !_bag3dTiles.length) return [];
+      const now    = performance.now();
+      const tint   = _b3SunTint();
+      const colors = _BAG3D_COLORS.map(c => c.map((v, i) => Math.round(v * tint[i])));
+      return _bag3dTiles.flatMap(t => {
+        const g = _growFactor(t.born, now);
+        return t.meshes.map((mesh, k) => mesh && new SimpleMeshLayer({
+          id:          `bag3d-${t.id}-${k}`,
+          data:        t.data,
+          mesh,
+          getPosition: d => [d.origin[0], d.origin[1], 0],
+          // Functie + updateTrigger: een constante getScale wordt in deck.gl 8.9
+          // niet opnieuw in instanceModelMatrix verwerkt (bleef op de beginschaal).
+          getScale:    () => [1, 1, g],
+          updateTriggers: { getScale: g },
+          getColor:    colors[k],
+          material:    { ambient: 0.5, diffuse: 0.6, shininess: 8, specularColor: [25, 25, 25] },
+          pickable:    false,
+        })).filter(Boolean);
+      });
+    }
+
+    // ── Geodesie (WGS84) ──
+    const _B3_A = 6378137, _B3_E2 = 6.69437999014e-3, _B3_D2R = Math.PI / 180;
+    function _b3EcefToLla(X, Y, Z) {
+      const b = _B3_A * Math.sqrt(1 - _B3_E2), ep2 = (_B3_A * _B3_A - b * b) / (b * b), p = Math.hypot(X, Y);
+      const th  = Math.atan2(Z * _B3_A, p * b);
+      const lat = Math.atan2(Z + ep2 * b * Math.sin(th) ** 3, p - _B3_E2 * _B3_A * Math.cos(th) ** 3);
+      const N   = _B3_A / Math.sqrt(1 - _B3_E2 * Math.sin(lat) ** 2);
+      return [Math.atan2(Y, X) / _B3_D2R, lat / _B3_D2R, p / Math.cos(lat) - N];
+    }
+    function _b3LlaToEcef(lon, lat, h) {
+      const l = lon * _B3_D2R, f = lat * _B3_D2R, N = _B3_A / Math.sqrt(1 - _B3_E2 * Math.sin(f) ** 2);
+      return [(N + h) * Math.cos(f) * Math.cos(l), (N + h) * Math.cos(f) * Math.sin(l), (N * (1 - _B3_E2) + h) * Math.sin(f)];
+    }
+    /** Rotatiematrix (rij-gewijs, 3×3) van ECEF naar lokaal East-North-Up rond (lon, lat). */
+    function _b3EnuRot(lon, lat) {
+      const l = lon * _B3_D2R, f = lat * _B3_D2R, sl = Math.sin(l), cl = Math.cos(l), sf = Math.sin(f), cf = Math.cos(f);
+      return [-sl, cl, 0,  -sf * cl, -sf * sl, cf,  cf * cl, cf * sl, sf];
+    }
+
+    // ── Tileset doorlopen: alleen takken waarvan de box de bbox raakt ──
+    function _b3BoxBounds(box) {
+      const c = box.slice(0, 3), u = box.slice(3, 6), v = box.slice(6, 9), w = box.slice(9, 12);
+      let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+      for (const su of [-1, 1]) for (const sv of [-1, 1]) for (const sw of [-1, 1]) {
+        const [lon, lat] = _b3EcefToLla(c[0] + su * u[0] + sv * v[0] + sw * w[0],
+                                        c[1] + su * u[1] + sv * v[1] + sw * w[1],
+                                        c[2] + su * u[2] + sv * v[2] + sw * w[2]);
+        x0 = Math.min(x0, lon); x1 = Math.max(x1, lon); y0 = Math.min(y0, lat); y1 = Math.max(y1, lat);
+      }
+      return [x0, y0, x1, y1];
+    }
+    const _b3Overlaps = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+
+    /** Verzamel de blad-tegels (.glb) binnen bbox, met hun lon/lat-bounds. */
+    async function _b3CollectTiles(url, bbox, out) {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`tileset ${resp.status}`);
+      const ts   = await resp.json();
+      const base = url.slice(0, url.lastIndexOf('/') + 1);
+      const walk = async node => {
+        if (!node.boundingVolume?.box) return;
+        const bounds = _b3BoxBounds(node.boundingVolume.box);
+        if (!_b3Overlaps(bounds, bbox)) return;
+        const uri = node.content?.uri;
+        if (uri && uri.endsWith('.json')) await _b3CollectTiles(base + uri, bbox, out);
+        else if (uri && !(node.children && node.children.length)) {
+          out.push({ url: base + uri, bounds, status: 'todo',
+                     center: [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2] });
+        }
+        for (const ch of node.children || []) await walk(ch);
+      };
+      await walk(ts.root);
+      return out;
+    }
+
+    // ── glb parsen + meshopt decoderen ──
+    const _B3_COMP = { 5120: ['getInt8', 1, 127], 5121: ['getUint8', 1, 255], 5122: ['getInt16', 2, 32767],
+                       5123: ['getUint16', 2, 65535], 5125: ['getUint32', 4, 0], 5126: ['getFloat32', 4, 0] };
+    const _B3_NCOMP = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
+
+    function _b3ParseGlb(buf, decoder) {
+      const dv      = new DataView(buf);
+      const jsonLen = dv.getUint32(12, true);
+      const json    = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jsonLen)));
+      const bin     = new Uint8Array(buf, 20 + jsonLen + 8, dv.getUint32(20 + jsonLen, true));
+      const views = json.bufferViews.map(bv => {
+        const ext = bv.extensions?.EXT_meshopt_compression;
+        if (ext) {
+          const src = bin.subarray(ext.byteOffset || 0, (ext.byteOffset || 0) + ext.byteLength);
+          const dst = new Uint8Array(ext.count * ext.byteStride);
+          decoder.decodeGltfBuffer(dst, ext.count, ext.byteStride, src, ext.mode, ext.filter);
+          return { data: dst, stride: ext.byteStride };
+        }
+        return { data: bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength), stride: bv.byteStride || 0 };
+      });
+      // Accessor → Float32Array/Uint32Array, met respect voor byteStride en normalized.
+      const read = (ai, asFloat = true) => {
+        const acc = json.accessors[ai], view = views[acc.bufferView];
+        const [get, bytes, norm] = _B3_COMP[acc.componentType], n = _B3_NCOMP[acc.type];
+        const stride = view.stride || bytes * n, off = acc.byteOffset || 0;
+        const dvv = new DataView(view.data.buffer, view.data.byteOffset, view.data.byteLength);
+        const out = asFloat ? new Float32Array(acc.count * n) : new Uint32Array(acc.count * n);
+        for (let i = 0; i < acc.count; i++) for (let k = 0; k < n; k++) {
+          let v = dvv[get](i * stride + off + k * bytes, true);
+          if (acc.normalized && norm) v = Math.max(-1, v / norm);
+          out[i * n + k] = v;
+        }
+        return out;
+      };
+      // EXT_structural_metadata: kolom uit de (enige) property table
+      const prop = name => {
+        const sm = json.extensions?.EXT_structural_metadata; if (!sm) return null;
+        const tbl = sm.propertyTables[0], p = tbl.properties[name]; if (!p) return null;
+        const cls = sm.schema.classes[tbl.class].properties[name];
+        const vals = views[p.values].data;
+        if (cls.type === 'STRING') {
+          const offs = new Uint32Array(views[p.stringOffsets].data.slice().buffer);
+          const td = new TextDecoder();
+          return Array.from({ length: tbl.count }, (_, i) => td.decode(vals.subarray(offs[i], offs[i + 1])));
+        }
+        if (cls.componentType === 'FLOAT32') return new Float32Array(vals.slice().buffer, 0, tbl.count);
+        return null;
+      };
+      return { json, read, prop };
+    }
+
+    /** glb → drie meshes (gevel/schuin dak/plat dak) in ENU-meters rond de tegel-oorsprong.
+     *  keep(lon, lat) bepaalt per pand (middelpunt) of het getoond wordt. */
+    function _b3BuildTile(url, glb, keep) {
+      const { json, read, prop } = glb;
+      const node = json.nodes.find(n => n.mesh != null);
+      const M    = node.matrix || [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+      const prim = json.meshes[node.mesh].primitives[0];
+      const P = read(prim.attributes.POSITION), Nr = read(prim.attributes.NORMAL);
+      const F = read(prim.attributes._FEATURE_ID_0), I = read(prim.indices, false);
+      const nv = P.length / 3;
+
+      // Oorsprong = node-translatie (glTF Y-up → ECEF: x, -z, y)
+      const [lon0, lat0] = _b3EcefToLla(M[12], -M[14], M[13]);
+      const O = _b3LlaToEcef(lon0, lat0, 0), R = _b3EnuRot(lon0, lat0);
+      const L = [M[0], M[1], M[2], M[4], M[5], M[6], M[8], M[9], M[10]];
+      // Normaaltransformatie: inverse-transpose van het (orthogonale, geschaalde) lineaire deel
+      const s0 = L[0]*L[0] + L[1]*L[1] + L[2]*L[2], s1 = L[3]*L[3] + L[4]*L[4] + L[5]*L[5], s2 = L[6]*L[6] + L[7]*L[7] + L[8]*L[8];
+
+      const nFeat = json.extensions?.EXT_structural_metadata?.propertyTables?.[0]?.count || 0;
+      const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3);
+      const zMin = new Float64Array(nFeat).fill(Infinity);
+      const fb = Array.from({ length: nFeat }, () => [Infinity, Infinity, -Infinity, -Infinity]);
+      for (let i = 0; i < nv; i++) {
+        const x = P[i*3], y = P[i*3+1], z = P[i*3+2];
+        const gx = L[0]*x + L[3]*y + L[6]*z + M[12];
+        const gy = L[1]*x + L[4]*y + L[7]*z + M[13];
+        const gz = L[2]*x + L[5]*y + L[8]*z + M[14];
+        const dx = gx - O[0], dy = -gz - O[1], dz = gy - O[2];
+        const e = R[0]*dx + R[1]*dy + R[2]*dz, n = R[3]*dx + R[4]*dy + R[5]*dz, u = R[6]*dx + R[7]*dy + R[8]*dz;
+        pos[i*3] = e; pos[i*3+1] = n; pos[i*3+2] = u;
+        const f = F[i] | 0;
+        if (u < zMin[f]) zMin[f] = u;
+        const b = fb[f]; if (e < b[0]) b[0] = e; if (n < b[1]) b[1] = n; if (e > b[2]) b[2] = e; if (n > b[3]) b[3] = n;
+        const a = Nr[i*3] / s0, c = Nr[i*3+1] / s1, d = Nr[i*3+2] / s2;
+        const hx = L[0]*a + L[3]*c + L[6]*d, hy = L[1]*a + L[4]*c + L[7]*d, hz = L[2]*a + L[5]*c + L[8]*d;
+        const ex = hx, ey = -hz, ez = hy;
+        let ne = R[0]*ex + R[1]*ey + R[2]*ez, nn = R[3]*ex + R[4]*ey + R[5]*ez, nu = R[6]*ex + R[7]*ey + R[8]*ez;
+        const len = Math.hypot(ne, nn, nu) || 1;
+        nor[i*3] = ne / len; nor[i*3+1] = nn / len; nor[i*3+2] = nu / len;
+      }
+      // Per pand het laagste punt naar z=0 (vlakke kaart → geen NAP-/geoïde-correctie nodig).
+      for (let i = 0; i < nv; i++) pos[i*3+2] -= zMin[F[i] | 0];
+
+      // Panden buiten het studiegebied weglaten (middelpunt van de ENU-bbox).
+      const mPerDegLat = _B3_A * _B3_D2R, mPerDegLon = mPerDegLat * Math.cos(lat0 * _B3_D2R);
+      const kept = fb.map(b => isFinite(b[0]) &&
+        keep(lon0 + (b[0] + b[2]) / 2 / mPerDegLon, lat0 + (b[1] + b[3]) / 2 / mPerDegLat));
+
+      // Driehoeken per klasse (gevel / schuin dak / plat dak) op basis van de normaal.
+      const nTri = I.length / 3, cls = new Uint8Array(nTri), cnt = [0, 0, 0];
+      for (let t = 0; t < nTri; t++) {
+        const a = I[t*3], b = I[t*3+1], c = I[t*3+2];
+        if (!kept[F[a] | 0]) { cls[t] = 255; continue; }
+        const nu = (nor[a*3+2] + nor[b*3+2] + nor[c*3+2]) / 3;
+        const k = nu > 0.97 ? 2 : nu > 0.2 ? 1 : 0;
+        cls[t] = k; cnt[k]++;
+      }
+      const remap = new Int32Array(nv);
+      const meshes = [0, 1, 2].map(k => {
+        if (!cnt[k]) return null;
+        remap.fill(-1);
+        const idx = new Uint32Array(cnt[k] * 3);
+        let nvk = 0, io = 0;
+        for (let t = 0; t < nTri; t++) {
+          if (cls[t] !== k) continue;
+          for (let j = 0; j < 3; j++) {
+            const v = I[t*3+j];
+            if (remap[v] < 0) remap[v] = nvk++;
+            idx[io++] = remap[v];
+          }
+        }
+        const p = new Float32Array(nvk * 3), n = new Float32Array(nvk * 3);
+        for (let v = 0; v < nv; v++) {
+          const r = remap[v]; if (r < 0) continue;
+          p[r*3] = pos[v*3]; p[r*3+1] = pos[v*3+1]; p[r*3+2] = pos[v*3+2];
+          n[r*3] = nor[v*3]; n[r*3+1] = nor[v*3+1]; n[r*3+2] = nor[v*3+2];
+        }
+        return { attributes: { positions: { value: p, size: 3 }, normals: { value: n, size: 3 } },
+                 indices: { value: idx, size: 1 } };
+      });
+
+      const ids = prop('identificatie') || [], dak = prop('b3_dak_type') || [];
+      const hNok = prop('b3_h_nok'), hMv = prop('b3_h_maaiveld');
+      const features = [];
+      for (let i = 0; i < nFeat; i++) {
+        if (kept[i]) features.push({ id: ids[i], dak: dak[i], hNok: hNok?.[i], hMv: hMv?.[i] });
+      }
+      const tile = { id: url.split('/').slice(-3).join('-').replace('.glb', ''), origin: [lon0, lat0], meshes, features };
+      tile.data = [tile];   // vaste data-array: geen attribuut-herberekening per updateOverlay()
+      return tile;
+    }
+
+    /** STUDY-zonepolygonen als [{ rings, bb }] (leeg als de zones er nog niet zijn). */
+    function _b3StudyPolys() {
+      let zones = [];
+      try { zones = zoneFeaturesRaw || []; } catch (_) { /* zones nog niet gedeclareerd */ }
+      const polys = [];
+      for (const f of zones) {
+        if (f.properties?.zoneClass !== 'STUDY') continue;
+        const g = f.geometry;
+        const list = g?.type === 'Polygon' ? [g.coordinates] : g?.type === 'MultiPolygon' ? g.coordinates : [];
+        for (const rings of list) {
+          let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+          for (const [x, y] of rings[0]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+          polys.push({ rings, bb: [x0, y0, x1, y1] });
+        }
+      }
+      return polys;
+    }
+
+    /** Filter 'ligt in het studiegebied' voor een punt: STUDY-zonepolygonen
+     *  (zelfde regel als de server-side panden-filter), fail-open naar de bbox. */
+    function _b3StudyFilter(bbox) {
+      const polys = _b3StudyPolys();
+      if (!polys.length) {
+        return (lon, lat) => lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
+      }
+      return (lon, lat) => polys.some(p =>
+        lon >= p.bb[0] && lon <= p.bb[2] && lat >= p.bb[1] && lat <= p.bb[3] &&
+        _pointInPolygon(lon, lat, p.rings[0]) &&
+        !p.rings.slice(1).some(h => _pointInPolygon(lon, lat, h)));
+    }
+
+    /** Start de 3D BAG-weergave: eenmalig de tegel-index binnen het
+     *  studiegebied, daarna laden per kaartbeeld. De bbox komt van de STUDY-
+     *  zones (dan hoeft niet op onze panden-data gewacht te worden), anders van
+     *  onze (al op STUDY gefilterde) panden. */
+    async function _loadBag3dIfNeeded() {
+      if (_bag3dState === 'ready') { _bag3dLoadInView(); return; }
+      if (_bag3dState !== 'idle' || _MAQUETTE) return;
+      const studyPolys = _b3StudyPolys();
+      if (!studyPolys.length && !_buildingsGeoJson) return;   // opnieuw zodra de panden er zijn
+      let bbox = [180, 90, -180, -90];
+      for (const p of studyPolys) {
+        bbox = [Math.min(bbox[0], p.bb[0]), Math.min(bbox[1], p.bb[1]), Math.max(bbox[2], p.bb[2]), Math.max(bbox[3], p.bb[3])];
+      }
+      for (const f of studyPolys.length ? [] : _buildingsGeoJson.features || []) {
+        const g = f.geometry;
+        const rings = g?.type === 'Polygon' ? [g.coordinates[0]] : g?.type === 'MultiPolygon' ? g.coordinates.map(p => p[0]) : [];
+        for (const r of rings) for (const [x, y] of r) {
+          if (x < bbox[0]) bbox[0] = x; if (x > bbox[2]) bbox[2] = x;
+          if (y < bbox[1]) bbox[1] = y; if (y > bbox[3]) bbox[3] = y;
+        }
+      }
+      const inNl = bbox[0] <= bbox[2] && bbox[0] >= _BAG3D_NL_BBOX[0] && bbox[2] <= _BAG3D_NL_BBOX[2]
+                && bbox[1] >= _BAG3D_NL_BBOX[1] && bbox[3] <= _BAG3D_NL_BBOX[3];
+      if (!inNl) { _bag3dState = 'unavailable'; _refreshBuildingsStatusUI(); return; }
+
+      const area = AREA_ID;
+      _bag3dState = 'indexing';
+      _refreshBuildingsStatusUI();
+      try {
+        const { MeshoptDecoder } = await import(_BAG3D_MESHOPT);
+        await MeshoptDecoder.ready;
+        let index;
+        try {
+          index = await _b3CollectTiles(_BAG3D_TILESET_PROXY, bbox, []);
+        } catch (e) {
+          console.warn('[3dbag] server-proxy niet beschikbaar, rechtstreeks naar 3D BAG:', e);
+          index = await _b3CollectTiles(_BAG3D_TILESET_DIRECT, bbox, []);
+        }
+        if (AREA_ID !== area) return;
+        _bag3dDecoder = MeshoptDecoder;
+        _bag3dKeep    = _b3StudyFilter(bbox);
+        _bag3dIndex   = index;
+        _bag3dState   = index.length ? 'ready' : 'unavailable';
+      } catch (e) {
+        console.warn('[3dbag] tegel-index laden mislukt, terugval op extrusie:', e);
+        _bag3dState = 'unavailable';
+      }
+      _applyBuildingDisplay();   // → _loadBag3dIfNeeded → _bag3dLoadInView()
+    }
+
+    /** Haal de nog ontbrekende tegels in (en rond) het kaartbeeld op, de
+     *  dichtstbijzijnde eerst. Geladen tegels blijven bewaard. */
+    function _bag3dLoadInView() {
+      if (!_bag3dActive() || map.getZoom() < _BAG3D_MIN_ZOOM) { _refreshBuildingsStatusUI(); return; }
+      const b  = map.getBounds();
+      const dw = (b.getEast() - b.getWest()) * 0.15, dh = (b.getNorth() - b.getSouth()) * 0.15;
+      const view = [b.getWest() - dw, b.getSouth() - dh, b.getEast() + dw, b.getNorth() + dh];
+      const c = map.getCenter();
+      const queue = _bag3dIndex
+        .filter(t => t.status === 'todo' && _b3Overlaps(t.bounds, view))
+        .sort((p, q) => Math.hypot(p.center[0] - c.lng, p.center[1] - c.lat)
+                      - Math.hypot(q.center[0] - c.lng, q.center[1] - c.lat));
+      const area = AREA_ID;
+      const loadOne = async entry => {
+        try {
+          const resp = await fetch(entry.url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const tile = _b3BuildTile(entry.url, _b3ParseGlb(await resp.arrayBuffer(), _bag3dDecoder), _bag3dKeep);
+          if (AREA_ID !== area) return;
+          entry.status = 'done';
+          if (tile.features.length) {
+            tile.born = performance.now();
+            _bag3dTiles.push(tile);
+            _bag3dPanden += tile.features.length;
+            _growKick(tile.born);
+            _bag3dRefreshOverlay();
+          }
+        } catch (e) {
+          entry.status = 'failed';
+          _bag3dFailed++;
+          console.warn('[3dbag] tegel overgeslagen:', entry.url, e);
+          // Niets lukt (bv. offline): terug naar de extrusie.
+          if (_bag3dFailed >= 3 && !_bag3dTiles.length) {
+            _bag3dState = 'unavailable';
+            _applyBuildingDisplay();
+          }
+        }
+      };
+      const pump = () => {
+        while (queue.length && _bag3dBusy < _BAG3D_CONCURRENCY) {
+          const entry = queue.shift();
+          if (entry.status !== 'todo') continue;
+          entry.status = 'loading';
+          _bag3dBusy++;
+          loadOne(entry).finally(() => { _bag3dBusy--; _refreshBuildingsStatusUI(); pump(); });
+        }
+        _refreshBuildingsStatusUI();
+      };
+      pump();
+    }
+    map.on('moveend', () => { if (_bag3dState === 'ready') _bag3dLoadInView(); });
 
     // ─── Verkeersobjecten-ondersteuning (deck.gl) ─────────────────────────────
     //
@@ -9258,6 +9731,22 @@
       return Math.min(_VEG_MAX_H, Math.max(_VEG_MIN_H, v));
     }
 
+    // Geboortetijd per boom/struik (sleutel = seed/positie) voor de opkomst-
+    // animatie (_growFactor). Blijft bewaard bij herbouw na een nieuwe bbox-
+    // pagina, zodat al zichtbare bomen niet opnieuw groeien. Kleine vaste
+    // spreiding per boom, zodat ze niet allemaal tegelijk omhoogschieten.
+    const _vegBorn = new Map();
+    function _vegBornAt(key) {
+      let t = _vegBorn.get(key);
+      if (t === undefined) {
+        if (_vegBorn.size > 200000) _vegBorn.clear();
+        t = performance.now() + _vegHash(`g:${key}`) * 500;
+        _vegBorn.set(key, t);
+        _growKick(t);
+      }
+      return t;
+    }
+
     // Bouw de boom-instanties uit punt-/lijnfeatures (gecapt op _VEG_MAX_TREES).
     function _vegBuildTrees() {
       const out = [];
@@ -9277,6 +9766,7 @@
           yaw:      r * 360,
           scale,
           needle,
+          born:     _vegBornAt(seed),
         });
       };
       for (const f of _vegTreeFeatures) {
@@ -9383,7 +9873,8 @@
           const sz  = (h / 2) * (0.8 + r1 * 0.4);   // hoogtejitter
           const sxy = sz * (1.1 + r2 * 0.4);        // iets breder dan hoog
           if (!isFinite(sz) || !isFinite(sxy)) return;
-          out.push({ position: [jx, jy, 0], yaw: r1 * 360, sxy, sz, color });
+          out.push({ position: [jx, jy, 0], yaw: r1 * 360, sxy, sz, color,
+                     born: _vegBornAt(`b:${jx.toFixed(6)},${jy.toFixed(6)}`) });
         });
       }
       return out;
@@ -9406,7 +9897,8 @@
           const h = hMin + r1 * hSpan;
           const scale = (h / _VEG_REF_H) * (0.9 + r2 * 0.2);
           if (!isFinite(scale)) return;
-          out.push({ position: [jx, jy, 0], yaw: r2 * 360, scale, needle });
+          out.push({ position: [jx, jy, 0], yaw: r2 * 360, scale, needle,
+                     born: _vegBornAt(`a:${jx.toFixed(6)},${jy.toFixed(6)}`) });
         });
       }
       return out;
@@ -9416,6 +9908,7 @@
       if (!_vegetationVisible) return [];
       if (map.getZoom() < _VEG_MINZOOM) return [];
       const layers = [];
+      const now = performance.now();
       _vegEnsureMeshes();
       // Struikvlakken (scrub) als verspreide lage struik-meshes.
       if (_vegBushes === null) _vegBushes = _vegBuildBushes();
@@ -9426,8 +9919,9 @@
           mesh:           _vegBushMesh,
           getPosition:    d => d.position,
           getOrientation: d => [0, d.yaw, 0],
-          getScale:       d => [d.sxy, d.sxy, d.sz],
+          getScale:       d => { const g = _growFactor(d.born, now); return [d.sxy * g, d.sxy * g, d.sz * g]; },
           getColor:       d => d.color,
+          updateTriggers: { getScale: _growTick },
           material:       { ambient: 0.65, diffuse: 0.8, shininess: 4, specularColor: [8, 8, 8] },
           pickable:       false,
         }));
@@ -9443,7 +9937,8 @@
         id, data,
         getPosition:    d => d.position,
         getOrientation: d => [0, d.yaw, 0],
-        getScale:       d => [d.scale, d.scale, d.scale],
+        getScale:       d => { const s = d.scale * _growFactor(d.born, now); return [s, s, s]; },
+        updateTriggers: { getScale: _growTick },
         sizeScale:      1,
         pickable:       false,
       });
@@ -15597,6 +16092,7 @@
           ...makeHeightAssetLayers(),
           ...makeFurnitureLayers(),
           ...makeVegetationTreeLayers(),
+          ...makeBag3dLayers(),
           makeEditSignLayer(),
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is

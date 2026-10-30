@@ -2967,6 +2967,64 @@ def ogc_conformance():
     )
 
 
+# ---------------------------------------------------------------------------
+# 3D BAG-proxy (LoD2.2-panden voor de stand '3D' van 'Pand weergave').
+#
+# De viewer haalt tileset-json's en .glb-tegels op via /3dbag/<pad>; de server
+# haalt ze eenmalig bij data.3dbag.nl en bewaart ze in work/_3dbag_cache/<versie>/
+# (en in S3 als dat aanstaat). Zo werkt de twin ook als data.3dbag.nl traag of
+# onbereikbaar is, en staat de 3D BAG-versie op één plek (hier). De tegels zijn
+# per versie onveranderlijk → lange browser-cache.
+# ---------------------------------------------------------------------------
+_BAG3D_VERSION = "v20250903"
+_BAG3D_REMOTE_BASE = f"https://data.3dbag.nl/{_BAG3D_VERSION}/cesium3dtiles/lod22/"
+_BAG3D_PATH_RE = re.compile(r"^[A-Za-z0-9_\-]+(/[A-Za-z0-9_\-]+)*\.(json|glb)$")
+
+
+@app.route("/3dbag/<path:sub>")
+def bag3d_proxy(sub: str):
+    if not _BAG3D_PATH_RE.match(sub):
+        abort(404)
+    content_type = "application/json" if sub.endswith(".json") else "model/gltf-binary"
+    cache_path = _work_dir() / "_3dbag_cache" / _BAG3D_VERSION / sub
+    s3_key = f"{_S3_PREFIX}_3dbag/{_BAG3D_VERSION}/{sub}"
+
+    data = None
+    if cache_path.exists():
+        data = cache_path.read_bytes()
+    elif _s3_enabled() and _s3_exists(s3_key):
+        try:
+            data = _s3_read_bytes(s3_key)
+        except Exception as _e:
+            print(f"[3dbag] S3-lezen mislukt ({s3_key}): {_e}")
+    if data is None:
+        try:
+            resp = requests.get(_BAG3D_REMOTE_BASE + sub, timeout=30)
+        except Exception as exc:
+            abort(502, f"3D BAG niet bereikbaar: {exc}")
+        if resp.status_code != 200:
+            abort(resp.status_code if resp.status_code == 404 else 502)
+        data = resp.content
+        if _s3_enabled():
+            try:
+                _s3_write_bytes(s3_key, data, content_type)
+            except Exception as _e:
+                print(f"[3dbag] S3-schrijven mislukt ({s3_key}): {_e}")
+    if not cache_path.exists():
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_fd, tmp_name = tempfile.mkstemp(dir=cache_path.parent, suffix=".tmp")
+            with os.fdopen(tmp_fd, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp_name, cache_path)
+        except Exception as _e:
+            print(f"[3dbag] cache schrijven mislukt ({cache_path}): {_e}")
+
+    response = Response(data, mimetype=content_type)
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
 @app.route("/collections")
 def ogc_collections():
     colls = []
