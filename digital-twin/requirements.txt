@@ -6,10 +6,10 @@
 gmt_shared-0.5.3-py3-none-any.whl
 gmt_network_core-0.5.3-py3-none-any.whl
 gmt_routing-0.5.1-py3-none-any.whl
-gmt_network_enrichment-0.5.1-py3-none-any.whl
+gmt_network_enrichment-0.6.0-py3-none-any.whl
 gmt_zone_core-0.5.2-py3-none-any.whl
 gmt_utils-0.5.0-py3-none-any.whl
-gmt_calculation_lib-0.5.7-py3-none-any.whl
+gmt_calculation_lib-0.5.8-py3-none-any.whl
 
 # Web framework
 flask>=3.1

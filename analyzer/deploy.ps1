@@ -43,8 +43,8 @@ $commonDataFiles = @(
     "common/data/holiday_indices.csv",
     "common/data/purpose_index.json"
 )
-# left-menu-panel.js wordt door index.html ingeladen; zonder dit bestand is de pagina stuk.
-$commonJsFiles = @("common/js/left-menu-panel.js")
+# Door index.html ingeladen; zonder deze bestanden is de pagina (of Kaart 2) stuk.
+$commonJsFiles = @("common/js/left-menu-panel.js", "common/js/montreal-basemap.js")
 
 # ── Dynamisch: wheels en release-notes (versienummer kan wijzigen) ───────────
 $dynamicFiles = @()

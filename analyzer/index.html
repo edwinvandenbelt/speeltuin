@@ -250,6 +250,23 @@
       font-size: 13px; color: #4b5159;
     }
     .lmp-block.collapsed .lmp-block-body { display: none; }
+    /* Kaartlaag-panels: accentstreep + naam van de actieve laag in de kop */
+    .lmp-layer-block { border-left: 4px solid transparent; }
+    .lmp-layer-block.has-active { border-left-color: #de0058; }
+    .lmp-active-name {
+      margin-left: auto; min-width: 0;
+      font-size: 12px; font-weight: 400; color: #6a757c;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .lmp-active-name + .lmp-block-arrow { margin-left: 0; }
+    .lmp-layer-block:not(.collapsed) .lmp-active-name { display: none; }
+    .lmp-layer-block:not(.collapsed) .lmp-active-name + .lmp-block-arrow { margin-left: auto; }
+    .lmp-subhead {
+      margin: 8px 0 0 0; padding-top: 6px;
+      border-top: 1px solid rgba(35,41,49,0.08);
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase; color: #6a757c;
+    }
     .lmp-radio-row {
       display: flex; align-items: center; gap: 8px;
       padding: 6px 4px;
@@ -1844,6 +1861,11 @@
         <option value="speed_elevation" data-i18n="metricSpeedElevation">Hellingen</option>
         <option value="speed_penalty_total" data-i18n="metricSpeedPenaltyTotal">Straf-seconden (totaal)</option>
       </optgroup>
+      <optgroup label="Inrichting">
+        <option value="surface_class" data-i18n="metricSurface">Verharding</option>
+        <option value="width_class" data-i18n="metricWidthClass">Breedte</option>
+        <option value="sidewalks" data-i18n="metricSidewalks">Stoepen</option>
+      </optgroup>
       <option value="safety" id="safetyOption">Veiligheid</option>
       <option value="spectrum">Spectrum</option>
       <option value="none" data-i18n="metricNone">Geen</option>
@@ -2211,13 +2233,16 @@
         </div>
       </div>
 
-      <div class="lmp-block collapsed" data-block="network">
+      <!-- ── Kaartlagen: vijf panels (accordeon, max. één open). Alle radio's
+           delen name="lmpMetric", dus er staat er hooguit één aan. Nogmaals
+           klikken op de actieve laag zet hem uit ('none'). ── -->
+      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-traffic">
         <div class="lmp-block-header">
-          <span>Netwerk</span>
+          <span data-i18n="layersTraffic">Verkeer</span>
+          <span class="lmp-active-name"></span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
-          <span>Verkeer</span>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow" checked> <span data-i18n="metricFlow">Intensiteit</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="flow_scaled"> <span data-i18n="metricFlowScaled">Intensiteit (geschaald)</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="occupancy"> <span data-i18n="metricIC">I/C</span></label>
@@ -2226,16 +2251,53 @@
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="coverage_scaled"> <span data-i18n="metricOccupancyScaled">Bezettingsgraad (geschaald)</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed"> <span data-i18n="metricSpeed">Snelheid</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="capacity"> <span data-i18n="metricCapacity">Capaciteit</span></label>
-          <span>Veiligheid</span>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="safety" id="lmpSafetyOption"> <span data-i18n="metricSafety">Veiligheid</span></label>
-          <span>Geluid</span>
+        </div>
+      </div>
+
+      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-safety">
+        <div class="lmp-block-header">
+          <span data-i18n="layersSafety">Veiligheid</span>
+          <span class="lmp-active-name"></span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body" id="lmpSafetyBody">
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="safety" id="lmpSafetyOption"> <span data-i18n="metricSafetyTotal">Totaal</span></label>
+          <!-- KPI-lagen (safety:&lt;kpi&gt;) worden gegenereerd uit SAFETY_KPI_GROUPS -->
+        </div>
+      </div>
+
+      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-noise">
+        <div class="lmp-block-header">
+          <span data-i18n="layersNoise">Geluid</span>
+          <span class="lmp-active-name"></span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body">
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lden"> <span data-i18n="metricNoiseLden">Geluid (Lden)</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="noise_lnight"> <span data-i18n="metricNoiseLnight">Geluid (Lnight)</span></label>
-          <span>Uitstoot</span>
+        </div>
+      </div>
+
+      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-emission">
+        <div class="lmp-block-header">
+          <span data-i18n="layersEmission">Uitstoot</span>
+          <span class="lmp-active-name"></span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body">
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_co2"> <span data-i18n="metricCo2">CO₂-uitstoot</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_nox"> <span data-i18n="metricNox">NOₓ-uitstoot</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="emis_pm10"> <span data-i18n="metricPm10">Fijnstof (PM10)</span></label>
-          <span>Inrichting</span>
+        </div>
+      </div>
+
+      <div class="lmp-block lmp-layer-block collapsed" data-block="layers-design">
+        <div class="lmp-block-header">
+          <span data-i18n="layersDesign">Inrichting</span>
+          <span class="lmp-active-name"></span>
+          <span class="lmp-block-arrow">▾</span>
+        </div>
+        <div class="lmp-block-body">
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="priority_roads"> <span data-i18n="metricPriorityRoads">Voorrangswegen</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_crossings"> <span data-i18n="metricSpeedCrossings">Zebrapaden</span></label>
           <!--label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_cycle_crossings" style="display:none"> <span data-i18n="metricSpeedCycleCrossings">Fietsoversteek</span></label-->
@@ -2246,8 +2308,10 @@
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_left_turn"> <span data-i18n="metricSpeedLeftTurn">Linksaf-hinder</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_oncoming"> <span data-i18n="metricSpeedOncoming">Tegenliggerhinder</span></label>
           <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="speed_elevation"> <span data-i18n="metricSpeedElevation">Hellingen</span></label>
-          <span>Geen</span>
-          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="none"> <span data-i18n="metricNone">Geen</span></label>
+          <div class="lmp-subhead" data-i18n="designGroupRoad">Wegprofiel</div>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="surface_class"> <span data-i18n="metricSurface">Verharding</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="width_class"> <span data-i18n="metricWidthClass">Breedte</span></label>
+          <label class="lmp-radio-row"><input type="radio" name="lmpMetric" value="sidewalks"> <span data-i18n="metricSidewalks">Stoepen</span></label>
         </div>
       </div>
 
@@ -2713,6 +2777,25 @@
       metricIC:'I/C', metricICScaled:'I/C (geschaald)',
       metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricPriorityRoads:'Voorrangswegen', metricNone:'Geen', metricCompare:'Vergelijking tonen',
       metricSafety:'Veiligheid',
+      layersTraffic:'Verkeer', layersSafety:'Veiligheid', layersNoise:'Geluid', layersEmission:'Uitstoot', layersDesign:'Inrichting',
+      metricSafetyTotal:'Totaal',
+      scoreGood:'Goed', scoreFair:'Redelijk', scoreModerate:'Matig', scorePoor:'Slecht', scoreNA:'n.v.t.',
+      catSignal:'Verkeerslicht', catRoundabout:'Rotonde', catSpeedBump:'Verkeersdrempel',
+      kpi_r_functional_usage:'Functioneel gebruik', kpi_r_longitudinal_marking:'Kantmarkering',
+      kpi_r_directional_separation:'Rijrichtingscheiding', kpi_r_lane_width:'Rijstrookbreedte',
+      kpi_r_road_surface:'Wegdek', kpi_r_pedestrian_facility:'Voetgangersfaciliteit',
+      kpi_r_bicycle_facility:'Fietsfaciliteit', kpi_r_parking_facility:'Parkeerfaciliteit',
+      kpi_r_bus_stop_facility:'Bushaltefaciliteit', kpi_r_speed_bumps:'Drempels', kpi_r_roadside_damage:'Bermschade',
+      kpi_r_road_width:'Rijbaanbreedte', kpi_r_pedestrian_width:'Breedte voetpad',
+      kpi_r_bicycle_width:'Breedte fietspad', kpi_r_parking_location:'Parkeerlocatie',
+      kpi_r_bus_location:'Buslocatie', kpi_r_pedestrian_crossing:'Voetgangersoversteek',
+      kpi_r_bicycle_crossing:'Fietsoversteek', kpi_r_bike_speed:'Fietssnelheid', kpi_r_bike_usage:'Fietsgebruik',
+      kpi_r_bike_parking:'Fietsparkeren', kpi_r_social_interaction:'Sociale interactie',
+      designGroupRoad:'Wegprofiel', metricSurface:'Verharding', metricWidthClass:'Breedte', metricSidewalks:'Stoepen',
+      legendSurface:'Verharding', legendWidthClass:'Wegbreedte (totaal)', legendSidewalks:'Stoepen',
+      surfAsphalt:'Asfalt', surfPavers:'Klinkers', surfConcrete:'Beton', surfSemiPaved:'Halfverhard', surfUnpaved:'Onverhard',
+      sidewalkBoth:'Beide', sidewalkLeft:'Links', sidewalkRight:'Rechts', sidewalkNone:'Geen', classUnknown:'Onbekend', legendSafety:'Veiligheid (totaal)',
+      safetyGroupRoad:'Wegvak', safetyGroupPedestrian:'Voetganger', safetyGroupBicycle:'Fiets', safetyGroupParkingBus:'Parkeren & bus', safetyGroupOther:'Overig',
       metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
       metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
       metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
@@ -2985,6 +3068,26 @@
       metricIC:'V/C', metricICScaled:'V/C (scaled)',
       metricSpeed:'Speed', metricCapacity:'Capacity', metricPriorityRoads:'Priority roads', metricNone:'None', metricCompare:'Show comparison',
       metricSafety:'Safety',
+      layersTraffic:'Traffic', layersSafety:'Safety', layersNoise:'Noise', layersEmission:'Emissions', layersDesign:'Road design',
+      metricSafetyTotal:'Overall',
+      scoreGood:'Good', scoreFair:'Fair', scoreModerate:'Moderate', scorePoor:'Poor', scoreNA:'n/a',
+      catSignal:'Traffic light', catRoundabout:'Roundabout', catSpeedBump:'Speed bump',
+      kpi_r_functional_usage:'Functional use', kpi_r_longitudinal_marking:'Edge marking',
+      kpi_r_directional_separation:'Directional separation', kpi_r_lane_width:'Lane width',
+      kpi_r_road_surface:'Road surface', kpi_r_pedestrian_facility:'Pedestrian facility',
+      kpi_r_bicycle_facility:'Cycling facility', kpi_r_parking_facility:'Parking facility',
+      kpi_r_bus_stop_facility:'Bus stop facility', kpi_r_speed_bumps:'Speed bumps',
+      kpi_r_roadside_damage:'Verge damage', kpi_r_road_width:'Carriageway width',
+      kpi_r_pedestrian_width:'Footpath width', kpi_r_bicycle_width:'Cycle path width',
+      kpi_r_parking_location:'Parking location', kpi_r_bus_location:'Bus location',
+      kpi_r_pedestrian_crossing:'Pedestrian crossing', kpi_r_bicycle_crossing:'Cycle crossing',
+      kpi_r_bike_speed:'Cycling speed', kpi_r_bike_usage:'Cycling use', kpi_r_bike_parking:'Bicycle parking',
+      kpi_r_social_interaction:'Social interaction',
+      designGroupRoad:'Road profile', metricSurface:'Surface', metricWidthClass:'Width', metricSidewalks:'Sidewalks',
+      legendSurface:'Surface', legendWidthClass:'Road width (total)', legendSidewalks:'Sidewalks',
+      surfAsphalt:'Asphalt', surfPavers:'Pavers', surfConcrete:'Concrete', surfSemiPaved:'Semi-paved', surfUnpaved:'Unpaved',
+      sidewalkBoth:'Both', sidewalkLeft:'Left', sidewalkRight:'Right', sidewalkNone:'None', classUnknown:'Unknown', legendSafety:'Safety (overall)',
+      safetyGroupRoad:'Road section', safetyGroupPedestrian:'Pedestrian', safetyGroupBicycle:'Bicycle', safetyGroupParkingBus:'Parking & bus', safetyGroupOther:'Other',
       metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
       metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
       metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
@@ -3244,6 +3347,26 @@
       metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
       metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricPriorityRoads:'Etuoikeutetut tiet', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
       metricSafety:'Turvallisuus',
+      layersTraffic:'Liikenne', layersSafety:'Turvallisuus', layersNoise:'Melu', layersEmission:'Päästöt', layersDesign:'Katusuunnittelu',
+      metricSafetyTotal:'Kokonais',
+      scoreGood:'Hyvä', scoreFair:'Kohtalainen', scoreModerate:'Välttävä', scorePoor:'Huono', scoreNA:'ei koske',
+      catSignal:'Liikennevalo', catRoundabout:'Kiertoliittymä', catSpeedBump:'Hidaste',
+      kpi_r_functional_usage:'Toiminnallinen käyttö', kpi_r_longitudinal_marking:'Reunaviiva',
+      kpi_r_directional_separation:'Ajosuuntien erottelu', kpi_r_lane_width:'Kaistan leveys',
+      kpi_r_road_surface:'Tienpinta', kpi_r_pedestrian_facility:'Jalankulkijoiden järjestelyt',
+      kpi_r_bicycle_facility:'Pyöräilyjärjestelyt', kpi_r_parking_facility:'Pysäköintijärjestelyt',
+      kpi_r_bus_stop_facility:'Bussipysäkki', kpi_r_speed_bumps:'Hidastetöyssyt',
+      kpi_r_roadside_damage:'Pientareen vauriot', kpi_r_road_width:'Ajoradan leveys',
+      kpi_r_pedestrian_width:'Jalkakäytävän leveys', kpi_r_bicycle_width:'Pyörätien leveys',
+      kpi_r_parking_location:'Pysäköinnin sijainti', kpi_r_bus_location:'Bussin sijainti',
+      kpi_r_pedestrian_crossing:'Suojatie', kpi_r_bicycle_crossing:'Pyörätien jatke',
+      kpi_r_bike_speed:'Pyöräilynopeus', kpi_r_bike_usage:'Pyöräilyn määrä', kpi_r_bike_parking:'Pyöräpysäköinti',
+      kpi_r_social_interaction:'Sosiaalinen vuorovaikutus',
+      designGroupRoad:'Tieprofiili', metricSurface:'Päällyste', metricWidthClass:'Leveys', metricSidewalks:'Jalkakäytävät',
+      legendSurface:'Päällyste', legendWidthClass:'Tien leveys (yhteensä)', legendSidewalks:'Jalkakäytävät',
+      surfAsphalt:'Asfaltti', surfPavers:'Kiveys', surfConcrete:'Betoni', surfSemiPaved:'Puolipäällystetty', surfUnpaved:'Päällystämätön',
+      sidewalkBoth:'Molemmat', sidewalkLeft:'Vasen', sidewalkRight:'Oikea', sidewalkNone:'Ei', classUnknown:'Tuntematon', legendSafety:'Turvallisuus (kokonais)',
+      safetyGroupRoad:'Tieosuus', safetyGroupPedestrian:'Jalankulkija', safetyGroupBicycle:'Pyörä', safetyGroupParkingBus:'Pysäköinti & bussi', safetyGroupOther:'Muut',
       metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
       metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
       metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
@@ -3483,6 +3606,9 @@
       document.getElementById('networkTitle').textContent = T('networkTitle', window._networkName);
       // document.title = T('pageTitle', window._networkName);
     }
+
+    // Laagnaam in de kop van de kaartlaag-panels opnieuw (vertaald) zetten
+    syncLayerPanels();
   }
 
   // Pas taal direct toe op statische DOM-elementen
@@ -3498,6 +3624,16 @@
   const LINK_ID_PARAM = _params.get('linkId');
   const NODE_ID_PARAM = _params.get('nodeId');
   let _networkFeatures = []; // gevuld zodra netwerk geladen is; gebruikt door maquette highlight
+
+  // Kaart 2 (Montréal-ondergrond): de wegen in de tiles krijgen breedte en
+  // verharding van deze links (MontrealBasemap.setNetwork). Bij MIXED alleen CAR.
+  function _setKaart2Network(features) {
+    const feats = MODE === 'MIXED'
+      ? features.filter(f => (f.properties.mode ?? 'CAR').toUpperCase() === 'CAR')
+      : features;
+    try { window.MontrealBasemap?.setNetwork(feats); }
+    catch (e) { console.warn('Montréal-netwerkwegen:', e); }
+  }
 
   // Vlag-parameters soepel lezen: ?x=true, ?x=1, ?x=yes en ?x tellen allemaal.
   // Een typfout als ?maquette=1 schakelde anders stilzwijgend de hele
@@ -4215,6 +4351,25 @@
     throw new Error('Geen areaId — keuzescherm getoond');
   }
 
+  // ── Kaartlaag-panels gelijk trekken met #colorMetric ─────────────────────
+  // Vinkt de juiste radio aan en markeert het panel met de actieve laag
+  // (accentstreep + laagnaam in de kop). Wordt ook vanuit updateLegend()
+  // aangeroepen, zodat programmatische resets (zonder 'change') meekomen.
+  function syncLayerPanels() {
+    const panel = document.getElementById('leftMenuPanel');
+    const select = document.getElementById('colorMetric');
+    if (!panel || !select) return;
+    panel.querySelectorAll('input[name="lmpMetric"]').forEach(radio => {
+      radio.checked = radio.value === select.value;
+    });
+    panel.querySelectorAll('.lmp-layer-block').forEach(block => {
+      const checked = block.querySelector('input[name="lmpMetric"]:checked');
+      block.classList.toggle('has-active', !!checked);
+      const nameEl = block.querySelector('.lmp-active-name');
+      if (nameEl) nameEl.textContent = checked ? checked.closest('label').textContent.trim() : '';
+    });
+  }
+
   // ── Linker menu-paneel in-/uitschakelen ─────────────────────────────────
   function initLeftMenuPanel() {
     const panel = document.getElementById('leftMenuPanel');
@@ -4227,33 +4382,45 @@
       return;
     }
 
-    // Collapse/expand van individuele blokken
+    // Collapse/expand van individuele blokken. De kaartlaag-panels werken als
+    // accordeon: één openen klapt de andere kaartlaag-panels dicht.
     panel.querySelectorAll('.lmp-block-header').forEach(header => {
       header.addEventListener('click', (e) => {
         const block = header.closest('.lmp-block');
+        const opening = block.classList.contains('collapsed');
+        if (opening && block.classList.contains('lmp-layer-block')) {
+          panel.querySelectorAll('.lmp-layer-block').forEach(b => {
+            if (b !== block) b.classList.add('collapsed');
+          });
+        }
         block.classList.toggle('collapsed');
       });
     });
 
-    // Netwerk: intensiteit-radiobuttons gekoppeld aan de bestaande colorMetric-select
+    // Kaartlagen: radiobuttons gekoppeld aan de bestaande colorMetric-select.
+    // Via delegatie, zodat later gegenereerde radio's (veiligheids-KPI's) meedoen.
     const metricSelect = document.getElementById('colorMetric');
-    const metricRadios = panel.querySelectorAll('input[name="lmpMetric"]');
-    if (metricSelect && metricRadios.length) {
-      metricRadios.forEach(radio => {
-        radio.checked = radio.value === metricSelect.value;
-        radio.addEventListener('change', () => {
-          if (!radio.checked) return;
-          metricSelect.value = radio.value;
-          metricSelect.dispatchEvent(new Event('change'));
-        });
+    if (metricSelect) {
+      const setMetric = (value) => {
+        metricSelect.value = value;
+        metricSelect.dispatchEvent(new Event('change'));
+      };
+      panel.addEventListener('click', (e) => {
+        const radio = e.target;
+        if (!(radio instanceof HTMLInputElement) || radio.name !== 'lmpMetric') return;
+        // Nogmaals klikken op de actieve laag zet hem uit ('change' vuurt dan niet,
+        // de select heeft hier nog de oude waarde).
+        if (radio.value === metricSelect.value) setMetric('none');
+      });
+      panel.addEventListener('change', (e) => {
+        const radio = e.target;
+        if (!(radio instanceof HTMLInputElement) || radio.name !== 'lmpMetric' || !radio.checked) return;
+        setMetric(radio.value);
       });
       // Zorg dat de radio's meebewegen als de metriek elders wordt aangepast
       // (bijv. via de select zelf, of automatische fallback naar 'flow').
-      metricSelect.addEventListener('change', () => {
-        metricRadios.forEach(radio => {
-          radio.checked = radio.value === metricSelect.value;
-        });
-      });
+      metricSelect.addEventListener('change', syncLayerPanels);
+      syncLayerPanels();
     }
 
     // Zone productie/attractie: radiobuttons gekoppeld aan de bestaande zoneCentroidSelect
@@ -4731,6 +4898,71 @@
     // "Snelheid"-sub-lagen (binaire aanwezigheid van een factor op het wegvak).
     const BINARY_SPEED_METRICS = new Set(['speed_crossings', 'speed_yield', 'speed_refuge']);
     const CATEGORICAL_SPEED_METRICS = new Set(['speed_intersections']);
+
+  // ── Inrichtingslagen met vaste klassen (verharding, breedte, stoepen) ──────
+  // Bron: NETWORK-properties uit gmt_network_enrichment ≥ 0.6 (surface,
+  // sidewalkLeft/Right) en de WKD-breedtes (roadWidthMinM/MaxM, roadWidthM).
+  const _UNKNOWN_CLASS_RGBA = [170, 170, 180, 140];
+
+  /** Totale wegbreedte (m) zoals Kaart 2, maar alleen uit gemeten waarden; anders null. */
+  function _designWidthM(p) {
+    if (p.roadWidthMinM != null && p.roadWidthMaxM != null) return (p.roadWidthMinM + p.roadWidthMaxM) / 2;
+    if (p.roadWidthM != null) return p.roadWidthM * 2;
+    return null;
+  }
+  const _hasSidewalk = v => v === 'yes' || v === 'separate';
+
+  const DESIGN_CLASS_LAYERS = {
+    surface_class: {
+      labelKey: 'legendSurface',
+      classes: {
+        asfalt:      { labelKey: 'surfAsphalt',    rgba: [60, 64, 72, 230] },
+        klinkers:    { labelKey: 'surfPavers',     rgba: [196, 98, 62, 230] },
+        beton:       { labelKey: 'surfConcrete',   rgba: [120, 160, 190, 230] },
+        halfverhard: { labelKey: 'surfSemiPaved',  rgba: [214, 170, 60, 230] },
+        onverhard:   { labelKey: 'surfUnpaved',    rgba: [125, 85, 45, 230] },
+        onbekend:    { labelKey: 'classUnknown',   rgba: _UNKNOWN_CLASS_RGBA },
+      },
+      classOf: p => window.MontrealBasemap?.surfaceClass?.(p) ?? 'onbekend',
+      rawOf:   p => p.surface ?? null,
+    },
+    width_class: {
+      labelKey: 'legendWidthClass',
+      classes: {
+        w0:       { label: '< 4 m',     rgba: [158, 202, 225, 230] },
+        w1:       { label: '4–5,5 m',   rgba: [107, 174, 214, 230] },
+        w2:       { label: '5,5–7 m',   rgba: [49, 130, 189, 230] },
+        w3:       { label: '7–9 m',     rgba: [8, 81, 156, 230] },
+        w4:       { label: '≥ 9 m',     rgba: [8, 38, 94, 230] },
+        onbekend: { labelKey: 'classUnknown', rgba: _UNKNOWN_CLASS_RGBA },
+      },
+      classOf: p => {
+        const w = _designWidthM(p);
+        if (w == null) return 'onbekend';
+        return w < 4 ? 'w0' : w < 5.5 ? 'w1' : w < 7 ? 'w2' : w < 9 ? 'w3' : 'w4';
+      },
+      rawOf: p => { const w = _designWidthM(p); return w == null ? null : `${w.toFixed(1)} m`; },
+    },
+    sidewalks: {
+      labelKey: 'legendSidewalks',
+      classes: {
+        both:     { labelKey: 'sidewalkBoth',  rgba: [40, 160, 80, 230] },
+        left:     { labelKey: 'sidewalkLeft',  rgba: [240, 150, 30, 230] },
+        right:    { labelKey: 'sidewalkRight', rgba: [140, 90, 200, 230] },
+        none:     { labelKey: 'sidewalkNone',  rgba: [215, 50, 50, 230] },
+        onbekend: { labelKey: 'classUnknown',  rgba: _UNKNOWN_CLASS_RGBA },
+      },
+      classOf: p => {
+        const L = p.sidewalkLeft, R = p.sidewalkRight;
+        if (L == null && R == null) return 'onbekend';
+        const l = _hasSidewalk(L), r = _hasSidewalk(R);
+        return l && r ? 'both' : l ? 'left' : r ? 'right' : 'none';
+      },
+      rawOf: p => (p.sidewalkLeft == null && p.sidewalkRight == null) ? null
+        : `${T('sidewalkLeft')}: ${p.sidewalkLeft ?? '–'}, ${T('sidewalkRight')}: ${p.sidewalkRight ?? '–'}`,
+    },
+  };
+  const _designClassLabel = c => c.labelKey ? T(c.labelKey) : c.label;
   // Toekomstige Snelheid-sub-lagen die al zichtbaar zijn in het menu, maar grijs
   // blijven zolang de brondata (gmt-library Deel A / cycle paths) nog ontbreekt.
   const FUTURE_BINARY_SPEED_METRICS = new Set(['speed_cycle_crossings']);
@@ -5287,6 +5519,7 @@
        f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
      );
      _networkFeatures = features; // beschikbaar stellen voor maquette highlight
+     _setKaart2Network(features);
 
     const flowValues = features.map(f => f.properties.flow);
     const minFlow    = Math.min(...flowValues);
@@ -5316,7 +5549,29 @@
     }
 
     /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
+    /** Legenda-blokjes [{c, label}] voor categorische lagen; null = gradient-legenda. */
+    function categoricalLegendOf(metric) {
+      if (isSafetyMetric(metric)) {
+        return [['GOED', 'scoreGood'], ['REDELIJK', 'scoreFair'], ['MATIG', 'scoreModerate'], ['SLECHT', 'scorePoor'], ['NVT', 'scoreNA']]
+          .map(([score, key]) => ({ c: kpiColor(score), label: T(key) }));
+      }
+      const dl = DESIGN_CLASS_LAYERS[metric];
+      if (dl) {
+        return Object.values(dl.classes).map(c =>
+          ({ c: `rgb(${c.rgba.slice(0, 3).join(',')})`, label: _designClassLabel(c) }));
+      }
+      if (CATEGORICAL_SPEED_METRICS.has(metric)) {
+        return [
+          { c: 'rgb(231,76,60)',  label: T('catSignal') },
+          { c: 'rgb(46,204,113)', label: T('catRoundabout') },
+          { c: 'rgb(241,196,15)', label: T('catSpeedBump') },
+        ];
+      }
+      return null;
+    }
+
     function updateLegend() {
+      syncLayerPanels();
       const legendStrip = document.getElementById('legendStrip');
       if (colorMetric === 'none') { legendStrip.style.display = 'none'; return; }
       legendStrip.style.display = '';
@@ -5419,21 +5674,21 @@
       }
       const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
 
-      // Categorische Snelheid-laag: toon drie gekleurde blokjes i.p.v. gradient.
-      if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+      // Categorische lagen: gekleurde blokjes met labels i.p.v. gradient.
+      const catColors = categoricalLegendOf(colorMetric);
+      if (catColors) {
         const legendBar = document.getElementById('legendBar');
         legendBar.style.background = 'transparent';
-        const catColors = [
-          { c: 'rgb(231,76,60)',  label: 'Verkeerslicht' },
-          { c: 'rgb(46,204,113)', label: 'Rotonde' },
-          { c: 'rgb(241,196,15)', label: 'Verkeersdrempel' },
-        ];
+        legendBar.style.height = 'auto';
         const html = catColors.map(x =>
           `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;color:#6a757c">` +
           `<span style="display:inline-block;width:14px;height:14px;border-radius:2px;background:${x.c};box-shadow:inset 0 0 0 1px rgba(0,0,0,0.15)"></span>${x.label}</span>`
         ).join('');
-        legendBar.innerHTML = `<div style="display:flex;padding:2px 0">${html}</div>`;
-        document.getElementById('legendLabel').textContent = T(labelKey);
+        legendBar.innerHTML = `<div style="display:flex;flex-wrap:wrap;row-gap:4px;padding:2px 0">${html}</div>`;
+        document.getElementById('legendLabel').textContent =
+          isSafetyMetric(colorMetric) ? safetyMetricLabel(colorMetric)
+          : DESIGN_CLASS_LAYERS[colorMetric] ? T(DESIGN_CLASS_LAYERS[colorMetric].labelKey)
+          : T(labelKey);
         document.getElementById('legendMin').textContent = '';
         document.getElementById('legendMax').textContent = '';
         document.getElementById('legendBarBike').style.display = 'none';
@@ -5443,6 +5698,7 @@
       }
       // Herstel gradient-weergave na categorische laag.
       document.getElementById('legendBar').innerHTML = '';
+      document.getElementById('legendBar').style.height = '';
       document.getElementById('legendBar').style.background = gradient;
 
       // MIXED + flow/flow_scaled: toon aparte balk voor fiets; label de auto-balk "Auto"
@@ -5473,10 +5729,6 @@
         // Vaste schaal 0–4000, onafhankelijk van de data
         document.getElementById('legendMin').textContent = fmt(0);
         document.getElementById('legendMax').textContent = fmt(4000);
-      } else if (colorMetric === 'safety') {
-        // Veiligheidsscore: vaste tekstlabels
-        document.getElementById('legendMin').textContent = 'Slecht';
-        document.getElementById('legendMax').textContent = 'Goed';
       } else if (METRIC_LIMITS[colorMetric]) {
         // Grenswaarde-lagen: toon de standaardwaarde (links, grens toegestaan) en
         // de grenswaarde (rechts, overschrijding) i.p.v. de dataspreiding.
@@ -6266,90 +6518,8 @@
 
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
     // Liberty lijnlagen (roads) en symboollagen (labels) blijven zichtbaar als overlay.
-    // ── Montréal-ondergrond ───────────────────────────────────────────────────
-    // Port van de stijl van allemannsdata.com/examples/montreal_kart (functie
-    // Ct + palet St in hun bundle), zonder terrein, gebouwen en POI's. De lagen
-    // gebruiken dezelfde OpenFreeMap-vectorsource als Liberty en worden als
-    // 'mtl-*'-lagen in de bestaande stijl gezet, zodat onze eigen lagen blijven.
-    const _MTL_PALETTES = {
-      day:   { land:'#e6e9dc', water:'#8fc7ca', green:'#b8c99e', forest:'#acbf97', road:'#c9cec5',
-               sidewalk:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3' },
-      night: { land:'#111c29', water:'#081321', green:'#162b29', forest:'#142522', road:'#26313b',
-               sidewalk:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c' },
-    };
-
-    function _montrealLayers(src, p) {
-      const roads = ['all', ['==', '$type', 'LineString'],
-        ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service', 'busway', 'bus_guideway'],
-        ['!=', 'brunnel', 'tunnel']];
-      const twoWay = ['all', roads, ['!in', 'oneway', 1, -1]];
-      const oneWay = ['all', roads, ['in', 'oneway', 1, -1]];
-      const byClass = (big, mid, other, service) => ['match', ['get', 'class'],
-        ['motorway', 'trunk'], big, ['primary', 'secondary'], mid, 'service', service, other];
-      const width = (a, b, c) => ['interpolate', ['exponential', 2], ['zoom'], 12, a, 16, b, 19, c];
-      const round = { 'line-cap': 'round', 'line-join': 'round' };
-      const butt  = { 'line-cap': 'butt',  'line-join': 'round' };
-      const tr = { source: src, 'source-layer': 'transportation' };
-      return [
-        { id: 'mtl-ground', type: 'background', paint: { 'background-color': p.land } },
-        { id: 'mtl-woodland', type: 'fill', source: src, 'source-layer': 'landcover',
-          filter: ['in', 'class', 'wood', 'grass'], paint: { 'fill-color': p.forest, 'fill-opacity': 0.55 } },
-        { id: 'mtl-green-land', type: 'fill', source: src, 'source-layer': 'landuse',
-          filter: ['in', 'class', 'grass', 'cemetery', 'recreation_ground', 'village_green'],
-          paint: { 'fill-color': p.green } },
-        { id: 'mtl-parks', type: 'fill', source: src, 'source-layer': 'park',
-          paint: { 'fill-color': p.green, 'fill-opacity': 0.7 } },
-        { id: 'mtl-water', type: 'fill', source: src, 'source-layer': 'water', paint: { 'fill-color': p.water } },
-        { id: 'mtl-waterways', type: 'line', source: src, 'source-layer': 'waterway',
-          paint: { 'line-color': p.water, 'line-width': 2 } },
-        { id: 'mtl-shore', type: 'line', source: src, 'source-layer': 'water',
-          paint: { 'line-color': p.sidewalk, 'line-width': 0.8, 'line-opacity': 0.5 } },
-        { id: 'mtl-paths', type: 'line', ...tr, minzoom: 15, layout: round,
-          filter: ['all', ['==', '$type', 'LineString'], ['in', 'class', 'path', 'track'],
-                   ['!=', 'brunnel', 'tunnel'], ['!=', 'indoor', 1]],
-          paint: { 'line-color': p.road, 'line-opacity': 0.65,
-                   'line-width': ['interpolate', ['exponential', 2], ['zoom'], 15, 0.5, 19, 5] } },
-        { id: 'mtl-road-edge', type: 'line', ...tr, filter: roads, layout: round,
-          paint: { 'line-color': p.line,
-                   'line-width': width(byClass(3.2, 2.7, 2, 1), byClass(12, 10.5, 9, 5.5), byClass(68, 56, 46, 28)) } },
-        { id: 'mtl-road-sidewalk', type: 'line', ...tr, filter: roads, layout: round,
-          paint: { 'line-color': p.sidewalk,
-                   'line-width': width(byClass(2.6, 2.1, 1.5, 0.75), byClass(10, 8.5, 7, 4), byClass(62, 50, 40, 24)) } },
-        { id: 'mtl-roads', type: 'line', ...tr, filter: roads, layout: round,
-          paint: { 'line-color': p.road,
-                   'line-width': width(byClass(1.8, 1.4, 1, 0.5), byClass(8, 6.5, 5, 2.8), byClass(56, 44, 36, 20)) } },
-        { id: 'mtl-road-centre-major', type: 'line', ...tr, minzoom: 16.5, layout: butt,
-          filter: ['all', twoWay, ['in', 'class', 'primary', 'secondary']],
-          paint: { 'line-color': p.marking, 'line-opacity': 0.94,
-                   'line-width':     ['interpolate', ['linear'], ['zoom'], 16.5, 0.8, 19, 1.8],
-                   'line-gap-width': ['interpolate', ['linear'], ['zoom'], 16.5, 0.7, 19, 2.2] } },
-        { id: 'mtl-road-markings', type: 'line', ...tr, minzoom: 17, layout: butt,
-          filter: ['all', twoWay, ['in', 'class', 'tertiary', 'minor']],
-          paint: { 'line-color': p.marking, 'line-opacity': 0.9, 'line-dasharray': [6, 5],
-                   'line-width': ['interpolate', ['linear'], ['zoom'], 17, 1, 19, 1.8] } },
-        { id: 'mtl-road-lane-dividers', type: 'line', ...tr, minzoom: 17, layout: butt,
-          filter: ['all', oneWay, ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor']],
-          paint: { 'line-color': p.laneMarking, 'line-opacity': 0.94, 'line-dasharray': [6, 5],
-                   'line-width': ['interpolate', ['linear'], ['zoom'], 17, 1, 19, 1.9] } },
-      ];
-    }
-
-    // Voegt de 'mtl-*'-lagen (verborgen) toe aan een kaart, direct boven de
-    // Liberty-achtergrond zodat ze onder al onze eigen lagen liggen.
-    function _ensureMontrealLayers(m) {
-      if (m.getLayer('mtl-ground')) return;
-      const style = m.getStyle();
-      const src = Object.keys(style.sources).find(k => {
-        const s = style.sources[k];
-        return s.type === 'vector' && /openfreemap|openmaptiles/.test(String(s.url || k));
-      }) || 'openmaptiles';
-      const liberty = new Set(_libertyAllLayerIds || []);
-      const beforeId = style.layers.find(l => liberty.has(l.id) && l.type !== 'background')?.id;
-      for (const layer of _montrealLayers(src, _MTL_PALETTES.day)) {
-        layer.layout = { ...(layer.layout || {}), visibility: 'none' };
-        m.addLayer(layer, beforeId);
-      }
-    }
+    // Montréal-ondergrond: de 'mtl-*'-lagen komen uit common/js/montreal-basemap.js
+    // (window.MontrealBasemap), gedeeld met de digital-twin.
 
     function _applyBasemapStyle(style) {
       basemapStyle = style;
@@ -6404,10 +6574,8 @@
           }
         }
         try {
-          if (isMtl) _ensureMontrealLayers(m);
-          for (const l of m.getStyle().layers) {
-            if (l.id.startsWith('mtl-')) m.setLayoutProperty(l.id, 'visibility', isMtl ? 'visible' : 'none');
-          }
+          if (isMtl) window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+          window.MontrealBasemap.setVisible(m, isMtl);
         } catch (e) { console.warn('Montréal-ondergrond:', e); }
         m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
         // Satelliet: verberg ook de Liberty fill/background lagen
@@ -7926,36 +8094,72 @@
       }
     }
 
-    /** KPI-namen voor het zijpaneel */
-    const KPI_LABELS = {
-      r_functional_usage:       'Functioneel gebruik',
-      r_longitudinal_marking:   'Kantmarkering',
-      r_directional_separation: 'Rijrichtingscheiding',
-      r_lane_width:             'Rijstrookbreedte',
-      r_road_surface:           'Wegdek',
-      r_pedestrian_facility:    'Voetgangersfaciliteit',
-      r_bicycle_facility:       'Fietsfaciliteit',
-      r_parking_facility:       'Parkeerfaciliteit',
-      r_bus_stop_facility:      'Bushaltefaciliteit',
-      r_speed_bumps:            'Drempels',
-      r_roadside_damage:        'Bermschade',
-      r_road_width:             'Rijbaanbreedte',
-      r_pedestrian_width:       'Breedte voetpad',
-      r_bicycle_width:          'Breedte fietspad',
-      r_parking_location:       'Parkeerlocatie',
-      r_bus_location:           'Buslocatie',
-      r_pedestrian_crossing:    'Voetgangersoversteek',
-      r_bicycle_crossing:       'Fietsoversteek',
-      r_bike_speed:             'Fietssnelheid',
-      r_bike_usage:             'Fietsgebruik',
-      r_bike_parking:           'Fietsparkeren',
-      r_social_interaction:     'Sociale interactie',
-    };
 
     /** Kleur (hex) per KPI-score voor het zijpaneel */
     function kpiColor(score) {
       return { GOED:'#388e3c', REDELIJK:'#fbc02d', MATIG:'#e65100', SLECHT:'#c62828' }[score] ?? '#5a6272';
     }
+
+    /** Indeling van de KPI's in het Veiligheid-panel (kaartlaag 'safety:<kpi>'). */
+    const SAFETY_KPI_GROUPS = [
+      { labelKey: 'safetyGroupRoad', kpis: ['r_functional_usage', 'r_longitudinal_marking', 'r_directional_separation',
+        'r_lane_width', 'r_road_width', 'r_road_surface', 'r_speed_bumps', 'r_roadside_damage'] },
+      { labelKey: 'safetyGroupPedestrian', kpis: ['r_pedestrian_facility', 'r_pedestrian_width', 'r_pedestrian_crossing'] },
+      { labelKey: 'safetyGroupBicycle', kpis: ['r_bicycle_facility', 'r_bicycle_width', 'r_bicycle_crossing',
+        'r_bike_speed', 'r_bike_usage', 'r_bike_parking'] },
+      { labelKey: 'safetyGroupParkingBus', kpis: ['r_parking_facility', 'r_parking_location', 'r_bus_stop_facility', 'r_bus_location'] },
+      { labelKey: 'safetyGroupOther', kpis: ['r_social_interaction'] },
+    ];
+
+    /** Alle KPI's in panelvolgorde; naam via T('kpi_<key>'). */
+    const KPI_KEYS = SAFETY_KPI_GROUPS.flatMap(g => g.kpis);
+    const kpiLabel = key => T('kpi_' + key);
+
+    /** Veiligheidslaag: het totaal ('safety') of één KPI ('safety:<kpi>'). */
+    function isSafetyMetric(metric) {
+      return metric === 'safety' || (typeof metric === 'string' && metric.startsWith('safety:'));
+    }
+
+    /** Wegenscan-score (GOED/REDELIJK/MATIG/SLECHT/NVT) van een link voor de gegeven veiligheidslaag. */
+    function safetyScoreOf(linkId, metric) {
+      const ws = wegenscanByLinkId.get(String(linkId));
+      if (!ws) return null;
+      return metric === 'safety' ? ws.generic_safety : ws.safety?.[metric.slice('safety:'.length)];
+    }
+
+    /** Naam van een veiligheidslaag (totaal of KPI). */
+    function safetyMetricLabel(metric) {
+      return metric === 'safety' ? T('legendSafety') : kpiLabel(metric.slice('safety:'.length));
+    }
+
+    // KPI-radio's in het Veiligheid-panel en bijbehorende opties in #colorMetric
+    // genereren (de radio↔select-koppeling vereist dat elke waarde een optie is).
+    (function buildSafetyKpiControls() {
+      const body = document.getElementById('lmpSafetyBody');
+      const select = document.getElementById('colorMetric');
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = 'Veiligheid';
+      for (const group of SAFETY_KPI_GROUPS) {
+        const head = document.createElement('div');
+        head.className = 'lmp-subhead';
+        head.dataset.i18n = group.labelKey;
+        head.textContent = T(group.labelKey);
+        body?.appendChild(head);
+        for (const kpi of group.kpis) {
+          const label = document.createElement('label');
+          label.className = 'lmp-radio-row';
+          label.innerHTML = `<input type="radio" name="lmpMetric" value="safety:${kpi}"> <span data-i18n="kpi_${kpi}">${kpiLabel(kpi)}</span>`;
+          body?.appendChild(label);
+          const opt = document.createElement('option');
+          opt.value = `safety:${kpi}`;
+          opt.dataset.i18n = `kpi_${kpi}`;
+          opt.textContent = kpiLabel(kpi);
+          optgroup.appendChild(opt);
+        }
+      }
+      select?.querySelector('#safetyOption')?.after(optgroup);
+      syncLayerPanels();
+    })();
 
     /** Laad WEGENSCAN-GeoJSON van de server, bouw lookupMap op. */
     async function loadWegenscanData() {
@@ -7987,11 +8191,13 @@
       scoreEl.textContent = generic;
       scoreEl.style.color = kpiColor(generic);
 
-      listEl.innerHTML = Object.entries(KPI_LABELS).map(([key, label]) => {
+      listEl.innerHTML = KPI_KEYS.map(key => {
+        const label = kpiLabel(key);
         const score = safety[key] ?? 'NVT';
         const color = kpiColor(score);
+        const active = colorMetric === `safety:${key}`;
         return `<div style="display:flex;justify-content:space-between;align-items:center;
-          padding:5px 0;border-bottom:1px solid rgba(35,41,49,0.05)">
+          padding:5px 0;border-bottom:1px solid rgba(35,41,49,0.05)${active ? ';font-weight:700;background:rgba(222,0,88,0.06)' : ''}">
           <span style="color:#aab4c8">${label}</span>
           <span style="font-weight:600;color:${color}">${score}</span>
         </div>`;
@@ -8707,6 +8913,16 @@
         <div><span style="color:#6a757c">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
         ${p.roadWidthM != null ? `<div><span style="color:#6a757c">${T('tooltipWidth')}: </span><b>${Number(p.roadWidthM).toFixed(1)} m</b></div>` : ''}
         ${(() => {
+          const dl = DESIGN_CLASS_LAYERS[colorMetric];
+          if (!dl) return '';
+          const cls = dl.classes[dl.classOf(p)];
+          const raw = dl.rawOf(p);
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            <span style="color:#6a757c">${T(dl.labelKey)}: </span><b>${_designClassLabel(cls)}</b>
+            ${raw != null ? `<span style="color:#6a757c"> (${raw})</span>` : ''}
+          </div>`;
+        })()}
+        ${(() => {
           const nd = noiseByLinkId && noiseByLinkId.get(p.linkId);
           if (!nd) return '';
           let h = '';
@@ -8729,10 +8945,16 @@
         ${(() => {
           const wsProps = wegenscanByLinkId.get(String(p.linkId));
           if (!wsProps?.generic_safety) return '';
+          let kpiRow = '';
+          if (isSafetyMetric(colorMetric) && colorMetric !== 'safety') {
+            const sc = safetyScoreOf(p.linkId, colorMetric) ?? 'NVT';
+            kpiRow = `<div><span style="color:#6a757c">${safetyMetricLabel(colorMetric)}: </span><b style="color:${kpiColor(sc)}">${sc}</b></div>`;
+          }
           return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            ${kpiRow}
             <span style="color:#6a757c">Veiligheid: </span>
             <b style="color:${kpiColor(wsProps.generic_safety)}">${wsProps.generic_safety}</b>
-            ${colorMetric === 'safety'
+            ${isSafetyMetric(colorMetric)
               ? `<span style="color:#00a5ab;margin-left:6px;cursor:pointer" onclick="openWegenscanPanel(wegenscanByLinkId.get('${p.linkId}'))">→ details</span>`
               : ''}
           </div>`;
@@ -8808,8 +9030,8 @@
             </div>`;
           } else if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
             const key = metricShortLabelKey(colorMetric);
-            const catName = v === 1 ? 'Verkeerslicht'
-                          : v === 2 ? 'Rotonde'
+            const catName = v === 1 ? T('catSignal')
+                          : v === 2 ? T('catRoundabout')
                           : null;
             if (catName == null) {
               return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
@@ -8910,11 +9132,13 @@
          },
           getLineColor: f => {
            if (f.properties.capacity === 0) return [210, 40, 40, 200];
-           // Veiligheidsmodus: kleur op basis van wegenscan generic_safety
-           if (colorMetric === 'safety') {
-             const wsProps = wegenscanByLinkId.get(String(f.properties.linkId));
-             return safetyToRgba(wsProps?.generic_safety);
+           // Veiligheidsmodus: kleur op basis van wegenscan generic_safety of de gekozen KPI
+           if (isSafetyMetric(colorMetric)) {
+             return safetyToRgba(safetyScoreOf(f.properties.linkId, colorMetric));
            }
+           // Inrichtingslagen met vaste klassen
+           const _dl = DESIGN_CLASS_LAYERS[colorMetric];
+           if (_dl) return _dl.classes[_dl.classOf(f.properties)].rgba;
               // Spectrum: aparte MapLibre-laag, netwerk-links normaal inkleuren
               const v = getMetricValue(f.properties);
             // Binaire toekomstige Snelheid-lagen zonder brondata: grijs tonen.
@@ -11054,7 +11278,7 @@
         return;
       }
       // Veiligheidsmodus: open KPI-paneel voor het aangeklikte wegvak
-      if (colorMetric === 'safety' && hoveredLinkId !== null) {
+      if (isSafetyMetric(colorMetric) && hoveredLinkId !== null) {
         const wsProps = wegenscanByLinkId.get(String(hoveredLinkId));
         if (wsProps) openWegenscanPanel(wsProps);
         return;
@@ -12805,6 +13029,7 @@
         f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
       );
       _networkFeatures = newFeatures; // highlight-lookup bijwerken
+      _setKaart2Network(newFeatures);
 
       // Vervang segmenten in-place
       const newFlows   = newFeatures.map(f => f.properties.flow);
@@ -14279,8 +14504,8 @@
       // (dekt ook de vroege returns hieronder voor safety/spectrum/compare).
       _ensureDiffCompatible();
 
-      // ── Veiligheidsmodus ──────────────────────────────────────────────
-      if (colorMetric === 'safety') {
+      // ── Veiligheidsmodus (totaal of één KPI) ──────────────────────────
+      if (isSafetyMetric(colorMetric)) {
         closeWegenscanPanel();
         if (!wegenscanData) {
           // Probeer te laden; als niet aanwezig: toon banner
@@ -14528,6 +14753,7 @@
           const newLang = settingsPanel.querySelector('input[name="spLang"]:checked')?.value;
           if (newLang && newLang !== document.getElementById('langSelect').value) {
             applyLang(newLang);
+            updateLegend();   // categorale legenda-labels opnieuw vertalen
           }
           // Lees nieuwe ondergrond-instelling en pas toe als gewijzigd
           const newBasemap = settingsPanel.querySelector('input[name="spBasemap"]:checked')?.value;
@@ -14966,6 +15192,7 @@
 
   <!-- Achtergronden-blok in linker menu-paneel (los module, na de hoofdscript) -->
   <script>window._basemapSupportsMontreal = true; // analyzer kent de Montréal-ondergrond</script>
+  <script src="montreal-basemap.js"></script>
   <script src="left-menu-panel.js"></script>
 </body>
 </html>

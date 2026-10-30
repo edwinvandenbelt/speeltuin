@@ -5796,12 +5796,10 @@
        f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
      );
      _networkFeatures = features; // beschikbaar stellen voor maquette highlight
-     // Montréal-ondergrond: netwerkwegen op werkelijke breedte. Doet niets als
-     // de mtl-lagen er nog niet zijn; _applyBasemapStyle doet het dan bij load.
-     for (const m of [map, map2]) {
-       try { if (m) window.MontrealBasemap?.setNetworkRoads(m, _kaart2NetworkFeatures()); }
-       catch (e) { console.warn('Montréal-netwerkwegen:', e); }
-     }
+     // Montréal-ondergrond: de wegen in de tiles krijgen breedte en verharding
+     // van deze links (geldt voor alle kaarten, ook als ze later laden).
+     try { window.MontrealBasemap?.setNetwork(_kaart2NetworkFeatures()); }
+     catch (e) { console.warn('Montréal-netwerkwegen:', e); }
 
     const flowValues = features.map(f => f.properties.flow);
     const minFlow    = Math.min(...flowValues);
@@ -6875,8 +6873,8 @@
       if (spinEl) spinEl.classList.toggle('visible', fetching);
     }
 
-    // Netwerklinks die de Montréal-ondergrond op werkelijke breedte tekent
-    // (MontrealBasemap.setNetworkRoads). Bij MIXED alleen de autowegen.
+    // Netwerklinks waarmee de Montréal-ondergrond de wegen breedte en
+    // verharding geeft (MontrealBasemap.setNetwork). Bij MIXED alleen de autowegen.
     function _kaart2NetworkFeatures() {
       if (MODE !== 'MIXED') return _networkFeatures;
       if (_kaart2Src !== _networkFeatures) {
@@ -6944,10 +6942,7 @@
           }
         }
         try {
-          if (isMtl) {
-            window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
-            window.MontrealBasemap.setNetworkRoads(m, _kaart2NetworkFeatures());
-          }
+          if (isMtl) window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
           window.MontrealBasemap.setVisible(m, isMtl);
         } catch (e) { console.warn('Montréal-ondergrond:', e); }
         m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
