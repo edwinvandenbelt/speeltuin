@@ -1188,8 +1188,11 @@ _PROCESS_DESCRIPTIONS = {
         "id": "wegenscan",
         "title": "Wegenscan – veiligheids-KPI's",
         "description": (
-            "Verrijkt een bestaand netwerk met NWB-attributen via Databricks en "
-            "berekent 21 veiligheids-KPI's per wegvak (GOED/REDELIJK/MATIG/SLECHT)."
+            "Berekent 21 veiligheids-KPI's per wegvak (GOED/REDELIJK/MATIG/SLECHT) "
+            "op basis van de netwerkattributen (breedte, wegdek, snelheid, wegtype, "
+            "fiets-/stoep-/parkeervoorzieningen), parkeervlakken en drempels uit "
+            "TRAFFIC-ASSETS (BGT/OSM) indien aanwezig. Optioneel aangevuld met NWB/WKD "
+            "uit Databricks voor velden zonder netwerkwaarde."
         ),
         "version": "2.1.0",
         "jobControlOptions": ["async-execute"],
@@ -1208,9 +1211,18 @@ _PROCESS_DESCRIPTIONS = {
                 },
                 "minOccurs": 1,
             },
+            "useDatabricks": {
+                "title": "Aanvullen uit Databricks (NWB/WKD)",
+                "schema": {"type": "boolean", "default": False},
+                "minOccurs": 0,
+            },
         },
         "outputs": {
             "collection": {"title": "Collectie-URL", "schema": {"type": "string"}},
+            "coverage": {
+                "title": "Dekking per invoerveld (% links met netwerk-/Databricks-waarde)",
+                "schema": {"type": "object"},
+            },
         },
     },
     "delete-area": {
@@ -2828,7 +2840,23 @@ def _run_whatif_road_closure_job(
 # ---------------------------------------------------------------------------
 
 
-def _run_wegenscan_job(job_id: str, area_id: str, mode: str):
+def _wegenscan_assets(area_id: str):
+    """Parkeervlakken en drempels uit TRAFFIC-ASSETS (met base-fallback), of None."""
+    path = _find_prepared_with_base_fallback(area_id, "TRAFFIC-ASSETS")
+    if path is None or not _GEOPANDAS_AVAILABLE or path.suffix.lower() not in _GEOPARQUET_EXTS:
+        print("[wegenscan] Geen TRAFFIC-ASSETS: parkeren/drempels uit netwerk of aanname")
+        return None
+    try:
+        gdf = _gpd.read_parquet(path)  # type: ignore[union-attr]
+    except Exception as exc:
+        print(f"[wegenscan] WAARSCHUWING: TRAFFIC-ASSETS niet leesbaar ({exc}); overgeslagen")
+        return None
+    gdf = gdf[gdf["assetType"].isin(["parkingArea", "speedBump"])] if "assetType" in gdf else gdf.iloc[0:0]
+    print(f"[wegenscan] TRAFFIC-ASSETS: {path.name} ({len(gdf)} parkeervlakken/drempels)")
+    return gdf
+
+
+def _run_wegenscan_job(job_id: str, area_id: str, mode: str, use_databricks: bool = False):
     """Voer wegenscan-pipeline (enrichment + KPI-berekening) uit in achtergrondthread."""
     with _jobs_lock:
         _jobs[job_id]["status"] = "running"
@@ -2848,7 +2876,13 @@ def _run_wegenscan_job(job_id: str, area_id: str, mode: str):
             print(f"[wegenscan] Netwerk laden: {network_path.name}")
             geojson = _read_geodata(network_path)
             print(f"[wegenscan] {len(geojson.get('features', []))} features geladen")
-            result = _ws_run_pipeline(geojson, id_field="spectrumId")  # type: ignore[misc]
+            assets = _wegenscan_assets(area_id)
+            result = _ws_run_pipeline(  # type: ignore[misc]
+                geojson,
+                id_field="spectrumId",
+                use_databricks=use_databricks,
+                assets=assets,
+            )
         stream.flush()
 
         out_path = _find_area_dir(area_id) / f"{area_id}-WEGENSCAN-{mode}.geojson"
@@ -2861,6 +2895,7 @@ def _run_wegenscan_job(job_id: str, area_id: str, mode: str):
             _jobs[job_id]["finished"] = _now_iso()
             _jobs[job_id]["_results"] = {
                 "collection": f"/collections/wegenscan/items?areaId={area_id}&mode={mode}",
+                "coverage": result.get("wegenscan_coverage", {}),
             }
     except BaseException as exc:
         stream.flush()
@@ -2921,12 +2956,28 @@ def _bbox_to_polygon(bbox: "list | None") -> "dict | None":
     }
 
 
-def _run_fetch_osm_job(job_id: str, area_id: str):
+# Digital-twin-bronnen voor fetch_osm: (invoernaam zoals de prepare-wizard,
+# run_pipeline-argument). Standaard allemaal aan, net als bij een nieuwe prepare;
+# de library-defaults van run_pipeline() staan ze uit.
+_FETCH_OSM_SOURCES = (
+    ("trafficSignals", "annotate_traffic_signals"),
+    ("trafficSigns", "fetch_traffic_signs"),
+    ("bgtAssets", "fetch_bgt_assets"),
+    ("osmAssets", "fetch_osm_assets"),
+    ("parking", "fetch_parking_areas"),
+    ("vegetation", "fetch_vegetation"),
+)
+
+
+def _run_fetch_osm_job(job_id: str, area_id: str, sources: "dict | None" = None):
     """Verrijk een bestaand gebied met OSM-data (Full digital twin).
 
     Draait prepare's stage-5 opnieuw met only_osm=True voor elk mode_label van
     het gebied. Herschrijft NETWORK (trafficSignal), TRAFFIC-ASSETS en BUILDINGS.
+    ``sources`` = run_pipeline-vlaggen uit _FETCH_OSM_SOURCES (standaard alles aan).
     """
+    if sources is None:
+        sources = {arg: True for _, arg in _FETCH_OSM_SOURCES}
     with _jobs_lock:
         _jobs[job_id]["status"] = "running"
         _jobs[job_id]["started"] = _now_iso()
@@ -2981,6 +3032,13 @@ def _run_fetch_osm_job(job_id: str, area_id: str):
                     catalog="spectrum",
                     schema="2024_01",
                     only_osm=True,
+                    # Verplichte argumenten van run_pipeline(); zonder deze
+                    # faalde de job direct met een TypeError.
+                    refresh=False,
+                    debug=False,
+                    fetch_buildings=True,
+                    ndw_data_uri=_NDW_DATA_URI,
+                    **sources,
                 )
                 print("[server] prepare-pipeline aanroep (only_osm):")
                 print(_format_pipeline_call("run_pipeline", _osm_kwargs))
@@ -3023,6 +3081,7 @@ def _execute_fetch_osm(inputs: dict):
     area_id = str(inputs.get("area_id", "")).strip()
     if not _safe(area_id):
         abort(400, f"Ongeldige of ontbrekende area_id: {area_id!r}")
+    sources = {arg: bool(inputs.get(name, True)) for name, arg in _FETCH_OSM_SOURCES}
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:
@@ -3039,7 +3098,7 @@ def _execute_fetch_osm(inputs: dict):
         }
     threading.Thread(
         target=_run_fetch_osm_job,
-        args=(job_id, area_id),
+        args=(job_id, area_id, sources),
         daemon=True,
     ).start()
     return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}
@@ -3817,6 +3876,10 @@ def _execute_wegenscan(inputs: dict):
 
     area_id = str(inputs.get("area_id", "")).strip()
     mode = str(inputs.get("mode", "CAR")).strip().upper()
+    use_databricks = inputs.get("useDatabricks", False)
+    if isinstance(use_databricks, str):
+        use_databricks = use_databricks.strip().lower() in ("1", "true", "yes", "ja")
+    use_databricks = bool(use_databricks)
 
     if not _safe(area_id):
         abort(400, f"Ongeldige of ontbrekende area_id: {area_id!r}")
@@ -3840,7 +3903,7 @@ def _execute_wegenscan(inputs: dict):
         }
     threading.Thread(
         target=_run_wegenscan_job,
-        args=(job_id, area_id, mode),
+        args=(job_id, area_id, mode, use_databricks),
         daemon=True,
     ).start()
     return {"jobID": job_id, "status": "accepted"}, 201, {"Location": f"/jobs/{job_id}"}

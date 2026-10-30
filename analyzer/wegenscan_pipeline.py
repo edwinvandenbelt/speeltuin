@@ -3,73 +3,49 @@ Wegenscan enrichment + KPI pipeline als herbruikbare functie.
 
 Ontworpen voor integratie in speeltuin server.py.
 
-Aanname: spectrumId (Spectrum-netwerk) == wvk_id (NWB) voor Nederlandse netwerken.
-De id_field-parameter bepaalt welke property als join-key op de NWB-tabellen
-wordt gebruikt; standaard is dat 'spectrumId'.
+Bron van de invoer
+------------------
+1. NETWORK-attributen (standaard): de prepare-pipeline heeft via WKD-breedtes
+   en de OSM road-enricher al breedte, wegdek, snelheid, wegtype, fiets-,
+   stoep- en parkeervoorzieningen per link. ``wegenscan_inputs`` vertaalt die
+   naar de wegenscan-velden en legt per veld de bron vast
+   (``props["wegenscan_sources"]``).
+2. Databricks (optioneel, ``use_databricks=True``): de NWB/WKD-tabellen van de
+   wegenscan-package vullen alleen velden aan waarvoor het netwerk geen waarde
+   had. Uitzondering is ``max_speed_s85``, die het netwerk niet kent. Join op
+   ``wvkIds`` (spatiale WKD-match uit prepare), met ``id_field`` als terugval;
+   bij meerdere wegvakken per link telt de meest voorkomende waarde.
+3. Wat dan nog ontbreekt, vult ``build_invoer`` met de wegenscan-defaults.
+   Markeringen, rijrichtingscheiding, bus en sociale interactie hebben geen
+   bron en blijven altijd default.
 
-Volgorde enrichment-stappen:
-  1. speed_attributes  – max_speed, max_speed_s85     (bbox-gefilterd)
-  2. road_category     – road_category, wegcat         (heel NL)
-  3. profile           – profile, bicycle_location     (bbox-gefilterd)
-  4. pedestrian        – pedestrian_location/crossing  (heel NL)
-  5. parking           – parking_location/width        (heel NL, met fallbacks)
-  6. speed_bumps       – speed_bumps                   (bbox-gefilterd)
-  7. markings          – longitudinal_markings, separation  (defaults)
-  8. bus               – bus_frequency, bus_facility       (defaults)
-  9. social_interaction – social_interaction               (default)
-
-Stap 10: KPI-berekening via wegenscan.py (build_invoer + calculate_kpis)
+Daarna: KPI-berekening via wegenscan.py (build_invoer + calculate_kpis).
 """
 
-# ---------------------------------------------------------------------------
-# Imports uit de wegenscan-package
-# ---------------------------------------------------------------------------
+import json
+from collections import Counter
 
-from db import execute_sql
+from wegenscan import calculate_kpis, calculate_generic_safety
 
-from wegenscan import build_invoer, calculate_kpis, calculate_generic_safety
+import wegenscan_assets as _wa
+import wegenscan_inputs as _wi
 
-# speed_attributes
-from add_speed_attributes import (
-    compute_bbox,
-    build_sql as _speed_build_sql,
-    build_speed_lookup as _speed_build_lookup,
-)
+from core.vorm_gebruik import VormGebruik as _VormGebruik
 
-# road_category
-from add_road_category import (
-    SQL_QUERY as _WEGCAT_SQL,
-    build_wegcat_lookup as _wegcat_build_lookup,
-    derive_road_category as _derive_road_category,
-    derive_wegcat as _derive_wegcat,
-)
 
-# profile
-from add_profile import (
-    build_sql as _profile_build_sql,
-    build_lookup as _profile_build_lookup,
-)
+# Bugfix wegenscan 2.1.0: bij een breedte boven de laatste tabelrij (20 m)
+# verwijst get_bermschade_waarden naar een niet-bestaande variabele `waarden`
+# (NameError → hele link NVT). Bedoeld is de laatste rij van de tabel.
+# Kwam pas aan het licht nu de echte breedte gebruikt wordt (voorheen 6 m).
+def _get_bermschade_waarden(self, width):
+    rows = sorted(self.bermschade_waarden, key=lambda x: x["breedte"])
+    for item in rows:
+        if item["breedte"] >= width:
+            return item["values"]
+    return rows[-1]["values"]
 
-# pedestrian
-from add_pedestrian import (
-    SQL_QUERY as _PEDESTRIAN_SQL,
-    build_lookup as _pedestrian_build_lookup,
-)
 
-# parking
-from add_parking import (
-    SQL_QUERY as _PARKING_SQL,
-    build_lookup as _parking_build_lookup,
-    derive_parking_from_road_category as _derive_parking_road_cat,
-    derive_parking_from_bicycle_location as _derive_parking_bicycle,
-    derive_parking_from_speed as _derive_parking_speed,
-)
-
-# speed_bumps
-from add_speed_bumps import (
-    build_sql as _bumps_build_sql,
-    build_bumps_lookup as _bumps_build_lookup,
-)
+_VormGebruik.get_bermschade_waarden = _get_bermschade_waarden
 
 
 # ---------------------------------------------------------------------------
@@ -101,216 +77,141 @@ KPI_LABELS = {
     "r_social_interaction": "Sociale interactie",
 }
 
-
-# ---------------------------------------------------------------------------
-# Hulpfunctie: bbox uit GeoJSON
-# ---------------------------------------------------------------------------
-
-
-def _get_bbox(geojson: dict):
-    """Bepaal bounding box voor de GeoJSON (uit properties of geometrieën)."""
-    return compute_bbox(geojson)
+# Wegtypes waarvoor de wegenscan geen beoordeling heeft (autosnelweg/autoweg).
+_OUT_OF_SCOPE_HIGHWAYS = {"motorway", "motorway_link", "trunk", "trunk_link"}
 
 
 # ---------------------------------------------------------------------------
-# Enrichment-stappen
+# Databricks-aanvulling (optioneel)
 # ---------------------------------------------------------------------------
 
 
-def _enrich_speed(features: list, geojson: dict, id_field: str) -> int:
-    """Voeg max_speed en max_speed_s85 toe via Databricks (bbox-gefilterd)."""
-    bbox = _get_bbox(geojson)
-    sql = _speed_build_sql(bbox)
-    columns, rows = execute_sql(sql)
-    if columns is None or rows is None:
-        print(
-            "  [wegenscan] WAARSCHUWING: snelheid-query mislukt, defaults worden gebruikt"
-        )
-        for f in features:
-            f["properties"].setdefault("max_speed", -1)
-            f["properties"].setdefault("max_speed_s85", -1)
-        return 0
-    lookup = _speed_build_lookup(columns, rows)
-    matched = 0
-    for f in features:
-        wvk_id = str(f["properties"].get(id_field, ""))
-        if wvk_id in lookup:
-            max_speed, max_speed_s85 = lookup[wvk_id]
-            f["properties"]["max_speed"] = max_speed
-            f["properties"]["max_speed_s85"] = max_speed_s85
-            matched += 1
-        else:
-            f["properties"].setdefault("max_speed", -1)
-            f["properties"].setdefault("max_speed_s85", -1)
-    print(f"  [wegenscan] snelheid: {matched}/{len(features)} features gematcht")
-    return matched
+def _wvk_keys(props: dict, id_field: str) -> list[str]:
+    """NWB-wegvak-id's van een link: wvkIds (lijst of JSON-string), anders id_field."""
+    raw = props.get("wvkIds")
+    ids = None
+    if isinstance(raw, str):
+        try:
+            ids = json.loads(raw)
+        except ValueError:
+            ids = None
+    elif raw is not None and not isinstance(raw, (int, float)):
+        try:
+            ids = list(raw)
+        except TypeError:
+            ids = None
+    if ids:
+        return [str(i) for i in ids]
+    own = props.get(id_field)
+    return [str(own)] if own not in (None, "") else []
 
 
-def _enrich_road_category(features: list, id_field: str) -> int:
-    """Voeg road_category en wegcat toe via Databricks."""
-    columns, rows = execute_sql(_WEGCAT_SQL)
-    if columns is None or rows is None:
-        print(
-            "  [wegenscan] WAARSCHUWING: wegcat-query mislukt, defaults worden gebruikt"
-        )
-        for f in features:
-            f["properties"].setdefault("road_category", "ETW 30 km/h")
-            f["properties"].setdefault("wegcat", "straat")
-        return 0
-    lookup = _wegcat_build_lookup(columns, rows)
-    matched = 0
-    for f in features:
-        props = f["properties"]
-        wvk_id = str(props.get(id_field, ""))
-        max_speed = props.get("max_speed", -1)
-        if isinstance(max_speed, str):
-            try:
-                max_speed = int(max_speed)
-            except (TypeError, ValueError):
-                max_speed = -1
-        wegcat_number = lookup.get(wvk_id, 99)
-        props["wegcat_number"] = wegcat_number
-        props["wegcat"] = _derive_wegcat(wegcat_number)
-        props["road_category"] = _derive_road_category(wegcat_number, max_speed)
-        if wvk_id in lookup:
-            matched += 1
-    print(f"  [wegenscan] wegcategorie: {matched}/{len(features)} features gematcht")
-    return matched
+def _majority(lookup: dict, keys: list[str]):
+    """Meest voorkomende waarde van lookup over de keys (None als geen match)."""
+    hits = [lookup[k] for k in keys if k in lookup]
+    if not hits:
+        return None
+    counted = Counter(json.dumps(h, sort_keys=True, default=str) for h in hits)
+    return json.loads(counted.most_common(1)[0][0])
 
 
-def _enrich_profile(features: list, geojson: dict, id_field: str) -> int:
-    """Voeg profile en bicycle_location toe via Databricks (bbox-gefilterd)."""
-    bbox = _get_bbox(geojson)
-    sql = _profile_build_sql(bbox)
-    columns, rows = execute_sql(sql)
-    if columns is None or rows is None:
-        print(
-            "  [wegenscan] WAARSCHUWING: profiel-query mislukt, defaults worden gebruikt"
-        )
-        for f in features:
-            f["properties"].setdefault(
-                "profile", "gemengd (auto 2, fiets 2 richtingen)"
-            )
-            f["properties"].setdefault("bicycle_location", "niet van toepassing")
-            f["properties"].setdefault(
-                "bicycle_crossing", "uit de voorrang / geen voorziening"
-            )
-            f["properties"].setdefault("bicycle_width", 0)
-        return 0
-    lookup = _profile_build_lookup(columns, rows)
-    matched = 0
+def _query_lookups(geojson: dict) -> dict:
+    """Voer de Databricks-queries uit; per bron een dict wvk_id → waarde.
+
+    Mislukte queries leveren een lege lookup op (geen defaults).
+    """
+    # Lazy: alleen nodig (en alleen verbinding maken) als Databricks aan staat.
+    from db import execute_sql
+    from add_speed_attributes import (
+        compute_bbox,
+        build_sql as speed_sql,
+        build_speed_lookup,
+    )
+    from add_road_category import SQL_QUERY as wegcat_sql, build_wegcat_lookup
+    from add_profile import build_sql as profile_sql, build_lookup as profile_lookup
+    from add_pedestrian import SQL_QUERY as pedestrian_sql, build_lookup as pedestrian_lookup
+    from add_parking import SQL_QUERY as parking_sql, build_lookup as parking_lookup
+    from add_speed_bumps import build_sql as bumps_sql, build_bumps_lookup
+
+    bbox = compute_bbox(geojson)
+    steps = {
+        "speed": (speed_sql(bbox), build_speed_lookup),
+        "wegcat": (wegcat_sql, build_wegcat_lookup),
+        "profile": (profile_sql(bbox), profile_lookup),
+        "pedestrian": (pedestrian_sql, pedestrian_lookup),
+        "parking": (parking_sql, parking_lookup),
+        "bumps": (bumps_sql(bbox), build_bumps_lookup),
+    }
+    lookups = {}
+    for name, (sql, build) in steps.items():
+        print(f"  [wegenscan] Databricks: {name} …")
+        columns, rows = execute_sql(sql)
+        if columns is None or rows is None:
+            print(f"  [wegenscan] WAARSCHUWING: {name}-query mislukt, geen aanvulling")
+            lookups[name] = {}
+            continue
+        lookups[name] = build(columns, rows)
+    # wegcat 99 = "niet gevonden" in build_wegcat_lookup.
+    lookups["wegcat"] = {k: v for k, v in lookups["wegcat"].items() if v != 99}
+    return lookups
+
+
+def _supplement_from_databricks(features: list, geojson: dict, id_field: str) -> None:
+    """Vul velden met bron 'default' aan uit Databricks (in-place)."""
+    from add_road_category import derive_road_category
+
+    lookups = _query_lookups(geojson)
+    filled = Counter()
+
     for f in features:
         props = f["properties"]
-        wvk_id = str(props.get(id_field, ""))
-        if wvk_id in lookup:
-            props.update(lookup[wvk_id])
-            matched += 1
-        else:
-            props.setdefault("profile", "gemengd (auto 2, fiets 2 richtingen)")
-            props.setdefault("bicycle_location", "niet van toepassing")
-            props.setdefault("bicycle_crossing", "uit de voorrang / geen voorziening")
-            props.setdefault("bicycle_width", 0)
-    print(f"  [wegenscan] profiel: {matched}/{len(features)} features gematcht")
-    return matched
+        sources = props["wegenscan_sources"]
+        keys = _wvk_keys(props, id_field)
+        if not keys:
+            continue
 
+        def fill(field, value, src):
+            if value is not None and _wi.is_assumed(sources.get(field)):
+                props[field] = value
+                sources[field] = src
+                filled[field] += 1
 
-def _enrich_pedestrian(features: list, id_field: str) -> int:
-    """Voeg pedestrian_location en pedestrian_crossing toe via Databricks."""
-    columns, rows = execute_sql(_PEDESTRIAN_SQL)
-    if columns is None or rows is None:
-        print(
-            "  [wegenscan] WAARSCHUWING: voetganger-query mislukt, defaults worden gebruikt"
-        )
-        for f in features:
-            f["properties"].setdefault("pedestrian_location", "op voetpad/trottoir")
-            f["properties"].setdefault(
-                "pedestrian_crossing", "uit de voorrang / geen voorziening"
-            )
-            f["properties"].setdefault("pedestrian_width", 0)
-        return 0
-    lookup = _pedestrian_build_lookup(columns, rows)
-    matched = 0
-    for f in features:
-        props = f["properties"]
-        wvk_id = str(props.get(id_field, ""))
-        props["pedestrian_width"] = 0
-        if wvk_id in lookup:
-            props.update(lookup[wvk_id])
-            matched += 1
-        else:
-            props.setdefault("pedestrian_location", "op voetpad/trottoir")
-            props.setdefault(
-                "pedestrian_crossing", "uit de voorrang / geen voorziening"
-            )
-    print(f"  [wegenscan] voetgangers: {matched}/{len(features)} features gematcht")
-    return matched
+        speed = _majority(lookups["speed"], keys)
+        if speed and speed[0] > 0:
+            max_speed, s85 = speed
+            if sources["max_speed"] == "default":
+                props["max_speed"] = max_speed
+                sources["max_speed"] = "databricks:MAXSHD"
+                filled["max_speed"] += 1
+            if s85 > 0:
+                # s85 heeft geen netwerkbron; altijd overnemen.
+                props["max_speed_s85"] = s85
+                sources["max_speed_s85"] = "databricks:s85"
+                filled["max_speed_s85"] += 1
 
+        wegcat = _majority(lookups["wegcat"], keys)
+        if wegcat is not None and props.get("max_speed"):
+            category = derive_road_category(wegcat, props["max_speed"])
+            category = _wi.normalize_category(category)
+            fill("road_category", category, "databricks:wkd_weg_catv2")
 
-def _enrich_parking(features: list, id_field: str) -> int:
-    """Voeg parking_location en parking_width toe via Databricks (met fallbacks)."""
-    columns, rows = execute_sql(_PARKING_SQL)
-    if columns is None or rows is None:
-        print(
-            "  [wegenscan] WAARSCHUWING: parkeer-query mislukt, defaults worden gebruikt"
-        )
-        for f in features:
-            f["properties"].setdefault("parking_location", "op de rijbaan")
-            f["properties"].setdefault("parking_width", 0)
-        return 0
-    lookup = _parking_build_lookup(columns, rows)
-    matched = 0
-    for f in features:
-        props = f["properties"]
-        wvk_id = str(props.get(id_field, ""))
-        if wvk_id in lookup:
-            props.update(lookup[wvk_id])
-            matched += 1
-        else:
-            derived = _derive_parking_road_cat(props.get("road_category"))
-            if derived is None:
-                derived = _derive_parking_bicycle(props.get("bicycle_location"))
-            if derived is None:
-                derived = _derive_parking_speed(props.get("max_speed", -1))
-            if derived:
-                props.update(derived)
-    print(f"  [wegenscan] parkeren: {matched}/{len(features)} features gematcht")
-    return matched
+        profile = _majority(lookups["profile"], keys) or {}
+        fill("profile", profile.get("profile"), "databricks:wkd_vrkrstpnv2")
+        fill("bicycle_location", profile.get("bicycle_location"), "databricks:wkd_vrkrstpnv2")
 
+        pedestrian = _majority(lookups["pedestrian"], keys) or {}
+        fill("pedestrian_location", pedestrian.get("pedestrian_location"), "databricks:wkd_vrkrstpnv2")
 
-def _enrich_speed_bumps(features: list, geojson: dict, id_field: str) -> int:
-    """Voeg speed_bumps toe via Databricks (bbox-gefilterd)."""
-    bbox = _get_bbox(geojson)
-    sql = _bumps_build_sql(bbox)
-    columns, rows = execute_sql(sql)
-    if columns is None or rows is None:
-        print(
-            "  [wegenscan] WAARSCHUWING: drempel-query mislukt, defaults worden gebruikt"
-        )
-        for f in features:
-            f["properties"].setdefault("speed_bumps", "niet aanwezig")
-        return 0
-    lookup = _bumps_build_lookup(columns, rows)
-    matched = 0
-    for f in features:
-        wvk_id = str(f["properties"].get(id_field, ""))
-        if wvk_id in lookup:
-            f["properties"]["speed_bumps"] = lookup[wvk_id]
-            matched += 1
-        else:
-            f["properties"].setdefault("speed_bumps", "niet aanwezig")
-    print(f"  [wegenscan] drempels: {matched}/{len(features)} features gematcht")
-    return matched
+        parking = _majority(lookups["parking"], keys) or {}
+        if parking.get("parking_location") and _wi.is_assumed(sources["parking_location"]):
+            props["parking_width"] = parking.get("parking_width", 0)
+        fill("parking_location", parking.get("parking_location"), "databricks:wkd_parkvlak")
 
+        fill("speed_bumps", _majority(lookups["bumps"], keys), "databricks:drempels")
 
-def _enrich_defaults(features: list) -> None:
-    """Zet overige attributen op defaults (markings, bus, social_interaction)."""
-    for f in features:
-        props = f["properties"]
-        props.setdefault("longitudinal_markings", "niet aanwezig")
-        props.setdefault("separation", "niet aanwezig")
-        props.setdefault("bus_frequency", "niet aanwezig")
-        props.setdefault("bus_facility", "niet van toepassing")
-        props.setdefault("social_interaction", "ja")
+    n = len(features)
+    summary = ", ".join(f"{k} {v}/{n}" for k, v in filled.items()) or "niets"
+    print(f"  [wegenscan] Databricks-aanvulling: {summary}")
 
 
 # ---------------------------------------------------------------------------
@@ -319,53 +220,49 @@ def _enrich_defaults(features: list) -> None:
 
 
 def enrich_features(
-    features: list, geojson: dict, id_field: str = "spectrumId"
-) -> list:
+    features: list,
+    geojson: dict,
+    id_field: str = "spectrumId",
+    use_databricks: bool = False,
+    assets=None,
+) -> dict:
     """
-    Verrijkt een lijst GeoJSON-features met NWB-attributen via Databricks.
+    Verrijkt GeoJSON-features met de wegenscan-invoervelden (in-place).
 
-    Parameters
-    ----------
-    features : list
-        De feature-lijst uit de GeoJSON FeatureCollection.
-    geojson : dict
-        De volledige FeatureCollection (nodig voor bbox-berekening).
-    id_field : str
-        De property-naam die als join-key op NWB wvk_id wordt gebruikt.
-        Standaard 'spectrumId'.
+    Eerst uit de NETWORK-attributen; met ``use_databricks`` daarna aanvulling
+    uit de NWB/WKD-tabellen voor velden zonder netwerkwaarde.
 
     Returns
     -------
-    list
-        Dezelfde feature-lijst, in-place bijgewerkt.
+    dict
+        Dekking per veld: percentage features met een niet-default bron.
     """
+    print(f"[wegenscan] Enrichment gestart ({len(features)} features)")
+    if features and not any("osmHighway" in f["properties"] for f in features):
+        print(
+            "  [wegenscan] WAARSCHUWING: netwerk mist de OSM road-enricher-kolommen "
+            "(osmHighway, surface, cycleway…); opnieuw prepareren geeft betere invoer. "
+            "Nu worden veel defaults gebruikt."
+        )
+    if assets is not None:
+        stats = _wa.link_assets(features, assets)
+        print(
+            f"  [wegenscan] TRAFFIC-ASSETS: {stats['parking_areas']} actuele parkeervlakken → "
+            f"{stats['parking_links']} links; {stats['speed_bumps']} drempels → "
+            f"{stats['bump_links']} links"
+        )
+    _wi.enrich_from_network(features)
+
+    if use_databricks:
+        print(f"[wegenscan] Databricks-aanvulling (join op wvkIds / {id_field!r}) …")
+        _supplement_from_databricks(features, geojson, id_field)
+
+    coverage = _wi.coverage(features)
     print(
-        f"[wegenscan] Enrichment gestart ({len(features)} features, id_field={id_field!r})"
+        "[wegenscan] Dekking (niet-default): "
+        + ", ".join(f"{k} {v}%" for k, v in coverage.items())
     )
-
-    print("[wegenscan] Stap 1/6: snelheidsattributen …")
-    _enrich_speed(features, geojson, id_field)
-
-    print("[wegenscan] Stap 2/6: wegcategorie …")
-    _enrich_road_category(features, id_field)
-
-    print("[wegenscan] Stap 3/6: rijbaanprofiel …")
-    _enrich_profile(features, geojson, id_field)
-
-    print("[wegenscan] Stap 4/6: voetgangers …")
-    _enrich_pedestrian(features, id_field)
-
-    print("[wegenscan] Stap 5/6: parkeren …")
-    _enrich_parking(features, id_field)
-
-    print("[wegenscan] Stap 6/6: drempels …")
-    _enrich_speed_bumps(features, geojson, id_field)
-
-    print("[wegenscan] Defaults toepassen (markering, bus, sociale interactie) …")
-    _enrich_defaults(features)
-
-    print("[wegenscan] Enrichment klaar.")
-    return features
+    return coverage
 
 
 def run_kpis(features: list) -> list:
@@ -376,16 +273,20 @@ def run_kpis(features: list) -> list:
       - ``safety``         dict met 21 KPI-waarden (GOED/REDELIJK/MATIG/SLECHT/NVT)
       - ``generic_safety`` geaggregeerde score
 
-    Returns
-    -------
-    list
-        Dezelfde feature-lijst, in-place bijgewerkt.
+    Autosnelwegen/autowegen vallen buiten de wegenscan en krijgen NVT.
     """
-    errors = 0
+    errors = skipped = 0
     for feature in features:
         props = feature["properties"]
-        invoer = build_invoer(props)
+        if props.get("osmHighway") in _OUT_OF_SCOPE_HIGHWAYS:
+            skipped += 1
+            props["safety"] = {}
+            props["generic_safety"] = "NVT"
+            continue
         try:
+            invoer = _wi.build_invoer_from_network(props)
+            # De invoer waarmee gerekend is (incl. defaults), voor het zijpaneel.
+            props["wegenscan_invoer"] = invoer
             safety = calculate_kpis(invoer)
             props["safety"] = safety
             props["generic_safety"] = calculate_generic_safety(safety)
@@ -396,32 +297,49 @@ def run_kpis(features: list) -> list:
             props["safety"] = {}
             props["generic_safety"] = "NVT"
 
-    ok = len(features) - errors
-    print(f"[wegenscan] KPI-berekening: {ok}/{len(features)} features succesvol")
+    ok = len(features) - errors - skipped
+    print(
+        f"[wegenscan] KPI-berekening: {ok}/{len(features)} features succesvol"
+        + (f", {skipped} buiten scope (autosnelweg/autoweg)" if skipped else "")
+    )
     return features
 
 
-def run_pipeline(geojson: dict, id_field: str = "spectrumId") -> dict:
+def run_pipeline(
+    geojson: dict,
+    id_field: str = "spectrumId",
+    use_databricks: bool = False,
+    assets=None,
+) -> dict:
     """
     Volledige wegenscan-pipeline op een GeoJSON FeatureCollection.
 
-    Stappen: enrichment (Databricks) → KPI-berekening
+    Stappen: enrichment (netwerk, optioneel Databricks) → KPI-berekening
 
     Parameters
     ----------
     geojson : dict
         GeoJSON FeatureCollection (bijv. geladen uit een NETWORK-bestand).
     id_field : str
-        Property-naam die als NWB wvk_id join-key geldt. Standaard 'spectrumId'.
+        Property die als NWB wvk_id-join geldt als een link geen wvkIds heeft.
+    use_databricks : bool
+        Velden zonder netwerkwaarde aanvullen uit Databricks (NWB/WKD).
+    assets : GeoDataFrame | None
+        TRAFFIC-ASSETS van het gebied (parkeervlakken, drempels); optioneel.
 
     Returns
     -------
     dict
-        Nieuwe GeoJSON FeatureCollection met toegevoegde veiligheids-properties.
+        Nieuwe GeoJSON FeatureCollection met veiligheids-properties en
+        ``wegenscan_coverage`` (dekking per invoerveld, in %).
     """
-    features = [f for f in geojson.get("features", [])]
+    # Kopie per feature: de invoer kan de (gecachte) netwerkdata van de server zijn.
+    features = [
+        {**f, "properties": dict(f.get("properties") or {})}
+        for f in geojson.get("features", [])
+    ]
 
-    enrich_features(features, geojson, id_field)
+    coverage = enrich_features(features, geojson, id_field, use_databricks, assets)
     run_kpis(features)
 
-    return {**geojson, "features": features}
+    return {**geojson, "features": features, "wegenscan_coverage": coverage}

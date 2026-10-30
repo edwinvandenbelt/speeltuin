@@ -2819,6 +2819,14 @@
       surfAsphalt:'Asfalt', surfPavers:'Klinkers', surfConcrete:'Beton', surfSemiPaved:'Halfverhard', surfUnpaved:'Onverhard',
       sidewalkBoth:'Beide', sidewalkLeft:'Links', sidewalkRight:'Rechts', sidewalkNone:'Geen', classUnknown:'Onbekend', legendSafety:'Veiligheid (totaal)',
       safetyGroupRoad:'Wegvak', safetyGroupPedestrian:'Voetganger', safetyGroupBicycle:'Fiets', safetyGroupParkingBus:'Parkeren & bus', safetyGroupOther:'Overig',
+      wsInputs:'Invoer', wsInputsHint:'Waarmee de score berekend is, en waar het vandaan komt.',
+      wsSrcNetwork:'netwerk', wsSrcNwb:'NWB', wsSrcAssets:'BGT/OSM', wsSrcDefault:'aanname', wsSrcNone:'geen bron',
+      wsInCategory:'Wegcategorie', wsInSpeed:'Snelheid (V85)', wsInWidth:'Wegbreedte', wsInSurface:'Wegdek',
+      wsInFlow:'Intensiteit', wsInProfile:'Profiel', wsInBicycle:'Fietsers', wsInPedestrian:'Voetgangers',
+      wsInPedCrossing:'Oversteek voetgangers', wsInParking:'Parkeren', wsInSpeedBumps:'Drempels',
+      wsInMarkings:'Kantmarkering', wsInSeparation:'Rijrichtingscheiding', wsInBus:'Bushalte', wsInSocial:'Sociale interactie',
+      wsCoverage:'Uit data (rest is aanname):', wsOldRun:'Berekend met een oudere versie: bijna alles is aanname.',
+      wsOldRunPanel:'Deze score is met een oudere versie berekend; bronnen zijn niet bekend.', wsRerun:'Opnieuw berekenen',
       metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
       metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
       metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
@@ -3111,6 +3119,14 @@
       surfAsphalt:'Asphalt', surfPavers:'Pavers', surfConcrete:'Concrete', surfSemiPaved:'Semi-paved', surfUnpaved:'Unpaved',
       sidewalkBoth:'Both', sidewalkLeft:'Left', sidewalkRight:'Right', sidewalkNone:'None', classUnknown:'Unknown', legendSafety:'Safety (overall)',
       safetyGroupRoad:'Road section', safetyGroupPedestrian:'Pedestrian', safetyGroupBicycle:'Bicycle', safetyGroupParkingBus:'Parking & bus', safetyGroupOther:'Other',
+      wsInputs:'Inputs', wsInputsHint:'What the score was calculated with, and where it comes from.',
+      wsSrcNetwork:'network', wsSrcNwb:'NWB', wsSrcAssets:'BGT/OSM', wsSrcDefault:'assumed', wsSrcNone:'no source',
+      wsInCategory:'Road category', wsInSpeed:'Speed (V85)', wsInWidth:'Road width', wsInSurface:'Surface',
+      wsInFlow:'Traffic volume', wsInProfile:'Profile', wsInBicycle:'Cyclists', wsInPedestrian:'Pedestrians',
+      wsInPedCrossing:'Pedestrian crossing', wsInParking:'Parking', wsInSpeedBumps:'Speed bumps',
+      wsInMarkings:'Edge marking', wsInSeparation:'Direction separation', wsInBus:'Bus stop', wsInSocial:'Social interaction',
+      wsCoverage:'From data (rest assumed):', wsOldRun:'Calculated with an older version: nearly everything is assumed.',
+      wsOldRunPanel:'This score was calculated with an older version; sources are unknown.', wsRerun:'Recalculate',
       metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
       metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
       metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
@@ -3390,6 +3406,14 @@
       surfAsphalt:'Asfaltti', surfPavers:'Kiveys', surfConcrete:'Betoni', surfSemiPaved:'Puolipäällystetty', surfUnpaved:'Päällystämätön',
       sidewalkBoth:'Molemmat', sidewalkLeft:'Vasen', sidewalkRight:'Oikea', sidewalkNone:'Ei', classUnknown:'Tuntematon', legendSafety:'Turvallisuus (kokonais)',
       safetyGroupRoad:'Tieosuus', safetyGroupPedestrian:'Jalankulkija', safetyGroupBicycle:'Pyörä', safetyGroupParkingBus:'Pysäköinti & bussi', safetyGroupOther:'Muut',
+      wsInputs:'Syötteet', wsInputsHint:'Millä pisteet laskettiin ja mistä tiedot tulevat.',
+      wsSrcNetwork:'verkko', wsSrcNwb:'NWB', wsSrcAssets:'BGT/OSM', wsSrcDefault:'oletus', wsSrcNone:'ei lähdettä',
+      wsInCategory:'Tieluokka', wsInSpeed:'Nopeus (V85)', wsInWidth:'Tien leveys', wsInSurface:'Päällyste',
+      wsInFlow:'Liikennemäärä', wsInProfile:'Profiili', wsInBicycle:'Pyöräilijät', wsInPedestrian:'Jalankulkijat',
+      wsInPedCrossing:'Suojatie', wsInParking:'Pysäköinti', wsInSpeedBumps:'Hidasteet',
+      wsInMarkings:'Reunamerkintä', wsInSeparation:'Ajosuuntien erottelu', wsInBus:'Bussipysäkki', wsInSocial:'Sosiaalinen vuorovaikutus',
+      wsCoverage:'Datasta (loput oletuksia):', wsOldRun:'Laskettu vanhemmalla versiolla: lähes kaikki on oletusta.',
+      wsOldRunPanel:'Pisteet laskettiin vanhemmalla versiolla; lähteet eivät ole tiedossa.', wsRerun:'Laske uudelleen',
       metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
       metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
       metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
@@ -8202,6 +8226,119 @@
         if (id != null) wegenscanByLinkId.set(String(id), p);
       }
       console.log('[wegenscan] geladen:', wegenscanByLinkId.size, 'features');
+      renderWegenscanCoverage();
+    }
+
+    // ── Wegenscan-invoer: waarde + bron per veld ─────────────────────────────
+    // `in` = sleutel in wegenscan_invoer (waarmee gerekend is), `src` = sleutel
+    // in wegenscan_sources. Velden zonder src hebben nooit een databron.
+    const WS_INPUT_ROWS = [
+      { in: 'r_category',              src: 'road_category',       labelKey: 'wsInCategory' },
+      { in: 'r_speed',                 src: 'max_speed_s85',       labelKey: 'wsInSpeed',  fmt: v => `${v} km/h` },
+      { in: 'r_width',                 src: 'width',               labelKey: 'wsInWidth',  fmt: v => `${Number(v).toFixed(1)} m` },
+      { in: 'r_surface',               src: 'surface',             labelKey: 'wsInSurface' },
+      { in: 'r_flow',                  src: 'flow',                labelKey: 'wsInFlow',   fmt: v => `${Math.round(v)}` },
+      { in: 'r_profile',               src: 'profile',             labelKey: 'wsInProfile' },
+      { in: 'r_bicycle_location',      src: 'bicycle_location',    labelKey: 'wsInBicycle' },
+      { in: 'r_pedestrian_location',   src: 'pedestrian_location', labelKey: 'wsInPedestrian' },
+      { in: 'r_pedestrian_crossing',   src: 'pedestrian_crossing', labelKey: 'wsInPedCrossing' },
+      { in: 'r_parking_location',      src: 'parking_location',    labelKey: 'wsInParking' },
+      { in: 'r_speed_bumps',           src: 'speed_bumps',         labelKey: 'wsInSpeedBumps' },
+      { in: 'r_longitudinal_markings',                             labelKey: 'wsInMarkings' },
+      { in: 'r_separation',                                        labelKey: 'wsInSeparation' },
+      { in: 'r_bus_facility',                                      labelKey: 'wsInBus' },
+      { in: 'r_social_interaction',                                labelKey: 'wsInSocial' },
+    ];
+    /** Velden in de dekkingsregel (volgorde = belang voor de score). */
+    const WS_COVERAGE_ROWS = ['road_category', 'width', 'surface', 'bicycle_location',
+      'pedestrian_location', 'parking_location', 'speed_bumps'];
+
+    const _wsEsc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    /** Bronlabel (netwerk / NWB / BGT/OSM / aanname / geen bron) als klein badge. */
+    function wsSourceBadge(src) {
+      const kind = !src ? 'none' : src.startsWith('netwerk') ? 'net'
+        : src.startsWith('databricks') ? 'nwb' : src.startsWith('assets') ? 'assets' : 'default';
+      const style = {
+        net:     ['wsSrcNetwork', '#00838a', 'rgba(0,165,171,0.12)'],
+        nwb:     ['wsSrcNwb',     '#1565c0', 'rgba(25,118,210,0.12)'],
+        assets:  ['wsSrcAssets',  '#6a1b9a', 'rgba(106,27,154,0.10)'],
+        default: ['wsSrcDefault', '#a35a00', 'rgba(230,120,20,0.14)'],
+        none:    ['wsSrcNone',    '#6b7385', 'rgba(35,41,49,0.07)'],
+      }[kind];
+      const title = src && src !== 'default' ? ` title="${_wsEsc(src)}"` : '';
+      return `<span data-i18n="${style[0]}"${title} style="font-size:11px;padding:1px 6px;border-radius:8px;
+        color:${style[1]};background:${style[2]};white-space:nowrap">${T(style[0])}</span>`;
+    }
+
+    /** Verhardingsklasse zoals de kaartlaag Inrichting → Verharding. */
+    function wsSurfaceLabel(props) {
+      const cls = window.MontrealBasemap?.surfaceClass?.(props);
+      const key = cls && DESIGN_CLASS_LAYERS.surface_class.classes[cls]?.labelKey;
+      return key && cls !== 'onbekend' ? T(key) : null;
+    }
+
+    /** HTML-blok 'Invoer' voor het zijpaneel. */
+    function wegenscanInputsHtml(props) {
+      const invoer = props?.wegenscan_invoer;
+      const sources = props?.wegenscan_sources ?? {};
+      if (!invoer) {
+        return `<div style="margin-bottom:14px;padding:8px 10px;border-radius:8px;background:rgba(230,120,20,0.10);color:#a35a00;font-size:12px">
+          <span data-i18n="wsOldRunPanel">${T('wsOldRunPanel')}</span>
+          <a href="#" onclick="runWegenscan();return false" style="color:#00838a;margin-left:4px" data-i18n="wsRerun">${T('wsRerun')}</a>
+        </div>`;
+      }
+      const rows = WS_INPUT_ROWS.map(row => {
+        let value = invoer[row.in];
+        if (value == null) return '';
+        value = row.fmt ? row.fmt(value) : value;
+        const src = row.src ? (sources[row.src] ?? 'default') : null;
+        let extra = '';
+        // Geen echte V85 in het netwerk: dan is het de limiet, en dat moet zichtbaar zijn.
+        if (row.in === 'r_speed' && src?.endsWith('(limiet)')) value += ' (limiet)';
+        // Diepte van het parkeervak (bepaalt haaks/langs) als die gemeten is.
+        if (row.in === 'r_parking_location' && invoer.r_parking_width > 0) value += ` (${Number(invoer.r_parking_width).toFixed(1)} m)`;
+        if (row.in === 'r_surface' && src !== 'default') {
+          const cls = wsSurfaceLabel(props);
+          extra = cls ? `<span style="color:#8892aa;font-weight:400">${_wsEsc(cls)}${props.surface ? ` (${_wsEsc(props.surface)})` : ''} → </span>` : '';
+        }
+        return `<div style="padding:4px 0;border-bottom:1px solid rgba(35,41,49,0.05)">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <span style="color:#8892aa" data-i18n="${row.labelKey}">${T(row.labelKey)}</span>${wsSourceBadge(src)}
+          </div>
+          <div style="font-weight:600;margin-top:1px">${extra}${_wsEsc(value)}</div>
+        </div>`;
+      }).join('');
+      return `<details open style="margin-bottom:16px">
+        <summary style="cursor:pointer;color:#00a5ab;font-weight:700;margin-bottom:4px" data-i18n="wsInputs">${T('wsInputs')}</summary>
+        <div style="color:#8892aa;font-size:12px;margin-bottom:6px" data-i18n="wsInputsHint">${T('wsInputsHint')}</div>
+        ${rows}
+      </details>`;
+    }
+
+    /** Dekkingsregel in het Veiligheid-blok: per invoerveld % links met data. */
+    function renderWegenscanCoverage() {
+      let el = document.getElementById('lmpSafetyCoverage');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'lmpSafetyCoverage';
+        el.style.cssText = 'font-size:11px;color:#6b7385;margin:2px 0 8px 22px;line-height:1.5';
+        document.getElementById('lmpSafetyOption')?.closest('label')?.after(el);
+      }
+      if (!wegenscanData) { el.innerHTML = ''; return; }
+      const cov = wegenscanData.properties?.wegenscan_coverage ?? wegenscanData.wegenscan_coverage;
+      const rerun = `<a href="#" onclick="runWegenscan();return false" style="color:#00838a" data-i18n="wsRerun">${T('wsRerun')}</a>`;
+      if (!cov) {
+        el.innerHTML = `<span style="color:#a35a00" data-i18n="wsOldRun">${T('wsOldRun')}</span> ${rerun}`;
+        return;
+      }
+      const label = key => T(WS_INPUT_ROWS.find(r => r.src === key)?.labelKey ?? key);
+      const parts = WS_COVERAGE_ROWS.filter(k => k in cov).map(k => {
+        const pct = cov[k];
+        const color = pct >= 75 ? '#00838a' : pct >= 25 ? '#a35a00' : '#9aa1b0';
+        return `${_wsEsc(label(k).toLowerCase())} <b style="color:${color}">${pct}%</b>`;
+      });
+      el.innerHTML = `<span data-i18n="wsCoverage">${T('wsCoverage')}</span> ${parts.join(' · ')}<br>${rerun}`;
     }
 
     /** Toon het KPI-zijpaneel voor de gegeven feature-properties. */
@@ -8218,6 +8355,7 @@
       linkEl.textContent  = `Wegvak ${linkId}`;
       scoreEl.textContent = generic;
       scoreEl.style.color = kpiColor(generic);
+      document.getElementById('wegenscanInputs').innerHTML = wegenscanInputsHtml(props);
 
       listEl.innerHTML = KPI_KEYS.map(key => {
         const label = kpiLabel(key);
@@ -8259,6 +8397,8 @@
           const job = await r.json();
           if (job.status === 'successful') {
             progress.textContent = 'Klaar!';
+            document.getElementById('wegenscanRunBtn').disabled = false;
+            closeWegenscanPanel();
             await loadWegenscanData();
             setWegenscanBanner(false);
             updateOverlay(true);
@@ -14634,8 +14774,11 @@
 
     // ── Wegenscan-knophandlers ────────────────────────────────────────────────
 
-    document.getElementById('wegenscanRunBtn').addEventListener('click', async () => {
+    /** Start de wegenscan voor dit gebied (ook 'Opnieuw berekenen') en wacht op het resultaat. */
+    async function runWegenscan() {
       const btn = document.getElementById('wegenscanRunBtn');
+      if (btn.disabled) return;
+      setWegenscanBanner(true, wegenscanData ? T('wsRerun') + '…' : null);
       btn.disabled = true;
       document.getElementById('wegenscanProgress').style.display = '';
       document.getElementById('wegenscanProgress').textContent = 'Job aanmaken…';
@@ -14652,7 +14795,9 @@
         document.getElementById('wegenscanProgress').textContent = 'Fout: ' + err.message;
         btn.disabled = false;
       }
-    });
+    }
+    document.getElementById('wegenscanRunBtn').addEventListener('click', runWegenscan);
+    window.runWegenscan = runWegenscan;
 
     document.getElementById('wegenscanPanelClose').addEventListener('click', () => {
       closeWegenscanPanel();
@@ -15235,6 +15380,7 @@
       <span style="color:#8892aa">Veiligheidsscore: </span>
       <span id="wegenscanGenericScore" style="font-weight:700;font-size:15px"></span>
     </div>
+    <div id="wegenscanInputs"></div>
     <div id="wegenscanKpiList"></div>
   </div>
 
