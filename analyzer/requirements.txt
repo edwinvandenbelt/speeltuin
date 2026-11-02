@@ -43,5 +43,5 @@ databricks-sql-connector>=3.0.0
 mapbox-vector-tile>=1.2
 
 # Lokale OSM-extracten: snelle PBF-backend in gmt_shared en uitsneden van
-# grote extracten (scripts/geofabrik_pbf.py, clipped_pbf_for_bbox)
+# Geofabrik-extracten per bbox (gmt_shared.geofabrik.local_pbf_for_bbox, vanaf gmt_shared 0.5.5)
 osmium>=4.0

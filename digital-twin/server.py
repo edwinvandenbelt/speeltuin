@@ -200,16 +200,14 @@ except ImportError as _e:
     _TA_SOURCES_AVAILABLE = False
     print(f"[server] WAARSCHUWING: traffic_asset_sources niet beschikbaar — {_e}")
 
-# Geofabrik-PBF-resolver (zelfde helper als analyzer/server.py): vindt/downloadt
-# het kleinste Geofabrik-extract dat een bbox dekt, zodat Overpass-achtige
+# Geofabrik-PBF-resolver (zelfde helper als analyzer/server.py): levert een kleine
+# lokale uitsnede voor een bbox (gmt_shared.geofabrik), zodat Overpass-achtige
 # fetchers (zoals vegetation) lokaal kunnen lezen i.p.v. de remote Overpass-API
 # te bevragen. Optioneel: als scripts/ niet beschikbaar is (geflatten deployment)
 # valt alles gewoon terug op de remote Overpass-API.
 try:
     from scripts.geofabrik_pbf import (
-        resolve_or_download_pbf as _resolve_or_download_pbf,
-        find_covering_extracts as _find_covering_extracts,
-        clipped_pbf_for_bbox as _clipped_pbf_for_bbox,
+        local_pbf_for_bbox as _local_pbf_for_bbox,
         OSM_PBF_ENV_VAR as _OSM_PBF_ENV_VAR,
         OSM_PBF_CACHE_DIR_ENV_VAR as _OSM_PBF_CACHE_DIR_ENV_VAR,
         DEFAULT_CACHE_DIR as _DEFAULT_PBF_CACHE_DIR,
@@ -217,9 +215,7 @@ try:
 
     _GEOFABRIK_PBF_AVAILABLE = True
 except ImportError as _e:
-    _resolve_or_download_pbf = None  # type: ignore[assignment]
-    _find_covering_extracts = None  # type: ignore[assignment]
-    _clipped_pbf_for_bbox = None  # type: ignore[assignment]
+    _local_pbf_for_bbox = None  # type: ignore[assignment]
     _OSM_PBF_ENV_VAR = "OSM_PBF_PATH"
     _OSM_PBF_CACHE_DIR_ENV_VAR = "OSM_PBF_CACHE_DIR"
     _DEFAULT_PBF_CACHE_DIR = Path(tempfile.gettempdir()) / "geofabrik_pbf"
@@ -228,45 +224,25 @@ except ImportError as _e:
 
 
 def _resolve_local_pbf(bbox: list) -> str | None:
-    """Kies een lokaal .osm.pbf-extract dat de bbox dekt, of None (→ Overpass).
+    """Kleine lokale .osm.pbf-uitsnede voor de bbox, of None (→ Overpass).
 
-    Best-effort, voor de achtergrondjobs van gebouwen (en vegetatie):
-      1. OSM_PBF_PATH, tenzij de Geofabrik-provinciegrenzen aantonen dat de bbox
-         in een ander extract valt (naam-match op de slug, bv. 'gelderland';
-         fail-open als die check niets kan vaststellen). Zonder deze check levert
-         een vaste provincie-PBF voor een gebied daarbuiten stil 0 gebouwen op.
-      2. Het kleinste Geofabrik-extract dat de bbox dekt (gecachet in
-         OSM_PBF_CACHE_DIR, zo nodig gedownload).
+    Best-effort, voor de achtergrondjobs van gebouwen (en vegetatie); zie
+    gmt_shared.geofabrik.local_pbf_for_bbox: OSM_PBF_PATH als dat de bbox dekt
+    (een vaste provincie-PBF voor een gebied daarbuiten wordt overgeslagen),
+    anders het Geofabrik-provincie-extract (twee samengevoegd op een grens, of
+    Nederland), eenmalig uitgesneden en gecachet in OSM_PBF_CACHE_DIR/clips.
     """
     if not _GEOFABRIK_PBF_AVAILABLE:
         return None
     pbf_cache_dir = Path(
         os.environ.get(_OSM_PBF_CACHE_DIR_ENV_VAR, "") or _DEFAULT_PBF_CACHE_DIR
     )
-    explicit = os.environ.get(_OSM_PBF_ENV_VAR, "").strip()
-    if explicit:
-        p = Path(explicit)
-        if p.is_file() and p.suffix.lower() == ".pbf":
-            try:
-                covering = _find_covering_extracts(*bbox, cache_dir=pbf_cache_dir)
-            except Exception:
-                covering = None
-            if not covering or any(e.slug in p.name.lower() for e in covering):
-                return str(p)
-            print(f"[server] OSM_PBF_PATH ({p.name}) dekt bbox {bbox} niet "
-                  f"(hoort bij {[e.slug for e in covering]}).")
     try:
-        pbf_path_obj, extract = _resolve_or_download_pbf(
-            *bbox, cache_dir=pbf_cache_dir, ignore_explicit=True
-        )
-        # Ligt de bbox over de grens van twee extracten (bv. Overijssel/Gelderland),
-        # dan wordt het hele land gekozen; maak daar eenmalig een kleine uitsnede van.
-        return str(_clipped_pbf_for_bbox(
-            pbf_path_obj, extract, *bbox, cache_dir=pbf_cache_dir
-        ))
+        return str(_local_pbf_for_bbox(bbox, cache_dir=pbf_cache_dir))
     except Exception as exc:
         print(f"[server] Geen lokaal OSM-extract voor bbox {bbox} ({exc}); val terug op Overpass.")
         return None
+
 
 # ---------------------------------------------------------------------------
 # Configuratie

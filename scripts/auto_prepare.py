@@ -1,7 +1,8 @@
 """Local/CLI entrypoint for the smart prepare pipeline.
 
-Discovers (and downloads if necessary) the smallest Geofabrik .osm.pbf extract
-that covers the requested bbox, then routes to either the full Databricks-based
+Makes a small cached .osm.pbf clip for the requested bbox (from the Geofabrik
+province extract(s) covering it, downloaded if necessary; see
+gmt_shared.geofabrik.local_pbf_for_bbox), then routes to either the full Databricks-based
 `prepare` pipeline ( bbox inside the Netherlands) or the OSM-only
 `osm_prepare` pipeline (bbox outside the Netherlands).
 
@@ -42,7 +43,7 @@ def _bootstrap_path() -> None:
 _bootstrap_path()
 
 from scripts.geofabrik_pbf import (  # noqa: E402
-    resolve_or_download_pbf,
+    local_pbf_for_bbox,
     is_within_netherlands,
     DEFAULT_CACHE_DIR,
     OSM_PBF_ENV_VAR,
@@ -123,6 +124,7 @@ def _run_osm_prepare_pipeline(
     max_lat: float,
     out_dir: Path,
     *,
+    pbf_path: Path,
     name: str | None,
     refresh: bool,
     debug: bool,
@@ -131,9 +133,7 @@ def _run_osm_prepare_pipeline(
 
     old_osm_pbf = os.environ.get(OSM_PBF_ENV_VAR)
     try:
-        os.environ[OSM_PBF_ENV_VAR] = str(
-            resolve_or_download_pbf(min_lon, min_lat, max_lon, max_lat)[0]
-        )
+        os.environ[OSM_PBF_ENV_VAR] = str(pbf_path)
         return run_pipeline(
             min_lon=min_lon,
             min_lat=min_lat,
@@ -233,24 +233,20 @@ def main() -> None:
     cache_dir = Path(args.pbf_cache_dir) if args.pbf_cache_dir else DEFAULT_CACHE_DIR
 
     if args.osm_path:
-        pbf_path = Path(args.osm_path)
-        if not pbf_path.is_file() or pbf_path.suffix.lower() != ".pbf":
+        explicit = Path(args.osm_path)
+        if not explicit.is_file() or explicit.suffix.lower() != ".pbf":
             print(
-                f"error: --osm-path is not a readable .pbf: {pbf_path}", file=sys.stderr
+                f"error: --osm-path is not a readable .pbf: {explicit}", file=sys.stderr
             )
             sys.exit(2)
-    else:
-        pbf_path, extract = resolve_or_download_pbf(
-            min_lon,
-            min_lat,
-            max_lon,
-            max_lat,
-            cache_dir=cache_dir,
-        )
-        print(
-            f"[auto-prepare] using PBF: {pbf_path}"
-            + (f" ({extract.name})" if extract else "")
-        )
+    # Small cached clip for the bbox: from --osm-path / OSM_PBF_PATH when that
+    # covers the bbox, else from the Geofabrik province extract(s).
+    pbf_path = local_pbf_for_bbox(
+        [min_lon, min_lat, max_lon, max_lat],
+        osm_path=args.osm_path or None,
+        cache_dir=cache_dir,
+    )
+    print(f"[auto-prepare] using PBF: {pbf_path}")
 
     modes = [m.upper() for m in args.modes]
     invalid = [m for m in modes if m not in {"CAR", "BIKE", "PEDESTRIAN"}]
@@ -290,6 +286,7 @@ def main() -> None:
             max_lon,
             max_lat,
             out_dir,
+            pbf_path=pbf_path,
             name=args.name,
             refresh=args.refresh,
             debug=args.debug,

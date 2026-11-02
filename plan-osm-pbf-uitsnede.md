@@ -33,3 +33,15 @@ OSM-queries (ook in de prepare-pipeline). Daarnaast wordt per bbox eenmalig een 
 - Waarom het hele land wordt gekozen en niet Overijssel + Gelderland samen: zo laten.
 - `digital-twin/test-deploy/` en `analyzer/test-deploy/` bevatten kopieën van `scripts/`; die worden bij
   de deploy ververst.
+
+## Vervolg (2026-11-02): naar gmt-shared
+- De uitsnede-logica staat nu in `gmt_shared.geofabrik` (gmt-shared 0.5.5), zodat ook de prepare-pipeline
+  (gmt-calculation-lib) en de road_enricher hem gebruiken. `scripts/geofabrik_pbf.py` is een dunne laag erover.
+- Een bbox over een provinciegrens gebruikt nu Overijssel + Gelderland (beide uitgesneden en samengevoegd)
+  in plaats van heel Nederland; Nederland is alleen nog de terugvaloptie (> 2 provincies). Er wordt altijd
+  een uitsnede gemaakt, ook binnen één provincie en van een expliciet `OSM_PBF_PATH`.
+- De node-pass decodeert DenseNodes met numpy: Harderwijk (Gelderland + Flevoland) 11 s, uit NL 39 s.
+- De dekkingscheck voor een expliciet `OSM_PBF_PATH` (provinciegrenzen, anders PBF-header) zit nu ook in
+  gmt-shared.
+- Na de release van gmt-shared 0.5.5 moet de `gmt_shared`-wheel in de repo-root worden vervangen; met de
+  oude wheel valt de import weg en gebruiken de servers de Overpass-API.
