@@ -2011,6 +2011,27 @@ def _ogc_items_response(
     }
     merged = {**top_props, **other}
 
+    # Projectie (?skipGeometry=true, ?properties=a,b,c): alleen wat de client
+    # nodig heeft. Nieuwe dicts, zodat gecachete resultaten intact blijven.
+    skip_geom = request.args.get("skipGeometry", "").strip().lower() == "true"
+    prop_arg = request.args.get("properties", "").strip()
+    keep_props = [p for p in prop_arg.split(",") if p] if prop_arg else None
+    if skip_geom or keep_props is not None:
+        projected = []
+        for feat in features:
+            f = {k: v for k, v in feat.items() if k != "properties"}
+            if skip_geom:
+                f["geometry"] = None
+            props = feat.get("properties") or {}
+            f["properties"] = (
+                {k: props[k] for k in keep_props if k in props}
+                if keep_props is not None
+                else props
+            )
+            projected.append(f)
+        features = projected
+        data = {**data, "features": features}
+
     # ND-GeoJSON: compact newline-delimited stream zonder wrapper (geen links)
     if as_ndgeojson:
         lines = [json.dumps(feat, ensure_ascii=False) for feat in features]
@@ -2018,6 +2039,12 @@ def _ogc_items_response(
         resp = make_response(body)
         resp.headers["Content-Type"] = "application/x-ndgeo+json"
         return resp
+
+    # NDJSON-stream (?format=ndjson): headerregel met numberMatched + één feature
+    # per regel, in één verzoek. Sneller dan limit/offset-paging, waarbij de
+    # server per pagina opnieuw de hele set filtert.
+    if request.args.get("format", "").strip().lower() == "ndjson":
+        return _ndjson_stream_response(collection_id, data)
 
     # OGC API Features paging (limit/offset). Zonder limit komen — compatibel
     # met bestaande aanroepers — alle features in één keer terug; limit=0 is
@@ -2089,8 +2116,13 @@ def _ndjson_stream_response(collection_id: str, data):
             "properties": top_props,
         }
         yield json.dumps(header, ensure_ascii=False) + "\n"
-        for feat in features:
-            yield json.dumps(feat, ensure_ascii=False) + "\n"
+        # Per blok van 1000 features yielden: één yield per feature kost bij
+        # grote sets (tienduizenden verkeersobjecten) meer dan het serialiseren.
+        for i in range(0, len(features), 1000):
+            yield "".join(
+                json.dumps(feat, ensure_ascii=False) + "\n"
+                for feat in features[i : i + 1000]
+            )
 
     resp = Response(stream_with_context(_gen()), mimetype="application/x-ndjson")
     resp.headers["Cache-Control"] = "no-cache"
@@ -2174,6 +2206,134 @@ def _read_geodata_cached(path: Path) -> dict:
         data = _read_geodata(path)
         _geodata_cache_set(path, data)
     return data
+
+
+# Minimale property-set die de frontend van traffic_assets echt gebruikt. Dit
+# scheelt aanzienlijk in payload (veel lege / ongebruikte BGT/OSM-kolommen).
+_TRAFFIC_ASSET_KEEP_PROPS = {
+    "assetType", "name",
+    "traffic_sign",  # bevat soms rvvCode (oudere data)
+    "osm_id", "rvvCode", "blackCode", "direction",
+    "bearing",  # orientatie voor borden/lantaarns/meubilair
+    "width", "surface", "linkId", "nodeId", "ref", "bench", "bus",
+    "public_transport", "ref:IFOPT", "shelter", "amenity", "shelter_type",
+    "man_made", "tower:type", "description", "board_type", "information",
+    "tourism", "operator", "collection_times", "colour", "operator:wikidata",
+    "check_date", "waste", "cycle_barrier", "cycle_barrier:installation",
+    "wheelchair", "emergency", "manufacturer", "siren:model", "siren:purpose",
+    "siren:type", "support", "lamp_mount", "lamp_type", "opening_hours",
+    "parkingId", "parkingCapacity", "tag_amenity", "tag_fee", "tag_name",
+    "tag_parking", "tag_access", "tag_capacity", "tag_park_ride", "tag_source",
+    "tag_supervised", "tag_surface", "tag_wheelchair", "tag_lit",
+    "tag_opening_hours", "tag_smoothness", "tag_operator", "tag_orientation",
+    "tag_parking:right", "belowGround", "heightM",
+}
+# Velden die _current_bgt_features nodig heeft (worden daarna weggeslankt).
+_BGT_VERSION_PROPS = {"lokaal_id", "eind_registratie", "termination_date", "tijdstip_registratie"}
+
+
+def _slim_traffic_props(props: dict) -> dict:
+    """Alleen _TRAFFIC_ASSET_KEEP_PROPS, zonder lege waarden (behalve assetType)."""
+    if not isinstance(props, dict):
+        return {}
+    out = {}
+    for k, v in props.items():
+        if k not in _TRAFFIC_ASSET_KEEP_PROPS:
+            continue
+        if k != "assetType":
+            if v is None:
+                continue
+            if isinstance(v, float) and v != v:
+                continue
+            if v == "":
+                continue
+        out[k] = v
+    return out
+
+
+def _read_traffic_assets_features(path: Path) -> list:
+    """Features van een TRAFFIC-ASSETS-bestand, alleen met de kolommen die het
+    endpoint gebruikt. ``_read_geodata`` zet alle ~300 kolommen via
+    ``to_json()`` om; dat kostte bij een groot gebied ~30s (en GB's geheugen)."""
+    if path.suffix.lower() in _GEOPARQUET_EXTS and _GEOPANDAS_AVAILABLE:
+        try:
+            import shapely as _shapely
+
+            meta = _pq.read_metadata(path).metadata or {}  # type: ignore[union-attr]
+            geom_col = json.loads(meta[b"geo"]).get("primary_column", "geometry")
+            names = set(_pq.read_schema(path).names)  # type: ignore[union-attr]
+            cols = sorted((_TRAFFIC_ASSET_KEEP_PROPS | _BGT_VERSION_PROPS) & names)
+            gdf = _gpd.read_parquet(path, columns=cols + [geom_col])  # type: ignore[union-attr]
+            if gdf.crs is not None and not gdf.crs.equals("EPSG:4326"):
+                gdf = gdf.to_crs("EPSG:4326")
+            geoms = _shapely.to_geojson(gdf.geometry.values)
+            records = gdf.drop(columns=[gdf.geometry.name]).to_dict("records")
+            feats = []
+            for props, g in zip(records, geoms):
+                # NaN → None (zoals to_json), en zelfde terugzetting van
+                # JSON-string-kolommen als _read_geodata.
+                for key, val in props.items():
+                    if isinstance(val, float) and val != val:
+                        props[key] = None
+                    elif isinstance(val, str) and len(val) > 1 and val[0] in ("{", "["):
+                        try:
+                            props[key] = json.loads(val)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                feats.append(
+                    {
+                        "type": "Feature",
+                        "properties": props,
+                        "geometry": json.loads(g) if g is not None else None,
+                    }
+                )
+            return feats
+        except Exception as exc:
+            print(f"[server] snel lezen TRAFFIC-ASSETS mislukt, val terug: {exc}")
+    return list(_read_geodata_cached(path).get("features", []))
+
+
+# Per TRAFFIC-ASSETS-bestand (sleutel: pad, op mtime): actuele, afgeslankte
+# features + hun bbox. Eén lock, zodat de parallelle telverzoeken van de
+# '3D weergave'-categorieën het bestand niet elk tegelijk inlezen.
+_TA_SLIM_CACHE: dict = {}
+_TA_SLIM_LOCK = threading.Lock()
+
+
+def _traffic_assets_slim_cached(path: Path):
+    """(features, bboxes) voor het traffic_assets-endpoint; niet muteren."""
+    key = str(path)
+    mtime = path.stat().st_mtime_ns
+    hit = _TA_SLIM_CACHE.get(key)
+    if hit is not None and hit[0] == mtime:
+        return hit[1], hit[2]
+    with _TA_SLIM_LOCK:
+        hit = _TA_SLIM_CACHE.get(key)
+        if hit is not None and hit[0] == mtime:
+            return hit[1], hit[2]
+        t0 = time.perf_counter()
+        # Historische BGT-versies (eind_registratie gezet) eruit; bestanden van
+        # vóór gmt-shared 0.5.4 bevatten die nog.
+        current = _current_bgt_features(_read_traffic_assets_features(path))
+        feats = [
+            {
+                "type": "Feature",
+                "properties": _slim_traffic_props(f.get("properties")),
+                "geometry": f.get("geometry"),
+            }
+            for f in current
+        ]
+        bboxes = [_geom_bbox((f["geometry"] or {}).get("coordinates")) for f in feats]
+        _TA_SLIM_CACHE.pop(key, None)
+        _TA_SLIM_CACHE[key] = (mtime, feats, bboxes)
+        while len(_TA_SLIM_CACHE) > 4:  # paar gebieden tegelijk; oudste eruit
+            _TA_SLIM_CACHE.pop(next(iter(_TA_SLIM_CACHE)))
+        print(
+            f"[server] TRAFFIC-ASSETS geladen: {path.name} "
+            f"({len(feats)} features, {(time.perf_counter() - t0) * 1000:.0f}ms)",
+            flush=True,
+        )
+        return feats, bboxes
 
 
 def _now_iso() -> str:
@@ -3578,123 +3738,24 @@ def ogc_collection_items(collection_id):
             empty = {"type": "FeatureCollection", "features": []}
             return _ogc_items_response("traffic_assets", empty, self_url)
 
-        # Minimale property-set die de frontend echt gebruikt. Dit scheelt
-        # aanzienlijk in payload (veel lege / ongebruikte BGT/OSM-kolommen).
-        _TRAFFIC_ASSET_KEEP_PROPS = {
-            "assetType",
-            "name",
-            "traffic_sign",  # bevat soms rvvCode (oudere data)
-            "osm_id",
-            "rvvCode",
-            "blackCode",
-            "direction",
-            "bearing",  # orientatie voor borden/lantaarns/meubilair
-            "width",
-            "surface",
-            "linkId",
-            "nodeId",
-            "ref",
-            "bench",
-            "bus",
-            "public_transport",
-            "ref:IFOPT",
-            "shelter",
-            "amenity",
-            "shelter_type",
-            "man_made",
-            "tower:type",
-            "description",
-            "board_type",
-            "information",
-            "tourism",
-            "operator",
-            "collection_times",
-            "colour",
-            "operator:wikidata",
-            "check_date",
-            "waste",
-            "cycle_barrier",
-            "cycle_barrier:installation",
-            "wheelchair",
-            "emergency",
-            "manufacturer",
-            "siren:model",
-            "siren:purpose",
-            "siren:type",
-            "support",
-            "lamp_mount",
-            "lamp_type",
-            "opening_hours",
-            "parkingId",
-            "parkingCapacity",
-            "tag_amenity",
-            "tag_fee",
-            "tag_name",
-            "tag_parking",
-            "tag_access",
-            "tag_capacity",
-            "tag_park_ride",
-            "tag_source",
-            "tag_supervised",
-            "tag_surface",
-            "tag_wheelchair",
-            "tag_lit",
-            "tag_opening_hours",
-            "tag_smoothness",
-            "tag_operator",
-            "tag_orientation",
-            "tag_parking:right",
-            "belowGround",
-            "heightM",
-        }
-
         try:
-            data = _read_geodata_cached(path)
+            all_feats, all_bboxes = _traffic_assets_slim_cached(path)
         except Exception as exc:
             abort(500, f"Fout bij lezen TRAFFIC-ASSETS: {exc}")
 
-        # Historische BGT-versies (eind_registratie gezet) eruit; bestanden van
-        # vóór gmt-shared 0.5.4 bevatten die nog.
-        feats = _current_bgt_features(data.get("features", []))
-
-        def _slim_traffic_props(props: dict) -> dict:
-            if not isinstance(props, dict):
-                return {}
-            out = {}
-            for k, v in props.items():
-                if k not in _TRAFFIC_ASSET_KEEP_PROPS:
-                    continue
-                # Sla lege waarden over, behalve assetType (altijd nodig).
-                if k != "assetType":
-                    if v is None:
-                        continue
-                    if isinstance(v, float) and v != v:
-                        continue
-                    if v == "":
-                        continue
-                out[k] = v
-            return out
-
-        if asset_types is not None:
-            feats = [
-                f
-                for f in feats
-                if (f.get("properties") or {}).get("assetType") in asset_types
-            ]
-
+        # Filteren op assetType en bbox (vooraf berekend per feature).
         if bbox is not None:
-            feats = _filter_features_by_bbox(feats, bbox)
-
-        # Strip ongebruikte/lege properties en laat geometry intact.
+            min_lon, min_lat, max_lon, max_lat = bbox
         slim_feats = []
-        for feat in feats:
-            slim_feats.append(
-                {
-                    "type": "Feature",
-                    "properties": _slim_traffic_props(feat.get("properties")),
-                    "geometry": feat.get("geometry"),
-                }
-            )
+        for feat, gb in zip(all_feats, all_bboxes):
+            if asset_types is not None and feat["properties"].get("assetType") not in asset_types:
+                continue
+            if bbox is not None and (
+                gb is None
+                or gb[0] > max_lon or gb[2] < min_lon or gb[1] > max_lat or gb[3] < min_lat
+            ):
+                continue
+            slim_feats.append(feat)
         data = {"type": "FeatureCollection", "features": slim_feats}
 
         as_nd = request.args.get("f", "").strip().lower() == "ndgeojson"

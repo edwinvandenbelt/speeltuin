@@ -8338,57 +8338,137 @@
            : _TA_ZEBRA_M * 0.75;
     }
 
+    // ── Ruimtelijke grid-index over het netwerk ──────────────────────────────
+    // De "dichtstbijzijnde wegvak/knoop"-zoekfuncties hieronder liepen per
+    // verkeersobject ALLE wegvakken af; bij duizenden objecten × tienduizenden
+    // segmenten blokkeerde dat de main thread tientallen seconden (bevroren
+    // beeld, auto's stil). Nu: segmenten/knopen per grid-cel, lui opgebouwd en
+    // opnieuw opgebouwd zodra het netwerk wijzigt (_netIndexVersion of size).
+    const _NET_CELL_M = 50;
+    let _netIndexVersion = 0;   // ophogen na het herbouwen van linkGeomMap/nodeCoords
+    let _netSegIdx  = null;     // { key, cells, cLng, cLat, segs: Float64Array, ids, ix0, ix1, iy0, iy1 }
+    let _netNodeIdx = null;
+
+    function _netGridParams(firstLat) {
+      return { cLat: _NET_CELL_M / 110540, cLng: _NET_CELL_M / (111320 * Math.cos(firstLat * Math.PI / 180) || 1) };
+    }
+    function _netCellKey(ix, iy) { return (ix + 1e6) * 2e6 + (iy + 1e6); }
+
+    function _netSegIndex() {
+      const key = `${_netIndexVersion}:${linkGeomMap.size}`;
+      if (_netSegIdx && _netSegIdx.key === key) return _netSegIdx;
+      let firstLat = 52;
+      for (const c of linkGeomMap.values()) { if (c && c.length) { firstLat = c[0][1]; break; } }
+      const { cLat, cLng } = _netGridParams(firstLat);
+      const coordsArr = [], ids = [];
+      const cells = new Map();
+      let ix0 = Infinity, ix1 = -Infinity, iy0 = Infinity, iy1 = -Infinity;
+      for (const [linkId, coords] of linkGeomMap) {
+        if (!coords || coords.length < 2) continue;
+        for (let i = 0; i < coords.length - 1; i++) {
+          const a = coords[i], b = coords[i + 1];
+          if (a[0] === b[0] && a[1] === b[1]) continue;
+          const s = ids.length;
+          coordsArr.push(a[0], a[1], b[0], b[1]);
+          ids.push(linkId);
+          const xa = Math.floor(Math.min(a[0], b[0]) / cLng), xb = Math.floor(Math.max(a[0], b[0]) / cLng);
+          const ya = Math.floor(Math.min(a[1], b[1]) / cLat), yb = Math.floor(Math.max(a[1], b[1]) / cLat);
+          if (xa < ix0) ix0 = xa; if (xb > ix1) ix1 = xb;
+          if (ya < iy0) iy0 = ya; if (yb > iy1) iy1 = yb;
+          for (let x = xa; x <= xb; x++) for (let y = ya; y <= yb; y++) {
+            const k = _netCellKey(x, y);
+            let arr = cells.get(k); if (!arr) cells.set(k, arr = []);
+            arr.push(s);
+          }
+        }
+      }
+      _netSegIdx = { key, cells, cLng, cLat, segs: Float64Array.from(coordsArr), ids, ix0, ix1, iy0, iy1 };
+      return _netSegIdx;
+    }
+
+    function _netNodeIndex() {
+      const key = `${_netIndexVersion}:${nodeCoords.size}`;
+      if (_netNodeIdx && _netNodeIdx.key === key) return _netNodeIdx;
+      let firstLat = 52;
+      for (const c of nodeCoords.values()) { firstLat = c[1]; break; }
+      const { cLat, cLng } = _netGridParams(firstLat);
+      const cells = new Map();
+      for (const [nodeId, c] of nodeCoords) {
+        const k = _netCellKey(Math.floor(c[0] / cLng), Math.floor(c[1] / cLat));
+        let arr = cells.get(k); if (!arr) cells.set(k, arr = []);
+        arr.push(nodeId, c);
+      }
+      _netNodeIdx = { key, cells, cLng, cLat };
+      return _netNodeIdx;
+    }
+
+    /** Dichtstbijzijnde netwerksegment bij (lng,lat), binnen maxM meter
+     *  (Infinity = onbegrensd). Geeft { d2 (m²), linkId, ax, ay, bx, by, t,
+     *  vx, vy } of null. Zelfde metriek als de oude brute-force lussen. */
+    function _netNearestSeg(lng, lat, maxM = Infinity) {
+      const idx = _netSegIndex();
+      if (!idx.ids.length) return null;
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      // Ondergrens (m) voor wat buiten ring r ligt: r hele cellen.
+      const cellM = Math.min(idx.cLng * mLng, idx.cLat * mLat) * 0.999;
+      const cx = Math.floor(lng / idx.cLng), cy = Math.floor(lat / idx.cLat);
+      const maxRingData = Math.max(cx - idx.ix0, idx.ix1 - cx, cy - idx.iy0, idx.iy1 - cy, 0);
+      const maxRing = isFinite(maxM) ? Math.min(maxRingData, Math.ceil(maxM / cellM) + 1) : maxRingData;
+      const segs = idx.segs;
+      const seen = new Set();
+      let best = isFinite(maxM) ? maxM * maxM : Infinity, bestS = -1, bestT = 0;
+      for (let r = 0; r <= maxRing; r++) {
+        for (let x = cx - r; x <= cx + r; x++) {
+          const edgeX = x === cx - r || x === cx + r;
+          for (let y = cy - r; y <= cy + r; y += (edgeX ? 1 : 2 * r || 1)) {
+            const arr = idx.cells.get(_netCellKey(x, y));
+            if (!arr) continue;
+            for (const s of arr) {
+              if (seen.has(s)) continue;
+              seen.add(s);
+              const o = s * 4;
+              const ax = (segs[o] - lng) * mLng, ay = (segs[o + 1] - lat) * mLat;
+              const vx = (segs[o + 2] - lng) * mLng - ax, vy = (segs[o + 3] - lat) * mLat - ay;
+              const len2 = vx * vx + vy * vy;
+              let t = len2 > 0 ? -(ax * vx + ay * vy) / len2 : 0;
+              t = t < 0 ? 0 : t > 1 ? 1 : t;
+              const px = ax + t * vx, py = ay + t * vy;
+              const d = px * px + py * py;
+              if (d < best) { best = d; bestS = s; bestT = t; }
+            }
+          }
+        }
+        // Alles buiten ring r ligt minstens r cellen weg.
+        if (bestS >= 0 && best <= (r * cellM) * (r * cellM)) break;
+      }
+      if (bestS < 0) return null;
+      const o = bestS * 4;
+      return {
+        d2: best, linkId: idx.ids[bestS], t: bestT,
+        ax: segs[o], ay: segs[o + 1], bx: segs[o + 2], by: segs[o + 3],
+        vx: (segs[o + 2] - segs[o]) * mLng, vy: (segs[o + 3] - segs[o + 1]) * mLat,
+      };
+    }
+
     // Wegrichting bij (lng,lat): hoek (° CCW t.o.v. oost) van het dichtstbijzijnde
     // netwerksegment, of null als er geen netwerk is. Gebruikt voor het dwars
     // over de weg leggen van markeringen.
     function _taRoadBearingAt(lng, lat) {
-      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
-      let best = Infinity, bestAng = null;
-      for (const coords of linkGeomMap.values()) {
-        if (!coords || coords.length < 2) continue;
-        for (let i = 0; i < coords.length - 1; i++) {
-          const a = coords[i], b = coords[i + 1];
-          const ax = (a[0] - lng) * mLng, ay = (a[1] - lat) * mLat;
-          const bx = (b[0] - lng) * mLng, by = (b[1] - lat) * mLat;
-          const vx = bx - ax, vy = by - ay;
-          const len2 = vx * vx + vy * vy;
-          if (len2 === 0) continue;
-          let t = -(ax * vx + ay * vy) / len2;
-          t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const px = ax + t * vx, py = ay + t * vy;
-          const d = px * px + py * py;
-          if (d < best) { best = d; bestAng = Math.atan2(vy, vx) * 180 / Math.PI; }
-        }
-      }
-      return bestAng;
+      const n = _netNearestSeg(lng, lat);
+      return n ? Math.atan2(n.vy, n.vx) * 180 / Math.PI : null;
     }
 
     // Zoek het dichtstbijzijnde punt op het netwerk (over alle links), incl.
     // linkId en afstand in meter. Gebruikt voor de debug-verbindingslijn
     // "bord → gekoppelde weg" (zie klik-handler hieronder).
     function _taNearestLinkPoint(lng, lat) {
-      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
-      let best = Infinity, bestPt = null, bestLinkId = null;
-      for (const [linkId, coords] of linkGeomMap) {
-        if (!coords || coords.length < 2) continue;
-        for (let i = 0; i < coords.length - 1; i++) {
-          const a = coords[i], b = coords[i + 1];
-          const ax = (a[0] - lng) * mLng, ay = (a[1] - lat) * mLat;
-          const bx = (b[0] - lng) * mLng, by = (b[1] - lat) * mLat;
-          const vx = bx - ax, vy = by - ay;
-          const len2 = vx * vx + vy * vy;
-          if (len2 === 0) continue;
-          let t = -(ax * vx + ay * vy) / len2;
-          t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const px = ax + t * vx, py = ay + t * vy;
-          const d = px * px + py * py;
-          if (d < best) {
-            best = d; bestLinkId = linkId;
-            bestPt = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
-          }
-        }
-      }
-      return bestPt ? { point: bestPt, linkId: bestLinkId, distM: Math.sqrt(best) } : null;
+      const n = _netNearestSeg(lng, lat);
+      if (!n) return null;
+      return {
+        point: [n.ax + n.t * (n.bx - n.ax), n.ay + n.t * (n.by - n.ay)],
+        linkId: n.linkId,
+        distM: Math.sqrt(n.d2),
+      };
     }
 
     // Max. afstand asset → wegvak om als "gekoppeld" te tellen bij de
@@ -10163,23 +10243,59 @@
     }
 
     /**
-     * Haal alle features van een OGC API Features items-URL op in pagina's van
-     * `pageSize` (limit/offset), door de `rel=next`-links te volgen. Na elke
-     * pagina wordt `onPage(alleFeaturesTotNuToe, numberMatched)` aangeroepen
-     * zodat de aanroeper progressief kan renderen. Geeft alle features terug.
-     * Gooit OgcHttpError bij een niet-200 status (ook 201 = generatiejob).
+     * Haal alle features van een OGC API Features items-URL op als NDJSON-stream
+     * (?format=ndjson: headerregel met numberMatched + één feature per regel), in
+     * één verzoek. Sneller dan limit/offset-paging, waarbij de server per pagina
+     * opnieuw de hele set filtert. Tijdens het binnenkomen wordt periodiek
+     * `onPage(alleFeaturesTotNuToe, numberMatched)` aangeroepen (en één keer aan
+     * het eind), zodat de aanroeper progressief kan renderen. Geeft alle features
+     * terug. Gooit OgcHttpError bij een niet-200 status (ook 201 = generatiejob).
      */
-    async function _fetchOgcPaged(url, { pageSize = 2000, onPage, signal } = {}) {
+    async function _fetchOgcStream(url, { onPage, signal } = {}) {
       const sep = url.includes('?') ? '&' : '?';
-      let next = `${url}${sep}limit=${pageSize}&offset=0`;
-      const all = [];
-      while (next) {
-        const page = await _ogcGetJson(next, signal);
-        if (Array.isArray(page.features)) all.push(...page.features);
-        if (onPage) onPage(all, page.numberMatched);
-        const link = (page.links || []).find(l => l.rel === 'next');
-        next = link ? link.href : null;
+      const r = await fetch(`${url}${sep}format=ndjson`, { signal, headers: { Accept: 'application/x-ndjson' } });
+      if (r.status !== 200) {
+        const body = await r.json().catch(() => null);
+        throw new OgcHttpError(r.status, body);
       }
+      const ct = (r.headers.get('Content-Type') || '').toLowerCase();
+      if (!r.body || !ct.includes('ndjson')) {
+        // Geen stream (oudere server) → gewone FeatureCollection.
+        const page = await r.json();
+        const all = Array.isArray(page.features) ? page.features : [];
+        if (onPage) onPage(all, page.numberMatched);
+        return all;
+      }
+      const reader  = r.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      const all = [];
+      let matched, buf = '', reported = 0, lastReport = performance.now();
+      const handleLine = (line) => {
+        const s = line.trim();
+        if (!s) return;
+        let obj;
+        try { obj = JSON.parse(s); } catch { return; }
+        if (obj && obj.type === 'Header') { matched = obj.numberMatched; return; }
+        all.push(obj);
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let start = 0, nl;
+        while ((nl = buf.indexOf('\n', start)) >= 0) { handleLine(buf.slice(start, nl)); start = nl + 1; }
+        buf = buf.slice(start);
+        // Tussentijds renderen: niet per chunk (de aanroeper verwerkt telkens de
+        // hele lijst), maar elke 3000 nieuwe features of 250 ms.
+        if (onPage && all.length > reported &&
+            (all.length - reported >= 3000 || performance.now() - lastReport >= 250)) {
+          reported = all.length; lastReport = performance.now();
+          onPage(all, matched);
+        }
+      }
+      buf += decoder.decode();
+      if (buf.length) handleLine(buf);
+      if (onPage) onPage(all, matched);
       return all;
     }
 
@@ -10362,7 +10478,7 @@
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            await _fetchOgcPaged(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`, {
+            await _fetchOgcStream(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`, {
               signal: ctrl.signal,
               onPage: feats => { if (_vegLoadAbort === ctrl) _applyVegetationFeatures(feats); },
             });
@@ -10548,7 +10664,7 @@
       let feats;
       _setTaCatLoading('bumps', true);
       try {
-        feats = await _fetchOgcPaged(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump&fetch=0`);
+        feats = await _fetchOgcStream(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump&fetch=0`);
       } catch (e) {
         if (e instanceof OgcHttpError && e.status === 404) _trafficAssetsNoFile = true;
         else console.debug('[TA] speedBump fetch mislukt', e);
@@ -10780,7 +10896,7 @@
         // Wel alle types, want de Snelheid-/Kruispuntlagen gebruiken ze ook.
         const url = `/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`
                   + `&assetType=${_TA_ALL_3D_TYPES.join(',')}&fetch=0`;
-        const features = await _fetchOgcPaged(url, {
+        const features = await _fetchOgcStream(url, {
           signal: ctrl.signal,
           onPage: feats => { if (_taLoadAbort === ctrl) _applyTrafficAssetFeatures(feats); },
         });
@@ -11234,42 +11350,28 @@
       return Math.hypot(dx, dy);
     }
 
-    // Kortste afstand (m) van punt (lon,lat) tot lijnstuk-geometrie coords.
-    function _speedDistToLine(lon, lat, coords) {
-      if (!coords || coords.length < 2) return Infinity;
-      const [mPerLng, mPerLat] = _mPerDeg(lat);
-      let best = Infinity;
-      for (let i = 0; i < coords.length - 1; i++) {
-        const a = coords[i], b = coords[i + 1];
-        const ax = (a[0] - lon) * mPerLng, ay = (a[1] - lat) * mPerLat;
-        const bx = (b[0] - lon) * mPerLng, by = (b[1] - lat) * mPerLat;
-        const vx = bx - ax, vy = by - ay;
-        const len2 = vx * vx + vy * vy;
-        let t = len2 > 0 ? -(ax * vx + ay * vy) / len2 : 0;
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const px = ax + t * vx, py = ay + t * vy;
-        const d = Math.hypot(px, py);
-        if (d < best) best = d;
-      }
-      return best;
-    }
-
+    // Via de grid-index (_netNodeIndex): alleen de cellen binnen maxM.
     function _speedNearestNodeId(lon, lat, maxM) {
+      const idx = _netNodeIndex();
+      const [mLng, mLat] = _mPerDeg(lat);
+      const rx = Math.ceil(maxM / (idx.cLng * mLng)) + 1, ry = Math.ceil(maxM / (idx.cLat * mLat)) + 1;
+      const cx = Math.floor(lon / idx.cLng), cy = Math.floor(lat / idx.cLat);
       let bestId = null, bestD = maxM;
-      for (const [nodeId, c] of nodeCoords) {
-        const d = _speedDistMeters(lon, lat, c[0], c[1]);
-        if (d < bestD) { bestD = d; bestId = nodeId; }
+      for (let x = cx - rx; x <= cx + rx; x++) for (let y = cy - ry; y <= cy + ry; y++) {
+        const arr = idx.cells.get(_netCellKey(x, y));
+        if (!arr) continue;
+        for (let i = 0; i < arr.length; i += 2) {
+          const c = arr[i + 1];
+          const d = _speedDistMeters(lon, lat, c[0], c[1]);
+          if (d < bestD) { bestD = d; bestId = arr[i]; }
+        }
       }
       return bestId;
     }
 
     function _speedNearestLinkId(lon, lat, maxM) {
-      let bestId = null, bestD = maxM;
-      for (const [linkId, coords] of linkGeomMap) {
-        const d = _speedDistToLine(lon, lat, coords);
-        if (d < bestD) { bestD = d; bestId = linkId; }
-      }
-      return bestId;
+      const n = _netNearestSeg(lon, lat, maxM);
+      return n ? n.linkId : null;
     }
 
     // Representatief punt [lon,lat] voor een feature-geometrie (Point of
@@ -18368,6 +18470,7 @@
       // Herbouw graph
       linkGeomMap.clear(); linkSpeedMap.clear(); linkCapacityMap.clear(); linkLenAttrMap.clear();
       nodeCoords.clear();  nodeLinkMap.clear();  adj.clear();  adjReverse.clear();
+      _netIndexVersion++;   // grid-index voor nearest-link/-node opnieuw opbouwen
       for (const f of newGeojson.features) {
         const p = f.properties, c = f.geometry.coordinates;
         if (!p.fromNode || !p.toNode || !c?.length) continue;
@@ -20506,6 +20609,11 @@
         });
         if (dateTime)   _fspParams.set('date', dateTime);
         if (purposeVal) _fspParams.set('purpose', purposeVal);
+        // Alleen de velden die hieronder gebruikt worden, zonder geometrie: de
+        // volledige GeoJSON (~10MB) in één JSON.parse liet de pagina elk sim-uur
+        // even vaststaan; zo is het ~0,9MB.
+        _fspParams.set('skipGeometry', 'true');
+        _fspParams.set('properties', 'linkId,flow,flow24hrs,flowTemporalUnit');
         const resp = await fetch(`/collections/flows/items?${_fspParams}`);
 
         if (!resp.ok) {
@@ -20513,7 +20621,7 @@
           throw new Error(err.error || resp.statusText);
         }
 
-        const scaled = await resp.json();  // GeoJSON FeatureCollection
+        const scaled = await resp.json();  // GeoJSON FeatureCollection (zonder geometrie)
 
         // ── Sla originele waarden op (alleen de eerste keer) ────────────────
         if (!_fspOriginal) {
