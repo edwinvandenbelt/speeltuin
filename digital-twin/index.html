@@ -2527,43 +2527,140 @@
   <script>
   'use strict';
 
-  // ── TIJDELIJK: fetch-tracing voor het "blijft pending"-onderzoek ──────────
-  // Logt elke fetch (start/einde/duur) naar de console, en meldt elke 5s welke
-  // fetches nog openstaan en hoe lang al. Verwijder dit blok weer zodra het
-  // onderzoek afgerond is.
-  (function _instrumentFetchForTracing() {
+  // ── TIJDELIJK: tracing voor het "pagina wordt niet-responsief"-onderzoek ──
+  // Elke trace-regel krijgt een wandklok-timestamp + ms sinds paginastart en
+  // gaat naar de console én naar een buffer (ook in localStorage, zodat de
+  // trace van een vastgelopen/afgeschoten tab na herladen nog op te halen is).
+  //   _traceDump()      → kopieer trace van deze sessie naar het klembord
+  //   _traceDumpPrev()  → idem voor de vorige sessie (na een vastgelopen tab)
+  // Detecteert ook blokkades van de main thread (watchdog + long tasks).
+  // Verwijder dit blok weer zodra het onderzoek afgerond is.
+  (function _instrumentForTracing() {
+    const LS_KEY = 'dt_trace', LS_PREV = 'dt_trace_prev', MAX = 2000;
+    const _buf = [];
+    let _lastLabel = '(start)';
+    let _lsPending = false;
+    try {
+      const prev = localStorage.getItem(LS_KEY);
+      if (prev) localStorage.setItem(LS_PREV, prev);
+      localStorage.removeItem(LS_KEY);
+    } catch (_) {}
+    const _ts = () => {
+      const d = new Date();
+      const p = (n, w = 2) => String(n).padStart(w, '0');
+      return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+    };
+    const _origLog = console.log.bind(console);
+    function _trace(msg) {
+      const line = `[trace ${_ts()} +${performance.now().toFixed(0)}ms] ${msg}`;
+      _buf.push(line);
+      if (_buf.length > MAX) _buf.shift();
+      _origLog(line);
+      // localStorage gebundeld wegschrijven (niet per regel synchroon)
+      if (!_lsPending) {
+        _lsPending = true;
+        setTimeout(() => {
+          _lsPending = false;
+          try { localStorage.setItem(LS_KEY, _buf.join('\n')); } catch (_) {}
+        }, 250);
+      }
+    }
+    // Markeer een stap: onthoudt het label zodat een blokkade eraan gekoppeld kan worden.
+    window._trace = (label) => { _lastLabel = label; _trace(label); };
+    // Meet de duur van een synchrone functie-aanroep.
+    window._traceTime = (label, fn) => {
+      window._trace(`▶ ${label}`);
+      const t0 = performance.now();
+      try { return fn(); }
+      finally { _trace(`◀ ${label} (${(performance.now() - t0).toFixed(0)}ms)`); }
+    };
+    const _copy = (text) => {
+      try { navigator.clipboard.writeText(text).then(
+        () => _origLog(`[trace] ${text.split('\n').length} regels naar klembord gekopieerd`),
+        () => _origLog(text)); }
+      catch (_) { _origLog(text); }
+      return text.split('\n').length + ' regels';
+    };
+    window._traceDump = () => _copy(_buf.join('\n'));
+    window._traceDumpPrev = () => {
+      let t = null; try { t = localStorage.getItem(LS_PREV); } catch (_) {}
+      return t ? _copy(t) : 'geen vorige trace';
+    };
+
+    // Bestaande [perf]-regels ook in de trace opnemen.
+    console.log = function (...args) {
+      if (typeof args[0] === 'string' && args[0].startsWith('[perf]')) {
+        _trace(args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' '));
+        return;
+      }
+      return _origLog(...args);
+    };
+
+    window.addEventListener('error', e => _trace(`✗ error: ${e.message} @ ${e.filename}:${e.lineno}`));
+    window.addEventListener('unhandledrejection', e => _trace(`✗ unhandledrejection: ${e.reason?.stack || e.reason}`));
+    document.addEventListener('visibilitychange', () => _trace(`visibility: ${document.visibilityState}`));
+
+    // Watchdog: een timer die elke 100ms hoort te lopen; loopt hij veel later,
+    // dan was de main thread zo lang geblokkeerd.
+    let _wdLast = performance.now();
+    setInterval(() => {
+      const now = performance.now(), gap = now - _wdLast;
+      _wdLast = now;
+      if (gap > 500 && document.visibilityState === 'visible')
+        _trace(`⚠ BLOKKADE main thread ~${gap.toFixed(0)}ms (laatste stap: ${_lastLabel})`);
+    }, 100);
+
+    // Long tasks (>200ms) volgens de browser zelf.
+    try {
+      new PerformanceObserver(list => {
+        for (const e of list.getEntries()) {
+          if (e.duration < 200) continue;
+          const a = e.attribution?.[0];
+          _trace(`⚠ longtask ${e.duration.toFixed(0)}ms start=+${e.startTime.toFixed(0)}ms` +
+                 (a ? ` (${a.containerType || ''} ${a.containerSrc || a.containerName || ''})` : '') +
+                 ` (laatste stap: ${_lastLabel})`);
+        }
+      }).observe({ type: 'longtask', buffered: true });
+    } catch (_) {}
+
+    // Geheugengebruik elke 5s (alleen Chromium) + openstaande fetches.
+    const _inFlight = new Map(); // id -> { method, url, start }
+    setInterval(() => {
+      const m = performance.memory;
+      if (m) _trace(`mem heap=${(m.usedJSHeapSize / 1048576).toFixed(0)}MB / limiet ${(m.jsHeapSizeLimit / 1048576).toFixed(0)}MB`);
+      const now = performance.now();
+      for (const [id, info] of _inFlight) {
+        const elapsedS = (now - info.start) / 1000;
+        if (elapsedS > 3) _trace(`...#${id} nog bezig: ${info.method} ${info.url} (${elapsedS.toFixed(1)}s)`);
+      }
+    }, 5000);
+
+    // Fetch-tracing: start/einde/duur/grootte.
     const _origFetch = window.fetch.bind(window);
     let _traceSeq = 0;
-    const _inFlight = new Map(); // id -> { method, url, start }
     window.fetch = function (input, init) {
       const id = ++_traceSeq;
       const url = typeof input === 'string' ? input : (input && input.url) || String(input);
       const method = (init && init.method) || (input && input.method) || 'GET';
       const start = performance.now();
       _inFlight.set(id, { method, url, start });
-      console.log(`[trace] →#${id} ${method} ${url}`);
+      _trace(`→#${id} ${method} ${url}`);
       return _origFetch(input, init).then(
         (resp) => {
           _inFlight.delete(id);
-          console.log(`[trace] ←#${id} ${resp.status} ${method} ${url} (${(performance.now() - start).toFixed(0)}ms)`);
+          const len = resp.headers.get('content-length');
+          _trace(`←#${id} ${resp.status} ${method} ${url} (${(performance.now() - start).toFixed(0)}ms` +
+                 (len ? `, ${(len / 1048576).toFixed(1)}MB` : '') + ')');
           return resp;
         },
         (err) => {
           _inFlight.delete(id);
-          console.log(`[trace] ✗#${id} FOUT ${method} ${url} (${(performance.now() - start).toFixed(0)}ms): ${err}`);
+          _trace(`✗#${id} FOUT ${method} ${url} (${(performance.now() - start).toFixed(0)}ms): ${err}`);
           throw err;
         }
       );
     };
-    setInterval(() => {
-      const now = performance.now();
-      for (const [id, info] of _inFlight) {
-        const elapsedS = (now - info.start) / 1000;
-        if (elapsedS > 3) {
-          console.log(`[trace] ...#${id} nog bezig: ${info.method} ${info.url} (${elapsedS.toFixed(1)}s)`);
-        }
-      }
-    }, 5000);
+    window._trace('pagina-script gestart');
   })();
 
   // ── Vertalingen ───────────────────────────────────────────────────────────
@@ -5481,6 +5578,7 @@
 
   // ═══════════════════════════════════════════════════════════════════════════
   (async () => {
+    _trace(`init: start (areaId=${AREA_ID}, mode=${MODE})`);
 
     // ── 0. Pre-fetch alle databestanden parallel (start vóór elke await) ───
     const _nwFetch = fetch(GEOJSON_FILE).then(r => {
@@ -5711,6 +5809,7 @@
     }
 
     map.once('load', () => {
+      _trace('kaart: load');
       _mapLoadFired = true;
       if (_areaBoundsSet) _fitAndSky();
 
@@ -5798,6 +5897,7 @@
     // ── 1. Netwerkdata laden ────────────────────────────────────────────────
     setLoaderMsg(T('loaderNetwork'));
     const geojson = await _nwFetch;
+    _trace(`init: 1. netwerk ontvangen (${geojson?.features?.length} features)`);
     if (!Array.isArray(geojson?.features))
       throw new Error(`Ongeldig netwerkbestand — geen GeoJSON FeatureCollection ontvangen.`);
 
@@ -7654,6 +7754,7 @@
      *  zones (dan hoeft niet op onze panden-data gewacht te worden), anders van
      *  onze (al op STUDY gefilterde) panden. */
     async function _loadBag3dIfNeeded() {
+      _trace('3D BAG: _loadBag3dIfNeeded');
       if (_bag3dState === 'ready') { _bag3dLoadInView(); return; }
       if (_bag3dState !== 'idle' || _MAQUETTE) return;
       const studyPolys = _b3StudyPolys();
@@ -7702,6 +7803,7 @@
     /** Haal de nog ontbrekende tegels in (en rond) het kaartbeeld op, de
      *  dichtstbijzijnde eerst. Geladen tegels blijven bewaard. */
     function _bag3dLoadInView() {
+      _trace('3D BAG: _bag3dLoadInView');
       if (!_bag3dActive() || map.getZoom() < _BAG3D_MIN_ZOOM) { _refreshBuildingsStatusUI(); return; }
       const b  = map.getBounds();
       const dw = (b.getEast() - b.getWest()) * 0.15, dh = (b.getNorth() - b.getSouth()) * 0.15;
@@ -10208,6 +10310,7 @@
     let _vegLoadAbort   = null;   // AbortController van de lopende bbox-load
     let _vegLoadingBbox = null;
     async function loadVegetationInView() {
+      _trace('vegetatie: loadVegetationInView');
       if (!_mapReady || !_vegetationVisible) return;
       if (_vegPollJobId) return;   // generatie loopt al; wacht tot die klaar is
       if (map.getZoom() < _VEG_MINZOOM) return;
@@ -10619,6 +10722,7 @@
     let _taLoadAbort = null;    // AbortController van de lopende bbox-load
     let _taLoadingBbox = null;  // bbox die nu geladen wordt
     async function loadTrafficAssetsInView() {
+      _trace('verkeersobjecten: loadTrafficAssetsInView');
       console.debug('[TA] loadTrafficAssetsInView called', { ready: _mapReady, visible: _trafficAssetsVisible, noFile: _trafficAssetsNoFile, zoom: map.getZoom(), minzoom: _TRAFFIC_ASSET_MINZOOM });
       if (!_mapReady)            { console.debug('[TA] skip: map niet ready'); return; }
       if (!_trafficAssetsVisible){ console.debug('[TA] skip: _trafficAssetsVisible=false (checkbox/localStorage)'); return; }
@@ -10904,6 +11008,7 @@
     })();
 
     // ── 2. Routes laden (optioneel) ─────────────────────────────────────────
+    _trace('init: 2. routes/graph opbouwen');
 
     // linkId → geometrie (voor route-reconstructie)
     const linkGeomMap      = new Map();
@@ -10926,6 +11031,7 @@
 
     /** Herbouw linkFlowMap voor het huidige dagdeel (aanroepen na dagdeel-wijziging) */
     function rebuildLinkFlowMap() {
+      _trace('rebuildLinkFlowMap');
       linkFlowMap.clear();
       for (const seg of segments) {
         linkFlowMap.set(seg.props.linkId, segFlow(seg));
@@ -11359,6 +11465,7 @@
     let zoneFeaturesRaw = [];    // alle zone-features (voor node-laag)
     try {
       const zoneData = await _zFetch;
+      _trace(`init: zones ontvangen (${zoneData?.features?.length ?? 'geen'})`);
       if (zoneData) {
         zoneFeaturesRaw = zoneData.features || [];
         for (const f of zoneFeaturesRaw) {
@@ -11383,6 +11490,7 @@
     const feedLinkByZone = new Map();  // zoneId → { production: coords|null, attraction: coords|null }
     try {
       const feedData = await _flFetch;
+      _trace(`init: feedlinks ontvangen (${feedData?.features?.length ?? 'geen'})`);
       if (feedData?.features?.length) {
         const zonePropsById = new Map(zoneFeaturesRaw.map(f => [f.properties?.zoneId, f.properties]));
         for (const f of feedData.features) {
@@ -11815,12 +11923,14 @@
       try {
         if (MODE === 'MIXED') {
           const [carFc, bikeFc] = await _rtFetch;
+          _trace(`routes (achtergrond): ontvangen CAR=${carFc?.features?.length} BIKE=${bikeFc?.features?.length}`);
           const _tP0 = performance.now();
           _parseAndAddRoutes(carFc,  'CAR');
           _parseAndAddRoutes(bikeFc, 'BIKE');
           console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
         } else {
           const routesFc = await _rtFetch;
+          _trace(`routes (achtergrond): ontvangen (${routesFc?.features?.length} features)`);
           if (!routesFc) throw new Error('geen data');
           const _tP0 = performance.now();
           _parseAndAddRoutes(routesFc, MODE);
@@ -11831,19 +11941,21 @@
         const _tBlrm = performance.now();
         buildLinkRouteMap();
         console.log('[perf] buildLinkRouteMap:', (performance.now() - _tBlrm).toFixed(0), 'ms | routes:', routeList.length);
-        calibrateRouteProductions();  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
+        _traceTime('routes (achtergrond): calibrateRouteProductions', () => calibrateRouteProductions());  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
         if (routeMode) {
           document.getElementById('odEditBtn').style.display = '';
-          rebuildCars();  // was al gestart in segment-modus; nu overschakelen naar route-modus
+          _traceTime('routes (achtergrond): rebuildCars', () => rebuildCars());  // was al gestart in segment-modus; nu overschakelen naar route-modus
         }
         console.log('[perf] routes geladen (achtergrond):', (performance.now() - _tPost).toFixed(0), 'ms');
       } catch (e) {
         console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
       }
     }
+    _trace('init: routes-achtergrondtaak gestart');
     _loadRoutesInBackground();
 
     // ── 4. Applicatiestatus ─────────────────────────────────────────────────
+    _trace('init: 4. Applicatiestatus');
      let timeScale = 1;
      let threshold = 0;
      let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
@@ -12511,6 +12623,8 @@
 
       if (routeMode) {
         const minWeight = thresh / 10000;
+        const _bT0 = performance.now();
+        let _bLinks = 0, _bCoords = 0;
 
         // Stap 1: bouw alle route-paden
         const routePaths = [];  // { path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount }
@@ -12534,6 +12648,7 @@
 
           const path = buildPathFromLinks(allLinkObjs);
           if (!path || path.length < 30) continue;
+          _bLinks += allLinkObjs.length; _bCoords += path.coords.length;
 
           const isBoundary = false;
           // Fietsen parkeren niet in de digital twin: alleen onderweg zichtbaar.
@@ -12541,6 +12656,8 @@
           routePaths.push({ path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount });
         }
 
+        const _bT1 = performance.now();
+        _trace(`buildCarList stap 1 (paden): ${routeList.length} routes → ${routePaths.length} paden, ${_bLinks} links, ${_bCoords} coords, ${(_bT1 - _bT0).toFixed(0)}ms (vulmethode=${initFillMethod})`);
         if (!routePaths.length) return list;
 
         // Stap 3b: sla OD-groepen op voor het productiemechanisme (altijd nodig, ongeacht vulmethode).
@@ -12563,6 +12680,7 @@
 
         // Preprocessing gedeeld door LD en CB: bouw per inner-link een route-map en
         // per route-pad een offset-tabel (path.boundaries[approachCount + j]).
+        _trace(`buildCarList stap 3b (odGroups=${odGroups.size}): ${(performance.now() - _bT1).toFixed(0)}ms`);
         let innerLinkRouteMap = null;
         if (initFillMethod === 'link' || initFillMethod === 'cap') {
           innerLinkRouteMap = new Map(); // linkId → [{rp, weight}]
@@ -12734,6 +12852,7 @@
             rp.density = odFlowVehHr * travelTime / 3600;
           }
           const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
+          _trace(`buildCarList LL stap 2+3 (N=${N}): ${(performance.now() - _bT1).toFixed(0)}ms sinds stap 1`);
 
           // Verdeel N proportioneel; probabilistische afronding zodat Σ count ≈ N.
           for (const rp of routePaths) {
@@ -12783,6 +12902,7 @@
               });
             }
           }
+          _trace(`buildCarList LL plaatsing (${list.length} auto's): ${(performance.now() - _bT1).toFixed(0)}ms sinds stap 1`);
         }
       } else {
         // Segment-modus: één link per pad.
@@ -13157,6 +13277,7 @@
     }
 
     // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
+    _trace('init: 5. Deck.gl lagen');
 
     // ── ScenarioVergelijker — state (vóór makeCarLayers zodat er geen TDZ-fout optreedt) ──
     let splitViewActive    = false;
@@ -15022,6 +15143,7 @@
 
     /** Bouw linkRouteMap: linkId → route[] na het vullen van routeList. */
     function buildLinkRouteMap() {
+      _trace('buildLinkRouteMap');
       linkRouteMap.clear();
       for (const route of routeList) {
         for (const id of route.linkIds) {
@@ -15048,6 +15170,7 @@
      * Voedingslinks (eerste + laatste linkId) worden uitgesloten.
      */
     function calibrateRouteProductions() {
+      _trace('calibrateRouteProductions');
       const DBG = /[?&]debug\b/.test(location.search);
       if (!routeList.length) return;
 
@@ -15865,9 +15988,10 @@
      }
 
     // ── 6. Initialisatie ────────────────────────────────────────────────────
+    _trace('init: 6. Initialisatie');
 
-    cars = enforceInitialSpacing(buildCarList(threshold));
-    computeCarData();
+    _traceTime('init: buildCarList+spacing', () => { cars = enforceInitialSpacing(buildCarList(threshold)); });
+    _traceTime(`init: computeCarData (${cars.length} auto's)`, () => computeCarData());
 
     let pendingChanges        = [];       // [{ nodeId, zoneId, production, attraction, label }]
     let _changesPanelReadOnly = false;   // true = geopend via ☰-knop (alleen-lezen)
@@ -15920,6 +16044,8 @@
       },
     });
     map.addControl(overlay);
+    _trace('init: deck.gl overlay toegevoegd');
+    map.once('idle', () => _trace('kaart: eerste idle'));
 
     // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
     // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
@@ -16073,6 +16199,7 @@
          // afspeel-vinkje van de simulatie bepaalt via `paused` of auto's bewegen
          // (animate()); zichtbaarheid blijft hier uitsluitend aan carsSuspended hangen.
          const showCars = withCars && !carsSuspended;
+         const _uoT0 = performance.now();
          overlay.setProps({ layers: [
            ...makeSunkenLayers(),
            ...makePathRibbonLayers(),
@@ -16101,6 +16228,8 @@
           ...makeBag3dLayers(),
           makeEditSignLayer(),
         ]});
+        const _uoDur = performance.now() - _uoT0;
+        if (_uoDur > 150) _trace(`⚠ updateOverlay ${_uoDur.toFixed(0)}ms`);
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
         if (splitViewActive && overlay2) {
           overlay2.setProps({ layers: [makeNetworkLayer2()].filter(Boolean) });
@@ -16109,6 +16238,7 @@
 
 
     // ── 7. Animatielus ──────────────────────────────────────────────────────
+    _trace('init: 7. Animatielus');
     let lastT  = null;
     let paused = false;          // auto's blijven zichtbaar maar bewegen niet; klok/datum/condities blijven instelbaar
     let carsSuspended = false;   // alleen tijdens knoop-/wegvak-bewerken: auto's echt verborgen/verwijderd
@@ -16135,7 +16265,10 @@
     let lastRevalidateT = 0;      // real-time (performance.now()/1000) van laatste hervalidatie
     const REVALIDATE_INTERVAL = 2.0; // elke 2 seconden
 
+    let _animFrames = 0;
     function animate() {
+      const _aT0 = performance.now();
+      if (_animFrames++ === 0) _trace('animatie: eerste frame');
       const now = performance.now() / 1000;
       if (!carsSuspended && !paused && lastT !== null) {
         const dt  = Math.min(now - lastT, 0.05) * timeScale;
@@ -16506,14 +16639,19 @@
         updateOverlay(true);
       }
       if (carsSuspended || paused) lastT = null; else lastT = now;
+      const _aDur = performance.now() - _aT0;
+      if (_aDur > 150) _trace(`⚠ animatie-frame ${_aDur.toFixed(0)}ms (auto's=${cars.length}, frame #${_animFrames})`);
       requestAnimationFrame(animate);
     }
 
     /** Herbouw auto-lijst (bij zoom-wijziging of drempel-aanpassing) */
     function rebuildCars() {
+      const _t0 = performance.now();
       lastProductionT = 0;   // reset productie-timer zodat er geen burst optreedt na rebuild
       cars = enforceInitialSpacing(buildCarList(threshold));
+      const _t1 = performance.now();
       computeCarData();
+      _trace(`rebuildCars: ${cars.length} auto's, buildCarList+spacing ${(_t1 - _t0).toFixed(0)}ms, computeCarData ${(performance.now() - _t1).toFixed(0)}ms`);
     }
 
     /** Lichte update van de OD-productiesnelheden na een flow-schaal-wijziging (nieuw heel
