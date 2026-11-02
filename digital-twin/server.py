@@ -209,6 +209,7 @@ try:
     from scripts.geofabrik_pbf import (
         resolve_or_download_pbf as _resolve_or_download_pbf,
         find_covering_extracts as _find_covering_extracts,
+        clipped_pbf_for_bbox as _clipped_pbf_for_bbox,
         OSM_PBF_ENV_VAR as _OSM_PBF_ENV_VAR,
         OSM_PBF_CACHE_DIR_ENV_VAR as _OSM_PBF_CACHE_DIR_ENV_VAR,
         DEFAULT_CACHE_DIR as _DEFAULT_PBF_CACHE_DIR,
@@ -218,6 +219,7 @@ try:
 except ImportError as _e:
     _resolve_or_download_pbf = None  # type: ignore[assignment]
     _find_covering_extracts = None  # type: ignore[assignment]
+    _clipped_pbf_for_bbox = None  # type: ignore[assignment]
     _OSM_PBF_ENV_VAR = "OSM_PBF_PATH"
     _OSM_PBF_CACHE_DIR_ENV_VAR = "OSM_PBF_CACHE_DIR"
     _DEFAULT_PBF_CACHE_DIR = Path(tempfile.gettempdir()) / "geofabrik_pbf"
@@ -254,10 +256,14 @@ def _resolve_local_pbf(bbox: list) -> str | None:
             print(f"[server] OSM_PBF_PATH ({p.name}) dekt bbox {bbox} niet "
                   f"(hoort bij {[e.slug for e in covering]}).")
     try:
-        pbf_path_obj, _ = _resolve_or_download_pbf(
+        pbf_path_obj, extract = _resolve_or_download_pbf(
             *bbox, cache_dir=pbf_cache_dir, ignore_explicit=True
         )
-        return str(pbf_path_obj)
+        # Ligt de bbox over de grens van twee extracten (bv. Overijssel/Gelderland),
+        # dan wordt het hele land gekozen; maak daar eenmalig een kleine uitsnede van.
+        return str(_clipped_pbf_for_bbox(
+            pbf_path_obj, extract, *bbox, cache_dir=pbf_cache_dir
+        ))
     except Exception as exc:
         print(f"[server] Geen lokaal OSM-extract voor bbox {bbox} ({exc}); val terug op Overpass.")
         return None

@@ -41,3 +41,7 @@ mapbox-vector-tile>=1.2
 
 # Maquette-camera: beeldherkenning van het fysieke schaalmodel
 opencv-python==4.13.0.92
+
+# Lokale OSM-extracten: snelle PBF-backend in gmt_shared en uitsneden van
+# grote extracten (scripts/geofabrik_pbf.py, clipped_pbf_for_bbox)
+osmium>=4.0

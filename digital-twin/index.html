@@ -4688,6 +4688,18 @@
     return total;
   }
 
+  /** Geometrische lengte (m) van een coördinatenreeks, gecachet per array-object.
+   *  Dezelfde linkgeometrie zit in duizenden route-paden; zo wordt haversine één keer
+   *  per link berekend. Nieuwe geometrie is een nieuw array en krijgt een eigen waarde.
+   *  Moet geometrisch blijven (niet het `length`-attribuut): interpolatePosition loopt
+   *  de coördinaten af met haversine tot offset × path.length. */
+  const _segLenCache = new WeakMap();
+  function segmentLengthCached(coords) {
+    let len = _segLenCache.get(coords);
+    if (len === undefined) { len = segmentLength(coords); _segLenCache.set(coords, len); }
+    return len;
+  }
+
   /** Lengte (m) van een netwerklink: het `length`-attribuut uit het netwerkbestand
    *  als dat aanwezig is, anders berekend uit de geometrie. */
   function linkLengthM(f) {
@@ -5759,6 +5771,20 @@
       attributionControl: { customAttribution: [OSM_ATTRIBUTION, BAG3D_ATTRIBUTION] },
     });
     window.map = map;
+    // TIJDELIJK (tracing): elke wijziging aan de luchtfoto-laag loggen, met aanroeper.
+    {
+      const _origSetLayout = map.setLayoutProperty.bind(map);
+      map.setLayoutProperty = (id, key, val, opts) => {
+        if (id === 'satellite-bg') {
+          const caller = (new Error().stack || '').split(String.fromCharCode(10)).slice(2, 5).map(l => l.trim()).join(' | ');
+          _trace(`luchtfoto: satellite-bg ${key}=${val} ← ${caller}`);
+        }
+        return _origSetLayout(id, key, val, opts);
+      };
+      const _origRemoveLayer = map.removeLayer.bind(map);
+      map.removeLayer = (id) => { if (id === 'satellite-bg') _trace('luchtfoto: satellite-bg VERWIJDERD'); return _origRemoveLayer(id); };
+      map.on('error', e => _trace(`kaart-fout: ${e?.error?.message || e?.error || e}`));
+    }
 
     // Deel de MapLibre-instantie met de closures in de buitenste scope
     // (_startFollowMode, camera-toggle IIFE). Zonder dit verwijst `map` daar
@@ -6910,6 +6936,9 @@
                            || display === 'geschaald_productie'
                            || display === 'geschaald_attractie';
       const is3D = display === 'normaal' || isScaledDisplay;
+      let _b3s = '?'; try { _b3s = _bag3dState; } catch (_) {}   // TDZ: vroeg in de init nog niet gedeclareerd
+      _trace(`gebouwweergave: display=${display}, purpose=${purpose}, 3D BAG=${_b3s}, ` +
+             `luchtfoto=${map.getLayer('satellite-bg') ? map.getLayoutProperty('satellite-bg', 'visibility') : 'geen laag'}`);
 
       // Gebouwen worden pas opgehaald zodra ze daadwerkelijk getoond moeten worden.
       if (is3D || purpose !== 'off') _loadBuildingsIfNeeded();
@@ -11016,6 +11045,9 @@
     const linkSpeedMap     = new Map();
     // linkId → capaciteit in veh/u (voor CB-vulmethode)
     const linkCapacityMap  = new Map();
+    // linkId → lengte in m volgens het netwerkattribuut (linkLengthM); voor reistijd/dichtheid.
+    // Niet voor pad-geometrie gebruiken, zie segmentLengthCached.
+    const linkLenAttrMap   = new Map();
     // linkId → flow per dagdeel (vtg/u), wordt bijgewerkt via rebuildLinkFlowMap()
     const linkFlowMap   = new Map();
     // linkId → route[] — gebouwd door buildLinkRouteMap() na het vullen van routeList
@@ -11024,6 +11056,7 @@
       linkGeomMap.set(seg.props.linkId,     seg.coords);
       linkSpeedMap.set(seg.props.linkId,    seg.speedMs);
       linkCapacityMap.set(seg.props.linkId, seg.props.capacity ?? 1800);
+      linkLenAttrMap.set(seg.props.linkId,  seg.length);
     }
     // Haaientanden (B6) — eerste opbouw op basis van het netwerk alleen;
     // wordt aangevuld/herbouwd zodra trafficSign-features (B6-borden) binnenkomen.
@@ -12449,7 +12482,7 @@
       for (let i = 0; i < linkObjs.length; i++) {
         const lo    = linkObjs[i];
         const coords = lo.coords;
-        const len   = segmentLength(coords);
+        const len   = segmentLengthCached(coords);
         links.push({ length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0 });
         boundaries.push(boundaries[boundaries.length - 1] + len);
         nodeIds.push(lo.toNode ?? null);
@@ -12577,14 +12610,9 @@
     }
 
     /**
-     * Bouw een pad-object + bijbehorende initiële offset, gewogen naar flow×length per link.
-     * Geeft { path, offset } of null als het pad ongeldig is.
-     * allLinkObjs: [{ coords, speedMs, flow }]
+     * Initiële offset [0, 1) op een bestaand pad, gewogen naar flow×length per link.
      */
-    function buildWeightedPath(allLinkObjs) {
-      const path = buildPathFromLinks(allLinkObjs);
-      if (!path || path.length < 30) return null;
-
+    function weightedOffsetOnPath(path) {
       // Gewichten per link: flow × length
       const linkWeights = path.links.map(l => Math.max(0, (l.flow || 0) * l.length));
       const totalW = linkWeights.reduce((s, w) => s + w, 0);
@@ -12600,7 +12628,34 @@
       } else {
         offset = Math.random();
       }
-      return { path, offset: Math.min(Math.max(offset, 0), 0.999) };
+      return Math.min(Math.max(offset, 0), 0.999);
+    }
+
+    /**
+     * Route-pad-object voor buildCarList en odGroups. `allLinkObjs` en `path` worden pas
+     * bij eerste gebruik opgebouwd en daarna bewaard (zelfde object, zodat
+     * enforceInitialSpacing op `car.path` kan groeperen). Van de tienduizenden routes
+     * krijgt maar een klein deel ooit een auto; vooraf alle paden met samengevoegde
+     * geometrie bouwen bevroor de pagina tientallen seconden (Deventer: 66 K routes).
+     */
+    function _makeRoutePath(route, isBoundary, canPark) {
+      let linkObjs = null, path = null;
+      return {
+        route, isBoundary, canPark,
+        approachCount: 0,
+        // Link-objecten uit het volledige linkpad (voedingslinks al gefilterd in _parseAndAddRoutes)
+        get allLinkObjs() {
+          return linkObjs ??= route.linkIds.map(id => {
+            const coords  = linkGeomMap.get(id);
+            const speedMs = linkSpeedMap.get(id) ?? 10;
+            const flow    = linkFlowMap.get(id) ?? 0;
+            const nodes   = nodeLinkMap.get(id);
+            return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
+          }).filter(Boolean);
+        },
+        get innerLinkPairs() { return this.allLinkObjs; },
+        get path() { return path ??= buildPathFromLinks(this.allLinkObjs); },
+      };
     }
 
     /**
@@ -12624,40 +12679,33 @@
       if (routeMode) {
         const minWeight = thresh / 10000;
         const _bT0 = performance.now();
-        let _bLinks = 0, _bCoords = 0;
+        let _bLinks = 0;
 
-        // Stap 1: bouw alle route-paden
-        const routePaths = [];  // { path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount }
+        // Stap 1: verzamel de route-paden. Alleen lengte en beginsnelheid worden hier
+        // bepaald; het pad zelf wordt lazy gebouwd (zie _makeRoutePath).
+        const routePaths = [];  // _makeRoutePath-objecten
         for (const route of routeList) {
           if (route.weight < minWeight) continue;
           if (!visibleModes.has(route.vehicleMode ?? MODE)) continue;
 
-          // Bouw link-objecten op uit het volledige linkpad (voedingslinks al gefilterd in _parseAndAddRoutes)
-          const allLinkObjs = route.linkIds.map(id => {
-            const coords  = linkGeomMap.get(id);
-            const speedMs = linkSpeedMap.get(id) ?? 10;
-            const flow    = linkFlowMap.get(id) ?? 0;
-            const nodes   = nodeLinkMap.get(id);
-            return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
-          }).filter(Boolean);
-
-          if (!allLinkObjs.length) continue;
-
-          const innerLinkPairs = allLinkObjs;
-          const approachCount  = 0;
-
-          const path = buildPathFromLinks(allLinkObjs);
-          if (!path || path.length < 30) continue;
-          _bLinks += allLinkObjs.length; _bCoords += path.coords.length;
+          let length = 0, nLinks = 0, firstSpeedMs = 10;
+          for (const id of route.linkIds) {
+            const coords = linkGeomMap.get(id);
+            if (!coords) continue;
+            if (nLinks++ === 0) firstSpeedMs = linkSpeedMap.get(id) ?? 10;
+            length += segmentLengthCached(coords);
+          }
+          if (!nLinks || length < 30) continue;
+          _bLinks += nLinks;
 
           const isBoundary = false;
           // Fietsen parkeren niet in de digital twin: alleen onderweg zichtbaar.
-          const canPark    = path.speedMs <= (50 / 3.6) && (route.vehicleMode ?? MODE) !== 'BIKE';
-          routePaths.push({ path, route, isBoundary, canPark, allLinkObjs, innerLinkPairs, approachCount });
+          const canPark    = firstSpeedMs <= (50 / 3.6) && (route.vehicleMode ?? MODE) !== 'BIKE';
+          routePaths.push(_makeRoutePath(route, isBoundary, canPark));
         }
 
         const _bT1 = performance.now();
-        _trace(`buildCarList stap 1 (paden): ${routeList.length} routes → ${routePaths.length} paden, ${_bLinks} links, ${_bCoords} coords, ${(_bT1 - _bT0).toFixed(0)}ms (vulmethode=${initFillMethod})`);
+        _trace(`buildCarList stap 1 (paden): ${routeList.length} routes → ${routePaths.length} paden, ${_bLinks} links, ${(_bT1 - _bT0).toFixed(0)}ms (vulmethode=${initFillMethod})`);
         if (!routePaths.length) return list;
 
         // Stap 3b: sla OD-groepen op voor het productiemechanisme (altijd nodig, ongeacht vulmethode).
@@ -12688,11 +12736,13 @@
             const w = (rp.route.originProduction ?? 0) * (rp.route.weight ?? 0);
             if (w <= 0) continue;
             rp.innerLinkOffsets = new Map(); // linkId → {startOffset [m], linkLength [m]}
-            for (let j = 0; j < rp.innerLinkPairs.length; j++) {
-              const { id: linkId } = rp.innerLinkPairs[j];
-              const startOffset    = rp.path.boundaries[rp.approachCount + j];
-              const linkLength     = rp.path.links[rp.approachCount + j].length;
+            // Zelfde waarden als rp.path.boundaries/links (approachCount = 0), maar zonder
+            // het pad met geometrie te bouwen.
+            let startOffset = 0;
+            for (const { id: linkId, coords } of rp.innerLinkPairs) {
+              const linkLength = segmentLengthCached(coords);
               if (linkLength > 0) rp.innerLinkOffsets.set(linkId, { startOffset, linkLength });
+              startOffset += linkLength;
               if (!innerLinkRouteMap.has(linkId)) innerLinkRouteMap.set(linkId, []);
               innerLinkRouteMap.get(linkId).push({ rp, weight: w });
             }
@@ -12846,8 +12896,11 @@
                               * (rp.route.weight ?? 0)
                               * (rp.route.calib ?? 1);
             let travelTime = 0;
-            for (const lo of rp.allLinkObjs) {
-              travelTime += segmentLength(lo.coords) / (lo.speedMs || 10);
+            for (const id of rp.route.linkIds) {
+              const coords = linkGeomMap.get(id);
+              if (!coords) continue;
+              const len = linkLenAttrMap.get(id) ?? segmentLengthCached(coords);
+              travelTime += len / (linkSpeedMap.get(id) || 10);
             }
             rp.density = odFlowVehHr * travelTime / 3600;
           }
@@ -12869,8 +12922,7 @@
               const isParked = rp.canPark && Math.random() < parkRatio;
 
               // Gewogen startpositie (ook voor geparkeerde auto's — verspreid over de route)
-              const wp = buildWeightedPath(rp.allLinkObjs);
-              if (!wp) continue;
+              const offset = weightedOffsetOnPath(rp.path);
 
               const pendingPath = null;
 
@@ -12882,7 +12934,7 @@
 
               list.push({
                 path:          rp.path,
-                offset:        wp.offset,
+                offset,
                 speed:         rp.path.speedMs * 0.9,
                 color:         randomCarColor(rp.route.vehicleMode),
                 clothingColor: randomClothingColor(),
@@ -18313,7 +18365,7 @@
       }));
 
       // Herbouw graph
-      linkGeomMap.clear(); linkSpeedMap.clear(); linkCapacityMap.clear();
+      linkGeomMap.clear(); linkSpeedMap.clear(); linkCapacityMap.clear(); linkLenAttrMap.clear();
       nodeCoords.clear();  nodeLinkMap.clear();  adj.clear();  adjReverse.clear();
       for (const f of newGeojson.features) {
         const p = f.properties, c = f.geometry.coordinates;
@@ -18321,6 +18373,7 @@
         linkGeomMap.set(p.linkId,      c);
         linkSpeedMap.set(p.linkId,     p.speed > 0 ? p.speed / 3.6 : 10);
         linkCapacityMap.set(p.linkId,  p.capacity ?? 1800);
+        if (p.length > 0) linkLenAttrMap.set(p.linkId, p.length);
         nodeCoords.set(p.fromNode, c[0]);
         nodeCoords.set(p.toNode,   c[c.length - 1]);
         nodeLinkMap.set(p.linkId,  { fromNode: p.fromNode, toNode: p.toNode });

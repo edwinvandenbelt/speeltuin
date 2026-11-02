@@ -8,10 +8,13 @@ and return the local file path.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
 import tempfile
+import threading
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -298,6 +301,169 @@ def resolve_or_download_pbf(
     if not _valid_pbf_path(pbf_path):
         raise RuntimeError(f"downloaded file is missing or not a .pbf: {pbf_path}")
     return pbf_path, extract
+
+
+# ---------------------------------------------------------------------------
+# Clipping: a small per-bbox cut-out of a large extract
+# ---------------------------------------------------------------------------
+
+#: Margin (degrees, ~1 km) added around the bbox when clipping, so a query
+#: bbox that is slightly larger than the requested one stays inside the clip.
+CLIP_BUFFER_DEG = 0.01
+
+#: Relation types kept in a clip. The OSM fetchers only query multipolygon
+#: relations (natural=wood, landuse=forest); boundary/route relations would
+#: drag in hundreds of kilometres of member ways.
+_CLIP_RELATION_TYPES = frozenset({"multipolygon"})
+
+_clip_locks: dict[Path, threading.Lock] = {}
+_clip_locks_guard = threading.Lock()
+
+
+def bbox_crosses_extract_border(
+    extract: Extract,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    cache_dir: Path | None = None,
+) -> bool:
+    """Return True when the bbox straddles the border of two smaller extracts.
+
+    *extract* is the smallest extract covering the bbox. If a smaller registry
+    extract intersects the bbox, it cannot cover it (otherwise it would have
+    been chosen), so the bbox crosses a border between smaller extracts — e.g.
+    a Deventer bbox reaching into both Overijssel and Gelderland resolves to
+    the whole of the Netherlands.
+    """
+    cache_dir = Path(cache_dir or DEFAULT_CACHE_DIR)
+    bbox = bbox_polygon(min_lon, min_lat, max_lon, max_lat)
+    for other in _GEOFABRIK_REGISTRY:
+        if other.size_mb >= extract.size_mb:
+            continue
+        try:
+            geometry = fetch_poly(other, cache_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("could not fetch polygon for %s: %s", other.slug, exc)
+            continue
+        if geometry.intersects(bbox):
+            return True
+    return False
+
+
+def clip_cache_path(
+    src: Path,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    cache_dir: Path | None = None,
+) -> Path:
+    """Return the cache path of the clip of *src* for this bbox."""
+    cache_dir = Path(cache_dir or DEFAULT_CACHE_DIR)
+    key = "_".join(f"{v:.4f}" for v in (min_lon, min_lat, max_lon, max_lat))
+    digest = hashlib.sha1(f"{src.name}|{key}".encode()).hexdigest()[:12]
+    stem = src.name.split(".")[0]
+    return cache_dir / "clips" / f"{stem}-{digest}.osm.pbf"
+
+
+def clip_pbf_to_bbox(
+    src: Path,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    out_path: Path,
+    buffer_deg: float = CLIP_BUFFER_DEG,
+) -> Path:
+    """Write a reference-complete cut-out of *src* for the (buffered) bbox.
+
+    Same semantics as Overpass ``out geom`` for the fetchers: every node in the
+    bbox, every way with at least one node in the bbox (with *all* its nodes),
+    and every multipolygon relation with a member in the bbox (with all member
+    ways and their nodes). Requires pyosmium.
+    """
+    import osmium  # noqa: PLC0415 — optional dependency
+
+    w, s = min_lon - buffer_deg, min_lat - buffer_deg
+    e, n = max_lon + buffer_deg, max_lat + buffer_deg
+
+    tracker = osmium.IdTracker()
+    # 1. Nodes inside the bbox.
+    for node in osmium.FileProcessor(str(src), osmium.osm.NODE):
+        loc = node.location
+        if loc.valid() and w <= loc.lon <= e and s <= loc.lat <= n:
+            tracker.add_node(node.id)
+    # 2. Ways touching those nodes (C++ pass, no per-way Python).
+    tracker.complete_forward_references(str(src), relation_depth=-1)
+    # 3. Multipolygon relations with a tracked member, plus all their members.
+    #    complete_backward_references() does not add member ways of tracked
+    #    relations (checked with pyosmium 4.3), so that is done here.
+    for rel in osmium.FileProcessor(str(src), osmium.osm.RELATION):
+        if rel.tags.get("type") in _CLIP_RELATION_TYPES and tracker.contains_any_references(rel):
+            tracker.add_relation(rel.id)
+            for member in rel.members:
+                if member.type == "w":
+                    tracker.add_way(member.ref)
+                elif member.type == "n":
+                    tracker.add_node(member.ref)
+    # 4. Complete: all nodes of all tracked ways.
+    tracker.complete_backward_references(str(src), relation_depth=0)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.with_name(out_path.name + ".tmp.osm.pbf")
+    tmp_path.unlink(missing_ok=True)
+    with osmium.SimpleWriter(str(tmp_path)) as writer:
+        for obj in osmium.FileProcessor(str(src)).with_filter(tracker.id_filter()):
+            writer.add(obj)
+    os.replace(tmp_path, out_path)
+    return out_path
+
+
+def clipped_pbf_for_bbox(
+    pbf_path: Path,
+    extract: Extract | None,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    *,
+    cache_dir: Path | str | None = None,
+) -> Path:
+    """Return a small clip of *pbf_path* when the bbox crosses an extract border.
+
+    Reading a country extract (Netherlands: ~1.4 GB) once per query is very
+    slow, so for such a bbox a cut-out is made once and cached under
+    ``{cache_dir}/clips`` (re-made when the source extract is newer). Falls
+    back to *pbf_path* when no clip is needed or clipping is not possible.
+    """
+    if extract is None:
+        return pbf_path
+    cache_dir = Path(cache_dir or DEFAULT_CACHE_DIR)
+    if not bbox_crosses_extract_border(extract, min_lon, min_lat, max_lon, max_lat, cache_dir):
+        return pbf_path
+
+    out_path = clip_cache_path(pbf_path, min_lon, min_lat, max_lon, max_lat, cache_dir)
+    with _clip_locks_guard:
+        lock = _clip_locks.setdefault(out_path, threading.Lock())
+    # Concurrent jobs for the same area (buildings, vegetation, traffic assets)
+    # wait for one clip instead of each making their own.
+    with lock:
+        if _valid_pbf_path(out_path) and out_path.stat().st_mtime >= pbf_path.stat().st_mtime:
+            return out_path
+        try:
+            started = time.monotonic()
+            print(f"[geofabrik] {pbf_path.name}: uitsnede maken voor bbox "
+                  f"{[min_lon, min_lat, max_lon, max_lat]} …", flush=True)
+            clip_pbf_to_bbox(pbf_path, min_lon, min_lat, max_lon, max_lat, out_path)
+            print(f"[geofabrik] uitsnede klaar: {out_path.name} "
+                  f"({out_path.stat().st_size / 1e6:.1f} MB, {time.monotonic() - started:.0f}s)",
+                  flush=True)
+            return out_path
+        except Exception as exc:  # noqa: BLE001
+            print(f"[geofabrik] uitsnede mislukt ({exc}); volledig extract {pbf_path.name} gebruikt.",
+                  flush=True)
+            return pbf_path
 
 
 def coverage_geojson(
