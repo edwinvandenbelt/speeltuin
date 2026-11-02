@@ -50,22 +50,24 @@ uitgevoerd.
     t.o.v. een vaste oorsprong (geen float32-gejitter). Herbouw bij `sourcedata`/`moveend` (250 ms debounce).
   - MapLibre 5 geeft `modelViewProjectionMatrix` in wereldpixels: in JS ×(512·2^zoom) naar mercator 0..1. De
     camerapositie komt uit de inverse van die matrix (`getFreeCameraOptions` bestaat niet in v5).
-  - Shader: golfhoogte uit 4 octaven drijvende simplex-ruis (8 / 3,7 / 1,7 / 0,8 m), die op afstand vervagen.
+  - Shader: golfhoogte uit 4 octaven simplex-ruis (8 / 3,7 / 1,7 / 0,8 m), die op afstand vervagen.
     Daarbij fresnel naar lucht (horizon → zenit), een lichte golfschaduw en zon-specular. Sinusgolven gaven op
     afstand een ruitpatroon.
-  - Animatie ~30 fps via `triggerRepaint`, alleen als er water is en de laag zichtbaar is.
-    `prefers-reduced-motion` → stilstaand water.
+  - ~~Animatie ~30 fps via `triggerRepaint`~~ — teruggedraaid (besluit 30-10-2026): continu hertekenen
+    (MapLibre + alle deck.gl-lagen) maakte de site vrijwel onbruikbaar. De golven staan nu stil. Er wordt alleen
+    hertekend na een herbouw van de geometrie, bij een zonwissel of op `styledata` (ondergrond-keuze).
+    Gecontroleerd: 0 renders in 3 s stilstand.
 - [x] **3. Koppeling aan de zon** — `updateSunLight` → `AnimatedWater.setSun(sun)`. Overdag reflecteert het de
   lucht- en horizonkleur, met schittering in de zonrichting (lage zon → warme strepen). 's Nachts is het mild
   gedempt blauwig, zonder schittering.
 - [ ] ~~**4. Spike: spiegelbeelden van gebouwen**~~ — later.
 - [x] **5. Testen** (headless Chrome, Den Bosch – Spoorzone)
   - Spoor op z16–19,6: bedding, dwarsliggers, rails en wissels zichtbaar.
-  - Water: twee frames 0,7 s na elkaar verschillen (beweegt). Ver weg lichter door de luchtweerspiegeling.
+  - Water: golfjes zichtbaar, ver weg lichter door de luchtweerspiegeling.
   - 20:00 → gedempt water; lage zon (handmatige `setSun`) → warme glinstering.
   - Nog niet getest: analyzer (spoor), split-view `map2`, maquette-modus, fps op een zwakke laptop.
 
 ## Aandachtspunten
-- Zolang er water in beeld is, tekent de kaart ~30× per seconde opnieuw, ook als de simulatie stilstaat.
-  Kost GPU/accu; desgewenst een schakelaar of 15 fps.
+- Echt bewegend water kan pas als het hertekenen goedkoop is, bijv. alleen meeliften op frames die de
+  simulatie al tekent (dan beweegt het water alleen als de simulatie loopt).
 - De smalle waterlopen (`mtl-waterways`, lijnen) bewegen niet mee.

@@ -1,12 +1,13 @@
 /**
- * animated-water.js — bewegend water met lucht-weerspiegeling (F4Map-stijl)
+ * animated-water.js — water met golfjes en lucht-weerspiegeling (F4Map-stijl)
  * als MapLibre custom layer boven 'mtl-water' (Montréal-ondergrond, zie
  * montreal-basemap.js).
  *
  * Geometrie: de 'water'-polygonen uit de OpenFreeMap-vectortiles
  * (querySourceFeatures), getrianguleerd met earcut (jsDelivr, lui geladen).
- * Shader: golfnormalen uit een paar lopende golven in wereldmeters, fresnel-
- * menging tussen waterkleur en luchtkleur, en zonneschittering. De laag is
+ * Shader: stilstaande golfnormalen (simplex-ruis in wereldmeters), fresnel-
+ * menging tussen waterkleur en luchtkleur, en zonneschittering. Bewust geen
+ * animatie: continu hertekenen maakte de hele kaart traag. De laag is
  * ondoorzichtig; zolang er nog geen geometrie is, blijft 'mtl-water' zichtbaar.
  *
  * API: window.AnimatedWater.ensure(map)
@@ -21,9 +22,7 @@
 
   const LAYER_ID   = 'mtl-water-anim';
   const EARCUT_URL = 'https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js';
-  const FRAME_MS   = 33;            // ~30 fps is genoeg voor golfjes
   const ORIGIN_RESET_M = 30000;     // nieuwe oorsprong als de kaart zo ver verschuift
-  const REDUCED_MOTION = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
   const _hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
   const _mul = (a, b) => a.map((v, i) => v * b[i]);
@@ -89,7 +88,6 @@
     precision highp float;
     varying vec2 v_pos;
     uniform vec3  u_cam;         // camera in dezelfde meters, z = hoogte
-    uniform float u_time;
     uniform vec3  u_base, u_skyZen, u_skyHor, u_sunDir, u_sunCol;
 
     // 2D simplex-ruis (Ashima Arts / Stefan Gustavson, MIT).
@@ -115,17 +113,17 @@
       return 130.0 * dot(m, g);
     }
 
-    // Golfhoogte (m): octaven die elk een eigen kant op drijven. Korte golven
-    // vervagen op afstand (anders flikkering/patronen).
-    float octave(vec2 p, float L, float A, vec2 drift, float d) {
+    // Golfhoogte (m) uit een paar octaven ruis; de offset haalt de octaven
+    // uit elkaars raster. Korte golven vervagen op afstand (anders patronen).
+    float octave(vec2 p, float L, float A, vec2 offset, float d) {
       float fade = 1.0 - smoothstep(L * 25.0, L * 90.0, d);
-      return fade < 0.001 ? 0.0 : A * fade * snoise(p / L + drift * u_time / L);
+      return fade < 0.001 ? 0.0 : A * fade * snoise(p / L + offset);
     }
     float height(vec2 p, float d) {
-      return octave(p, 8.0,  0.10,  vec2( 0.45,  0.20), d)
-           + octave(p, 3.7,  0.05,  vec2(-0.20,  0.38), d)
-           + octave(p, 1.7,  0.022, vec2( 0.30, -0.25), d)
-           + octave(p, 0.8,  0.010, vec2(-0.22, -0.18), d);
+      return octave(p, 8.0,  0.10,  vec2( 0.0,  0.0), d)
+           + octave(p, 3.7,  0.05,  vec2(17.3,  4.1), d)
+           + octave(p, 1.7,  0.022, vec2(-8.2, 31.7), d)
+           + octave(p, 0.8,  0.010, vec2(42.9, -13.6), d);
     }
 
     void main() {
@@ -189,7 +187,7 @@
     let map = null, gl = null, prog = null, loc = null, vao = null;
     let vbuf = null, ibuf = null, nIdx = 0, failed = false;
     let origin = null;            // { x, y, mpu, lat } in mercator-eenheden
-    let sig = '', timer = 0, raf = 0, lastFrame = 0;   // sig: laatst getrianguleerde set
+    let sig = '', timer = 0;   // sig: laatst getrianguleerde set
 
     // Volgt 'mtl-water': custom layers ontbreken in getStyle().layers, dus
     // MontrealBasemap.setVisible schakelt deze laag zelf niet.
@@ -259,21 +257,10 @@
       map.triggerRepaint();
     }
 
-    // Animatie: ~30 fps hertekenen zolang de laag zichtbaar is en er water is.
-    // Net zichtbaar geworden (ondergrond-keuze) → geometrie bijwerken.
-    let wasVisible = false;
-    function tick(t) {
-      raf = requestAnimationFrame(tick);
-      const v = visible();
-      if (v && !wasVisible) schedule();
-      wasVisible = v;
-      if (!v || REDUCED_MOTION || !nIdx || t - lastFrame < FRAME_MS) return;
-      lastFrame = t;
-      map.triggerRepaint();
-    }
-
     const onSourceData = e => { if (e.sourceId === srcId && e.tile) schedule(); };
     const onMoveEnd = () => schedule();
+    // Ondergrond-keuze (zichtbaarheid 'mtl-water') → geometrie bijwerken.
+    const onStyleData = () => { if (visible() && !nIdx) schedule(); };
 
     return {
       id: LAYER_ID, type: 'custom', renderingMode: '2d',
@@ -297,7 +284,6 @@
           pos: gl.getAttribLocation(prog, 'a_pos'),
           matrix: gl.getUniformLocation(prog, 'u_matrix'),
           cam: gl.getUniformLocation(prog, 'u_cam'),
-          time: gl.getUniformLocation(prog, 'u_time'),
           base: gl.getUniformLocation(prog, 'u_base'),
           skyZen: gl.getUniformLocation(prog, 'u_skyZen'),
           skyHor: gl.getUniformLocation(prog, 'u_skyHor'),
@@ -317,16 +303,16 @@
         }
         map.on('sourcedata', onSourceData);
         map.on('moveend', onMoveEnd);
+        map.on('styledata', onStyleData);
         _maps.add(map);
-        raf = requestAnimationFrame(tick);
         schedule();
       },
 
       onRemove() {
-        cancelAnimationFrame(raf);
         clearTimeout(timer);
         map.off('sourcedata', onSourceData);
         map.off('moveend', onMoveEnd);
+        map.off('styledata', onStyleData);
         _maps.delete(map);
         if (gl && !failed) {
           gl.deleteBuffer(vbuf); gl.deleteBuffer(ibuf); gl.deleteProgram(prog);
@@ -356,7 +342,6 @@
         }
         const cp = _eye(m);
         const cam = cp ? [(cp[0] - ox) * mpu, -(cp[1] - oy) * mpu, Math.max(1, cp[2] * mpu)] : [0, 0, 1000];
-        const t = REDUCED_MOTION ? 0 : (performance.now() / 1000) % 3600;
 
         gl.useProgram(prog);
         gl.disable(gl.DEPTH_TEST);
@@ -365,7 +350,6 @@
         gl.disable(gl.BLEND);
         gl.uniformMatrix4fv(loc.matrix, false, M);
         gl.uniform3fv(loc.cam, cam);
-        gl.uniform1f(loc.time, t);
         gl.uniform3fv(loc.base, _look.base);
         gl.uniform3fv(loc.skyZen, _look.skyZen);
         gl.uniform3fv(loc.skyHor, _look.skyHor);
