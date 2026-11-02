@@ -2537,6 +2537,8 @@
   // Verwijder dit blok weer zodra het onderzoek afgerond is.
   (function _instrumentForTracing() {
     const LS_KEY = 'dt_trace', LS_PREV = 'dt_trace_prev', MAX = 2000;
+    // Trace-regels ook naar de console? Uit: alleen buffer/localStorage (_traceDump()).
+    const TRACE_TO_CONSOLE = false;
     const _buf = [];
     let _lastLabel = '(start)';
     let _lsPending = false;
@@ -2555,7 +2557,7 @@
       const line = `[trace ${_ts()} +${performance.now().toFixed(0)}ms] ${msg}`;
       _buf.push(line);
       if (_buf.length > MAX) _buf.shift();
-      _origLog(line);
+      if (TRACE_TO_CONSOLE) _origLog(line);
       // localStorage gebundeld wegschrijven (niet per regel synchroon)
       if (!_lsPending) {
         _lsPending = true;
@@ -5771,20 +5773,6 @@
       attributionControl: { customAttribution: [OSM_ATTRIBUTION, BAG3D_ATTRIBUTION] },
     });
     window.map = map;
-    // TIJDELIJK (tracing): elke wijziging aan de luchtfoto-laag loggen, met aanroeper.
-    {
-      const _origSetLayout = map.setLayoutProperty.bind(map);
-      map.setLayoutProperty = (id, key, val, opts) => {
-        if (id === 'satellite-bg') {
-          const caller = (new Error().stack || '').split(String.fromCharCode(10)).slice(2, 5).map(l => l.trim()).join(' | ');
-          _trace(`luchtfoto: satellite-bg ${key}=${val} ← ${caller}`);
-        }
-        return _origSetLayout(id, key, val, opts);
-      };
-      const _origRemoveLayer = map.removeLayer.bind(map);
-      map.removeLayer = (id) => { if (id === 'satellite-bg') _trace('luchtfoto: satellite-bg VERWIJDERD'); return _origRemoveLayer(id); };
-      map.on('error', e => _trace(`kaart-fout: ${e?.error?.message || e?.error || e}`));
-    }
 
     // Deel de MapLibre-instantie met de closures in de buitenste scope
     // (_startFollowMode, camera-toggle IIFE). Zonder dit verwijst `map` daar
@@ -6937,8 +6925,7 @@
                            || display === 'geschaald_attractie';
       const is3D = display === 'normaal' || isScaledDisplay;
       let _b3s = '?'; try { _b3s = _bag3dState; } catch (_) {}   // TDZ: vroeg in de init nog niet gedeclareerd
-      _trace(`gebouwweergave: display=${display}, purpose=${purpose}, 3D BAG=${_b3s}, ` +
-             `luchtfoto=${map.getLayer('satellite-bg') ? map.getLayoutProperty('satellite-bg', 'visibility') : 'geen laag'}`);
+      _trace(`gebouwweergave: display=${display}, purpose=${purpose}, 3D BAG=${_b3s}`);
 
       // Gebouwen worden pas opgehaald zodra ze daadwerkelijk getoond moeten worden.
       if (is3D || purpose !== 'off') _loadBuildingsIfNeeded();
@@ -7044,7 +7031,7 @@
     }
 
     // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
-    // Liberty lijnlagen (roads) en symboollagen (labels) blijven zichtbaar als overlay.
+    // Bij de luchtfoto blijven alleen de Liberty-symboollagen (labels) zichtbaar als overlay.
     function _applyBasemapStyle(style) {
       if (style === 'montreal') style = 'map';
       basemapStyle = style;
@@ -7084,16 +7071,29 @@
             layout: { visibility: 'none' }, paint: { 'raster-opacity': 1 },
           }, firstLayerId);
         }
+        // deck.gl (interleaved) laat POLYGON_OFFSET_FILL aan staan met de offset
+        // van zijn laatste laag (standaard -layerIndex*100). MapLibre beheert die
+        // GL-state niet, dus het volgende frame tekent de sky met die offset en
+        // komt die in de dieptebuffer vóór de luchtfoto te liggen; het raster
+        // (gl.LESS) viel dan overal weg zodra de overlay veel lagen had (3D BAG-
+        // panden + auto's). Deze lege custom layer zet de offset vóór het frame uit.
+        if (!m.getLayer('gl-polygon-offset-reset')) {
+          const off = gl => gl.disable(gl.POLYGON_OFFSET_FILL);
+          m.addLayer({ id: 'gl-polygon-offset-reset', type: 'custom', renderingMode: '2d',
+                       prerender: off, render: off }, 'satellite-bg');
+        }
         try { m.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none'); } catch (_) {}
         // Liberty lagen aan/uit. De Liberty-gebouwlagen ('building'/'building-3d')
         // en onze eigen 'buildings-*'-lagen worden hier bewust overgeslagen: hun
         // zichtbaarheid wordt uitsluitend bepaald door de 'Gebouw weergave'/
         // 'Gebouw productie/attractie'-radio's (zie _applyBuildingDisplay), niet
         // door de achtergrondkeuze.
-        // Montréal-modus: alle Liberty-lagen behalve de labels (symbol) uit;
-        // de 'mtl-*'-lagen tekenen de ondergrond.
+        // Montréal- en luchtfotomodus: alle Liberty-lagen behalve de labels
+        // (symbol) uit; in Montréal-modus tekenen de 'mtl-*'-lagen de ondergrond,
+        // bij de luchtfoto mag er geen kaartbeeld (wegen, water, landgebruik)
+        // door de foto heen komen.
         if (_libertyAllLayerIds) {
-          const mtlHidden = isMtl ? window.MontrealBasemap.hiddenBaseLayerIds(m) : null;
+          const mtlHidden = (isMtl || isSat) ? window.MontrealBasemap.hiddenBaseLayerIds(m) : null;
           for (const id of _libertyAllLayerIds) {
             if (id === 'building' || id === 'building-3d' || id.startsWith('buildings')) continue;
             const show = !hideMap && !(mtlHidden && mtlHidden.has(id));
@@ -7113,6 +7113,7 @@
         // Satelliet: verberg ook de Liberty fill/background lagen
         if (!hideMap && !isMtl && _libertyFillLayerIds) {
           for (const id of _libertyFillLayerIds) {
+            if (id === 'satellite-bg') continue;
             try { m.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
           }
         }
