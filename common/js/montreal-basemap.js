@@ -56,18 +56,31 @@
       15, ['*', m, ['get', 'netK'], Math.pow(2, 15)], 22, ['*', m, ['get', 'netK'], Math.pow(2, 22)]];
     // Haarlijn (px) voor de wegrand en de buitenrand van de stoep.
     const hairline = ['interpolate', ['linear'], ['zoom'], 12, 0.5, 16, 1];
-    // Lijn evenwijdig aan de weg aan de kant waar de link een stoep heeft
-    // (side -1 = links, 1 = rechts), op centerM meter buiten de wegrand.
-    const sidewalkLine = (id, side, flag, centerM, color, lineWidth) => ({
-      id, type: 'line', ...tr, minzoom: 15, layout: round, filter: ['all', roads, ['==', flag, 1]],
+    // Lijn evenwijdig aan de weg aan de kant waar de link flag heeft (side
+    // -1 = links, 1 = rechts), op centerM meter buiten de wegrand (negatief =
+    // op het wegdek).
+    const sideLine = (id, side, flag, centerM, color, lineWidth, extra = {}) => ({
+      id, type: 'line', ...tr, minzoom: 15, layout: round, filter: ['all', roads, ['==', flag, 1]], ...extra,
       paint: { 'line-color': color, 'line-opacity': fadeIn, 'line-width': lineWidth,
-               'line-offset': metres(['*', side, ['+', ['/', ['get', 'netWidthM'], 2], centerM]]) } });
+               'line-offset': metres(['*', side, ['+', ['/', ['get', 'netWidthM'], 2], centerM]]),
+               ...extra.paint } });
     // Stoep: strook van _SIDEWALK_STRIP_M, met aan de wegkant een donkerdere
     // stoeprand (_KERB_M) en aan de buitenkant een haarlijn.
     const sidewalk = (name, side, flag) => [
-      sidewalkLine(`mtl-road-sidewalk-${name}`, side, flag, _SIDEWALK_STRIP_M / 2, p.sidewalk, metres(_SIDEWALK_STRIP_M)),
-      sidewalkLine(`mtl-road-sidewalk-${name}-kerb`, side, flag, _KERB_M / 2, p.kerb, metres(_KERB_M)),
-      sidewalkLine(`mtl-road-sidewalk-${name}-edge`, side, flag, _SIDEWALK_STRIP_M, p.line, hairline),
+      sideLine(`mtl-road-sidewalk-${name}`, side, flag, _SIDEWALK_STRIP_M / 2, p.sidewalk, metres(_SIDEWALK_STRIP_M)),
+      sideLine(`mtl-road-sidewalk-${name}-kerb`, side, flag, _KERB_M / 2, p.kerb, metres(_KERB_M)),
+      sideLine(`mtl-road-sidewalk-${name}-edge`, side, flag, _SIDEWALK_STRIP_M, p.line, hairline),
+    ];
+    // Fietsstrook op het wegdek: rode strook langs de wegrand, met een
+    // onderbroken witte streep aan de kant van de rijbaan. Breedte schaalt
+    // mee met de weg: _CYCLELANE_SHARE van de wegbreedte, begrensd.
+    const laneM = ['min', _CYCLELANE_MAX_M, ['max', _CYCLELANE_MIN_M, ['*', _CYCLELANE_SHARE, ['get', 'netWidthM']]]];
+    const cycleLane = (name, side, flag) => [
+      sideLine(`mtl-road-cyclelane-${name}`, side, flag, ['/', laneM, -2], p.bikePath, metres(laneM),
+        { layout: butt }),
+      sideLine(`mtl-road-cyclelane-${name}-line`, side, flag, ['*', laneM, -1], p.laneMarking,
+        ['interpolate', ['linear'], ['zoom'], 16, 1, 19, 1.8],
+        { minzoom: 16.5, layout: butt, paint: { 'line-dasharray': [3, 3] } }),
     ];
     const roadWidth = width(byClass(1.8, 1.4, 1, 0.5), byClass(8, 6.5, 5, 2.8), byClass(56, 44, 36, 20));
     const surfaceColor = ['match', ['coalesce', ['get', 'netSurface'], ''],
@@ -116,6 +129,9 @@
       { id: 'mtl-roads', type: 'line', ...tr, filter: roads, layout: round,
         paint: { 'line-color': surfaceColor,
                  'line-width': roadWidth } },
+      // Fietsstroken uit het netwerk (cyclewayLeft/Right = 'lane'/'shared_lane'), op het wegdek.
+      ...cycleLane('left', -1, 'netCwL'),
+      ...cycleLane('right', 1, 'netCwR'),
       { id: 'mtl-road-centre-major', type: 'line', ...tr, minzoom: 16.5, layout: butt,
         filter: ['all', twoWay, ['in', 'class', 'primary', 'secondary']],
         paint: { 'line-color': p.marking, 'line-opacity': 0.94,
@@ -202,8 +218,9 @@
   let _sidewalksOn = true;
   const _sidewalkMaps = new Set();
 
-  // BGT-vlakken en de stoepstroken uit het netwerk.
-  const _isSidewalkLayer = l => l.source === _SIDEWALK_SRC || l.id.startsWith('mtl-road-sidewalk-');
+  // BGT-vlakken en de stoepen en fietsstroken uit het netwerk.
+  const _isSidewalkLayer = l => l.source === _SIDEWALK_SRC
+    || l.id.startsWith('mtl-road-sidewalk-') || l.id.startsWith('mtl-road-cyclelane-');
 
   function _ensureSidewalkSource(m) {
     if (!m.getSource(_SIDEWALK_SRC)) m.addSource(_SIDEWALK_SRC, { type: 'geojson', data: _sidewalkFC });
@@ -232,7 +249,8 @@
   // De 'transportation'-laag van de OFM-tiles gaat via een eigen protocol
   // (mtlnet://). Daar krijgt elke weg die op NETWORK-links ligt de breedte
   // (netWidthM, met netK = px per meter op z0), de verhardingsklasse
-  // (netSurface) en de stoepen (netSwL/netSwR = 1, links/rechts t.o.v. de
+  // (netSurface), de stoepen (netSwL/netSwR = 1) en fietsstroken
+  // (netCwL/netCwR = 1) (links/rechts t.o.v. de
   // tekenrichting van de weg) van die links. Er wordt niets overheen getekend: de
   // mtl-weglagen stylen gewoon op die extra properties.
 
@@ -240,6 +258,9 @@
   const _NET_WIDTH_MAX_M = 12;
   const _SIDEWALK_STRIP_M = 1;    // breedte van de stoepstrook per kant (incl. stoeprand)
   const _KERB_M           = 0.2;  // breedte van de stoeprand
+  const _CYCLELANE_SHARE  = 0.25; // fietsstrook = dit deel van de wegbreedte,
+  const _CYCLELANE_MIN_M  = 0.75; //   maar minstens
+  const _CYCLELANE_MAX_M  = 2;    //   en hoogstens zoveel meter
   const _MATCH_DIST_M    = 8;     // max. afstand weg ↔ link
   const _MATCH_COS       = Math.cos(30 * Math.PI / 180);  // max. hoekverschil 30°
   const _MATCH_PIECE_M   = 10;    // wegen worden in stukjes van ≤ 10 m getoetst
@@ -299,6 +320,9 @@
   let _netVersion = 0;
   const _maps = new Set();  // kaarten met een mtl-ofm-roads-source
 
+  // Fietsstrook op het wegdek: 'lane' en 'shared_lane' (suggestiestrook).
+  const _isCycleLane = v => v === 'lane' || v === 'shared_lane';
+
   function _buildNetIndex(features) {
     const ids = new Set(features.map(f => f.properties?.linkId));
     const seen = new Set();
@@ -313,7 +337,8 @@
       if (absId) seen.add(absId);
       const hasOpposite = p.linkId != null && ids.has(-p.linkId);
       links.push({ coords, widthM: _netWidthM(p, hasOpposite), surface: _surfaceClass(p),
-                   swL: p.sidewalkLeft === 'yes', swR: p.sidewalkRight === 'yes' });
+                   swL: p.sidewalkLeft === 'yes', swR: p.sidewalkRight === 'yes',
+                   cwL: _isCycleLane(p.cyclewayLeft), cwR: _isCycleLane(p.cyclewayRight) });
       latSum += coords[0][1];
     }
     if (!links.length) return null;
@@ -364,14 +389,14 @@
     return best;
   }
 
-  // Lijnen (wereldcoördinaten) → { netSurface, netWidthM, netSwL, netSwR } of
+  // Lijnen (wereldcoördinaten) → { netSurface, netWidthM, netSwL/R, netCwL/R } of
   // null. Stemt per stukje van ≤ 10 m: verharding = meeste lengte, breedte =
-  // lengte-gewogen, stoep = op meer dan de helft van de gematchte lengte.
+  // lengte-gewogen, stoep/fietsstrook = op meer dan de helft van de gematchte lengte.
   // Links/rechts van een tegengesteld getekende link worden omgedraaid.
   function _matchRoad(lines) {
     const mPerW = _net.mPerW;
     const surfLen = new Map();
-    let total = 0, matched = 0, widthSum = 0, swLLen = 0, swRLen = 0;
+    let total = 0, matched = 0, widthSum = 0, swLLen = 0, swRLen = 0, cwLLen = 0, cwRLen = 0;
     for (const line of lines) {
       for (let i = 1; i < line.length; i++) {
         const [ax, ay] = line[i - 1], [bx, by] = line[i];
@@ -389,6 +414,8 @@
           matched += pieceM;
           if (hit.same ? link.swL : link.swR) swLLen += pieceM;
           if (hit.same ? link.swR : link.swL) swRLen += pieceM;
+          if (hit.same ? link.cwL : link.cwR) cwLLen += pieceM;
+          if (hit.same ? link.cwR : link.cwL) cwRLen += pieceM;
           widthSum += link.widthM * pieceM;
           surfLen.set(link.surface, (surfLen.get(link.surface) || 0) + pieceM);
         }
@@ -398,7 +425,8 @@
     let surface = 'onbekend', bestLen = -1;
     for (const [s, l] of surfLen) if (l > bestLen) { bestLen = l; surface = s; }
     return { netSurface: surface, netWidthM: Math.round(widthSum / matched * 10) / 10,
-             netSwL: swLLen > matched / 2, netSwR: swRLen > matched / 2 };
+             netSwL: swLLen > matched / 2, netSwR: swRLen > matched / 2,
+             netCwL: cwLLen > matched / 2, netCwR: cwRLen > matched / 2 };
   }
 
   // ── Mini-protobuf/MVT: alleen wat nodig is om tags toe te voegen ────────
@@ -475,7 +503,7 @@
   }
 
   // Transportation-laag (bytes [start, end)) opnieuw schrijven met de tags
-  // netSurface/netWidthM/netK (en netSwL/netSwR) op gematchte wegen; null = niets gematcht.
+  // netSurface/netWidthM/netK (en netSwL/R, netCwL/R) op gematchte wegen; null = niets gematcht.
   // MVT: Layer name=1 features=2 keys=3 values=4 extent=5; Feature tags=2 type=3 geometry=4.
   function _enrichTransportation(buf, start, end, z, tx, ty) {
     const keys = [], values = [], features = [];
@@ -524,6 +552,8 @@
       const extra = [k0, valIndex(m.netSurface), k0 + 1, valIndex(m.netWidthM), k0 + 2, valIndex(netK)];
       if (m.netSwL) extra.push(k0 + 3, valIndex(1));
       if (m.netSwR) extra.push(k0 + 4, valIndex(1));
+      if (m.netCwL) extra.push(k0 + 5, valIndex(1));
+      if (m.netCwR) extra.push(k0 + 6, valIndex(1));
       extraTags.set(fi, extra);
     });
     if (!extraTags.size) return null;
@@ -545,7 +575,7 @@
       }
       w.lenDelim(2, fw.result());
     }
-    for (const k of ['netSurface', 'netWidthM', 'netK', 'netSwL', 'netSwR']) w.lenDelim(3, _utf8enc.encode(k));
+    for (const k of ['netSurface', 'netWidthM', 'netK', 'netSwL', 'netSwR', 'netCwL', 'netCwR']) w.lenDelim(3, _utf8enc.encode(k));
     for (const v of newValues) w.lenDelim(4, _encodeValue(v));
     return w.result();
   }
