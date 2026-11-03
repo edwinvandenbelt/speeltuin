@@ -831,7 +831,7 @@ _COLLECTIONS = {
     },
     "traffic_assets": {
         "title": "Verkeersobjecten",
-        "description": "Verkeersobjecten (borden, verkeerslichten, e.a.) uit het geprepareerde TRAFFIC-ASSETS bestand; ondersteunt bbox-filtering en optioneel assetType-filtering.",
+        "description": "Verkeersobjecten (borden, verkeerslichten, e.a.) uit het geprepareerde TRAFFIC-ASSETS bestand; ondersteunt bbox-filtering, optioneel assetType-filtering en vereenvoudigen (simplify=<meters>).",
     },
     "heights": {
         "title": "Hoogte- en constructie-objecten",
@@ -1147,7 +1147,12 @@ _WI_PERIODS = {"etmaal": 0, "ochtendspits": 1, "avondspits": 2, "restdag": 3}
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__, static_folder=None)
-Compress(app)
+_compress = Compress(app)
+# flask_compress kent de GeoJSON-mimetypes niet, terwijl de OGC-items vaak de
+# grootste antwoorden zijn (b.v. stoep-polygonen: ~5 MB → ~1 MB gzip).
+_GEOJSON_MIMETYPES = ["application/geo+json", "application/x-ndgeo+json"]
+app.config["COMPRESS_MIMETYPES"] += _GEOJSON_MIMETYPES
+_compress.compress_mimetypes_set.update(_GEOJSON_MIMETYPES)
 
 # ---------------------------------------------------------------------------
 # Job-store
@@ -1987,6 +1992,69 @@ def _job_to_status(job: dict) -> dict:
             },
         ],
     }
+
+
+_SIMPLIFY_CACHE: dict = {}
+_SIMPLIFY_LOCK = threading.Lock()
+
+
+def _simplify_query_arg():
+    """``?simplify=<m>``: tolerantie in meters (0 < m <= 10), of None."""
+    arg = request.args.get("simplify", "").strip()
+    if not arg:
+        return None
+    try:
+        tol_m = float(arg)
+    except ValueError:
+        abort(400, "Ongeldige simplify: verwacht een getal (meters)")
+    if not 0 < tol_m <= 10:
+        abort(400, "Ongeldige simplify: verwacht 0 < meters <= 10")
+    return tol_m
+
+
+def _round_coords(c):
+    if c and isinstance(c[0], (list, tuple)):
+        return [_round_coords(x) for x in c]
+    return [round(v, 6) for v in c]
+
+
+def _simplify_features(feats: list, tol_m: float, cache_key=None) -> list:
+    """Nieuwe features met vereenvoudigde (Douglas-Peucker, ~``tol_m`` meter) en
+    op 6 decimalen (~0,1 m) afgeronde geometrie; de invoer blijft intact.
+    BGT-vlakken zijn fijn verdicht (bogen): stoepen Deventer 1,7 mln. → 0,2 mln.
+    punten. Met ``cache_key`` (hashbaar, incl. mtime) wordt het resultaat bewaard."""
+    if cache_key is not None:
+        hit = _SIMPLIFY_CACHE.get(cache_key)
+        if hit is not None:
+            return hit
+    import shapely
+    from shapely.geometry import mapping, shape
+
+    t0 = time.perf_counter()
+    # Graden-tolerantie op de breedtegraad; in lengterichting is die daardoor
+    # iets fijner (cos φ), dus nooit grover dan gevraagd.
+    tol_deg = tol_m / 111_320
+    out = []
+    for f in feats:
+        geom = f.get("geometry")
+        if geom and geom.get("type") != "Point":
+            try:
+                geom = mapping(shapely.simplify(shape(geom), tol_deg, preserve_topology=True))
+                geom = {"type": geom["type"], "coordinates": _round_coords(geom["coordinates"])}
+            except Exception:
+                geom = f.get("geometry")
+        out.append({**f, "geometry": geom})
+    if cache_key is not None:
+        with _SIMPLIFY_LOCK:
+            _SIMPLIFY_CACHE[cache_key] = out
+            while len(_SIMPLIFY_CACHE) > 8:  # oudste eruit
+                _SIMPLIFY_CACHE.pop(next(iter(_SIMPLIFY_CACHE)))
+    print(
+        f"[server] {len(out)} features vereenvoudigd ({tol_m} m, "
+        f"{(time.perf_counter() - t0) * 1000:.0f}ms)",
+        flush=True,
+    )
+    return out
 
 
 def _ogc_items_response(
@@ -4707,6 +4775,7 @@ def ogc_collection_items(collection_id):
         asset_type_arg = request.args.get("assetType", "").strip()
         if asset_type_arg:
             asset_types = {t.strip() for t in asset_type_arg.split(",") if t.strip()}
+        tol_m = _simplify_query_arg()
 
         # Minimale property-set die de frontend echt gebruikt. Dit scheelt
         # aanzienlijk in payload (veel lege / ongebruikte BGT/OSM-kolommen).
@@ -4841,6 +4910,14 @@ def ogc_collection_items(collection_id):
                     "geometry": feat.get("geometry"),
                 }
             )
+        # Optioneel vereenvoudigen (?simplify=<m>), b.v. voor de BGT-stoepen op
+        # Kaart 2. Zonder bbox is het resultaat per bestand/types te cachen.
+        if tol_m is not None:
+            cache_key = None if bbox is not None else (
+                "traffic_assets", str(path), path.stat().st_mtime_ns, tol_m,
+                frozenset(asset_types or ()),
+            )
+            slim_feats = _simplify_features(slim_feats, tol_m, cache_key)
         data = {"type": "FeatureCollection", "features": slim_feats}
 
         as_nd = request.args.get("f", "").strip().lower() == "ndgeojson"

@@ -15,6 +15,11 @@
  *      window.MontrealBasemap.setNetwork(features)
  *        → NETWORK-links (GeoJSON) waarmee de wegen in de tiles breedte en
  *          verharding krijgen; geldt voor alle kaarten.
+ *      window.MontrealBasemap.setSidewalks(features)
+ *        → BGT-stoepen en -fietspaden (TRAFFIC-ASSETS, assetType 'sidewalk' /
+ *          'bikePath', polygonen); geldt voor alle kaarten.
+ *      window.MontrealBasemap.setSidewalksVisible(bool)
+ *        → stoepen/fietspaden aan of uit (alleen zichtbaar in Montréal-modus).
  */
 (function () {
   'use strict';
@@ -22,10 +27,10 @@
   const _MTL_PALETTES = {
     day:   { land:'#e6e9dc', water:'#8fc7ca', green:'#b8c99e', forest:'#acbf97', road:'#c9cec5',
              sidewalk:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
-             railBed:'#bdb5aa', railTie:'#8c8073', rail:'#5b6066' },
+             railBed:'#bdb5aa', railTie:'#8c8073', rail:'#5b6066', bikePath:'#d9a596' },
     night: { land:'#111c29', water:'#081321', green:'#162b29', forest:'#142522', road:'#26313b',
              sidewalk:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
-             railBed:'#2c3238', railTie:'#3a3530', rail:'#7a838c' },
+             railBed:'#2c3238', railTie:'#3a3530', rail:'#7a838c', bikePath:'#4a3433' },
   };
 
   // roadSrc: source voor de transportation-lagen (mtl-ofm-roads, met de
@@ -52,6 +57,8 @@
     const butt  = { 'line-cap': 'butt',  'line-join': 'round' };
     const tr = { source: roadSrc, 'source-layer': 'transportation' };
     const rail = { source: src, 'source-layer': 'transportation' };
+    const walk = { source: _SIDEWALK_SRC };
+    const fadeIn = ['interpolate', ['linear'], ['zoom'], 15, 0, 15.5, 1];
     const railOf = cls => ['all', ['==', '$type', 'LineString'], ['==', 'class', cls], ['!=', 'brunnel', 'tunnel']];
     return [
       { id: 'mtl-ground', type: 'background', paint: { 'background-color': p.land } },
@@ -72,12 +79,21 @@
                  ['!=', 'brunnel', 'tunnel'], ['!=', 'indoor', 1]],
         paint: { 'line-color': p.road, 'line-opacity': 0.65,
                  'line-width': ['interpolate', ['exponential', 2], ['zoom'], 15, 0.5, 19, 5] } },
+      // BGT-stoepen (vlakken, setSidewalks) onder de wegranden: dekken de
+      // OSM-voetpadlijnen van mtl-paths af, de wegen liggen eroverheen.
+      { id: 'mtl-sidewalk-fill', type: 'fill', ...walk, minzoom: 15, filter: ['==', 'assetType', 'sidewalk'],
+        paint: { 'fill-color': p.sidewalk, 'fill-opacity': fadeIn } },
       { id: 'mtl-road-edge', type: 'line', ...tr, filter: roads, layout: round,
         paint: { 'line-color': p.line,
                  'line-width': width(byClass(3.2, 2.7, 2, 1), byClass(12, 10.5, 9, 5.5), byClass(68, 56, 46, 28), _NET_EDGE_M) } },
       { id: 'mtl-road-sidewalk', type: 'line', ...tr, filter: roads, layout: round,
         paint: { 'line-color': p.sidewalk,
                  'line-width': width(byClass(2.6, 2.1, 1.5, 0.75), byClass(10, 8.5, 7, 4), byClass(62, 50, 40, 24), _NET_SIDEWALK_M) } },
+      // BGT-fietspaden (rood asfalt) boven de lichte wegrand (die anders over
+      // het fietspad valt), maar onder het wegdek. Geen eigen omtreklijn: de
+      // BGT-vlakken liggen in stukken naast elkaar, een lijn tekent elke naad.
+      { id: 'mtl-bikepath-fill', type: 'fill', ...walk, minzoom: 15, filter: ['==', 'assetType', 'bikePath'],
+        paint: { 'fill-color': p.bikePath, 'fill-opacity': fadeIn } },
       { id: 'mtl-roads', type: 'line', ...tr, filter: roads, layout: round,
         paint: { 'line-color': surfaceColor,
                  'line-width': width(byClass(1.8, 1.4, 1, 0.5), byClass(8, 6.5, 5, 2.8), byClass(56, 44, 36, 20)) } },
@@ -144,6 +160,7 @@
     const liberty = new Set(libertyLayerIds || []);
     const beforeId = style.layers.find(l => liberty.has(l.id) && l.type !== 'background')?.id;
     const roadSrc = _ensureRoadSource(m, src) || src;
+    _ensureSidewalkSource(m);
     for (const layer of _montrealLayers(src, _MTL_PALETTES.day, roadSrc)) {
       layer.layout = { ...(layer.layout || {}), visibility: 'none' };
       m.addLayer(layer, beforeId);
@@ -152,7 +169,40 @@
 
   function setVisible(m, visible) {
     for (const l of m.getStyle().layers) {
-      if (l.id.startsWith('mtl-')) m.setLayoutProperty(l.id, 'visibility', visible ? 'visible' : 'none');
+      if (!l.id.startsWith('mtl-')) continue;
+      const on = visible && (_sidewalksOn || l.source !== _SIDEWALK_SRC);
+      m.setLayoutProperty(l.id, 'visibility', on ? 'visible' : 'none');
+    }
+  }
+
+  // ── Stoepen en fietspaden (BGT) ─────────────────────────────────────────
+  // Eén GeoJSON-source per kaart; de features gelden voor alle kaarten.
+  const _SIDEWALK_SRC = 'mtl-sidewalks';
+  const _EMPTY_FC = { type: 'FeatureCollection', features: [] };
+  let _sidewalkFC = _EMPTY_FC;
+  let _sidewalksOn = true;
+  const _sidewalkMaps = new Set();
+
+  function _ensureSidewalkSource(m) {
+    if (!m.getSource(_SIDEWALK_SRC)) m.addSource(_SIDEWALK_SRC, { type: 'geojson', data: _sidewalkFC });
+    _sidewalkMaps.add(m);
+  }
+
+  function setSidewalks(features) {
+    _sidewalkFC = Array.isArray(features) && features.length
+      ? { type: 'FeatureCollection', features } : _EMPTY_FC;
+    for (const m of _sidewalkMaps) m.getSource(_SIDEWALK_SRC)?.setData(_sidewalkFC);
+  }
+
+  // Alleen zichtbaar als ook de Montréal-ondergrond aanstaat (mtl-ground).
+  function setSidewalksVisible(on) {
+    _sidewalksOn = !!on;
+    for (const m of _sidewalkMaps) {
+      if (!m.getLayer('mtl-ground')) continue;
+      const mtlOn = m.getLayoutProperty('mtl-ground', 'visibility') !== 'none';
+      for (const l of m.getStyle().layers) {
+        if (l.source === _SIDEWALK_SRC) m.setLayoutProperty(l.id, 'visibility', mtlOn && _sidewalksOn ? 'visible' : 'none');
+      }
     }
   }
 
@@ -537,5 +587,5 @@
   }
 
   window.MontrealBasemap = { palettes: _MTL_PALETTES, ensure, setVisible, hiddenBaseLayerIds, setNetwork,
-    surfaceClass: _surfaceClass };
+    setSidewalks, setSidewalksVisible, surfaceClass: _surfaceClass };
 })();
