@@ -5172,59 +5172,6 @@ def proxy_mvt(layer_uuid, z, x, y):
     return resp
 
 
-@app.route("/traffic-sign-icon/<string:code>")
-def traffic_sign_icon(code):
-    """Serveer een NDW PNG-icoon voor een RVV-bordcode; 404 als niet beschikbaar.
-
-    Gebruikt door de traffic_assets-laag (2D bordplaatjes). De iconenset zelf
-    leeft in common/data/traffic_sign_icons (gedeeld met GMT Digital Twin, dat
-    dezelfde code gebruikt voor zijn 3D-bordobjecten).
-
-    Naast een exacte match worden enkele naamvarianten geprobeerd, omdat de
-    NDW-brondata codes gebruikt die iets afwijken van de iconbestandsnamen:
-      * voorloopnullen in het eerste segment (``A01`` → ``A1``, ``C08`` → ``C8``);
-      * een zone-suffix (``-ZB`` = Zone Begin, ``-ZE`` = Zone Eind, e.d.) die
-        het onderliggende bord niet verandert en dus wordt weggelaten.
-    """
-    safe = re.sub(
-        r"[^A-Za-z0-9.\-]", "", code
-    )  # koppelteken en decimaalpunt toegestaan
-    icon_dir = COMMON_DATA_DIR / "traffic_sign_icons"
-    if not icon_dir.is_dir():
-        icon_dir = Path(__file__).parent / "traffic_sign_icons"  # geflatten deployment
-
-    def _norm_zeros(name: str) -> str:
-        parts = name.split("-")
-        m = re.match(r"^([A-Za-z]+)0*([0-9].*)$", parts[0])
-        if m:
-            parts[0] = m.group(1) + m.group(2)
-        return "-".join(parts)
-
-    # Bouw kandidaat-namen in volgorde van voorkeur (eerste die bestaat wint).
-    candidates: list[str] = []
-
-    def _add(name: str) -> None:
-        if name and name not in candidates:
-            candidates.append(name)
-
-    _add(safe)
-    # Zone-suffix (-ZB/-ZE/-ZP/…) van het einde strippen.
-    _base = re.sub(r"-Z[A-Za-z]$", "", safe)
-    _add(_base)
-    # Voorloopnullen normaliseren (met en zonder zone-suffix).
-    _add(_norm_zeros(safe))
-    _add(_norm_zeros(_base))
-    # Alias voor bekende niet-RVV codes (bv. bebouwde kom → H1).
-    _ICON_ALIASES = {"citylimit": "H1"}
-    _add(_ICON_ALIASES.get(_base.lower()))
-
-    match = next((c for c in candidates if (icon_dir / f"{c}.png").exists()), None)
-    if match is None:
-        abort(404)
-    resp = send_from_directory(str(icon_dir), f"{match}.png", mimetype="image/png")
-    resp.headers["Cache-Control"] = "no-cache"
-    return resp
-
 # ---------------------------------------------------------------------------
 # Maatregelsets uit een geüploade GeoPackage (measure_set_creator)
 # ---------------------------------------------------------------------------

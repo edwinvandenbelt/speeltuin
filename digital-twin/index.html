@@ -8165,12 +8165,12 @@
       return _taIcons['front:' + full] || _taIcons['front:' + rvv] || null;
     }
 
-    // Bouw een voorkant-composiet uit een geladen plaat-<img>.
-    function _taBuildFront(code, imgEl) {
+    // Bouw een voorkant-composiet uit een plaat-canvas (uitgeknipt uit de sprite).
+    function _taBuildFront(code, plate) {
       const S = Math.round(_TA_SIGN_M * _TA_PPM) * _TA_RS;
       const cv = document.createElement('canvas');
       cv.width = S; cv.height = S;
-      cv.getContext('2d').drawImage(imgEl, 0, 0, S, S);
+      cv.getContext('2d').drawImage(plate, 0, 0, S, S);
       const rvvBase = String(code).split('-')[0];
       _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(cv, _taPoleHeightM(rvvBase)));
     }
@@ -8179,27 +8179,62 @@
       _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(_taSignPlateCanvas(code), _taPoleHeightM(rvvBase)));
     }
 
-    // Laad ontbrekende voorkant-plaaticonen (NDW-PNG per code, canvas-fallback bij
-    // 404) en bouw de composieten. Bumpt _taIconVersion + hertekent zodra klaar.
+    // ── NDW-sprite als iconbron ───────────────────────────────────────────────
+    // Eén sprite-sheet (sprite.json + sprite.png, @2x) van wegkenmerken.ndw.nu.
+    // Naamresolutie volgt NDW: rvv-black-zone → rvv-zone → rvv-black → rvv;
+    // niets gevonden → canvas-fallback.
+    let _taSpritePromise = null;
+    function _taLoadSprite() {
+      if (!_taSpritePromise) {
+        _taSpritePromise = Promise.all([
+          fetch('/traffic-sign-sprite/sprite.json').then(r => { if (!r.ok) throw new Error(`sprite.json HTTP ${r.status}`); return r.json(); }),
+          new Promise((res, rej) => {
+            const im = new Image();
+            im.onload = () => res(im);
+            im.onerror = () => rej(new Error('sprite.png laden mislukt'));
+            im.src = '/traffic-sign-sprite/sprite.png';
+          }),
+        ]).then(([index, img]) => ({ index, img }))
+          .catch(err => { console.warn('[TA] sprite niet beschikbaar, canvas-fallback:', err); return null; });
+      }
+      return _taSpritePromise;
+    }
+    function _taSpriteName(index, rvv, black, zone) {
+      const cands = [];
+      if (black && zone) cands.push(`${rvv}-${black}-${zone}`);
+      if (zone)          cands.push(`${rvv}-${zone}`);
+      if (black)         cands.push(`${rvv}-${black}`);
+      cands.push(rvv);
+      return cands.find(n => index[n]) || null;
+    }
+    // Knip een sprite-icoon uit naar een canvas (aspect behouden, gecentreerd in
+    // een vierkant, zodat rechthoekige borden als L51a niet uitgerekt worden).
+    function _taSpriteCanvas(sprite, name) {
+      const e = sprite.index[name];
+      const side = Math.max(e.width, e.height);
+      const cv = document.createElement('canvas');
+      cv.width = side; cv.height = side;
+      cv.getContext('2d').drawImage(sprite.img, e.x, e.y, e.width, e.height,
+                                    (side - e.width) / 2, (side - e.height) / 2, e.width, e.height);
+      return cv;
+    }
+    // Bouw ontbrekende voorkant-composieten uit de sprite (canvas-fallback als
+    // de code niet in de sprite staat). Bumpt _taIconVersion + hertekent.
     async function _taEnsurePlates(features) {
-      const codes = new Set();
+      const sprite = await _taLoadSprite();
+      let changed = false;
       for (const f of (features || [])) {
         const p = f.properties || {};
         const rvv = p.rvvCode;
         if (!rvv) continue;
         const black = (p.blackCode || '').trim();
-        if (black) codes.add(`${rvv}-${black}`);
-        codes.add(rvv);
+        const key = black ? `${rvv}-${black}` : rvv;   // sleutel zoals _taFrontIcon hem zoekt
+        if (_taIcons['front:' + key]) continue;
+        const name = sprite && _taSpriteName(sprite.index, rvv, black, (p.zoneCode || '').trim());
+        if (name) _taBuildFront(key, _taSpriteCanvas(sprite, name));
+        else      _taBuildFrontFallback(key);
+        changed = true;
       }
-      console.debug('[TA] _taEnsurePlates: codes te laden =', [...codes]);
-      let changed = false;
-      await Promise.allSettled([...codes].map(code => new Promise(res => {
-        if (_taIcons['front:' + code]) { res(); return; }
-        const el = new Image();
-        el.onload  = () => { try { _taBuildFront(code, el); } catch (_) { _taBuildFrontFallback(code); } changed = true; res(); };
-        el.onerror = () => { console.debug('[TA] plaat-icoon 404/error, fallback canvas:', code); _taBuildFrontFallback(code); changed = true; res(); };
-        el.src = `/traffic-sign-icon/${encodeURIComponent(code)}?v=2`;
-      })));
       if (changed) { _taIconVersion++; updateOverlay(true); }
     }
 
