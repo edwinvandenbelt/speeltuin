@@ -8242,8 +8242,7 @@
     let _taTunnelFeatures    = [];   // CIMLK tunnel-wegvakken (dekband + doorschijnend dak)
     let _taRetWallQuads      = [];   // CIMLK keermuren → geëxtrudeerde muur-quads
      let _taCulvertFeatures   = [];   // CIMLK duikers (lage donkere kruising)
-     let _taSunkenFloors      = [];   // verzonken wegdelen (tunnel-polygon / bak) → donkere vloervlakken
-     let _taSunkenWalls       = [];   // randmuurtjes rond de bakken → geëxtrudeerde quads
+     let _taSunkenFloors      = [];   // verzonken wegdelen (tunnel-polygonen) → donkere vloervlakken
       let _taTunnelDecks       = [];   // grijs wegdek over de centrale tunnelband (onderdoorgang)
     let _taUnderpassFeatures = [];   // CIMLK overspanningen boven verdiepte weg (belowGround)
     let _taBusStopFeatures   = [];   // busStop-features (billboard-sprite met halte-bordje)
@@ -9171,16 +9170,11 @@
     const _TA_CULVERT_WIDTH_M = 2.5;   // breedte van de duiker-kruising (m)
      const _TA_UNDERPASS_H_M   = 4.0;   // hoogte waarop de overspanning boven de verdiepte weg zweeft (m)
 
-     // Verzonken wegdelen (tunnel-polygonen / bak): donker vloervlak nét boven
-     // maaiveld + lage donkere randmuurtjes. De satelliet-basemap is ondoorzichtig
-     // op z=0, dus een écht verdiept vlak zou onzichtbaar zijn; deze weergave houdt
-     // het "verlaagd wegdeel tussen muren" leesbaar én zichtbaar.
-     const _TA_SUNKEN_WALL_H     = 0.9;   // hoogte van de bak-randmuurtjes (m)
-     const _TA_SUNKEN_WALL_HALF  = 0.25;  // halve dikte van een randmuurtje (m)
+     // Verzonken wegdelen (tunnel-polygonen): donker vloervlak nét boven
+     // maaiveld. De satelliet-basemap is ondoorzichtig op z=0, dus een écht
+     // verdiept vlak zou onzichtbaar zijn.
      const _TA_SUNKEN_FLOOR_Z    = 0.06;  // vloervlak nét boven maaiveld (m, tegen z-fighting)
-     const _TA_BAK_HALF_M        = 2.5;   // halve zijde van het bak-vierkant rond een punt (m)
      const _TA_SUNKEN_FLOOR_COLOR = [26, 27, 31, 240];   // donkere tunnelmond/vloer
-     const _TA_SUNKEN_WALL_COLOR  = [96, 98, 106, 245];  // betongrijs (bak-wanden)
      // Tunnel-onderdoorgang: grijs wegdek over de centrale band (de weg loopt door),
      // met donkere vloer aan de uiteinden als portaalmonden.
      const _TA_TUNNEL_DECK_Z      = 0.22;                 // dek net boven de donkere vloer (m)
@@ -9190,42 +9184,14 @@
      const _TA_TUNNEL_DECK_MAX_M  = 22;                   // max. deklengte (m)
      const _TA_TUNNEL_DECK_VPAD_M = 1.0;                  // overstek dek buiten footprint (m)
 
-     // Ringen (buitenring per polygon) uit een feature; een Point wordt een klein
-     // vierkant. Alleen eindige coördinaten.
+     // Ringen (buitenring per polygon) uit een feature.
      function _sunkenRings(f) {
        const g = f.geometry || {};
        if (g.type === 'Polygon')
          return (g.coordinates || []).slice(0, 1).filter(r => r && r.length >= 4);
        if (g.type === 'MultiPolygon')
          return (g.coordinates || []).map(p => p && p[0]).filter(r => r && r.length >= 4);
-       if (g.type === 'Point') {
-         const c = g.coordinates || [];
-         if (!isFinite(c[0]) || !isFinite(c[1])) return [];
-         const cosLat = Math.max(0.1, Math.cos(c[1] * Math.PI / 180));
-         const dx = _TA_BAK_HALF_M / (111320 * cosLat), dy = _TA_BAK_HALF_M / 110540;
-         return [[[c[0] - dx, c[1] - dy], [c[0] + dx, c[1] - dy],
-                  [c[0] + dx, c[1] + dy], [c[0] - dx, c[1] + dy], [c[0] - dx, c[1] - dy]]];
-       }
        return [];
-     }
-
-     // Dunne geëxtrudeerde muur-quads langs de randen van een ring.
-     function _ringWallQuads(ring, props, halfW, h) {
-       const out = [];
-       for (let i = 0; i + 1 < ring.length; i++) {
-         const a = ring[i], b = ring[i + 1];
-         if (!a || !b || !isFinite(a[0]) || !isFinite(a[1]) || !isFinite(b[0]) || !isFinite(b[1])) continue;
-         const latMid = (a[1] + b[1]) * 0.5, cosLat = Math.max(0.1, Math.cos(latMid * Math.PI / 180));
-         const dxm = (b[0] - a[0]) * 111320 * cosLat, dym = (b[1] - a[1]) * 110540;
-         const len = Math.hypot(dxm, dym) || 1;
-         const px = -dym / len, py = dxm / len;
-         const ox = (px * halfW) / (111320 * cosLat), oy = (py * halfW) / 110540;
-         out.push({ polygon: [
-           [a[0] + ox, a[1] + oy], [b[0] + ox, b[1] + oy],
-           [b[0] - ox, b[1] - oy], [a[0] - ox, a[1] - oy],
-         ], height: h, props });
-       }
-       return out;
      }
 
      // Centrale wegdek-band ("het dak") over een set tunnelringen. Bepaalt met een
@@ -9271,19 +9237,10 @@
        return [toLL(uc0, v0), toLL(uc1, v0), toLL(uc1, v1), toLL(uc0, v1), toLL(uc0, v0)];
      }
 
-     // (Her)bouw de verzonken-wegdeel stores.
-     //   bakFeats    → Point-bakken: donker vierkant + lage randmuurtjes.
-     //   tunnelFeats → polygon-tunnels: donkere vloer (portaalmonden) + centraal dek.
-     function _taRebuildSunken(bakFeats, tunnelFeats) {
-       const floors = [], walls = [], decks = [];
-       // Bakken: klein donker vloervierkant met opstaande randmuurtjes.
-       for (const f of bakFeats) {
-         const props = f.properties || {};
-         for (const ring of _sunkenRings(f)) {
-           floors.push({ polygon: ring.map(c => [c[0], c[1], _TA_SUNKEN_FLOOR_Z]), props });
-           walls.push(..._ringWallQuads(ring, props, _TA_SUNKEN_WALL_HALF, _TA_SUNKEN_WALL_H));
-         }
-       }
+     // (Her)bouw de verzonken-wegdeel stores uit polygon-tunnels: donkere vloer
+     // (portaalmonden) + centraal dek. Bakken worden bewust niet afgebeeld.
+     function _taRebuildSunken(tunnelFeats) {
+       const floors = [], decks = [];
        // Tunnels: donkere vloer over de hele footprint (overlappende/dubbele
        // polygonen overlappen visueel → geen dubbele wanden). Eén dek over de
        // samengevoegde langsas.
@@ -9300,7 +9257,6 @@
          if (deck) decks.push({ polygon: deck, props: (tunnelFeats[0] || {}).properties || {} });
        }
         _taSunkenFloors = floors;
-        _taSunkenWalls  = walls;
         _taTunnelDecks  = decks;
       }
 
@@ -9598,8 +9554,8 @@
       }
 
       // ═══════════════════════════════════════════════════════════════════════
-      //  VERZONKEN WEGDELEN — tunnel-polygonen / bak
-      //  Donker vloervlak + randmuurtjes + grijs tunneldek. Wordt als ÉÉRSTE
+      //  VERZONKEN WEGDELEN — tunnel-polygonen
+      //  Donker vloervlak + grijs tunneldek. Wordt als ÉÉRSTE
       //  deck-laaggroep getekend (direct boven de kaart), zodat alle andere
       //  lagen er visueel bovenop liggen.
       // ═══════════════════════════════════════════════════════════════════════
@@ -9615,20 +9571,6 @@
             filled:         true,
             getPolygon:     d => d.polygon,
             getFillColor:   _TA_SUNKEN_FLOOR_COLOR,
-            pickable:       true,
-            onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
-          }));
-        }
-        if (_taSunkenWalls.length) {
-          layers.push(new PolygonLayer({
-            id:             'ta-sunken-walls',
-            data:           _taSunkenWalls,
-            extruded:       true,
-            wireframe:      false,
-            getPolygon:     d => d.polygon,
-            getElevation:   d => d.height,
-            getFillColor:   _TA_SUNKEN_WALL_COLOR,
-            material:       { ambient: 0.55, diffuse: 0.7, shininess: 8 },
             pickable:       true,
             onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
           }));
@@ -10213,7 +10155,7 @@
     const _TA_CATEGORY_TYPES = {
       signs:     ['trafficSign', 'trafficSignal', 'pedestrianCrossing', 'stopSign', 'giveWay', 'busStop'],
       paths:     ['footPath', 'cyclePath'],
-      height:    ['viaduct', 'bridge', 'tunnel', 'bak', 'culvert', 'underpass', 'screen', 'retainingWall'],
+      height:    ['viaduct', 'bridge', 'tunnel', 'culvert', 'underpass', 'screen', 'retainingWall'],
       furniture: ['mailbox', 'busShelter', 'mast', 'streetLight', 'bikeGate', 'infoBoard', 'trashBin'],
       bumps:     ['speedBump'],
     };
@@ -10560,8 +10502,8 @@
         if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         if (surf) html += `<br><span style="font-size:0.8em;color:#777">${surf}</span>`;
         html += '</div>';
-      } else if (at === 'bak' || at === 'tunnel') {
-        const label = at === 'bak' ? 'Verlaagd wegdeel (bak)' : 'Tunnel';
+      } else if (at === 'tunnel') {
+        const label = 'Tunnel';
         const road  = p.roadName || p.road_name || p.name || '';
         html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
         if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
@@ -10817,10 +10759,10 @@
         _taViaductFeatures = (byType.viaduct || []).filter(f => !_below(f));
         _taBridgeFeatures  = (byType.bridge  || []).filter(f => !_below(f));
         // Tunnels: lijn-features via de bestaande dekband/dak-render; polygon-tunnels
-        // (BGT) via het verzonken-wegdeel vloervlak + randmuurtjes (samen met bak).
+        // (BGT) via het verzonken-wegdeel vloervlak + tunneldek.
         const _tunnels = byType.tunnel || [];
         _taTunnelFeatures  = _tunnels.filter(f => !_isPoly(f));
-        _taRebuildSunken(byType.bak || [], _tunnels.filter(_isPoly));
+        _taRebuildSunken(_tunnels.filter(_isPoly));
         _taCulvertFeatures = byType.culvert || [];
         _taUnderpassFeatures = [
           ...(byType.underpass || []),
@@ -16351,8 +16293,8 @@
          // auto's in beeld", ongeacht wat de aanroeper meegeeft — anders duikt de
          // bevroren auto-positie weer op zodra een ongerelateerde update (camera,
          // assets, …) hier met de standaardwaarde `true` doorheen loopt. Het
-         // afspeel-vinkje van de simulatie bepaalt via `paused` of auto's bewegen
-         // (animate()); zichtbaarheid blijft hier uitsluitend aan carsSuspended hangen.
+         // afspeel-vinkje van de simulatie (`paused`) stuurt alleen de klok; auto's
+         // blijven altijd rijden en hangen uitsluitend aan carsSuspended.
          const showCars = withCars && !carsSuspended;
          const _uoT0 = performance.now();
          overlay.setProps({ layers: [
@@ -16395,11 +16337,11 @@
     // ── 7. Animatielus ──────────────────────────────────────────────────────
     _trace('init: 7. Animatielus');
     let lastT  = null;
-    let paused = false;          // auto's blijven zichtbaar maar bewegen niet; klok/datum/condities blijven instelbaar
+    let paused = false;          // klok staat stil; auto's blijven gewoon rijden; datum/condities blijven instelbaar
     let carsSuspended = false;   // alleen tijdens knoop-/wegvak-bewerken: auto's echt verborgen/verwijderd
 
     /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus.
-     *  `paused` (het afspeel-vinkje) bevriest alleen de bewegende auto's; datum, tijd,
+     *  `paused` (het afspeel-vinkje) zet alleen de klok stil — de auto's rijden door; datum, tijd,
      *  temperatuur, weer en motief blijven daarbij gewoon instelbaar. Alleen tijdens
      *  knoop-/wegvak-bewerken (`carsSuspended`) zijn ze geblokkeerd, om verstoring van
      *  die bewerkmodus te voorkomen. */
@@ -16425,7 +16367,7 @@
       const _aT0 = performance.now();
       if (_animFrames++ === 0) _trace('animatie: eerste frame');
       const now = performance.now() / 1000;
-      if (!carsSuspended && !paused && lastT !== null) {
+      if (!carsSuspended && lastT !== null) {
         const dt  = Math.min(now - lastT, 0.05) * timeScale;
         const t   = now;   // huidige tijd in seconden (performance.now()/1000)
 
@@ -16793,7 +16735,7 @@
 
         updateOverlay(true);
       }
-      if (carsSuspended || paused) lastT = null; else lastT = now;
+      if (carsSuspended) lastT = null; else lastT = now;
       const _aDur = performance.now() - _aT0;
       if (_aDur > 150) _trace(`⚠ animatie-frame ${_aDur.toFixed(0)}ms (auto's=${cars.length}, frame #${_animFrames})`);
       requestAnimationFrame(animate);
@@ -20525,8 +20467,8 @@
     })();
 
     /** Verzet de klok een vast aantal uren t.o.v. de huidige stand (knopjes rond het
-     *  tijdveld en de AM/PM-knop). Werkt ook terwijl gepauzeerd — alleen de bewegende
-     *  auto's staan dan stil, de tijd blijft instelbaar. Enkel tijdens knoop-/wegvak-
+     *  tijdveld en de AM/PM-knop). Werkt ook terwijl gepauzeerd — alleen het automatisch
+     *  doorlopen van de klok staat dan stil, de tijd blijft instelbaar. Enkel tijdens knoop-/wegvak-
      *  bewerken (carsSuspended) is dit geblokkeerd. */
     async function _nudgeSimHour(deltaHours) {
       if (_simClockBusyCount > 0 || carsSuspended) return; // vorige overgang nog bezig, of aan het bewerken
