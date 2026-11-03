@@ -26,10 +26,10 @@
 
   const _MTL_PALETTES = {
     day:   { land:'#e6e9dc', water:'#8fc7ca', green:'#b8c99e', forest:'#acbf97', road:'#c9cec5',
-             sidewalk:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
+             sidewalk:'#c3c3c3', kerb:'#a3a3a3', shore:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
              railBed:'#bdb5aa', railTie:'#8c8073', rail:'#5b6066', bikePath:'#d9a596' },
     night: { land:'#111c29', water:'#081321', green:'#162b29', forest:'#142522', road:'#26313b',
-             sidewalk:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
+             sidewalk:'#3c454a', kerb:'#2e353a', shore:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
              railBed:'#2c3238', railTie:'#3a3530', rail:'#7a838c', bikePath:'#4a3433' },
   };
 
@@ -44,13 +44,32 @@
     const byClass = (big, mid, other, service) => ['match', ['get', 'class'],
       ['motorway', 'trunk'], big, ['primary', 'secondary'], mid, 'service', service, other];
     // Breedte per klasse (px op z12/16/19); wegen met netWidthM krijgen hun
-    // werkelijke breedte + extraM: (m + extraM) · netK · 2^z px. Exponentieel
-    // grondtal 2 tussen de stops is daarvoor exact.
-    const width = (a, b, c, extraM = 0) => {
+    // werkelijke breedte: m · netK · 2^z px. Exponentieel grondtal 2 tussen
+    // de stops is daarvoor exact.
+    const width = (a, b, c) => {
       const at = (z, px) => ['case', ['has', 'netWidthM'],
-        ['*', ['+', ['get', 'netWidthM'], extraM], ['get', 'netK'], Math.pow(2, z)], px];
+        ['*', ['get', 'netWidthM'], ['get', 'netK'], Math.pow(2, z)], px];
       return ['interpolate', ['exponential', 2], ['zoom'], 12, at(12, a), 16, at(16, b), 19, at(19, c), 22, at(22, c)];
     };
+    // Breedte in meters → px (alleen wegen met netK, dus met netwerkdata).
+    const metres = m => ['interpolate', ['exponential', 2], ['zoom'],
+      15, ['*', m, ['get', 'netK'], Math.pow(2, 15)], 22, ['*', m, ['get', 'netK'], Math.pow(2, 22)]];
+    // Haarlijn (px) voor de wegrand en de buitenrand van de stoep.
+    const hairline = ['interpolate', ['linear'], ['zoom'], 12, 0.5, 16, 1];
+    // Lijn evenwijdig aan de weg aan de kant waar de link een stoep heeft
+    // (side -1 = links, 1 = rechts), op centerM meter buiten de wegrand.
+    const sidewalkLine = (id, side, flag, centerM, color, lineWidth) => ({
+      id, type: 'line', ...tr, minzoom: 15, layout: round, filter: ['all', roads, ['==', flag, 1]],
+      paint: { 'line-color': color, 'line-opacity': fadeIn, 'line-width': lineWidth,
+               'line-offset': metres(['*', side, ['+', ['/', ['get', 'netWidthM'], 2], centerM]]) } });
+    // Stoep: strook van _SIDEWALK_STRIP_M, met aan de wegkant een donkerdere
+    // stoeprand (_KERB_M) en aan de buitenkant een haarlijn.
+    const sidewalk = (name, side, flag) => [
+      sidewalkLine(`mtl-road-sidewalk-${name}`, side, flag, _SIDEWALK_STRIP_M / 2, p.sidewalk, metres(_SIDEWALK_STRIP_M)),
+      sidewalkLine(`mtl-road-sidewalk-${name}-kerb`, side, flag, _KERB_M / 2, p.kerb, metres(_KERB_M)),
+      sidewalkLine(`mtl-road-sidewalk-${name}-edge`, side, flag, _SIDEWALK_STRIP_M, p.line, hairline),
+    ];
+    const roadWidth = width(byClass(1.8, 1.4, 1, 0.5), byClass(8, 6.5, 5, 2.8), byClass(56, 44, 36, 20));
     const surfaceColor = ['match', ['coalesce', ['get', 'netSurface'], ''],
       ...Object.entries(_MTL_SURFACE.day).flat(), p.road];
     const round = { 'line-cap': 'round', 'line-join': 'round' };
@@ -73,7 +92,7 @@
       { id: 'mtl-waterways', type: 'line', source: src, 'source-layer': 'waterway',
         paint: { 'line-color': p.water, 'line-width': 2 } },
       { id: 'mtl-shore', type: 'line', source: src, 'source-layer': 'water',
-        paint: { 'line-color': p.sidewalk, 'line-width': 0.8, 'line-opacity': 0.5 } },
+        paint: { 'line-color': p.shore, 'line-width': 0.8, 'line-opacity': 0.5 } },
       { id: 'mtl-paths', type: 'line', ...tr, minzoom: 15, layout: round,
         filter: ['all', ['==', '$type', 'LineString'], ['in', 'class', 'path', 'track'],
                  ['!=', 'brunnel', 'tunnel'], ['!=', 'indoor', 1]],
@@ -83,20 +102,20 @@
       // OSM-voetpadlijnen van mtl-paths af, de wegen liggen eroverheen.
       { id: 'mtl-sidewalk-fill', type: 'fill', ...walk, minzoom: 15, filter: ['==', 'assetType', 'sidewalk'],
         paint: { 'fill-color': p.sidewalk, 'fill-opacity': fadeIn } },
+      // Wegrand: haarlijn direct langs het wegdek (gap = wegbreedte).
       { id: 'mtl-road-edge', type: 'line', ...tr, filter: roads, layout: round,
-        paint: { 'line-color': p.line,
-                 'line-width': width(byClass(3.2, 2.7, 2, 1), byClass(12, 10.5, 9, 5.5), byClass(68, 56, 46, 28), _NET_EDGE_M) } },
-      { id: 'mtl-road-sidewalk', type: 'line', ...tr, filter: roads, layout: round,
-        paint: { 'line-color': p.sidewalk,
-                 'line-width': width(byClass(2.6, 2.1, 1.5, 0.75), byClass(10, 8.5, 7, 4), byClass(62, 50, 40, 24), _NET_SIDEWALK_M) } },
-      // BGT-fietspaden (rood asfalt) boven de lichte wegrand (die anders over
-      // het fietspad valt), maar onder het wegdek. Geen eigen omtreklijn: de
+        paint: { 'line-color': p.line, 'line-width': hairline, 'line-gap-width': roadWidth } },
+      // Stoepen uit het netwerk (sidewalkLeft/Right = 'yes'), boven de wegrand.
+      ...sidewalk('left', -1, 'netSwL'),
+      ...sidewalk('right', 1, 'netSwR'),
+      // BGT-fietspaden (rood asfalt) boven de wegrand en stoepstroken (die
+      // anders over het fietspad vallen), maar onder het wegdek. Geen eigen omtreklijn: de
       // BGT-vlakken liggen in stukken naast elkaar, een lijn tekent elke naad.
       { id: 'mtl-bikepath-fill', type: 'fill', ...walk, minzoom: 15, filter: ['==', 'assetType', 'bikePath'],
         paint: { 'fill-color': p.bikePath, 'fill-opacity': fadeIn } },
       { id: 'mtl-roads', type: 'line', ...tr, filter: roads, layout: round,
         paint: { 'line-color': surfaceColor,
-                 'line-width': width(byClass(1.8, 1.4, 1, 0.5), byClass(8, 6.5, 5, 2.8), byClass(56, 44, 36, 20)) } },
+                 'line-width': roadWidth } },
       { id: 'mtl-road-centre-major', type: 'line', ...tr, minzoom: 16.5, layout: butt,
         filter: ['all', twoWay, ['in', 'class', 'primary', 'secondary']],
         paint: { 'line-color': p.marking, 'line-opacity': 0.94,
@@ -170,7 +189,7 @@
   function setVisible(m, visible) {
     for (const l of m.getStyle().layers) {
       if (!l.id.startsWith('mtl-')) continue;
-      const on = visible && (_sidewalksOn || l.source !== _SIDEWALK_SRC);
+      const on = visible && (_sidewalksOn || !_isSidewalkLayer(l));
       m.setLayoutProperty(l.id, 'visibility', on ? 'visible' : 'none');
     }
   }
@@ -182,6 +201,9 @@
   let _sidewalkFC = _EMPTY_FC;
   let _sidewalksOn = true;
   const _sidewalkMaps = new Set();
+
+  // BGT-vlakken en de stoepstroken uit het netwerk.
+  const _isSidewalkLayer = l => l.source === _SIDEWALK_SRC || l.id.startsWith('mtl-road-sidewalk-');
 
   function _ensureSidewalkSource(m) {
     if (!m.getSource(_SIDEWALK_SRC)) m.addSource(_SIDEWALK_SRC, { type: 'geojson', data: _sidewalkFC });
@@ -201,7 +223,7 @@
       if (!m.getLayer('mtl-ground')) continue;
       const mtlOn = m.getLayoutProperty('mtl-ground', 'visibility') !== 'none';
       for (const l of m.getStyle().layers) {
-        if (l.source === _SIDEWALK_SRC) m.setLayoutProperty(l.id, 'visibility', mtlOn && _sidewalksOn ? 'visible' : 'none');
+        if (_isSidewalkLayer(l)) m.setLayoutProperty(l.id, 'visibility', mtlOn && _sidewalksOn ? 'visible' : 'none');
       }
     }
   }
@@ -209,14 +231,15 @@
   // ── Netwerkdata in de wegen-tiles ───────────────────────────────────────
   // De 'transportation'-laag van de OFM-tiles gaat via een eigen protocol
   // (mtlnet://). Daar krijgt elke weg die op NETWORK-links ligt de breedte
-  // (netWidthM, met netK = px per meter op z0) en de verhardingsklasse
-  // (netSurface) van die links. Er wordt niets overheen getekend: de
+  // (netWidthM, met netK = px per meter op z0), de verhardingsklasse
+  // (netSurface) en de stoepen (netSwL/netSwR = 1, links/rechts t.o.v. de
+  // tekenrichting van de weg) van die links. Er wordt niets overheen getekend: de
   // mtl-weglagen stylen gewoon op die extra properties.
 
   const _NET_WIDTH_MIN_M = 2;
   const _NET_WIDTH_MAX_M = 12;
-  const _NET_SIDEWALK_M  = 0.4;   // extra breedte van mtl-road-sidewalk (totaal)
-  const _NET_EDGE_M      = 0.9;   // extra breedte van mtl-road-edge (totaal)
+  const _SIDEWALK_STRIP_M = 1;    // breedte van de stoepstrook per kant (incl. stoeprand)
+  const _KERB_M           = 0.2;  // breedte van de stoeprand
   const _MATCH_DIST_M    = 8;     // max. afstand weg ↔ link
   const _MATCH_COS       = Math.cos(30 * Math.PI / 180);  // max. hoekverschil 30°
   const _MATCH_PIECE_M   = 10;    // wegen worden in stukjes van ≤ 10 m getoetst
@@ -289,7 +312,8 @@
       if (absId && seen.has(absId)) continue;
       if (absId) seen.add(absId);
       const hasOpposite = p.linkId != null && ids.has(-p.linkId);
-      links.push({ coords, widthM: _netWidthM(p, hasOpposite), surface: _surfaceClass(p) });
+      links.push({ coords, widthM: _netWidthM(p, hasOpposite), surface: _surfaceClass(p),
+                   swL: p.sidewalkLeft === 'yes', swR: p.sidewalkRight === 'yes' });
       latSum += coords[0][1];
     }
     if (!links.length) return null;
@@ -315,7 +339,8 @@
     return { grid, cell, mPerW };
   }
 
-  // Dichtstbijzijnde, ongeveer evenwijdige link bij punt (mx,my) met richting (dx,dy).
+  // Dichtstbijzijnde, ongeveer evenwijdig linksegment bij punt (mx,my) met
+  // richting (dx,dy); { link, same } met same = zelfde richting als (dx,dy).
   function _nearestLink(mx, my, dx, dy) {
     const { grid, cell, mPerW } = _net;
     const maxD = _MATCH_DIST_M / mPerW;
@@ -333,18 +358,20 @@
         if (Math.abs(sx * dx + sy * dy) / (Math.sqrt(sl2) * dl) < _MATCH_COS) continue;
         const t = Math.max(0, Math.min(1, ((mx - s.ax) * sx + (my - s.ay) * sy) / sl2));
         const d = Math.hypot(mx - (s.ax + t * sx), my - (s.ay + t * sy));
-        if (d < bestD) { bestD = d; best = s.link; }
+        if (d < bestD) { bestD = d; best = { link: s.link, same: sx * dx + sy * dy > 0 }; }
       }
     }
     return best;
   }
 
-  // Lijnen (wereldcoördinaten) → { netSurface, netWidthM } of null. Stemt per
-  // stukje van ≤ 10 m: verharding = meeste lengte, breedte = lengte-gewogen.
+  // Lijnen (wereldcoördinaten) → { netSurface, netWidthM, netSwL, netSwR } of
+  // null. Stemt per stukje van ≤ 10 m: verharding = meeste lengte, breedte =
+  // lengte-gewogen, stoep = op meer dan de helft van de gematchte lengte.
+  // Links/rechts van een tegengesteld getekende link worden omgedraaid.
   function _matchRoad(lines) {
     const mPerW = _net.mPerW;
     const surfLen = new Map();
-    let total = 0, matched = 0, widthSum = 0;
+    let total = 0, matched = 0, widthSum = 0, swLLen = 0, swRLen = 0;
     for (const line of lines) {
       for (let i = 1; i < line.length; i++) {
         const [ax, ay] = line[i - 1], [bx, by] = line[i];
@@ -356,9 +383,12 @@
         for (let k = 0; k < n; k++) {
           const t = (k + 0.5) / n;
           total += pieceM;
-          const link = _nearestLink(ax + t * dx, ay + t * dy, dx, dy);
-          if (!link) continue;
+          const hit = _nearestLink(ax + t * dx, ay + t * dy, dx, dy);
+          if (!hit) continue;
+          const link = hit.link;
           matched += pieceM;
+          if (hit.same ? link.swL : link.swR) swLLen += pieceM;
+          if (hit.same ? link.swR : link.swL) swRLen += pieceM;
           widthSum += link.widthM * pieceM;
           surfLen.set(link.surface, (surfLen.get(link.surface) || 0) + pieceM);
         }
@@ -367,7 +397,8 @@
     if (!total || matched / total < _MATCH_MIN_RATIO) return null;
     let surface = 'onbekend', bestLen = -1;
     for (const [s, l] of surfLen) if (l > bestLen) { bestLen = l; surface = s; }
-    return { netSurface: surface, netWidthM: Math.round(widthSum / matched * 10) / 10 };
+    return { netSurface: surface, netWidthM: Math.round(widthSum / matched * 10) / 10,
+             netSwL: swLLen > matched / 2, netSwR: swRLen > matched / 2 };
   }
 
   // ── Mini-protobuf/MVT: alleen wat nodig is om tags toe te voegen ────────
@@ -444,7 +475,7 @@
   }
 
   // Transportation-laag (bytes [start, end)) opnieuw schrijven met de tags
-  // netSurface/netWidthM/netK op gematchte wegen; null = niets gematcht.
+  // netSurface/netWidthM/netK (en netSwL/netSwR) op gematchte wegen; null = niets gematcht.
   // MVT: Layer name=1 features=2 keys=3 values=4 extent=5; Feature tags=2 type=3 geometry=4.
   function _enrichTransportation(buf, start, end, z, tx, ty) {
     const keys = [], values = [], features = [];
@@ -490,7 +521,10 @@
       const m = _matchRoad(lines);
       if (!m) return;
       const k0 = keys.length;
-      extraTags.set(fi, [k0, valIndex(m.netSurface), k0 + 1, valIndex(m.netWidthM), k0 + 2, valIndex(netK)]);
+      const extra = [k0, valIndex(m.netSurface), k0 + 1, valIndex(m.netWidthM), k0 + 2, valIndex(netK)];
+      if (m.netSwL) extra.push(k0 + 3, valIndex(1));
+      if (m.netSwR) extra.push(k0 + 4, valIndex(1));
+      extraTags.set(fi, extra);
     });
     if (!extraTags.size) return null;
 
@@ -511,7 +545,7 @@
       }
       w.lenDelim(2, fw.result());
     }
-    for (const k of ['netSurface', 'netWidthM', 'netK']) w.lenDelim(3, _utf8enc.encode(k));
+    for (const k of ['netSurface', 'netWidthM', 'netK', 'netSwL', 'netSwR']) w.lenDelim(3, _utf8enc.encode(k));
     for (const v of newValues) w.lenDelim(4, _encodeValue(v));
     return w.result();
   }
