@@ -1,0 +1,18179 @@
+  'use strict';
+
+  // ── TIJDELIJK: tracing voor het "pagina wordt niet-responsief"-onderzoek ──
+  // Elke trace-regel krijgt een wandklok-timestamp + ms sinds paginastart en
+  // gaat naar de console én naar een buffer (ook in localStorage, zodat de
+  // trace van een vastgelopen/afgeschoten tab na herladen nog op te halen is).
+  //   _traceDump()      → kopieer trace van deze sessie naar het klembord
+  //   _traceDumpPrev()  → idem voor de vorige sessie (na een vastgelopen tab)
+  // Detecteert ook blokkades van de main thread (watchdog + long tasks).
+  // Verwijder dit blok weer zodra het onderzoek afgerond is.
+  (function _instrumentForTracing() {
+    const LS_KEY = 'dt_trace', LS_PREV = 'dt_trace_prev', MAX = 2000;
+    // Trace-regels ook naar de console? Uit: alleen buffer/localStorage (_traceDump()).
+    const TRACE_TO_CONSOLE = false;
+    const _buf = [];
+    let _lastLabel = '(start)';
+    let _lsPending = false;
+    try {
+      const prev = localStorage.getItem(LS_KEY);
+      if (prev) localStorage.setItem(LS_PREV, prev);
+      localStorage.removeItem(LS_KEY);
+    } catch (_) {}
+    const _ts = () => {
+      const d = new Date();
+      const p = (n, w = 2) => String(n).padStart(w, '0');
+      return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+    };
+    const _origLog = console.log.bind(console);
+    function _trace(msg) {
+      const line = `[trace ${_ts()} +${performance.now().toFixed(0)}ms] ${msg}`;
+      _buf.push(line);
+      if (_buf.length > MAX) _buf.shift();
+      if (TRACE_TO_CONSOLE) _origLog(line);
+      // localStorage gebundeld wegschrijven (niet per regel synchroon)
+      if (!_lsPending) {
+        _lsPending = true;
+        setTimeout(() => {
+          _lsPending = false;
+          try { localStorage.setItem(LS_KEY, _buf.join('\n')); } catch (_) {}
+        }, 250);
+      }
+    }
+    // Markeer een stap: onthoudt het label zodat een blokkade eraan gekoppeld kan worden.
+    window._trace = (label) => { _lastLabel = label; _trace(label); };
+    // Meet de duur van een synchrone functie-aanroep.
+    window._traceTime = (label, fn) => {
+      window._trace(`▶ ${label}`);
+      const t0 = performance.now();
+      try { return fn(); }
+      finally { _trace(`◀ ${label} (${(performance.now() - t0).toFixed(0)}ms)`); }
+    };
+    const _copy = (text) => {
+      try { navigator.clipboard.writeText(text).then(
+        () => _origLog(`[trace] ${text.split('\n').length} regels naar klembord gekopieerd`),
+        () => _origLog(text)); }
+      catch (_) { _origLog(text); }
+      return text.split('\n').length + ' regels';
+    };
+    window._traceDump = () => _copy(_buf.join('\n'));
+    window._traceDumpPrev = () => {
+      let t = null; try { t = localStorage.getItem(LS_PREV); } catch (_) {}
+      return t ? _copy(t) : 'geen vorige trace';
+    };
+
+    // Bestaande [perf]-regels ook in de trace opnemen.
+    console.log = function (...args) {
+      if (typeof args[0] === 'string' && args[0].startsWith('[perf]')) {
+        _trace(args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' '));
+        return;
+      }
+      return _origLog(...args);
+    };
+
+    window.addEventListener('error', e => _trace(`✗ error: ${e.message} @ ${e.filename}:${e.lineno}`));
+    window.addEventListener('unhandledrejection', e => _trace(`✗ unhandledrejection: ${e.reason?.stack || e.reason}`));
+    document.addEventListener('visibilitychange', () => _trace(`visibility: ${document.visibilityState}`));
+
+    // Watchdog: een timer die elke 100ms hoort te lopen; loopt hij veel later,
+    // dan was de main thread zo lang geblokkeerd.
+    let _wdLast = performance.now();
+    setInterval(() => {
+      const now = performance.now(), gap = now - _wdLast;
+      _wdLast = now;
+      if (gap > 500 && document.visibilityState === 'visible')
+        _trace(`⚠ BLOKKADE main thread ~${gap.toFixed(0)}ms (laatste stap: ${_lastLabel})`);
+    }, 100);
+
+    // Long tasks (>200ms) volgens de browser zelf.
+    try {
+      new PerformanceObserver(list => {
+        for (const e of list.getEntries()) {
+          if (e.duration < 200) continue;
+          const a = e.attribution?.[0];
+          _trace(`⚠ longtask ${e.duration.toFixed(0)}ms start=+${e.startTime.toFixed(0)}ms` +
+                 (a ? ` (${a.containerType || ''} ${a.containerSrc || a.containerName || ''})` : '') +
+                 ` (laatste stap: ${_lastLabel})`);
+        }
+      }).observe({ type: 'longtask', buffered: true });
+    } catch (_) {}
+
+    // Geheugengebruik elke 5s (alleen Chromium) + openstaande fetches.
+    const _inFlight = new Map(); // id -> { method, url, start }
+    setInterval(() => {
+      const m = performance.memory;
+      if (m) _trace(`mem heap=${(m.usedJSHeapSize / 1048576).toFixed(0)}MB / limiet ${(m.jsHeapSizeLimit / 1048576).toFixed(0)}MB`);
+      const now = performance.now();
+      for (const [id, info] of _inFlight) {
+        const elapsedS = (now - info.start) / 1000;
+        if (elapsedS > 3) _trace(`...#${id} nog bezig: ${info.method} ${info.url} (${elapsedS.toFixed(1)}s)`);
+      }
+    }, 5000);
+
+    // Fetch-tracing: start/einde/duur/grootte.
+    const _origFetch = window.fetch.bind(window);
+    let _traceSeq = 0;
+    window.fetch = function (input, init) {
+      const id = ++_traceSeq;
+      const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      const method = (init && init.method) || (input && input.method) || 'GET';
+      const start = performance.now();
+      _inFlight.set(id, { method, url, start });
+      _trace(`→#${id} ${method} ${url}`);
+      return _origFetch(input, init).then(
+        (resp) => {
+          _inFlight.delete(id);
+          const len = resp.headers.get('content-length');
+          _trace(`←#${id} ${resp.status} ${method} ${url} (${(performance.now() - start).toFixed(0)}ms` +
+                 (len ? `, ${(len / 1048576).toFixed(1)}MB` : '') + ')');
+          return resp;
+        },
+        (err) => {
+          _inFlight.delete(id);
+          _trace(`✗#${id} FOUT ${method} ${url} (${(performance.now() - start).toFixed(0)}ms): ${err}`);
+          throw err;
+        }
+      );
+    };
+    window._trace('pagina-script gestart');
+  })();
+
+  // ── Vertalingen ───────────────────────────────────────────────────────────
+  const TRANSLATIONS = {
+    NL: {
+      // Toolbar
+      homeTitle:'Terug naar overzicht',
+      fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
+      fillCbLabel:'CB', fillCbTitle:'Initiële vulling: Capaciteitsbezetting',
+      settingsTitle:'Instellingen', settingsFillLabel:'Initiële vulling', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
+      settingsBasemapLabel:'Achtergronden', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Zwart', settingsBasemapWhite:'Wit',
+      settingsTrafficAssetsLabel:'Verkeersobjecten',
+      spFillLl:'Little\'s Law', spFillLd:'Linkdichtheid', spFillCb:'Capaciteitsbezetting',
+      metricTitle:'Kleur-metriek',
+      timeScaleTitle:'Tijdschaal', timeScaleRangeTitle:'Tijdschaal aanpassen',
+      pauseTitle:'Pauzeer simulatie',
+      simClockTitle:'Sleep de wijzer om de tijd aan te passen',
+      simClockToggleTitle:'Klik om te wisselen tussen AM/PM',
+      simClockCycleTitle:'Klik om te wisselen tussen 24 uur / ochtendspits / restdag / avondspits',
+      simHourBackFullTitle:'Een uur terug',
+      simHourBackHalfTitle:'Een half uur terug',
+      simHourFwdHalfTitle:'Een half uur vooruit',
+      simHourFwdFullTitle:'Een uur vooruit',
+      nodeEditTitle:'Productie/attractie per knoop wijzigen',
+      linkEditTitle:'Capaciteit per wegvak wijzigen',
+      linkFlowEditTitle:'Flow per wegvak wijzigen',
+      addWegvakTitle:'Wegvak toevoegen (nog niet beschikbaar)',
+      addKnoopTitle:'Knoop toevoegen (nog niet beschikbaar)',
+      // Metriek-opties
+      metricFlow:'Intensiteit', metricFlowScaled:'Intensiteit (geschaald)',
+      metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
+      metricIC:'I/C', metricICScaled:'I/C (geschaald)',
+      metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricPriorityRoads:'Voorrangswegen', metricNone:'Geen', metricCompare:'Vergelijking tonen',
+      metricSafety:'Veiligheid',
+      metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
+      metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
+      metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
+      metricGroupSpeedFactors:'Snelheid',
+      metricSpeedCrossings:'Zebrapaden', metricSpeedCycleCrossings:'Fietsoversteek',
+      metricSpeedIntersections:'Kruispunten', metricSpeedYield:'Haaientanden/stopstrepen',
+      metricSpeedRefuge:'Vluchtheuvels (midden op de weg)',
+      metricSpeedFromRight:'Verkeer van rechts', metricSpeedLeftTurn:'Linksaf-hinder',
+      metricSpeedOncoming:'Tegenliggerhinder', metricSpeedElevation:'Hellingen',
+      metricSpeedPenaltyTotal:'Straf-seconden (totaal)',
+      // Laadscherm
+      loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
+      loaderZones:'Zones laden\u2026', loaderRoutes:'Routes laden\u2026', loaderMap:'Kaart laden\u2026',
+      // Gebiedskeuze
+      areaTitle:'Netwerk-visualisatie', areaSubtitle:'Kies een gebied om te laden:',
+      areaNotFound:'Geen gebieden gevonden. Start de server met --data <map>.',
+      areaConnError:'Verbinding met server mislukt.',
+      areaDelTitle: n => `Verwijder ${n}`,
+      areaDelConfirm: (n, m) => `Gebied \u201c${n}\u201d (${m}) definitief verwijderen?\n\nLet op: alle afgeleide sub-scenario's (de hele boom) worden ook verwijderd.`,
+      areaDelError: e => `Verwijderen mislukt: ${e}`,
+      newAreaBtn:'+ Nieuw gebied aanmaken',
+      // Nieuw-gebied scherm
+      newAreaH2:'Nieuw gebied', newAreaName:'Naam', newAreaNamePh:'bijv. Merwehaven',
+      newAreaMode:'Transportmodus', newAreaCar:'Auto (CAR)', newAreaBike:'Fiets (BIKE)',
+      newAreaPed:'Voetganger (PEDESTRIAN)',
+      newAreaBboxHint:'Teken een rechthoek op de kaart om de bbox te bepalen. Klik voor de eerste hoek, klik nogmaals voor de tweede.',
+      newAreaNoBbox:'Geen bbox getekend', newAreaClearBbox:'Wis bbox',
+      newAreaHome:'\u2302 Overzicht', newAreaCancel:'Annuleren', newAreaSubmit:'Aanmaken',
+      newAreaStatusStart:'Pipeline starten\u2026', newAreaStatusConn:'Verbinding mislukt.',
+      newAreaStatusRunning:'Pipeline actief\u2026', newAreaStatusDone:'Klaar! Gebied is beschikbaar.',
+      newAreaStatusBack:'Terug naar overzicht', newAreaStatusError: c => `Fout (exitcode ${c}).`,
+      newAreaAlertName:'Voer een naam in.', newAreaAlertBbox:'Teken eerst een bbox op de kaart.',
+      newAreaAlertMode:'Selecteer minstens één transportmodus.',
+      // Link-dialoog
+      linkDialogDefault:'Wegvak', linkDialogName: n => `Wegvak: ${n}`, linkDialogId: id => `Link ${id}`,
+      linkDialogCap:'Capaciteit', linkDialogCapUnit:'vtg/u',
+      linkDialogSpeed:'Snelheid instellen', linkDialogSpeedHint:'past capaciteit aan',
+      // Link flow-dialoog
+      linkFlowDialogLabel:'Intensiteit (24u)', linkFlowDialogUnit:'pae/dag',
+      linkFlowDialogHint:'+500 = delta\u00a0|\u00a03000 = absoluut (\u22650)',
+      linkFlowDialogPh:'+500 of 3000',
+      linkFlowCurrentLabel: v => `Huidige waarde: ${v}\u00a0pae/dag`,
+      changeFlowLabel: v => `flow: ${v} pae/dag`,
+      // Nieuw wegvak
+      linkAddTitle:'Nieuw wegvak intekenen',
+      linkAddHint:'Klik om een punt te plaatsen \u00b7 dubbelklik of Afronden om te voltooien',
+      linkAddFinishBtn:'Lijn afronden',
+      linkAddClearBtn:'Wis lijn',
+      linkAddDialogTitle:'Nieuw wegvak',
+      linkAddLengthLabel: m => `Lengte: ~${m}\u00a0m`,
+      linkAddCapLabel:'Capaciteit',
+      linkAddSpeedLabel:'Snelheid',
+      linkAddLanesLabel:'Rijstroken',
+      linkAddDialogOkBtn:'Toevoegen',
+      linkAddChangeLabel: m => `+ Nieuw wegvak (~${m}\u00a0m)`,
+      changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pae/u \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0rijstr.`,
+      // Node-dialoog
+      nodeDialogDefault:'Knoop',
+      nodeDialogProd:'Productie', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut (\u22650)',
+      nodeDialogProdPh:'+300 of 1200',
+      nodeDialogAttr:'Attractie', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut (\u22650)',
+      nodeDialogAttrPh:'+300 of 800',
+      // Gedeeld dialoog
+      dialogCancel:'Annuleren', dialogOk:'OK',
+      // Wijzigingenlijst
+      changesTitle:'Wijzigingen', scenarioNamePh:'Scenario-naam', applyBtn:'\u25b6 Doorvoeren',
+      applyStart:'Adjust starten\u2026', applyRunning:'Bezig\u2026', applyDone:'Klaar!',
+      estimatingRoutes: 'Routes schatten via Dijkstra\u2026',
+      applyError: c => `Onbekende fout (returncode: ${c})`, applyFetchError: e => `Fout: ${e}`,
+      changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
+      changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeItemDel:'Verwijder',
+      noChanges:'Geen wijzigingen', viewChangesBtnTitle:'Wijzigingen bekijken',
+      changesPendingSection:'Openstaand',
+      changesHistLinkLabel: id => `Wegvak ${id}`, changesHistNodeLabel: id => `Knoop ${id}`,
+      changesHistZoneLabel: id => `Zone ${id}`,
+      // Polygon-selectie
+      nodeSelectTitle:'Selectiemodus',
+      nodeSelectClick:'Klik op een knoop',
+      nodeSelectPolygon:'Polygon tekenen',
+      polygonHint:"Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.",
+      polygonFinishBtn:'\u2713 Polygon afsluiten',
+      polygonClearBtn:'\u2715 Wis polygon',
+      polygonDialogTitle:'Polygon aanpassing',
+      polygonNodeInfoLabel: n => n === 1 ? `${n} knoop geselecteerd` : `${n} knopen geselecteerd`,
+      polygonDialogProd:'Productie (totaal)',
+      polygonDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut',
+      polygonDialogAttr:'Attractie (totaal)',
+      polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut',
+      polygonPerNodeLabel: v => `\u2192 per knoop: ${v}`,
+      polygonNoNodes:'Geen knopen gevonden in de polygon.',
+      // Link polygon-selectie
+      linkSelectTitle:'Selectiemodus',
+      linkSelectClick:'Klik op een wegvak',
+      linkSelectPolygon:'Polygon tekenen',
+      linkPolygonHint:"Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.",
+      linkPolygonFinishBtn:'\u2713 Polygon afsluiten',
+      linkPolygonClearBtn:'\u2715 Wis polygon',
+      linkPolygonDialogTitle:'Polygon capaciteitswijziging',
+      linkPolygonLinkInfoLabel: n => n === 1 ? `${n} wegvak geselecteerd` : `${n} wegvakken geselecteerd`,
+      linkPolygonDialogCap:'Capaciteit',
+      linkPolygonDialogCapHint:'800 = absoluut\u00a0|\u00a080% = factor',
+      linkPolygonDialogCapUnit:'vtg/u',
+      linkPolygonPerLinkLabel: v => `\u2192 gemiddeld na wijziging: ${v}\u00a0vtg/u`,
+      linkPolygonNoLinks:'Geen wegvakken gevonden in de polygon.',
+      linkCloseBtnTitle:'Weg afsluiten (capaciteit = 0)',
+      changeClosedLabel:'afgesloten (cap = 0)',
+      changeOdTripsLabel: t => `OD: ${t} rit/dag`,
+      // OD-paar aanpassen
+      odEditBtnTitle:'OD-paar aanpassen',
+      odEditBtnLabel:'OD-paar aanpassen',
+      odEditTitle:'OD-paar aanpassen',
+      odEditFromLabel:'Herkomst',
+      odEditToLabel:'Bestemming',
+      odEditWaiting:'Klik een zone…',
+      odEditTripsSection:'Verplaatsingen',
+      odEditTripsLabel:'Ritten/dag',
+      odEditMotifSection:'Motiefverdeling (%)',
+      odEditSaveBtn:'+ Toevoegen aan wijzigingen',
+      odEditFoundRoutes: n => `${n} route(s) gevonden`,
+      odEditCurrentTrips:'Huidig:',
+      odEditNoRoutes:'Geen routes gevonden voor dit OD-paar.',
+      // Legenda
+      legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad', legendIC:'I/C',
+      legendNoiseLden:'Geluid Lden', legendNoiseLnight:'Geluid Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
+      legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
+      legendSpeedCrossings:'Zebrapaden', legendSpeedCycleCrossings:'Fietsoversteek',
+      legendSpeedIntersections:'Kruispunten', legendSpeedYield:'Haaientanden/stopstrepen',
+      legendSpeedRefuge:'Vluchtheuvels',
+      legendPriorityRoads:'Voorrangswegen',
+      legendSpeedFromRight:'Verkeer van rechts', legendSpeedLeftTurn:'Linksaf-hinder',
+      legendSpeedOncoming:'Tegenliggerhinder', legendSpeedElevation:'Hellingen',
+      legendSpeedPenaltyTotal:'Straf-seconden',
+      legendUnit:'vtg/u',
+      carCountFmt: n => `~${n.toLocaleString('nl-NL')} voertuigen op de wegen`,
+      // Flow-scaler panel
+      fspBtnTitle:'Flow-scaler instellen',
+      fspTitle:'Inschatting',
+      fspTitleValue:'Volumes',
+      fspDateLabel:'Datum',
+      fspHourLabel:'Uur',
+      fspTempLabel:'Temperatuur',
+      fspTempHigh:'Hoog', fspTempMedium:'Medium', fspTempLow:'Laag',
+      fspWeatherLabel:'Weer',
+      fspWeatherSunny:'Zonnig', fspWeatherCloudy:'Bewolkt',
+      fspWeatherDry:'Droog', fspWeatherRainy:'Regenachtig',
+      fspPurposeLabel:'Motief',
+      fspPurposeAll:'Alle', fspPurposeWork:'Werk', fspPurposeEducation:'Onderwijs',
+      fspPurposeShopping:'Winkelen', fspPurposeRecreational:'Recreatie', fspPurposeUnknown:'Overig',
+      fspRegioLabel:'Regio (vakantie)',
+      fspRegioMidden:'Midden', fspRegioNoord:'Noord', fspRegioZuid:'Zuid',
+      fspApplyBtn:'Toepassen', fspResetBtn:'Wis',
+      fspLoading:'Laden\u2026', fspDone:'Klaar',
+      fspError: e => `Fout: ${e}`,
+      // Tooltip
+      tooltipSegment: id => `Segment #${id}`,
+      tooltipDaypart:'Dagdeel',
+      tooltipFlow:'Aantal voertuigen', 
+      tooltipFlowUnit:'vtg/u',
+      tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
+      tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte', tooltipWidth:'Breedte',
+      tooltipSpeedDataUnavailable:'Nog niet beschikbaar in deze brondata', tooltipSpeedFactorPresent:'Ja', tooltipSpeedFactorAbsent:'Nee',
+      tooltipZoneClass:'Zoneklasse',
+      tooltipZoneClassStudy:'Studiegebied', tooltipZoneClassInfluence:'Invloedszone',
+      tooltipZoneClassBoundary:'Grenszone', tooltipZoneClassCbs:'CBS-zone',
+      tooltipZoneProd:'Productie', tooltipZoneProdUnit:'vtg/dag',
+      tooltipZoneAttr:'Attractie',  tooltipZoneAttrUnit:'vtg/dag',
+      tooltipZoneRoute:'Rituitwisseling', tooltipZoneRouteUnit:'vtg/u',
+      tooltipZoneFloorTitle:'Vloeroppervlak per functie',
+      tooltipZoneFloorResidential:'Wonen', tooltipZoneFloorOffice:'Kantoor',
+      tooltipZoneFloorIndustrial:'Industrie', tooltipZoneFloorCommercial:'Winkel/horeca',
+      tooltipZoneFloorEducation:'Onderwijs', tooltipZoneFloorRecreation:'Recreatie',
+      tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Overig',
+      tooltipZoneFloorUnit:'m²',
+      dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag',
+      // Motiefverdeling (purposeChart)
+      purposeChartTitle:'Motiefverdeling',
+      purposeChartEstimated:'(geschat)', purposeChartNoData:'Onvoldoende data',
+      motifLabel_house:'Thuis', motifLabel_work:'Werk', motifLabel_shopping:'Winkelen',
+      motifLabel_school:'Onderwijs', motifLabel_education:'Onderwijs', motifLabel_recreational:'Recreatie',
+      motifLabel_hospital:'Ziekenhuis', motifLabel_parking:'Parkeren',
+      motifLabel_other:'Overig', motifLabel_unclassified:'Niet geclassificeerd',
+      motifLabel_unknown:'Onbekend',
+      // Netwerktitel
+      networkTitle: n => `${n}`, pageTitle: n => `${n}`,
+      // ScenarioVergelijker
+      splitViewTitle:'ScenarioVergelijker: berekend ↔ bron',
+      badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Herkomst/bestemming per wegvak',
+      counterBtnTitle:'Voertuigteller plaatsen/verwijderen',
+      counterPanelTitle:'Voertuigtellers',
+      counterHint:'Klik op een wegvak om een teller te plaatsen.',
+      // What-if wegafsluiting
+      whatifRcBtnTitle:'What-if wegafsluiting',
+      whatifRcTitle:'What-if wegafsluiting',
+      whatifRcNamePh:'Scenario-naam',
+      whatifRcRunBtn:'\uD83D\uDEAB Uitvoeren',
+      whatifRcClearBtn:'\u2715 Wis selectie',
+      whatifRcDirectionLabel:'Richting',
+      whatifRcDirBoth:'Beide richtingen',
+      whatifRcDirSame:'Zelfde richting',
+      whatifRcDirOpposite:'Tegenrichting',
+      whatifRcNoLinks:'Geen wegvakken geselecteerd.',
+      whatifRcNoCsv:'NVP-routedata ontbreekt. Bereid het gebied opnieuw voor met nvp_table + nvp_year.',
+      whatifRcStart:'What-if starten\u2026',
+      whatifRcRunning:'Bezig\u2026',
+      whatifRcDone:'Klaar!',
+      whatifRcError: c => `Fout (returncode: ${c})`,
+      whatifRcFetchError: e => `Fout: ${e}`,
+      whatifRcLinkLabel: id => `Wegvak ${id}`,
+      // Gebouwen motief-dropdown
+      buildingPurposeAll:'- gebouwen: alles -', buildingPurposeAllScaled:'- gebouwen: alles (geschaald) -',
+      buildingPurposeWerk:'- gebouwen: werk -', buildingPurposeWerkScaled:'- gebouwen: werk (geschaald) -',
+      buildingPurposeOnderwijs:'- gebouwen: onderwijs -', buildingPurposeOnderwijsScaled:'- gebouwen: onderwijs (geschaald) -',
+      buildingPurposeWinkelen:'- gebouwen: winkelen -', buildingPurposeWinkelenScaled:'- gebouwen: winkelen (geschaald) -',
+      buildingPurposeRecreat:'- gebouwen: recreatie -', buildingPurposeRecreatiScaled:'- gebouwen: recreatie (geschaald) -',
+      buildingPurposeHidden:'- gebouwen: verborgen -',
+      buildingPurposeOff:'- gebouwen: uit -',
+      // Gebouwen tooltip
+      tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
+      tooltipBuildingHeight:'Hoogte', tooltipBuildingCap:'Capaciteit',
+      tooltipBuildingDir:'Richting', tooltipBuildingAttraction:'Attractie',
+      tooltipBuildingProduction:'Productie', tooltipBuildingNeutral:'Neutraal',
+      tooltipPurposeAll:'alles', tooltipPurposeWerk:'werk',
+      tooltipPurposeOnderwijs:'onderwijs', tooltipPurposeWinkelen:'winkelen', tooltipPurposeRecreat:'recreatie',
+      buildingTypeResidential:'Wonen', buildingTypeOffice:'Kantoor',
+      buildingTypeCommercial:'Winkel / horeca', buildingTypeEducation:'Onderwijs',
+      buildingTypeIndustrial:'Industrie', buildingTypeParking:'Parkeren',
+      buildingTypeTransport:'OV / station', buildingTypeRecreation:'Recreatie',
+      buildingTypeOther:'Overig',
+      // Gebouw P/A-berekening (tooltip-breakdown)
+      calcTitle:'Berekening P/A', calcFloorArea:'Vloeroppervlak', calcZoneBase:'Zone-basis',
+      calcShare:'Aandeel pand', calcInZone:'(zone)', calcInBuilding:'(pand)', calcResidents:'Inwoners zone', calcHouseholds:'Huishoudens zone',
+      calcNorm:'Normalisatie (P95)', calcScore:'Intensiteit', calcNotRelevant:'Niet relevant voor dit motief',
+      capBaseHouseholds:'Huishoudens', capBaseResidents:'Inwoners', capBaseJobsOffice:'Arbeidsplaatsen kantoor',
+      capBaseJobsShop:'Arbeidsplaatsen winkel', capBaseJobsIndustry:'Arbeidsplaatsen industrie',
+      capBaseSeats:'Leerlingplaatsen', capBaseCars:'Auto\u2019s', capBaseJobsRec:'Arbeidsplaatsen recreatie',
+      capBaseJobsOther:'Arbeidsplaatsen overig', capBaseJobs:'Arbeidsplaatsen', capBaseWorkers:'Werkende inwoners', capBaseChildren:'Kinderen (<18\u202fjr)',
+      // Taal-dropdown
+      langSelectTitle:'Taal kiezen',
+      numberLocale:'nl',
+    },
+    EN: {
+      homeTitle:'Back to overview',
+      fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
+      fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
+      settingsTitle:'Settings', settingsFillLabel:'Initial fill', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
+      settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'Black', settingsBasemapWhite:'White',
+      settingsTrafficAssetsLabel:'Traffic assets',
+      spFillLl:'Little\'s Law', spFillLd:'Link density', spFillCb:'Capacity occupancy',
+      metricTitle:'Color metric',
+      timeScaleTitle:'Time scale', timeScaleRangeTitle:'Adjust time scale',
+      pauseTitle:'Pause simulation',
+      simClockTitle:'Drag the hand to change the time',
+      simClockToggleTitle:'Click to toggle AM/PM',
+      simClockCycleTitle:'Click to cycle through 24 hours / morning peak / off-peak / evening peak',
+      simHourBackFullTitle:'Back one hour',
+      simHourBackHalfTitle:'Back half an hour',
+      simHourFwdHalfTitle:'Forward half an hour',
+      simHourFwdFullTitle:'Forward one hour',
+      nodeEditTitle:'Edit production/attraction per node',
+      linkEditTitle:'Edit capacity per road link',
+      linkFlowEditTitle:'Edit flow per road link',
+      addWegvakTitle:'Add road link (not yet available)',
+      addKnoopTitle:'Add node (not yet available)',
+      metricFlow:'Intensity', metricFlowScaled:'Intensity (scaled)',
+      metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
+      metricIC:'V/C', metricICScaled:'V/C (scaled)',
+      metricSpeed:'Speed', metricCapacity:'Capacity', metricPriorityRoads:'Priority roads', metricNone:'None', metricCompare:'Show comparison',
+      metricSafety:'Safety',
+      metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
+      metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
+      metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
+      metricGroupSpeedFactors:'Speed',
+      metricSpeedCrossings:'Pedestrian crossings', metricSpeedCycleCrossings:'Cycle crossing',
+      metricSpeedSignals:'Traffic signals', metricSpeedYield:'Give-way/stop markings',
+      metricSpeedRefuge:'Traffic islands (mid-road)',
+      metricSpeedFromRight:'Traffic from the right', metricSpeedLeftTurn:'Left-turn hindrance',
+      metricSpeedOncoming:'Oncoming-traffic hindrance', metricSpeedElevation:'Slopes',
+      metricSpeedPenaltyTotal:'Penalty seconds (total)',
+      loaderInit:'Loading GeoJSON\u2026', loaderNetwork:'Loading network data\u2026',
+      loaderZones:'Loading zones\u2026', loaderRoutes:'Loading routes\u2026', loaderMap:'Loading map\u2026',
+      areaTitle:'Traffic network visualisation', areaSubtitle:'Select an area to load:',
+      areaNotFound:'No areas found. Start the server with --data <dir>.',
+      areaConnError:'Connection to server failed.',
+      areaDelTitle: n => `Delete ${n}`,
+      areaDelConfirm: (n, m) => `Permanently delete area \u201c${n}\u201d (${m})?\n\nNote: all derived sub-scenarios (the entire tree) will also be deleted.`,
+      areaDelError: e => `Deletion failed: ${e}`,
+      newAreaBtn:'+ Create new area',
+      newAreaH2:'New area', newAreaName:'Name', newAreaNamePh:'e.g. Merwehaven',
+      newAreaMode:'Transport mode', newAreaCar:'Car (CAR)', newAreaBike:'Bicycle (BIKE)',
+      newAreaPed:'Pedestrian (PEDESTRIAN)',
+      newAreaBboxHint:'Draw a rectangle on the map to set the bounding box. Click for the first corner, click again for the second.',
+      newAreaNoBbox:'No bounding box drawn', newAreaClearBbox:'Clear bbox',
+      newAreaHome:'\u2302 Overview', newAreaCancel:'Cancel', newAreaSubmit:'Create',
+      newAreaStatusStart:'Starting pipeline\u2026', newAreaStatusConn:'Connection failed.',
+      newAreaStatusRunning:'Pipeline running\u2026', newAreaStatusDone:'Done! Area is available.',
+      newAreaStatusBack:'Back to overview', newAreaStatusError: c => `Error (exit code ${c}).`,
+      newAreaAlertName:'Please enter a name.', newAreaAlertBbox:'Please draw a bounding box on the map first.',
+      newAreaAlertMode:'Select at least one transport mode.',
+      linkDialogDefault:'Road link', linkDialogName: n => `Road link: ${n}`, linkDialogId: id => `Link ${id}`,
+      linkDialogCap:'Capacity', linkDialogCapUnit:'veh/h',
+      linkDialogSpeed:'Set speed', linkDialogSpeedHint:'adjusts capacity',
+      // Link flow dialog
+      linkFlowDialogLabel:'Intensity (24h)', linkFlowDialogUnit:'pcu/day',
+      linkFlowDialogHint:'+500 = delta\u00a0|\u00a03000 = absolute (\u22650)',
+      linkFlowDialogPh:'+500 or 3000',
+      linkFlowCurrentLabel: v => `Current value: ${v}\u00a0pcu/day`,
+      changeFlowLabel: v => `flow: ${v} pcu/day`,
+      // New link
+      linkAddTitle:'Draw new road link',
+      linkAddHint:'Click to place a point \u00b7 double-click or Finish to complete',
+      linkAddFinishBtn:'Finish line',
+      linkAddClearBtn:'Clear line',
+      linkAddDialogTitle:'New road link',
+      linkAddLengthLabel: m => `Length: ~${m}\u00a0m`,
+      linkAddCapLabel:'Capacity',
+      linkAddSpeedLabel:'Speed',
+      linkAddLanesLabel:'Lanes',
+      linkAddDialogOkBtn:'Add',
+      linkAddChangeLabel: m => `+ New road link (~${m}\u00a0m)`,
+      changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pcu/h \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0lane${lanes !== 1 ? 's' : ''}`,
+      nodeDialogDefault:'Node',
+      nodeDialogProd:'Production', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute (\u22650)',
+      nodeDialogProdPh:'+300 or 1200',
+      nodeDialogAttr:'Attraction', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute (\u22650)',
+      nodeDialogAttrPh:'+300 or 800',
+      dialogCancel:'Cancel', dialogOk:'OK',
+      changesTitle:'Changes', scenarioNamePh:'Scenario name', applyBtn:'\u25b6 Apply',
+      applyStart:'Starting adjust\u2026', applyRunning:'Processing\u2026', applyDone:'Done!',
+      estimatingRoutes: 'Estimating routes via Dijkstra\u2026',
+      applyError: c => `Unknown error (return code: ${c})`, applyFetchError: e => `Error: ${e}`,
+      changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `speed: ${v} km/h`,
+      changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeItemDel:'Delete',
+      noChanges:'No changes', viewChangesBtnTitle:'View changes',
+      changesPendingSection:'Pending',
+      changesHistLinkLabel: id => `Link ${id}`, changesHistNodeLabel: id => `Node ${id}`,
+      changesHistZoneLabel: id => `Zone ${id}`,
+      // Polygon selection
+      nodeSelectTitle:'Selection mode',
+      nodeSelectClick:'Click on a node',
+      nodeSelectPolygon:'Draw a polygon',
+      polygonHint:"Click to place vertices. Use 'Finish' when the polygon is complete.",
+      polygonFinishBtn:'\u2713 Finish polygon',
+      polygonClearBtn:'\u2715 Clear polygon',
+      polygonDialogTitle:'Polygon adjustment',
+      polygonNodeInfoLabel: n => n === 1 ? `${n} node selected` : `${n} nodes selected`,
+      polygonDialogProd:'Production (total)',
+      polygonDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute',
+      polygonDialogAttr:'Attraction (total)',
+      polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute',
+      polygonPerNodeLabel: v => `\u2192 per node: ${v}`,
+      polygonNoNodes:'No nodes found within the polygon.',
+      // Link polygon selection
+      linkSelectTitle:'Selection mode',
+      linkSelectClick:'Click on a road link',
+      linkSelectPolygon:'Draw a polygon',
+      linkPolygonHint:"Click to place vertices. Use 'Finish' when the polygon is complete.",
+      linkPolygonFinishBtn:'\u2713 Finish polygon',
+      linkPolygonClearBtn:'\u2715 Clear polygon',
+      linkPolygonDialogTitle:'Polygon capacity change',
+      linkPolygonLinkInfoLabel: n => n === 1 ? `${n} link selected` : `${n} links selected`,
+      linkPolygonDialogCap:'Capacity',
+      linkPolygonDialogCapHint:'800 = absolute\u00a0|\u00a080% = factor',
+      linkPolygonDialogCapUnit:'veh/h',
+      linkPolygonPerLinkLabel: v => `\u2192 average after change: ${v}\u00a0veh/h`,
+      linkPolygonNoLinks:'No road links found within the polygon.',
+      linkCloseBtnTitle:'Close road (capacity = 0)',
+      changeClosedLabel:'closed (cap = 0)',
+      changeOdTripsLabel: t => `OD: ${t} trips/day`,
+      // OD-pair adjustment
+      odEditBtnTitle:'Adjust OD pair',
+      odEditBtnLabel:'Adjust OD pair',
+      odEditTitle:'Adjust OD pair',
+      odEditFromLabel:'Origin',
+      odEditToLabel:'Destination',
+      odEditWaiting:'Click a zone…',
+      odEditTripsSection:'Trips',
+      odEditTripsLabel:'Trips/day',
+      odEditMotifSection:'Motive split (%)',
+      odEditSaveBtn:'+ Add to changes',
+      odEditFoundRoutes: n => `${n} route(s) found`,
+      odEditCurrentTrips:'Current:',
+      odEditNoRoutes:'No routes found for this OD pair.',
+      legendFlow:'Intensity', legendOccupancy:'Occupancy', legendIC:'V/C',
+      legendNoiseLden:'Noise Lden', legendNoiseLnight:'Noise Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
+      legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
+      legendSpeedCrossings:'Pedestrian crossings', legendSpeedCycleCrossings:'Cycle crossing',
+      legendSpeedIntersections:'Intersections', legendSpeedYield:'Give-way/stop markings',
+      legendSpeedRefuge:'Traffic islands',
+      legendPriorityRoads:'Priority roads',
+      legendSpeedFromRight:'Traffic from the right', legendSpeedLeftTurn:'Left-turn hindrance',
+      legendSpeedOncoming:'Oncoming-traffic hindrance', legendSpeedElevation:'Slope/delay',
+      legendSpeedPenaltyTotal:'Penalty seconds',
+      legendUnit:'veh/h',
+      carCountFmt: n => `~${n.toLocaleString('en-GB')} vehicles on the road`,
+      // Flow-scaler panel
+      fspBtnTitle:'Configure flow scaler',
+      fspTitle:'Flow scaler',
+      fspDateLabel:'Date',
+      fspHourLabel:'Hour',
+      fspTempLabel:'Temperature',
+      fspTempHigh:'High', fspTempMedium:'Medium', fspTempLow:'Low',
+      fspWeatherLabel:'Weather',
+      fspWeatherSunny:'Sunny', fspWeatherCloudy:'Cloudy',
+      fspWeatherDry:'Dry', fspWeatherRainy:'Rainy',
+      fspPurposeLabel:'Trip purpose',
+      fspPurposeAll:'All', fspPurposeWork:'Work', fspPurposeEducation:'Education',
+      fspPurposeShopping:'Shopping', fspPurposeRecreational:'Recreational', fspPurposeUnknown:'Other',
+      fspRegioLabel:'Region (holiday)',
+      fspRegioMidden:'Central', fspRegioNoord:'North', fspRegioZuid:'South',
+      fspApplyBtn:'Apply', fspResetBtn:'Reset',
+      fspLoading:'Loading\u2026', fspDone:'Done',
+      fspError: e => `Error: ${e}`,
+      tooltipSegment: id => `Segment #${id}`,
+      tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
+      tooltipFlowUnit:'veh/h',
+      tooltipSpeed:'Speed', tooltipLanes:'Lanes',
+      tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length', tooltipWidth:'Width',
+      tooltipSpeedDataUnavailable:'Not yet available in this source data', tooltipSpeedFactorPresent:'Yes', tooltipSpeedFactorAbsent:'No',
+      tooltipZoneClass:'Zone class',
+      tooltipZoneClassStudy:'Study area', tooltipZoneClassInfluence:'Influence zone',
+      tooltipZoneClassBoundary:'Boundary zone', tooltipZoneClassCbs:'CBS zone',
+      tooltipZoneProd:'Production', tooltipZoneProdUnit:'veh/day',
+      tooltipZoneAttr:'Attraction',  tooltipZoneAttrUnit:'veh/day',
+      tooltipZoneRoute:'Trip exchange', tooltipZoneRouteUnit:'veh/h',
+      tooltipZoneFloorTitle:'Floor area by function',
+      tooltipZoneFloorResidential:'Residential', tooltipZoneFloorOffice:'Office',
+      tooltipZoneFloorIndustrial:'Industrial', tooltipZoneFloorCommercial:'Retail/hospitality',
+      tooltipZoneFloorEducation:'Education', tooltipZoneFloorRecreation:'Recreation',
+      tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Other',
+      tooltipZoneFloorUnit:'m²',
+      dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak',
+      // Purpose chart
+      purposeChartTitle:'Trip purposes',
+      purposeChartEstimated:'(estimated)', purposeChartNoData:'Insufficient data',
+      motifLabel_house:'Home', motifLabel_work:'Work', motifLabel_shopping:'Shopping',
+      motifLabel_school:'Education', motifLabel_education:'Education', motifLabel_recreational:'Recreation',
+      motifLabel_hospital:'Hospital', motifLabel_parking:'Parking',
+      motifLabel_other:'Other', motifLabel_unclassified:'Unclassified',
+      motifLabel_unknown:'Unknown',
+      networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
+      // Scenario comparator
+      splitViewTitle:'Scenario comparator: calculated ↔ source',
+      badgeLeft:'Calculated scenario', badgeRight:'Source scenario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Origin/destination per road link',
+      counterBtnTitle:'Place/remove vehicle counter',
+      counterPanelTitle:'Vehicle counters',
+      counterHint:'Click a road link to place a counter.',
+      // What-if road closure
+      whatifRcBtnTitle:'What-if road closure',
+      whatifRcTitle:'What-if road closure',
+      whatifRcNamePh:'Scenario name',
+      whatifRcRunBtn:'\uD83D\uDEAB Run',
+      whatifRcClearBtn:'\u2715 Clear selection',
+      whatifRcDirectionLabel:'Direction',
+      whatifRcDirBoth:'Both directions',
+      whatifRcDirSame:'Same direction',
+      whatifRcDirOpposite:'Opposite direction',
+      whatifRcNoLinks:'No road links selected.',
+      whatifRcNoCsv:'NVP route data missing. Re-prepare this area with nvp_table + nvp_year.',
+      whatifRcStart:'Starting what-if\u2026',
+      whatifRcRunning:'Processing\u2026',
+      whatifRcDone:'Done!',
+      whatifRcError: c => `Error (return code: ${c})`,
+      whatifRcFetchError: e => `Error: ${e}`,
+      whatifRcLinkLabel: id => `Link ${id}`,
+      // Building purpose dropdown
+      buildingPurposeAll:'- buildings: all -', buildingPurposeAllScaled:'- buildings: all (scaled) -',
+      buildingPurposeWerk:'- buildings: work -', buildingPurposeWerkScaled:'- buildings: work (scaled) -',
+      buildingPurposeOnderwijs:'- buildings: education -', buildingPurposeOnderwijsScaled:'- buildings: education (scaled) -',
+      buildingPurposeWinkelen:'- buildings: shopping -', buildingPurposeWinkelenScaled:'- buildings: shopping (scaled) -',
+      buildingPurposeRecreat:'- buildings: recreation -', buildingPurposeRecreatiScaled:'- buildings: recreation (scaled) -',
+      buildingPurposeHidden:'- buildings: hidden -',
+      buildingPurposeOff:'- buildings: off -',
+      // Building tooltip
+      tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
+      tooltipBuildingHeight:'Height', tooltipBuildingCap:'Capacity',
+      tooltipBuildingDir:'Direction', tooltipBuildingAttraction:'Attraction',
+      tooltipBuildingProduction:'Production', tooltipBuildingNeutral:'Neutral',
+      tooltipPurposeAll:'all', tooltipPurposeWerk:'work',
+      tooltipPurposeOnderwijs:'education', tooltipPurposeWinkelen:'shopping', tooltipPurposeRecreat:'recreation',
+      buildingTypeResidential:'Residential', buildingTypeOffice:'Office',
+      buildingTypeCommercial:'Retail / food', buildingTypeEducation:'Education',
+      buildingTypeIndustrial:'Industrial', buildingTypeParking:'Parking',
+      buildingTypeTransport:'Transit / station', buildingTypeRecreation:'Recreation',
+      buildingTypeOther:'Other',
+      // Building P/A calculation (tooltip breakdown)
+      calcTitle:'P/A calculation', calcFloorArea:'Floor area', calcZoneBase:'Zone base',
+      calcShare:'Building share', calcInZone:'(zone)', calcInBuilding:'(building)', calcResidents:'Zone residents', calcHouseholds:'Zone households',
+      calcNorm:'Normalisation (P95)', calcScore:'Intensity', calcNotRelevant:'Not relevant for this purpose',
+      capBaseHouseholds:'Households', capBaseResidents:'Residents', capBaseJobsOffice:'Office jobs',
+      capBaseJobsShop:'Retail jobs', capBaseJobsIndustry:'Industry jobs',
+      capBaseSeats:'Student places', capBaseCars:'Cars', capBaseJobsRec:'Recreation jobs',
+      capBaseJobsOther:'Other jobs', capBaseJobs:'Jobs', capBaseWorkers:'Working residents', capBaseChildren:'Children (<18\u202fyr)',
+      // Language dropdown
+      langSelectTitle:'Select language',
+      numberLocale:'en-GB',
+    },
+    FI: {
+      homeTitle:'Takaisin yleiskatsaukseen',
+      fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
+      fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
+      settingsTitle:'Asetukset', settingsFillLabel:'Alkutäyttö', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
+      settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Musta', settingsBasemapWhite:'Valkoinen',
+      settingsTrafficAssetsLabel:'Liikenneobjektit',
+      spFillLl:'Littlen laki', spFillLd:'Linkkitiheys', spFillCb:'Kapasiteetin käyttöaste',
+      metricTitle:'V\xe4rimitta',
+      timeScaleTitle:'Aikakerroin', timeScaleRangeTitle:'Muuta aikakerrointa',
+      pauseTitle:'Pys\xe4yt\xe4 simulaatio',
+      simClockTitle:'Ved\u00e4 viisaria aikaa muuttaaksesi',
+      simClockToggleTitle:'Vaihda AM/PM napauttamalla',
+      simClockCycleTitle:'Napauta vaihtaaksesi 24 tuntia / aamuruuhka / muu aika / iltaruuhka',
+      simHourBackFullTitle:'Tunti taaksepäin',
+      simHourBackHalfTitle:'Puoli tuntia taaksepäin',
+      simHourFwdHalfTitle:'Puoli tuntia eteenpäin',
+      simHourFwdFullTitle:'Tunti eteenpäin',
+      nodeEditTitle:'Muokkaa solmupisteen tuotantoa/houkuttelevuutta',
+      linkEditTitle:'Muokkaa tiejakson kapasiteettia',
+      addWegvakTitle:'Lis\xe4\xe4 tiejakso (ei viel\xe4 saatavilla)',
+      addKnoopTitle:'Lis\xe4\xe4 solmupiste (ei viel\xe4 saatavilla)',
+      metricFlow:'Intensiteetti', metricFlowScaled:'Intensiteetti (skaalattu)',
+      metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
+      metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
+      metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricPriorityRoads:'Etuoikeutetut tiet', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
+      metricSafety:'Turvallisuus',
+      metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
+      metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
+      metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
+      metricGroupSpeedFactors:'Nopeus',
+      metricSpeedCrossings:'Suojatiet', metricSpeedCycleCrossings:'Py\xf6r\xe4ylitys',
+      metricSpeedIntersections:'Risteykset', metricSpeedYield:'V\xe4istymis-/pys\xe4hdysmerkinn\xe4t',
+      metricSpeedRefuge:'Keskisaarekkeet (kesken tiet\xe4)',
+      metricSpeedFromRight:'Oikealta tuleva liikenne', metricSpeedLeftTurn:'Vasemmalle k\xe4\xe4ntymisen hidaste',
+      metricSpeedOncoming:'Vastasuuntaisen liikenteen hidaste', metricSpeedElevation:'Kaltevuudet',
+      metricSpeedPenaltyTotal:'Viivesekunnit (yhteens\xe4)',
+      loaderInit:'Ladataan GeoJSON\u2026', loaderNetwork:'Ladataan verkkodata\u2026',
+      loaderZones:'Ladataan alueita\u2026', loaderRoutes:'Ladataan reittej\xe4\u2026', loaderMap:'Ladataan karttaa\u2026',
+      areaTitle:'Liikenneverkkovisualisointi', areaSubtitle:'Valitse alue ladattavaksi:',
+      areaNotFound:'Alueita ei l\xf6ydy. K\xe4ynnist\xe4 palvelin --data <kansio> -valitsimella.',
+      areaConnError:'Yhteys palvelimeen ep\xe4onnistui.',
+      areaDelTitle: n => `Poista ${n}`,
+      areaDelConfirm: (n, m) => `Poistetaanko alue \u201c${n}\u201d (${m}) pysyv\xe4sti?\n\nHuomaa: kaikki johdetut aliskenaariot (koko puu) poistetaan my\xf6s.`,
+      areaDelError: e => `Poisto ep\xe4onnistui: ${e}`,
+      newAreaBtn:'+ Luo uusi alue',
+      newAreaH2:'Uusi alue', newAreaName:'Nimi', newAreaNamePh:'esim. Merwehaven',
+      newAreaMode:'Kulkutapa', newAreaCar:'Auto (CAR)', newAreaBike:'Polkupy\xf6r\xe4 (BIKE)',
+      newAreaPed:'Jalankulkija (PEDESTRIAN)',
+      newAreaBboxHint:'Piirrä suorakulmio kartalle rajausalueen m\xe4\xe4ritt\xe4miseksi. Napsauta ensimm\xe4ist\xe4 kulmaa, napsauta uudelleen toista.',
+      newAreaNoBbox:'Rajausaluetta ei ole piirretty', newAreaClearBbox:'Tyhjenн\xe4 rajaus',
+      newAreaHome:'\u2302 Yleiskatsaus', newAreaCancel:'Peruuta', newAreaSubmit:'Luo',
+      newAreaStatusStart:'K\xe4ynnistet\xe4\xe4n putkilinjaa\u2026', newAreaStatusConn:'Yhteys ep\xe4onnistui.',
+      newAreaStatusRunning:'Putkilinja k\xe4ynniss\xe4\u2026', newAreaStatusDone:'Valmis! Alue on k\xe4ytett\xe4viss\xe4.',
+      newAreaStatusBack:'Takaisin yleiskatsaukseen', newAreaStatusError: c => `Virhe (paluuarvo ${c}).`,
+      newAreaAlertName:'Sy\xf6t\xe4 nimi.', newAreaAlertBbox:'Piirrä ensin rajausalue kartalle.',
+      newAreaAlertMode:'Valitse v\xe4hint\xe4\xe4n yksi kulkutapa.',
+      linkDialogDefault:'Tiejakso', linkDialogName: n => `Tiejakso: ${n}`, linkDialogId: id => `Tiejakso ${id}`,
+      linkDialogCap:'Kapasiteetti', linkDialogCapUnit:'ajon/h',
+      linkDialogSpeed:'Aseta nopeus', linkDialogSpeedHint:'s\xe4\xe4t\xe4\xe4 kapasiteettia',
+      nodeDialogDefault:'Solmupiste',
+      nodeDialogProd:'Tuotanto', nodeDialogProdHint:'+300 = muutos\u00a0|\u00a01200 = absoluuttinen (\u22650)',
+      nodeDialogProdPh:'+300 tai 1200',
+      nodeDialogAttr:'Houkuttelevuus', nodeDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen (\u22650)',
+      nodeDialogAttrPh:'+300 tai 800',
+      dialogCancel:'Peruuta', dialogOk:'OK',
+      changesTitle:'Muutokset', scenarioNamePh:'Skenaarion nimi', applyBtn:'\u25b6 K\xe4yt\xe4',
+      applyStart:'K\xe4ynnistet\xe4\xe4n s\xe4\xe4t\xf6\xe4\u2026', applyRunning:'K\xe4sitell\xe4\xe4n\u2026', applyDone:'Valmis!',
+      estimatingRoutes: 'Lasketaan reittej\xe4 Dijkstralla\u2026',
+      applyError: c => `Tuntematon virhe (paluuarvo: ${c})`, applyFetchError: e => `Virhe: ${e}`,
+      changeCapLabel: (v, u) => `kap: ${v} ${u}`, changeSpeedLabel: v => `nopeus: ${v} km/h`,
+      changeProdLabel: v => `tuot: ${v}`, changeAttrLabel: v => `houk: ${v}`,
+      changeItemDel:'Poista',
+      noChanges:'Ei muutoksia', viewChangesBtnTitle:'Näytä muutokset',
+      changesPendingSection:'Odottaa',
+      changesHistLinkLabel: id => `Kaari ${id}`, changesHistNodeLabel: id => `Solmu ${id}`,
+      changesHistZoneLabel: id => `Vyöhyke ${id}`,
+      // Monikulmio-valinta
+      nodeSelectTitle:'Valintamoodi',
+      nodeSelectClick:'Napsauta solmupistett\xe4',
+      nodeSelectPolygon:'Piirrä monikulmio',
+      polygonHint:"Napsauta lisätäksesi kärkipisteitä. Käytä 'Valmis' kun monikulmio on valmis.",
+      polygonFinishBtn:'\u2713 Valmis monikulmio',
+      polygonClearBtn:'\u2715 Tyhjennä',
+      polygonDialogTitle:'Monikulmio s\xe4\xe4t\xf6',
+      polygonNodeInfoLabel: n => `${n} solmupistett\xe4 valittu`,
+      polygonDialogProd:'Tuotanto (yhteens\xe4)',
+      polygonDialogProdHint:'+300 = muutos\u00a0|\u00a01200 = absoluuttinen',
+      polygonDialogAttr:'Houkuttelevuus (yhteens\xe4)',
+      polygonDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen',
+      polygonPerNodeLabel: v => `\u2192 per solmupiste: ${v}`,
+      polygonNoNodes:'Solmupisteit\xe4 ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
+      // Linkin monikulmio-valinta
+      linkSelectTitle:'Valintamoodi',
+      linkSelectClick:'Napsauta tiejaksoa',
+      linkSelectPolygon:'Piirrä monikulmio',
+      linkPolygonHint:"Napsauta lis\xe4t\xe4ksesi k\xe4rkipisteit\xe4. K\xe4yt\xe4 'Valmis' kun monikulmio on valmis.",
+      linkPolygonFinishBtn:'\u2713 Valmis monikulmio',
+      linkPolygonClearBtn:'\u2715 Tyhjenн\xe4',
+      linkPolygonDialogTitle:'Monikulmio kapasiteettimuutos',
+      linkPolygonLinkInfoLabel: n => `${n} tiejaksoa valittu`,
+      linkPolygonDialogCap:'Kapasiteetti',
+      linkPolygonDialogCapHint:'800 = absoluuttinen\u00a0|\u00a080% = kerroin',
+      linkPolygonDialogCapUnit:'ajon/h',
+      linkPolygonPerLinkLabel: v => `\u2192 keskiarvo muutoksen j\xe4lkeen: ${v}\u00a0ajon/h`,
+      linkPolygonNoLinks:'Tiejaksoja ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
+      linkCloseBtnTitle:'Sulje tie (kapasiteetti = 0)',
+      changeClosedLabel:'suljettu (kap = 0)',
+      legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste', legendIC:'V/C',
+      legendNoiseLden:'Melu Lden', legendNoiseLnight:'Melu Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
+      legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
+      legendSpeedCrossings:'Suojatiet', legendSpeedCycleCrossings:'Py\xf6r\xe4ylitys',
+      legendSpeedSignals:'Liikennevalot', legendSpeedYield:'V\xe4istymis-/pys\xe4hdysmerkinn\xe4t',
+      legendPriorityRoads:'Etuoikeutetut tiet',
+      legendSpeedRefuge:'Keskisaarekkeet',
+      legendSpeedFromRight:'Oikealta tuleva liikenne', legendSpeedLeftTurn:'Vasemmalle k\xe4\xe4ntymisen hidaste',
+      legendSpeedOncoming:'Vastasuuntaisen liikenteen hidaste', legendSpeedElevation:'Kaltevuus/viive',
+      legendSpeedPenaltyTotal:'Viivesekunnit',
+      legendUnit:'ajon/h',
+      carCountFmt: n => `~${n.toLocaleString('fi-FI')} ajoneuvoa tiellä`,
+      // Flow-scaler panel
+      fspBtnTitle:'Virtaskaalain asetukset',
+      fspTitle:'Virtaskaalain',
+      fspDateLabel:'Päivämäärä',
+      fspHourLabel:'Tunti',
+      fspTempLabel:'L\u00e4mp\u00f6tila',
+      fspTempHigh:'Korkea', fspTempMedium:'Keskitaso', fspTempLow:'Matala',
+      fspWeatherLabel:'S\u00e4\u00e4',
+      fspWeatherSunny:'Aurinkoinen', fspWeatherCloudy:'Pilvinen',
+      fspWeatherDry:'Kuiva', fspWeatherRainy:'Sateinen',
+      fspPurposeLabel:'Matkan tarkoitus',
+      fspPurposeAll:'Kaikki', fspPurposeWork:'Ty\u00f6', fspPurposeEducation:'Koulutus',
+      fspPurposeShopping:'Ostokset', fspPurposeRecreational:'Vapaa-aika', fspPurposeUnknown:'Muu',
+      fspRegioLabel:'Alue (loma)',
+      fspRegioMidden:'Keski', fspRegioNoord:'Pohjoinen', fspRegioZuid:'Etel\u00e4',
+      fspApplyBtn:'K\u00e4yt\u00e4', fspResetBtn:'Nollaa',
+      fspLoading:'Ladataan\u2026', fspDone:'Valmis',
+      fspError: e => `Virhe: ${e}`,
+      tooltipSegment: id => `Segmentti #${id}`,
+      tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
+      tooltipFlowUnit:'ajon/h',
+      tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
+      tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus', tooltipWidth:'Leveys',
+      tooltipSpeedDataUnavailable:'Ei vielä saatavilla tassa aineistossa', tooltipSpeedFactorPresent:'Kyllä', tooltipSpeedFactorAbsent:'Ei',
+      tooltipZoneClass:'Alueluokka',
+      tooltipZoneClassStudy:'Tutkimusalue', tooltipZoneClassInfluence:'Vaikutusalue',
+      tooltipZoneClassBoundary:'Rajav\u00f6hyke', tooltipZoneClassCbs:'CBS-alue',
+      tooltipZoneProd:'Tuotanto', tooltipZoneProdUnit:'ajon/vrk',
+      tooltipZoneAttr:'Houkuttelevuus', tooltipZoneAttrUnit:'ajon/vrk',
+      tooltipZoneRoute:'Matkavirta', tooltipZoneRouteUnit:'ajon/h',
+      dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika',
+      networkTitle: n => `Liikenneverkko ${n}`, pageTitle: n => `Liikenneverkko ${n}`,
+      // Skenaariovertailija
+      splitViewTitle:'Skenaariovertailija: laskettu ↔ lähde',
+      badgeLeft:'Laskettu skenaario', badgeRight:'Lähdeskenaario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Lähtö/kohde tiejaksokohtaisesti',
+      counterBtnTitle:'Aseta/poista ajoneuvolaskuri',
+      counterPanelTitle:'Ajoneuvolaskurit',
+      counterHint:'Napsauta tiejaksoa asettaaksesi laskurin.',
+      // What-if tiesulku
+      whatifRcBtnTitle:'What-if tiesulku',
+      whatifRcTitle:'What-if tiesulku',
+      whatifRcNamePh:'Skenaarion nimi',
+      whatifRcRunBtn:'\uD83D\uDEAB Suorita',
+      whatifRcClearBtn:'\u2715 Tyhjenн\xe4 valinta',
+      whatifRcDirectionLabel:'Suunta',
+      whatifRcDirBoth:'Molemmat suunnat',
+      whatifRcDirSame:'Sama suunta',
+      whatifRcDirOpposite:'Vastakkaissuunta',
+      whatifRcNoLinks:'Ei tiejaksoja valittuna.',
+      whatifRcNoCsv:'NVP-reittitiedot puuttuvat. Valmistele alue uudelleen nvp_table + nvp_year.',
+      whatifRcStart:'K\xe4ynnistet\xe4\xe4n what-if\u2026',
+      whatifRcRunning:'K\xe4sitell\xe4\xe4n\u2026',
+      whatifRcDone:'Valmis!',
+      whatifRcError: c => `Virhe (paluuarvo: ${c})`,
+      whatifRcFetchError: e => `Virhe: ${e}`,
+      whatifRcLinkLabel: id => `Tiejakso ${id}`,
+      // Rakennusten matkamotiivi
+      buildingPurposeAll:'- rakennukset: kaikki -', buildingPurposeAllScaled:'- rakennukset: kaikki (skaalattu) -',
+      buildingPurposeWerk:'- rakennukset: työ -', buildingPurposeWerkScaled:'- rakennukset: työ (skaalattu) -',
+      buildingPurposeOnderwijs:'- rakennukset: koulutus -', buildingPurposeOnderwijsScaled:'- rakennukset: koulutus (skaalattu) -',
+      buildingPurposeWinkelen:'- rakennukset: ostokset -', buildingPurposeWinkelenScaled:'- rakennukset: ostokset (skaalattu) -',
+      buildingPurposeRecreat:'- rakennukset: vapaa-aika -', buildingPurposeRecreatiScaled:'- rakennukset: vapaa-aika (skaalattu) -',
+      buildingPurposeHidden:'- rakennukset: piilotettu -',
+      buildingPurposeOff:'- rakennukset: pois -',
+      // Rakennuksen tooltip
+      tooltipBuildingType:'Tyyppi', tooltipBuildingZone:'Vyöhyke',
+      tooltipBuildingHeight:'Korkeus', tooltipBuildingCap:'Kapasiteetti',
+      tooltipBuildingDir:'Suunta', tooltipBuildingAttraction:'Vetovoima',
+      tooltipBuildingProduction:'Tuotanto', tooltipBuildingNeutral:'Neutraali',
+      tooltipPurposeAll:'kaikki', tooltipPurposeWerk:'työ',
+      tooltipPurposeOnderwijs:'koulutus', tooltipPurposeWinkelen:'ostokset', tooltipPurposeRecreat:'vapaa-aika',
+      buildingTypeResidential:'Asuminen', buildingTypeOffice:'Toimisto',
+      buildingTypeCommercial:'Kauppa / ravintola', buildingTypeEducation:'Koulutus',
+      buildingTypeIndustrial:'Teollisuus', buildingTypeParking:'Pysäköinti',
+      buildingTypeTransport:'Joukkoliikenne', buildingTypeRecreation:'Virkistys',
+      buildingTypeOther:'Muu',
+      // Rakennuksen P/A-laskenta (tooltip)
+      calcTitle:'P/A-laskenta', calcFloorArea:'Kerrosala', calcZoneBase:'Vyöhykeperusta',
+      calcShare:'Rakennuksen osuus', calcInZone:'(vyöhyke)', calcInBuilding:'(rakennus)', calcResidents:'Vyöhykkeen asukkaat', calcHouseholds:'Vyöhykkeen taloudet',
+      calcNorm:'Normalisointi (P95)', calcScore:'Intensiteetti', calcNotRelevant:'Ei merkityksellinen tälle tarkoitukselle',
+      capBaseHouseholds:'Taloudet', capBaseResidents:'Asukkaat', capBaseJobsOffice:'Toimistotyöpaikat',
+      capBaseJobsShop:'Kaupan työpaikat', capBaseJobsIndustry:'Teollisuustyöpaikat',
+      capBaseSeats:'Oppilaspaikat', capBaseCars:'Autot', capBaseJobsRec:'Virkistystyöpaikat',
+      capBaseJobsOther:'Muut työpaikat', capBaseJobs:'Työpaikat', capBaseWorkers:'Työssäkäyvät asukkaat', capBaseChildren:'Lapset (<18\u202fv)',
+      // Kielen valinta
+      langSelectTitle:'Valitse kieli',
+      numberLocale:'fi',
+    },
+  };
+
+  let currentLang = localStorage.getItem('ui-lang') || 'NL';
+
+  function T(key, ...args) {
+    const val = (TRANSLATIONS[currentLang] || TRANSLATIONS.NL)[key];
+    if (typeof val === 'function') return val(...args);
+    return val ?? key;
+  }
+
+  function applyLang(lang) {
+    if (!TRANSLATIONS[lang]) return;
+    currentLang = lang;
+    localStorage.setItem('ui-lang', lang);
+
+    // Taal-dropdown synchroniseren
+    const langSel = document.getElementById('langSelect');
+    if (langSel) langSel.value = lang;
+
+    // data-i18n → textContent
+    document.querySelectorAll('[data-i18n]').forEach(el =>
+      el.textContent = T(el.dataset.i18n));
+
+    // data-i18n-title → title
+    document.querySelectorAll('[data-i18n-title]').forEach(el =>
+      el.title = T(el.dataset.i18nTitle));
+
+    // data-i18n-ph → placeholder
+    document.querySelectorAll('[data-i18n-ph]').forEach(el =>
+      el.placeholder = T(el.dataset.i18nPh));
+
+    // data-i18n-label → optgroup label
+    document.querySelectorAll('[data-i18n-label]').forEach(el =>
+      el.label = T(el.dataset.i18nLabel));
+
+    // Legenda-label (afhankelijk van geselecteerde metriek)
+    const metric = document.getElementById('colorMetric')?.value;
+    const legendKeyMap = {
+      flow:'legendFlow', flow_scaled:'legendFlow',
+      occupancy:'legendIC', occupancy_scaled:'legendIC',
+      coverage:'legendOccupancy', coverage_scaled:'legendOccupancy',
+      speed:'legendSpeed', capacity:'legendCapacity', compare:'legendCompare',
+      noise_lden:'legendNoiseLden', noise_lnight:'legendNoiseLnight',
+      emis_co2:'legendCo2', emis_nox:'legendNox', emis_pm10:'legendPm10',
+    };
+    const legEl = document.getElementById('legendLabel');
+    if (legEl && metric) legEl.textContent = T(legendKeyMap[metric] || 'legendFlow');
+
+    // Netwerktitel (dynamische naam bewaard in window._networkName)
+    if (window._networkName) {
+      document.getElementById('networkTitle').textContent = T('networkTitle', window._networkName);
+      // document.title = T('pageTitle', window._networkName);
+    }
+  }
+
+  // Pas taal direct toe op statische DOM-elementen
+  applyLang(currentLang);
+
+  // ── Parameters uit URL (bijv. /?areaId=xxx&mode=CAR) ─────────────────────
+  const _params = new URLSearchParams(window.location.search);
+  let AREA_ID = _params.get('areaId');
+  const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
+  window.AREA_ID = AREA_ID;
+  window.MODE    = MODE;
+  const _DEBUG_MARKS = _params.get('debugMarks') === '1';  // hulplijnen voor markeringen/hoeken
+  const LINK_ID_PARAM = _params.get('linkId');
+  const NODE_ID_PARAM = _params.get('nodeId');
+  let _networkFeatures = []; // gevuld zodra netwerk geladen is; gebruikt door maquette highlight
+  let _kaart2Src = null, _kaart2Feats = null; // cache van _kaart2NetworkFeatures (MIXED-filter)
+
+  // Vlag-parameters soepel lezen: ?x=true, ?x=1, ?x=yes en ?x tellen allemaal.
+  // Een typfout als ?maquette=1 schakelde anders stilzwijgend de hele
+  // maquette-stand uit, zonder dat er iets zichtbaar misging.
+  const _flag = name => {
+    const v = _params.get(name);
+    return v !== null && ['', 'true', '1', 'yes', 'ja'].includes(v.toLowerCase());
+  };
+  window._maquetteFlag = _flag;
+
+  // ── maquette: combineert hide-panels + blok-cursor + verberg gebouwen (?maquette=true) ──
+  const _MAQUETTE = _flag('maquette');
+  if (_MAQUETTE) {
+    document.body.classList.add('maquette-mode');
+    document.addEventListener('mousemove', e => {
+      document.body.style.setProperty('--cur-x', e.clientX + 'px');
+      document.body.style.setProperty('--cur-y', e.clientY + 'px');
+    });
+  }
+
+  // Scenario waarmee deze maquette-sessie begon. Hier keert de maquette een
+  // minuut na elke aanpassing automatisch naar terug (zie _startFollowMode).
+  const _MAQUETTE_INITIAL_AREA_ID = AREA_ID;
+
+  // ── follow: herlaad in-place zodra een adjust klaar is (?follow=true) ────
+  // In maquette-stand altijd aan: zonder deze verbinding komt er geen enkel
+  // bericht van de camera binnen (geen oplichtend wegvak, geen detecties,
+  // geen camerastatus) terwijl alles verder normaal lijkt te werken.
+  const _FOLLOW = _flag('follow') || _MAQUETTE;
+  if (_FOLLOW) document.body.classList.add('follow-mode');
+
+  // Referentie naar de echte MapLibre-instantie (toegewezen zodra de kaart is
+  // aangemaakt). Nodig omdat `map` in deze buitenste scope naar het DOM-element
+  // <div id="map"> verwijst i.p.v. de kaart.
+  let _maquetteMap = null;
+
+  // Hook waarmee het map-load blok de opgeslagen calibratie (kaartweergave +
+  // getekend vierkant) kan herstellen. Toegewezen binnen de camera-toggle IIFE.
+  let _maquetteRestore = null;
+
+  // Late-bound referentie naar loadAdjustedResult (gedefinieerd verderop in een andere scope).
+  // Wordt ingevuld zodra loadAdjustedResult beschikbaar is.
+  let _followLoadFn = null;
+
+  // Toegewezen binnen de camera-toggle IIFE: vergrendelt/ontgrendelt de
+  // camera-knop terwijl de maquette terugschakelt naar het initiële scenario.
+  let _maquetteLockCamera = null;
+  let _maquetteUnlockCamera = null;
+
+  // Timer-handle voor de "terug naar initieel scenario"-reset, zodat een
+  // eventuele volgende aanpassing een lopende reset kan annuleren.
+  let _maquetteResetTimer = null;
+
+  /**
+   * Opent een SSE-verbinding naar /events?areaId=<AREA_ID>.
+   * Bij een 'started' event: poll /jobs/{job_id} tot klaar, laad dan resultaat in-place.
+   */
+  let _followEs = null;
+  function _startFollowMode(overrideAreaId) {
+    const listenId = overrideAreaId || AREA_ID;
+    if (!_FOLLOW || !listenId) return;
+    if (_followEs) { _followEs.close(); _followEs = null; }
+
+    console.log(`[follow] luisteren op areaId=${listenId}`);
+    const es = new EventSource(`/events?areaId=${encodeURIComponent(listenId)}`);
+    _followEs = es;
+
+    es.addEventListener('started', async (evt) => {
+      try {
+        const { job_id } = JSON.parse(evt.data);
+        console.log(`[follow] berekening gestart, job=${job_id}`);
+        // Highlight wissen zodra de berekening daadwerkelijk begint
+        try { _maquetteMap?.getSource('maquette-highlight')?.setData({ type: 'FeatureCollection', features: [] }); } catch (_) {}
+        const ind = document.getElementById('followIndicator');
+        if (ind) ind.textContent = 'Berekening loopt\u2026';
+
+        // Poll tot job klaar is (zelfde ritme als eigen adjust)
+        const POLL_DELAYS = [5000, 3000, 2000];
+        let step = 0;
+        await new Promise((resolve, reject) => {
+          const next = () => setTimeout(poll, step < POLL_DELAYS.length ? POLL_DELAYS[step++] : 1000);
+          const poll = async () => {
+            try {
+              const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
+              if (sj.status === 'successful') return resolve();
+              if (sj.status === 'failed')     return reject(new Error((sj.log || []).slice(-3).join('\n')));
+              next();
+            } catch (e) { reject(e); }
+          };
+          next();
+        });
+
+        if (ind) ind.textContent = 'Resultaat laden\u2026';
+        const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+        console.log(`[follow] resultaat ophalen: new_area_id=${results.new_area_id}`);
+
+        if (_followLoadFn) {
+          await _followLoadFn(results.new_area_id, results.compare_url || null);
+        }
+        if (ind) ind.textContent = 'Meekijkmodus \u2014 aanpassingen worden automatisch geladen';
+
+        // Herverbind expliciet op het nieuwe areaId (niet via AREA_ID — andere closure)
+        _startFollowMode(results.new_area_id);
+
+        // Maquette: een minuut na het laden van het aangepaste resultaat
+        // automatisch terug naar het scenario waarmee deze sessie begon;
+        // camera blijft tot die reload klaar is vergrendeld.
+        if (_MAQUETTE) {
+          if (_maquetteLockCamera) _maquetteLockCamera();
+          clearTimeout(_maquetteResetTimer);
+          _maquetteResetTimer = setTimeout(async () => {
+            try {
+              if (_followLoadFn) {
+                await _followLoadFn(_MAQUETTE_INITIAL_AREA_ID, null);
+              }
+              _startFollowMode(_MAQUETTE_INITIAL_AREA_ID);
+            } catch (e) {
+              console.warn('[maquette] reset naar initieel scenario mislukt:', e);
+            } finally {
+              if (_maquetteUnlockCamera) _maquetteUnlockCamera();
+            }
+          }, 60000);
+        }
+      } catch (e) {
+        console.warn('[follow] fout:', e);
+        const ind = document.getElementById('followIndicator');
+        if (ind) ind.textContent = 'Meekijkmodus \u2014 aanpassingen worden automatisch geladen';
+      }
+    });
+
+    es.onerror = (e) => {
+      console.warn('[follow] SSE verbindingsfout, herverbinden\u2026', e);
+    };
+
+    // ── camera_status: heartbeat van maquette_camera.py ─────────────────────
+    let _cameraHeartbeatTimer = null;
+    const _camInd = document.getElementById('cameraIndicator');
+    const _camLbl = document.getElementById('cameraIndicatorLabel');
+    const _CAMERA_TIMEOUT_MS = 12000; // 2× heartbeat-interval
+
+    function _setCameraActive(active) {
+      if (!_camInd) return;
+      _camInd.classList.toggle('cam-active',   active);
+      _camInd.classList.toggle('cam-inactive', !active);
+      if (_camLbl) _camLbl.textContent = active ? 'Camera actief' : 'Camera inactief';
+    }
+
+    function _resetCameraTimeout() {
+      clearTimeout(_cameraHeartbeatTimer);
+      _cameraHeartbeatTimer = setTimeout(() => _setCameraActive(false), _CAMERA_TIMEOUT_MS);
+    }
+
+    es.addEventListener('camera_status', (evt) => {
+      try {
+        const { active } = JSON.parse(evt.data);
+        _setCameraActive(active);
+        if (active) _resetCameraTimeout();
+        else {
+          clearTimeout(_cameraHeartbeatTimer);
+          // Camera is (zichzelf) gestopt → knopstatus terugzetten naar "uit".
+          document.dispatchEvent(new Event('camera_inactive_event'));
+        }
+      } catch (e) {
+        console.warn('[follow] camera_status parse fout:', e);
+      }
+    });
+
+    // ── maquette_detections: geef door aan maquette-monitor.js ──────────────
+    es.addEventListener('maquette_detections', (evt) => {
+      try {
+        document.dispatchEvent(new CustomEvent('maquette-detections', {
+          detail: JSON.parse(evt.data),
+        }));
+      } catch (e) {
+        console.warn('[follow] maquette_detections parse fout:', e);
+      }
+    });
+
+    // ── link_preview: licht het gedetecteerde wegvak op vóór de berekening ───
+    es.addEventListener('link_preview', (evt) => {
+      try {
+        const { link_ids } = JSON.parse(evt.data);
+        const src = _maquetteMap?.getSource('maquette-highlight');
+        if (!src) return;
+        if (!link_ids || link_ids.length === 0) {
+          src.setData({ type: 'FeatureCollection', features: [] });
+          return;
+        }
+        const absIds = new Set(link_ids.map(id => Math.abs(id)));
+        const matched = _networkFeatures.filter(
+          f => absIds.has(Math.abs(f.properties?.linkId ?? NaN))
+        );
+        src.setData({ type: 'FeatureCollection', features: matched });
+      } catch (e) {
+        console.warn('[follow] link_preview parse fout:', e);
+      }
+    });
+  }
+
+  // ── Camera toggle (alleen in ?maquette=true, niet in follow-modus) ────────
+  (function () {
+    if (!_MAQUETTE) return;
+
+    const btn   = document.getElementById('cameraToggleBtn');
+    const label = document.getElementById('cameraToggleLabel');
+    if (!btn) return;
+
+    let _cameraOn = false;
+    const _cameraId = parseInt(_params.get('cameraId') ?? '-1', 10);
+
+    // Vergrendeling tijdens de "terug naar initieel scenario"-reset (zie
+    // _startFollowMode): voorkomt dat de camera alweer aangezet wordt
+    // terwijl de maquette nog bezig is terug te schakelen.
+    let _resetLocked = false;
+
+    _maquetteLockCamera = function () {
+      _resetLocked = true;
+      btn.disabled = true;
+      if (!_cameraOn) label.textContent = 'Wacht op reset…';
+    };
+
+    _maquetteUnlockCamera = function () {
+      _resetLocked = false;
+      if (!_cameraOn) {
+        btn.disabled = false;
+        label.textContent = 'Camera aan';
+      }
+    };
+
+    // Alleen de pixelmaat is nog nodig: de koppeling tussen camerapixels en de
+    // kaart komt uit het calibratiebestand. getBoundingClientRect en niet
+    // window.innerWidth, zodat de maat ook klopt als de kaart niet het hele
+    // venster vult.
+    function _getViewport() {
+      if (!_maquetteMap) return null;
+      const r = _maquetteMap.getContainer().getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      return { width: Math.round(r.width), height: Math.round(r.height) };
+    }
+
+    async function _startCamera() {
+      if (_resetLocked) return;
+      const vp = _getViewport();
+      if (!vp) { alert('Kaart nog niet beschikbaar — wacht tot hij geladen is.'); return; }
+      if (!AREA_ID)  { alert('Geen area_id bekend — laad eerst een scenario.'); return; }
+
+      // De virtuele cursor-modus heeft geen calibratie nodig: de browser stuurt
+      // de cursorpositie al in kaartcoördinaten door.
+      if (_cameraId < 0) { _launchCamera(vp); return; }
+
+      // Her-calibratie afdwingen via ?calibrate=true (of het oudere ?recalibrate=true)
+      const _forceRecalib = _flag('calibrate') || _flag('recalibrate');
+
+      label.textContent = 'Controleren…';
+      btn.disabled = true;
+
+      let hasCalib = false;
+      if (!_forceRecalib) {
+        try {
+          const r = await fetch(`/maquette/calibration?area_id=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`);
+          const d = await r.json();
+          hasCalib = !!d.exists;
+          if (hasCalib) _lastCalib = d.calibration || null;
+        } catch (e) {
+          console.warn('[maquette] calibratie-check mislukt:', e);
+        }
+      }
+
+      btn.disabled = false;
+      if (hasCalib) {
+        _applyCalibration(_lastCalib);
+        _launchCamera(vp);
+      } else if (window.MaquetteCalibration) {
+        // Geen calibratie: eerst het camerabeeld over de kaart leggen.
+        label.textContent = 'Uitlijnen…';
+        window.MaquetteCalibration.open();
+      } else {
+        alert('Calibratiemodule niet geladen — kan de camera niet uitlijnen.');
+      }
+    }
+
+    // Door maquette-calibration.js aangeroepen zodra de calibratie is opgeslagen.
+    window._maquetteStartDetection = function () {
+      const vp = _getViewport();
+      if (vp) _launchCamera(vp);
+    };
+
+    // Idem als het uitlijnen is afgebroken: knop weer in de uitgangsstand.
+    window._maquetteCalibrationCancelled = function () {
+      _cameraOn = false;
+      window.MaquetteCalibration?.setCursorActive?.(false);
+      btn.classList.remove('cam-on');
+      btn.disabled = false;
+      label.textContent = 'Camera aan';
+    };
+
+    let _lastCalib = null;   // laatst opgehaalde/toegepaste calibratie
+
+    // Polygon-feature uit een lijst geo-punten (voor het tonen van de
+    // voetafdruk die de camera in beeld heeft).
+    function _ringFeature(points) {
+      const ring = points.map(p => [p[0], p[1]]);
+      ring.push(ring[0]);
+      return {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [ring] },
+        properties: {},
+      };
+    }
+
+    // Herstel kaartweergave en teken het gebied dat de camera ziet.
+    function _applyCalibration(calib) {
+      if (!calib) return;
+      const v = calib.view;
+      if (v && Array.isArray(v.center)) {
+        _maquetteMap.jumpTo({
+          center: v.center,
+          zoom: v.zoom,
+          bearing: v.bearing || 0,
+          pitch: v.pitch || 0,
+        });
+      }
+      if (Array.isArray(calib.geo_points) && calib.geo_points.length === 4) {
+        _setRectData([_ringFeature(calib.geo_points)]);
+        return;
+      }
+      // Legacy-formaat met vier benoemde hoeken.
+      const c = calib.corners;
+      if (c && c.bl && c.br && c.tr && c.tl) {
+        _setRectData([_ringFeature([c.bl, c.br, c.tr, c.tl])]);
+      }
+    }
+
+    // Haal opgeslagen calibratie op en herstel kaart + vierkant (bij page-load).
+    _maquetteRestore = async function () {
+      if (!AREA_ID) return;
+      if (_flag('calibrate') || _flag('recalibrate')) return;
+      try {
+        const r = await fetch(`/maquette/calibration?area_id=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`);
+        const d = await r.json();
+        if (d.exists && d.calibration) {
+          _lastCalib = d.calibration;
+          _applyCalibration(_lastCalib);
+        }
+      } catch (e) {
+        console.warn('[maquette] calibratie-herstel mislukt:', e);
+      }
+    };
+
+    function _setRectData(features) {
+      const src = _maquetteMap.getSource('maquette-calib-rect');
+      if (src) src.setData({ type: 'FeatureCollection', features });
+    }
+
+    // Start de detectie. De koppeling camerapixel → kaart komt uit het
+    // calibratiebestand; hier hoeft alleen de gewenste pixelmaat mee.
+    async function _launchCamera(vp) {
+      label.textContent = 'Bezig…';
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/maquette/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            area_id:   AREA_ID,
+            mode:      MODE,
+            camera_id: _cameraId,
+            viewport:  vp,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || resp.statusText);
+        _cameraOn = true;
+        window.MaquetteCalibration?.setCursorActive?.(true);
+        btn.classList.add('cam-on');
+        label.textContent = 'Camera uit';
+        console.log('[maquette] camera gestart, pid=', data.pid);
+      } catch (e) {
+        console.error('[maquette] start mislukt:', e);
+        _setRectData([]);
+        label.textContent = 'Camera aan';
+        alert('Camera starten mislukt: ' + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function _stopCamera() {
+      label.textContent = 'Bezig…';
+      btn.disabled = true;
+      if (window.MaquetteCalibration && window.MaquetteCalibration.isOpen()) {
+        window.MaquetteCalibration.close();
+      }
+      _setRectData([]);
+      try {
+        await fetch('/maquette/stop', { method: 'POST' });
+      } catch (e) {
+        console.warn('[maquette] stop fout:', e);
+      }
+      _cameraOn = false;
+      window.MaquetteCalibration?.setCursorActive?.(false);
+      btn.classList.remove('cam-on');
+      label.textContent = 'Camera aan';
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', () => {
+      if (_cameraOn) _stopCamera(); else _startCamera();
+    });
+
+    // Herstel knopstatus als SSE meldt dat camera gestopt is
+    document.addEventListener('camera_inactive_event', () => {
+      if (_cameraOn) {
+        _cameraOn = false;
+        window.MaquetteCalibration?.setCursorActive?.(false);
+        btn.classList.remove('cam-on');
+        label.textContent = 'Camera aan';
+      }
+    });
+  })();
+
+
+  // ── bbox-param: begrenzing bij opstarten (?bbox=minLon,minLat,maxLon,maxLat in WGS84) ─
+  const _bboxParam = (() => {
+    const v = _params.get('bbox');
+    if (!v) return null;
+    const parts = v.split(',').map(Number);
+    if (parts.length !== 4 || parts.some(isNaN)) return null;
+    return [[parts[0], parts[1]], [parts[2], parts[3]]]; // [[swLon, swLat], [neLon, neLat]]
+  })();
+
+  // ── polygon-param: pas op een vrij polygoon (?polygon=lon1,lat1,lon2,lat2,...) ─
+  const _polygonParam = (() => {
+    const v = _params.get('polygon');
+    if (!v) return null;
+    const nums = v.split(',').map(Number);
+    if (nums.length < 6 || nums.length % 2 !== 0 || nums.some(isNaN)) return null;
+    const coords = [];
+    for (let i = 0; i < nums.length; i += 2) coords.push([nums[i], nums[i + 1]]);
+    return coords; // [[lon,lat], ...]
+  })();
+
+  // Gecombineerde "fit"-trigger: polygon heeft voorrang op bbox
+  const _fitParam = _polygonParam
+    ? (() => {
+        const lons = _polygonParam.map(c => c[0]);
+        const lats = _polygonParam.map(c => c[1]);
+        return [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]];
+      })()
+    : _bboxParam;
+
+  // ── viewport-grootte (?width=W&height=H) ─────────────────────────────────
+  const _vpWidth  = parseInt(_params.get('width'),  10) || null;
+  const _vpHeight = parseInt(_params.get('height'), 10) || null;
+  if (_vpWidth && _vpHeight) {
+    const mapEl = document.getElementById('map');
+    mapEl.style.width  = _vpWidth  + 'px';
+    mapEl.style.height = _vpHeight + 'px';
+    document.getElementById('mapContainer').style.width  = _vpWidth  + 'px';
+    document.getElementById('mapContainer').style.height = _vpHeight + 'px';
+  }
+
+  // ── Geen areaId: toon keuzescherm (menu-paneel + kaart, zoals bij een gebied) ──
+  if (!AREA_ID) {
+    document.getElementById('loader').style.display = 'none';
+
+    // Linker menu-paneel tonen in "geen gebied gekozen"-stand: toggle en
+    // instellingen-knop zijn hier dode knoppen (hun handlers worden pas
+    // verderop in dit script gekoppeld, wat wordt overgeslagen zonder areaId).
+    const homePanel = document.getElementById('leftMenuPanel');
+    homePanel.classList.add('visible');
+    const homeToggle = document.getElementById('leftMenuPanelToggle');
+    if (homeToggle) homeToggle.style.display = 'none';
+    const homeSettingsBtn = document.getElementById('settingsBtn');
+    if (homeSettingsBtn) homeSettingsBtn.style.display = 'none';
+    const homeLegendStrip = document.getElementById('legendStrip');
+    if (homeLegendStrip) homeLegendStrip.style.display = 'none';
+    document.getElementById('networkTitle').textContent = T('areaTitle');
+
+    const homeBody = document.getElementById('leftMenuBody');
+    homeBody.innerHTML = `
+      <div class="lmp-block">
+        <div style="padding:14px">
+          <p style="color:#6a757c;font-size:13px;margin:0 0 12px">${T('areaSubtitle')}</p>
+          <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px"></div>
+          <p id="areaError" style="display:none;color:#e63312;font-size:13px;margin-top:16px;text-align:center"></p>
+        </div>
+      </div>`;
+
+    // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
+    const homeMap = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      center: [5.2913, 52.1326],
+      zoom: 7,
+    });
+    const HOME_BBOX_SOURCE = 'home-bbox-src';
+    const HOME_BBOX_LAYER  = 'home-bbox-layer';
+    function bboxArrToGeoJSON(b) {
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [b[0], b[1]],
+          ]],
+        },
+      };
+    }
+    homeMap.on('load', () => {
+      homeMap.addSource(HOME_BBOX_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      homeMap.addLayer({
+        id: HOME_BBOX_LAYER, type: 'fill', source: HOME_BBOX_SOURCE,
+        paint: { 'fill-color': '#DE0058', 'fill-opacity': 0.15 },
+      });
+      homeMap.addLayer({
+        id: HOME_BBOX_LAYER + '-outline', type: 'line', source: HOME_BBOX_SOURCE,
+        paint: { 'line-color': '#DE0058', 'line-width': 2 },
+      });
+    });
+
+    fetch('/collections/areas/items')
+      .then(r => r.json())
+      .then(data => data.features.map(f => f.properties))
+      .then(areas => {
+        const container = document.getElementById('areaButtons');
+        if (!areas.length) {
+          document.getElementById('areaError').textContent = T('areaNotFound');
+          document.getElementById('areaError').style.display = 'block';
+        } else {
+          // ── Boomstructuur opbouwen ──────────────────────────────────────────
+          const byKey     = new Map(areas.map(a => [`${a.areaId}|${a.mode}`, a]));
+          const kidsMap   = new Map();   // key → [child areas]
+          const roots     = [];
+
+          areas.forEach(a => {
+            const parentKey = a.srcAreaId ? `${a.srcAreaId}|${a.mode}` : null;
+            if (parentKey && byKey.has(parentKey)) {
+              if (!kidsMap.has(parentKey)) kidsMap.set(parentKey, []);
+              kidsMap.get(parentKey).push(a);
+            } else {
+              roots.push(a);
+            }
+          });
+
+          // Ingeklapte takken persisteren — standaard alles ingeklapt
+          const _saved    = localStorage.getItem('areaTreeCollapsed');
+          const collapsed = _saved
+            ? new Set(JSON.parse(_saved))
+            : new Set(kidsMap.keys());   // eerste keer: alle takken dicht
+          const saveCollapsed = () =>
+            localStorage.setItem('areaTreeCollapsed', JSON.stringify([...collapsed]));
+
+          // Sluit alle dropdowns bij klik buiten
+          document.addEventListener('click', () => {
+            document.querySelectorAll('.area-dropdown').forEach(d => d.style.display = 'none');
+          });
+
+          // ── Node renderen ───────────────────────────────────────────────────
+          function renderNode(area, depth) {
+            const key     = `${area.areaId}|${area.mode}`;
+            const kids    = kidsMap.get(key) || [];
+            const hasKids = kids.length > 0;
+
+            const nodeEl = document.createElement('div');
+
+            // Rij
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:5px;align-items:center';
+
+            // Toggle-pijltje (neemt altijd dezelfde breedte in zodat knoppen uitlijnen)
+            const arrowBtn = document.createElement('button');
+            arrowBtn.style.cssText = `
+              flex-shrink:0;width:20px;height:20px;padding:0;
+              background:none;border:none;
+              color:${hasKids ? '#6a757c' : 'transparent'};
+              pointer-events:${hasKids ? 'auto' : 'none'};
+              font-size:9px;display:flex;align-items:center;justify-content:center;
+              transition:color .15s;margin-left:${depth * 20}px`;
+            arrowBtn.textContent = collapsed.has(key) ? '▶' : '▼';
+
+            // Scenario-knop
+            const btn = document.createElement('button');
+            btn.textContent = `${area.name}  —  ${area.mode}`;
+            btn.style.cssText = `
+              flex:1;min-width:0;
+              background:#ffffff;color:#232931;
+              border:1px solid #e3e6ea;
+              border-radius:7px;padding:9px 14px;font-size:13px;
+              cursor:pointer;text-align:left;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+              transition:background .15s`;
+            btn.onmouseenter = () => {
+              btn.style.background = 'rgba(0,165,171,0.08)';
+              if (area.bbox && area.bbox.length === 4) {
+                homeMap.getSource(HOME_BBOX_SOURCE)?.setData(bboxArrToGeoJSON(area.bbox));
+                homeMap.fitBounds(
+                  [[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]],
+                  { padding: 60, duration: 500 }
+                );
+              }
+            };
+            btn.onmouseleave = () => btn.style.background = '#ffffff';
+            btn.onclick = () => {
+              window.location.href =
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
+            };
+
+            // ── '...' menu-knop ────────────────────────────────────────────────
+            const menuBtn = document.createElement('button');
+            menuBtn.textContent = '···';
+            menuBtn.title = 'Opties';
+            menuBtn.style.cssText = `
+              flex-shrink:0;background:transparent;color:#6a757c;
+              border:1px solid #e3e6ea;
+              border-radius:7px;padding:9px 12px;font-size:13px;letter-spacing:1px;
+              cursor:pointer;transition:background .15s,color .15s`;
+            menuBtn.onmouseenter = () => {
+              menuBtn.style.background = 'rgba(0,165,171,0.08)';
+              menuBtn.style.color      = 'var(--ga-rood)';
+            };
+            menuBtn.onmouseleave = () => {
+              menuBtn.style.background = 'transparent';
+              menuBtn.style.color      = '#6a757c';
+            };
+
+            // Dropdown
+            const dropdown = document.createElement('div');
+            dropdown.style.cssText = `
+              display:none;position:absolute;right:0;top:calc(100% + 4px);
+              background:#ffffff;border:1px solid #e3e6ea;
+              border-radius:8px;min-width:160px;z-index:999;
+              box-shadow:0 4px 16px rgba(35,41,49,0.15);overflow:hidden`;
+
+            const mkItem = (label, icon, disabled, danger) => {
+              const item = document.createElement('button');
+              item.style.cssText = `
+                display:flex;align-items:center;gap:9px;width:100%;
+                background:transparent;border:none;
+                color:${disabled ? '#b7bcc2' : danger ? '#de0058' : '#232931'};
+                padding:10px 14px;font-size:13px;font-family:inherit;
+                text-align:left;cursor:${disabled ? 'default' : 'pointer'};
+                transition:background .12s;`;
+              item.innerHTML = `<span style="opacity:${disabled?0.4:1}">${icon}</span><span>${label}</span>`;
+              if (!disabled) {
+                item.onmouseenter = () => item.style.background = danger
+                  ? 'rgba(222,0,88,0.08)' : 'rgba(0,165,171,0.08)';
+                item.onmouseleave = () => item.style.background = 'transparent';
+              }
+              return item;
+            };
+
+            // Item: Meekijken
+            const followItem = mkItem('Meekijken',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+              false, false);
+            followItem.onclick = () => {
+              dropdown.style.display = 'none';
+              window.location.href =
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}&follow=true`;
+            };
+
+            // Item: Maquette (opent kaart in maquette-modus met camera-koppeling)
+            const maquetteItem = mkItem('Maquette',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/><circle cx="12" cy="14" r="2.5"/></svg>',
+              false, false);
+            maquetteItem.onclick = async () => {
+              dropdown.style.display = 'none';
+
+              // Camera-ID 1 is de vaste maquette-camera; is die aanwezig, gebruik
+              // hem dan zonder te vragen. Anders (bv. andere/geen camera's
+              // aangesloten) de gebruiker laten kiezen.
+              let cameraId = -1;
+              let camPresent = false;
+              try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                camPresent = devices.filter(d => d.kind === 'videoinput').length > 1;
+              } catch (e) {
+                console.warn('[maquette] camera-detectie mislukt:', e);
+              }
+
+              if (camPresent) {
+                cameraId = 1;
+              } else {
+                const answer = prompt(
+                  'Camera 1 niet gevonden. Welke camera-ID moet gebruikt worden? ' +
+                  '(-1 voor de virtuele cursor, zonder fysieke camera)',
+                  '-1');
+                if (answer === null) return; // geannuleerd
+                cameraId = parseInt(answer, 10);
+                if (Number.isNaN(cameraId)) cameraId = -1;
+              }
+
+              window.location.href =
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}` +
+                `&maquette=true&follow=true&cameraId=${cameraId}`;
+            };
+
+            // Item: Maak Full digital twin (OSM-verrijking van bestaand gebied)
+            const isFullTwin = !!area.isFullTwin;
+            const twinItem = mkItem(
+              isFullTwin ? 'Full digital twin (klaar)' : 'Maak Full digital twin',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+              isFullTwin, false);
+            if (!isFullTwin) {
+              twinItem.onclick = async () => {
+                dropdown.style.display = 'none';
+                if (!confirm('OSM-verrijking (Full digital twin) starten voor "' + area.name + '"? Dit kan enkele minuten duren.')) return;
+                // UI blokkeren: open-knop uitschakelen tijdens de job
+                const prevBtnText = btn.textContent;
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'default';
+                btn.onclick = null;
+                btn.textContent = `${area.name}  —  ${area.mode}  (OSM-verrijking bezig…)`;
+                twinItem.querySelector('span:last-child').textContent = 'Bezig met verrijken…';
+                const restore = () => {
+                  btn.disabled = false;
+                  btn.style.opacity = '';
+                  btn.style.cursor = 'pointer';
+                  btn.textContent = prevBtnText;
+                  btn.onclick = () => {
+                    window.location.href =
+                      `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
+                  };
+                };
+                try {
+                  const res = await fetch('/processes/fetch_osm/execution', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ area_id: area.areaId }),
+                  });
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const { jobID } = await res.json();
+                  for (;;) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    const jd = await fetch(`/jobs/${jobID}`).then(r => r.json());
+                    if (jd.status === 'successful') {
+                      twinItem.querySelector('span:last-child').textContent = 'Full digital twin (klaar)';
+                      twinItem.style.color = '#3a4455';
+                      twinItem.style.cursor = 'default';
+                      twinItem.onclick = null;
+                      twinItem.onmouseenter = null;
+                      twinItem.onmouseleave = null;
+                      restore();
+                      break;
+                    }
+                    if (jd.status === 'failed') {
+                      twinItem.querySelector('span:last-child').textContent = 'Full digital twin (mislukt)';
+                      twinItem.style.color = '#ff6b6b';
+                      restore();
+                      break;
+                    }
+                  }
+                } catch (err) {
+                  twinItem.querySelector('span:last-child').textContent = 'Full digital twin (fout)';
+                  twinItem.style.color = '#ff6b6b';
+                  restore();
+                }
+              };
+            }
+
+            dropdown.appendChild(followItem);
+            dropdown.appendChild(maquetteItem);
+            dropdown.appendChild(twinItem);
+
+            // Wrapper voor positionering dropdown
+            const menuWrap = document.createElement('div');
+            menuWrap.style.cssText = 'position:relative;flex-shrink:0';
+            menuWrap.appendChild(menuBtn);
+            menuWrap.appendChild(dropdown);
+
+            menuBtn.onclick = (e) => {
+              e.stopPropagation();
+              const isOpen = dropdown.style.display === 'block';
+              // Sluit alle andere open menus
+              document.querySelectorAll('.area-dropdown').forEach(d => d.style.display = 'none');
+              dropdown.style.display = isOpen ? 'none' : 'block';
+            };
+            dropdown.classList.add('area-dropdown');
+
+            row.appendChild(arrowBtn);
+            row.appendChild(btn);
+            row.appendChild(menuWrap);
+            nodeEl.appendChild(row);
+
+            // Kinderen-wrapper (gedefinieerd vóór onclick zodat de closure hem kan bereiken)
+            const kidsWrap = document.createElement('div');
+            kidsWrap.style.cssText = `margin-top:3px;display:${collapsed.has(key) ? 'none' : 'block'}`;
+            kids.forEach(child => kidsWrap.appendChild(renderNode(child, depth + 1)));
+            nodeEl.appendChild(kidsWrap);
+
+            // Pijltje-gedrag (na kidsWrap definitie)
+            if (hasKids) {
+              arrowBtn.onclick = () => {
+                const wasCollapsed = collapsed.has(key);
+                if (wasCollapsed) collapsed.delete(key); else collapsed.add(key);
+                saveCollapsed();
+                kidsWrap.style.display  = wasCollapsed ? 'block' : 'none';
+                arrowBtn.textContent    = wasCollapsed ? '▼' : '▶';
+                arrowBtn.style.color    = '#6a757c';
+              };
+              arrowBtn.onmouseenter = () => arrowBtn.style.color = 'var(--ga-rood)';
+              arrowBtn.onmouseleave = () => arrowBtn.style.color = '#6a757c';
+            }
+
+            return nodeEl;
+          }
+
+          roots.forEach(root => container.appendChild(renderNode(root, 0)));
+        }
+
+        // "Nieuw"-knop altijd toevoegen
+        // const newBtn = document.createElement('button');
+        // newBtn.textContent = T('newAreaBtn');
+        // newBtn.style.cssText = `
+        //   background:transparent;color:var(--ga-rood);
+        //   border:1px dashed rgba(0,165,171,0.4);
+        //   border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
+        //   transition:background .15s;width:100%;margin-top:6px`;
+        // newBtn.onmouseenter = () => newBtn.style.background = 'rgba(0,165,171,0.07)';
+        // newBtn.onmouseleave = () => newBtn.style.background = 'transparent';
+        // newBtn.onclick = () => openNewScreen();
+        // container.appendChild(newBtn);
+      })
+      .catch(() => {
+        document.getElementById('areaError').textContent = T('areaConnError');
+        document.getElementById('areaError').style.display = 'block';
+      });
+
+    throw new Error('Geen areaId — keuzescherm getoond');
+  }
+
+  // ── Linker menu-paneel in-/uitschakelen ─────────────────────────────────
+  function initLeftMenuPanel() {
+    const panel = document.getElementById('leftMenuPanel');
+    const toggle = document.getElementById('leftMenuPanelToggle');
+    if (!panel) return;
+    if (AREA_ID) {
+      panel.classList.add('visible');
+    } else {
+      if (toggle) toggle.style.display = 'none';
+      return;
+    }
+
+    // Collapse/expand van individuele blokken
+    panel.querySelectorAll('.lmp-block-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        const block = header.closest('.lmp-block');
+        block.classList.toggle('collapsed');
+      });
+    });
+
+    // Netwerk: intensiteit-radiobuttons gekoppeld aan de bestaande colorMetric-select
+    const metricSelect = document.getElementById('colorMetric');
+    const metricRadios = panel.querySelectorAll('input[name="lmpMetric"]');
+    if (metricSelect && metricRadios.length) {
+      metricRadios.forEach(radio => {
+        radio.checked = radio.value === metricSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          metricSelect.value = radio.value;
+          metricSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      // Zorg dat de radio's meebewegen als de metriek elders wordt aangepast
+      // (bijv. via de select zelf, of automatische fallback naar 'flow').
+      metricSelect.addEventListener('change', () => {
+        metricRadios.forEach(radio => {
+          radio.checked = radio.value === metricSelect.value;
+        });
+      });
+    }
+
+    // Zone productie/attractie: radiobuttons gekoppeld aan de bestaande zoneCentroidSelect
+    const zoneSelect = document.getElementById('zoneCentroidSelect');
+    const zoneRadios = panel.querySelectorAll('input[name="lmpZoneCentroid"]');
+    if (zoneSelect && zoneRadios.length) {
+      zoneRadios.forEach(radio => {
+        radio.checked = radio.value === zoneSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          zoneSelect.value = radio.value;
+          zoneSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      zoneSelect.addEventListener('change', () => {
+        zoneRadios.forEach(radio => {
+          radio.checked = radio.value === zoneSelect.value;
+        });
+      });
+    }
+
+    // Gebouw weergave: radiobuttons gekoppeld aan de bestaande buildingDisplay-select
+    const buildingDisplaySelect = document.getElementById('buildingDisplay');
+    const buildingDisplayRadios = panel.querySelectorAll('input[name="lmpBuildingDisplay"]');
+    if (buildingDisplaySelect && buildingDisplayRadios.length) {
+      buildingDisplayRadios.forEach(radio => {
+        radio.checked = radio.value === buildingDisplaySelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          buildingDisplaySelect.value = radio.value;
+          buildingDisplaySelect.dispatchEvent(new Event('change'));
+        });
+      });
+      buildingDisplaySelect.addEventListener('change', () => {
+        buildingDisplayRadios.forEach(radio => {
+          radio.checked = radio.value === buildingDisplaySelect.value;
+        });
+      });
+    }
+
+    // Gebouw productie/attractie: radiobuttons gekoppeld aan de bestaande buildingPurpose-select
+    const buildingPurposeSelect = document.getElementById('buildingPurpose');
+    const buildingPurposeRadios = panel.querySelectorAll('input[name="lmpBuildingPurpose"]');
+    if (buildingPurposeSelect && buildingPurposeRadios.length) {
+      buildingPurposeRadios.forEach(radio => {
+        radio.checked = radio.value === buildingPurposeSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          buildingPurposeSelect.value = radio.value;
+          buildingPurposeSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      buildingPurposeSelect.addEventListener('change', () => {
+        buildingPurposeRadios.forEach(radio => {
+          radio.checked = radio.value === buildingPurposeSelect.value;
+        });
+      });
+    }
+
+    // Verkeersobjecten weergave: per-categorie checkboxen gekoppeld aan
+    // _setTrafficAssetCategory (gedefinieerd verderop in dit script).
+    const trafficAssetChecks = panel.querySelectorAll('input[name="lmpTrafficAsset"]');
+    if (trafficAssetChecks.length) {
+      trafficAssetChecks.forEach(check => {
+        check.checked = !!(window._trafficAssetCategories && window._trafficAssetCategories[check.value]);
+        check.addEventListener('change', () => {
+          if (typeof window._setTrafficAssetCategory === 'function') {
+            window._setTrafficAssetCategory(check.value, check.checked);
+          }
+        });
+      });
+    }
+
+    // Vegetatie weergave: volledig losstaande checkbox (bomen), niet
+    // gekoppeld aan verkeersobjecten.
+    const vegetationCheck = document.getElementById('lmpVegetation');
+    if (vegetationCheck) {
+      vegetationCheck.checked = typeof window._getVegetationVisible === 'function'
+        ? window._getVegetationVisible()
+        : false;
+      vegetationCheck.addEventListener('change', () => {
+        if (typeof window._setVegetationVisibility === 'function') {
+          window._setVegetationVisibility(vegetationCheck.checked);
+        }
+      });
+    }
+
+    // Slider-tab: paneel in-/uitklappen (naar links wegschuiven)
+    const savedCollapsed = localStorage.getItem('leftMenuPanelCollapsed') === '1';
+    if (toggle) {
+      const applyState = (collapsed) => {
+        panel.classList.toggle('collapsed', collapsed);
+        toggle.classList.toggle('collapsed', collapsed);
+        toggle.title = collapsed ? 'Menu uitklappen' : 'Menu inklappen';
+      };
+      applyState(savedCollapsed);
+      toggle.addEventListener('click', () => {
+        const collapsed = !panel.classList.contains('collapsed');
+        applyState(collapsed);
+        localStorage.setItem('leftMenuPanelCollapsed', collapsed ? '1' : '0');
+      });
+    }
+  }
+
+  // ── Nieuw-scherm ──────────────────────────────────────────────────────────
+  function openNewScreen() {
+    document.getElementById('loader').style.display   = 'none';
+    document.getElementById('newScreen').classList.add('visible');
+
+    // Initialiseer de kaart in het nieuw-scherm (MapLibre, zelfde stijl als hoofdkaart)
+    const newMap = new maplibregl.Map({
+      container: 'newMap',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      center: [4.9, 52.3],
+      zoom: 7,
+    });
+
+    let bbox   = null;   // { minLon, minLat, maxLon, maxLat }
+    let corner = null;   // eerste klik-coördinaat
+    const SOURCE_ID = 'bbox-src';
+    const LAYER_ID  = 'bbox-layer';
+
+    function bboxToGeoJSON(b) {
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [b.minLon, b.minLat],
+            [b.maxLon, b.minLat],
+            [b.maxLon, b.maxLat],
+            [b.minLon, b.maxLat],
+            [b.minLon, b.minLat],
+          ]],
+        },
+      };
+    }
+
+    function updateBboxLayer() {
+      if (!newMap.getSource(SOURCE_ID)) return;
+      newMap.getSource(SOURCE_ID).setData(
+        bbox ? bboxToGeoJSON(bbox) : { type: 'FeatureCollection', features: [] }
+      );
+      document.getElementById('bboxDisplay').innerHTML = bbox
+        ? `min lon: <b>${bbox.minLon.toFixed(5)}</b><br>
+           min lat: <b>${bbox.minLat.toFixed(5)}</b><br>
+           max lon: <b>${bbox.maxLon.toFixed(5)}</b><br>
+           max lat: <b>${bbox.maxLat.toFixed(5)}</b>`
+        : T('newAreaNoBbox');
+    }
+
+    newMap.on('load', () => {
+      newMap.addSource(SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      newMap.addLayer({
+        id: LAYER_ID, type: 'fill', source: SOURCE_ID,
+        paint: { 'fill-color': '#7ec8e3', 'fill-opacity': 0.15 },
+      });
+      newMap.addLayer({
+        id: LAYER_ID + '-outline', type: 'line', source: SOURCE_ID,
+        paint: { 'line-color': '#7ec8e3', 'line-width': 2 },
+      });
+      newMap.getCanvas().style.cursor = 'crosshair';
+    });
+
+    newMap.on('click', e => {
+      const { lng, lat } = e.lngLat;
+      if (!corner) {
+        corner = [lng, lat];
+      } else {
+        bbox = {
+          minLon: Math.min(corner[0], lng),
+          minLat: Math.min(corner[1], lat),
+          maxLon: Math.max(corner[0], lng),
+          maxLat: Math.max(corner[1], lat),
+        };
+        corner = null;
+        updateBboxLayer();
+      }
+    });
+
+    // Rubber-band preview tijdens muis bewegen
+    newMap.on('mousemove', e => {
+      if (!corner || !newMap.getSource(SOURCE_ID)) return;
+      const { lng, lat } = e.lngLat;
+      const preview = {
+        minLon: Math.min(corner[0], lng), minLat: Math.min(corner[1], lat),
+        maxLon: Math.max(corner[0], lng), maxLat: Math.max(corner[1], lat),
+      };
+      newMap.getSource(SOURCE_ID).setData(bboxToGeoJSON(preview));
+    });
+
+    document.getElementById('newClearBtn').onclick = () => {
+      bbox = null; corner = null;
+      updateBboxLayer();
+    };
+
+    // Synchroniseer checkbox met globale debug-toestand; wissel beide mee.
+    const newDebugEl = document.getElementById('newDebug');
+    newDebugEl.checked = !!window._debugMode;
+    newDebugEl.onchange = e => { window._debugMode = e.target.checked; };
+
+    document.getElementById('newCancelBtn').onclick = () => {
+      // Geen loader herstellen: het keuzescherm (menu-paneel + kaart) staat
+      // hieronder nog gewoon, #newScreen lag er alleen full-screen overheen.
+      document.getElementById('newScreen').classList.remove('visible');
+      newMap.remove();
+    };
+
+  document.getElementById('newSubmitBtn').onclick = async () => {
+    const name = document.getElementById('newName').value.trim();
+    if (!name) { alert(T('newAreaAlertName')); return; }
+    if (!bbox)  { alert(T('newAreaAlertBbox')); return; }
+
+    const selectedModes = [...document.querySelectorAll('#newModes input[type=checkbox]:checked')]
+      .map(cb => cb.value);
+    if (!selectedModes.length) { alert(T('newAreaAlertMode')); return; }
+
+    // UI in wacht-modus
+    const progressEl = document.getElementById('newProgress');
+    const statusEl   = document.getElementById('newStatus');
+    const logEl      = document.getElementById('newLog');
+    const fillEl     = document.getElementById('newProgressFill');
+    progressEl.style.display = 'flex';
+    document.getElementById('newSubmitBtn').disabled = true;
+    statusEl.textContent = T('newAreaStatusStart');
+    fillEl.style.width = '5%';
+
+    // Start één job met alle geselecteerde modi tegelijk (modes-array → pipeline doet fusing)
+    const jobStates = [];
+    try {
+      const body = {
+        name, modes: selectedModes,
+        min_lon: bbox.minLon, min_lat: bbox.minLat,
+        max_lon: bbox.maxLon, max_lat: bbox.maxLat,
+        debug: !!window._debugMode,
+        vegetation: !!document.getElementById('newVegetation').checked,
+        elevation: !!document.getElementById('newElevation').checked,
+      };
+      const res  = await fetch('/processes/prepare/execution', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: body }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.style.color = '#ff6b6b';
+        statusEl.textContent = data.error;
+        document.getElementById('newSubmitBtn').disabled = false;
+        return;
+      }
+      jobStates.push({ jobId: data.jobID, logLen: 0, done: false });
+    } catch (e) {
+      statusEl.style.color = '#ff6b6b';
+      statusEl.textContent = T('newAreaStatusConn');
+      document.getElementById('newSubmitBtn').disabled = false;
+      return;
+    }
+
+    // Peil alle jobs tegelijk met één interval
+    const poll = setInterval(async () => {
+      let anyFailed = false;
+      for (const js of jobStates) {
+        if (js.done) continue;
+        try {
+          const res = await fetch(`/jobs/${js.jobId}`);
+          const job = await res.json();
+          const newLines = job.log.slice(js.logLen);
+          if (newLines.length) {
+            logEl.textContent += newLines.join('\n') + '\n';
+            logEl.scrollTop = logEl.scrollHeight;
+            js.logLen = job.log.length;
+          }
+          if      (job.status === 'successful') { js.done = true; }
+          else if (job.status === 'failed')     { js.done = true; anyFailed = true; }
+        } catch (_) {}
+      }
+      const doneCnt = jobStates.filter(js => js.done).length;
+      const total   = jobStates.length;
+      if (anyFailed) {
+        clearInterval(poll);
+        fillEl.style.background = '#ff1744';
+        statusEl.style.color    = '#ff6b6b';
+        statusEl.textContent    = T('newAreaStatusError', '');
+        document.getElementById('newSubmitBtn').disabled = false;
+      } else if (doneCnt === total) {
+        clearInterval(poll);
+        fillEl.style.width     = '100%';
+        fillEl.style.animation = 'none';
+        statusEl.style.color   = '#00e676';
+        statusEl.textContent   = T('newAreaStatusDone');
+        document.getElementById('newSubmitBtn').disabled = false;
+        document.getElementById('newSubmitBtn').textContent = T('newAreaStatusBack');
+        document.getElementById('newSubmitBtn').onclick = () => window.location.reload();
+      } else {
+        statusEl.textContent = T('newAreaStatusRunning');
+        fillEl.style.width   = `${10 + 80 * doneCnt / total}%`;
+      }
+    }, 1500);
+  };
+}
+
+  function apiUrl(type) {
+    const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', FEEDLINK: 'feedlinks', COMPARE: 'comparison' };
+    const coll = collMap[type] || type.toLowerCase();
+    return `/collections/${coll}/items?areaId=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`;
+  }
+
+  const GEOJSON_FILE  = apiUrl('NETWORK');
+  const ROUTES_FILE   = apiUrl('ROUTES');
+  const CENTER        = [4.42043, 51.91117];
+
+  // ── Geo-hulpfuncties ──────────────────────────────────────────────────────
+
+  function haversineM([lon1, lat1], [lon2, lat2]) {
+    const R = 6371000, rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  /**
+   * Berekent de kompassrichting (0=N, 90=O, 180=Z, 270=W) van c1 naar c2.
+   * Corrigeert voor Mercator (lengtegraden schalen met cos(lat)).
+   */
+  function segmentBearing([lon1, lat1], [lon2, lat2]) {
+    const cosLat = Math.cos((lat1 + lat2) * Math.PI / 360);
+    return (Math.atan2((lon2 - lon1) * cosLat, lat2 - lat1) * 180 / Math.PI + 360) % 360;
+  }
+
+  function segmentLength(coords) {
+    let total = 0;
+    for (let i = 0; i < coords.length - 1; i++)
+      total += haversineM(coords[i], coords[i + 1]);
+    return total;
+  }
+
+  /** Geometrische lengte (m) van een coördinatenreeks, gecachet per array-object.
+   *  Dezelfde linkgeometrie zit in duizenden route-paden; zo wordt haversine één keer
+   *  per link berekend. Nieuwe geometrie is een nieuw array en krijgt een eigen waarde.
+   *  Moet geometrisch blijven (niet het `length`-attribuut): interpolatePosition loopt
+   *  de coördinaten af met haversine tot offset × path.length. */
+  const _segLenCache = new WeakMap();
+  function segmentLengthCached(coords) {
+    let len = _segLenCache.get(coords);
+    if (len === undefined) { len = segmentLength(coords); _segLenCache.set(coords, len); }
+    return len;
+  }
+
+  /** Lengte (m) van een netwerklink: het `length`-attribuut uit het netwerkbestand
+   *  als dat aanwezig is, anders berekend uit de geometrie. */
+  function linkLengthM(f) {
+    const L = f.properties?.length;
+    return L > 0 ? L : segmentLength(f.geometry.coordinates);
+  }
+
+  /**
+   * Geeft [lon, lat, bearing°] op fractie offset ∈ [0,1] langs een LineString.
+   * bearing = kompasrichting (0 = N, 90 = O, 180 = Z, 270 = W).
+   */
+  function interpolatePosition(coords, offset, totalLen) {
+    const target = Math.max(0, Math.min(1, offset)) * totalLen;
+    let acc = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const d = haversineM(coords[i], coords[i + 1]);
+      if (acc + d >= target || i === coords.length - 2) {
+        const t = d > 0 ? Math.min(1, (target - acc) / d) : 0;
+        const lon     = coords[i][0] + t * (coords[i + 1][0] - coords[i][0]);
+        const lat     = coords[i][1] + t * (coords[i + 1][1] - coords[i][1]);
+        const dLon    = coords[i + 1][0] - coords[i][0];
+        const dLat    = coords[i + 1][1] - coords[i][1];
+        // Corrigeer voor Mercator-projectie: lengtegraden zijn cos(lat) keer korter
+        const cosLat  = Math.cos(lat * Math.PI / 180);
+        const bearing = (Math.atan2(dLon * cosLat, dLat) * 180 / Math.PI + 360) % 360;
+        return [lon, lat, bearing];
+      }
+      acc += d;
+    }
+    const c = coords[coords.length - 1];
+    return [c[0], c[1], 0];
+  }
+
+  // ── Kleur- & dichtheidsfuncties ───────────────────────────────────────────
+
+    /** norm ∈ [0,1] → RGBA groen → geel → rood.
+     *  Wortel-gamma: geel verschuift naar norm ≈ 0.25 voor meer kleuronderscheid bij lage intensiteiten. */
+    function flowToRgba(norm) {
+      // Vaste kleurblokken conform Google Maps-legenda: groen → geel → oranje → rood → donkerrood
+      if (norm < 0.04) return [150, 150, 150,  60];  // nauwelijks gebruik: grijs
+      if (norm < 0.20) return [ 99, 214, 104, 220];  // vrij:     groen
+      if (norm < 0.40) return [255, 220,   0, 220];  // matig:    geel
+      if (norm < 0.65) return [230,  90,  20, 220];  // druk:     oranje
+      if (norm < 0.85) return [210,  35,  35, 220];  // erg druk: rood
+                       return [130,   0,   0, 220];  // vast:     donkerrood
+    }
+
+  /** Fiets-specifieke kleurschaal (multimodaal MIXED): donkerpaars → magenta → amber.
+   *  Geen rood-tint, geen overlap met de auto-schaal (blauw→groen→geel→rood).
+   *  norm=0 (laag): [80,0,160] diep paars  |  norm=0.5: [220,40,200] magenta  |  norm=1 (hoog): [255,170,0] amber */
+  function bikeFlowToRgba(norm) {
+    let r, g, b;
+    if (norm <= 0.5) {
+      const t = norm * 2;
+      r = Math.round(80  + t * 140);   // 80  → 220
+      g = Math.round(0   + t * 40);    // 0   → 40
+      b = Math.round(160 + t * 40);    // 160 → 200
+    } else {
+      const t = (norm - 0.5) * 2;
+      r = Math.round(220 + t * 35);    // 220 → 255
+      g = Math.round(40  + t * 130);   // 40  → 170
+      b = Math.round(200 - t * 200);   // 200 → 0
+    }
+    return [r, Math.min(255, Math.max(0, g)), Math.min(255, Math.max(0, b)), 210];
+  }
+
+  // Groen→geel→rood (bezettingsgraad): zelfde blokken maar lagere drempels —
+  // 65% bezetting is al erg druk en kleurt rood.
+  function greenRedRgba(norm) {
+    // norm = bezettingsgraad / 100  (0–1)
+    if (norm < 0.04) return [150, 150, 150,  60];  // < 4%:   grijs
+    if (norm < 0.15) return [ 99, 214, 104, 220];  // < 15%:  groen
+    if (norm < 0.30) return [255, 220,   0, 220];  // < 30%:  geel
+    if (norm < 0.50) return [230,  90,  20, 220];  // < 50%:  oranje
+    if (norm < 0.70) return [210,  35,  35, 220];  // < 70%:  rood
+                     return [130,   0,   0, 220];  // ≥ 70%:  donkerrood
+  }
+
+  /**
+   * Absolute (niet-relatieve) grenswaarden voor de geluid- en emissielagen.
+   * Elke laag krijgt een vaste drempel: onder `std` = toegestaan (groen),
+   * tussen `std` en `max` = grijs gebied / afweegzone (geel→oranje), boven
+   * `max` = overschrijding (rood). Zo blijft de inkleuring vergelijkbaar
+   * tussen scenario's, i.p.v. mee te schalen met de dataspreiding.
+   *
+   * Geluid: wettelijke waarden uit de Omgevingswet (Aanvullingsbesluit geluid,
+   *   wegverkeer gemeente-/provinciale weg): standaardwaarde Lden 53 dB,
+   *   grenswaarde Lden 70 dB. Voor Lnight bestaat geen wettelijke wegnorm;
+   *   hier een indicatieve band (WHO-nachtrichtwaarde 45 dB → 59 dB).
+   *   NB: het model levert bronemissie per link, geen gevelimmissie; de
+   *   waarden zijn als indicatieve klassenindeling toegepast.
+   * Emissie: luchtkwaliteitsnormen zijn concentraties (µg/m³), niet massa per
+   *   weglink, dus er is GEEN wettelijke per-weg-limiet. Onderstaande drempels
+   *   zijn indicatief (kg/km/etmaal) en bedoeld om te tunen.
+   */
+  const METRIC_LIMITS = {
+    noise_lden:   { std: 53,  max: 70,  legal: true  },  // Omgevingswet, Lden dB(A)
+    noise_lnight: { std: 45,  max: 59,  legal: false },  // indicatief, Lnight dB(A)
+    emis_co2:     { std: 500, max: 1000, legal: false }, // indicatief, kg/km/etmaal
+    emis_nox:     { std: 1.5, max: 3.0,  legal: false }, // indicatief, kg/km/etmaal
+    emis_pm10:    { std: 0.15, max: 0.30, legal: false },// indicatief, kg/km/etmaal
+    // "Snelheid"-straf-seconden v0 (alleen vaste componenten, zie
+    // docs/plan-snelheid-strafseconden.md) — startwaarden, nog te valideren.
+    speed_penalty_total: { std: 4, max: 12, legal: false },
+  };
+
+  /** Kleur op basis van absolute drempels: groen (toegestaan) → geel/oranje
+   *  (grijs gebied) → rood (overschrijding). */
+  function limitBandRgba(v, std, max) {
+    if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+    if (v < std) {
+      // Toegestaan: lichtgroen → groen naarmate het de standaardwaarde nadert
+      return [99, 214, 104, 220];
+    }
+    if (v < max) {
+      // Grijs gebied: geel → oranje over de afweegzone
+      const t = (v - std) / (max - std);
+      return [230, Math.round(210 - 120 * t), 20, 225];
+    }
+    // Overschrijding: rood → donkerrood bij forse overschrijding
+    const t = Math.max(0, Math.min(1, (v - max) / max));
+    return [Math.round(205 - 75 * t), Math.round(30 - 30 * t), Math.round(30 - 30 * t), 230];
+  }
+
+    // "Snelheid"-sub-lagen (binaire aanwezigheid van een factor op het wegvak).
+    const BINARY_SPEED_METRICS = new Set(['speed_crossings', 'speed_yield', 'speed_refuge']);
+    const CATEGORICAL_SPEED_METRICS = new Set(['speed_intersections']);
+  // Toekomstige Snelheid-sub-lagen die al zichtbaar zijn in het menu, maar grijs
+  // blijven zolang de brondata (gmt-library Deel A / cycle paths) nog ontbreekt.
+  const FUTURE_BINARY_SPEED_METRICS = new Set(['speed_cycle_crossings']);
+  // Snelheid-sub-lagen met een continue (flow-gebaseerde) waarde i.p.v. binair.
+  const FLOW_SPEED_METRICS = new Set(['speed_from_right', 'speed_left_turn', 'speed_oncoming', 'speed_elevation']);
+  const BINARY_SPEED_RGBA = [235, 110, 20, 230];   // opvallend amber/oranje
+  const UNAVAILABLE_GREY_RGBA = [160, 160, 170, 180]; // half-transparant grijs: data nog niet beschikbaar
+
+  // Blauw (vrij/snel) → rood (langzaam): norm=0 is langzaam, norm=1 is snel
+  function speedRgba(norm) {
+    const n = 1 - norm; // omdraaien: hoge snelheid = koel blauw
+    const r = Math.min(255, Math.round(n * 2 * 255));
+    const g = Math.min(255, Math.round((1 - n) * 1.5 * 255));
+    const b = Math.min(255, Math.round((1 - n) * 255));
+    return [r, g, b, 210];
+  }
+
+  // Grijs/transparant (laag) → amber → rood (hoog), voor continue Snelheid-lagen.
+  function redOrangeRgba(norm) {
+    if (norm <= 0) return [80, 80, 100, 120];
+    if (norm >= 1) return [231, 76, 60, 230];
+    if (norm < 0.5) {
+      // grijs (0,0.2,0.4,0.6) → amber
+      const t = norm * 2;
+      const r = Math.round(80 + t * (235 - 80));
+      const g = Math.round(80 + t * (110 - 80));
+      const b = Math.round(100 + t * (20 - 100));
+      const a = Math.round(120 + t * (230 - 120));
+      return [r, g, b, a];
+    }
+    // amber → rood
+    const t = (norm - 0.5) * 2;
+    const r = Math.round(235 + t * (231 - 235));
+    const g = Math.round(110 + t * (76 - 110));
+    const b = Math.round(20 + t * (60 - 20));
+    return [r, g, b, 230];
+  }
+
+  // Hellingspercentage: groen (bergaf, negatief) → geel (0%) → rood (bergop, positief).
+  // maxAbs = maximum absolute helling in het geladen gebied.
+  function slopeRgba(pct, maxAbs) {
+    if (maxAbs <= 0 || pct == null || !isFinite(pct)) return [255, 220, 80, 230];
+    const stop = [
+      { p: -maxAbs, c: [30, 160, 60] },   // groen, bergaf
+      { p: 0,       c: [255, 220, 80] },   // geel, vlak
+      { p: maxAbs,  c: [220, 50, 40] }    // rood, bergop
+    ];
+    // lineair interpoleren tussen de twee dichtstbijzijnde stops
+    let a = stop[0], b = stop[stop.length - 1];
+    for (let i = 0; i < stop.length - 1; i++) {
+      if (pct >= stop[i].p && pct <= stop[i + 1].p) { a = stop[i]; b = stop[i + 1]; break; }
+    }
+    const range = b.p - a.p || 1;
+    const t = Math.max(0, Math.min(1, (pct - a.p) / range));
+    const r = Math.round(a.c[0] + t * (b.c[0] - a.c[0]));
+    const g = Math.round(a.c[1] + t * (b.c[1] - a.c[1]));
+    const bl = Math.round(a.c[2] + t * (b.c[2] - a.c[2]));
+    return [r, g, bl, 230];
+  }
+
+  // Lichtblauw (laag) → diepblauw (hoog)
+  function capacityRgba(norm) {
+    const r = Math.round(30 + (1 - norm) * 140);
+    const g = Math.round(80 + (1 - norm) * 120);
+    const b = Math.round(200 + norm * 55);
+    return [r, g, b, 210];
+  }
+
+  function flowToCarCount(flow) {
+    if (flow < 200)  return 0;
+    if (flow < 600)  return 1;
+    if (flow < 1200) return 2;
+    if (flow < 2000) return 3;
+    return 4;
+  }
+
+  /**
+   * Doelaantal auto's op basis van huidig zoom-niveau.
+   * Meer detail bij inzoomen, minder bij uitzoomen voor performance.
+   */
+  function targetCarCount(zoom) {
+    if (zoom < 12) return 400;
+    if (zoom < 13) return 800;
+    if (zoom < 14) return 1500;
+    if (zoom < 15) return 2500;
+    if (zoom < 16) return 4000;
+    return 5500;
+  }
+
+  // Autokleuren afgestemd op het Nederlandse wagenpark (bron: RDW kentekendatabank).
+  // Elk item: [R, G, B, A, gewicht]  — gewicht bepaalt de kans op selectie.
+  const CAR_PALETTE_WEIGHTED = [
+    [175, 178, 180, 255, 28],  // grijs        ~28 %
+    [ 28,  28,  30, 255, 22],  // zwart        ~22 %
+    [235, 235, 232, 255, 19],  // wit          ~19 %
+    [ 38,  72, 148, 255, 12],  // blauw        ~12 %
+    [185,  30,  30, 255,  8],  // rood          ~8 %
+    [ 38, 100,  48, 255,  4],  // groen         ~4 %
+    [160, 130,  90, 255,  4],  // bruin/beige   ~4 %
+    [200, 130,  30, 255,  3],  // overig/oranje ~3 %
+  ];
+
+  // Vooraf cumulatieve gewichtssom berekenen voor snelle gewogen loting
+  const _cpTotal = CAR_PALETTE_WEIGHTED.reduce((s, c) => s + c[4], 0);
+  const _cpCumul = (() => {
+    let acc = 0;
+    return CAR_PALETTE_WEIGHTED.map(c => { acc += c[4]; return acc; });
+  })();
+
+  /** Geeft een kleur [R,G,B,A] gewogen willekeurig terug */
+  function randomCarColor(vehicleMode = MODE) {
+    if (vehicleMode === 'BIKE') return BIKE_COLOR;
+    const r = Math.random() * _cpTotal;
+    const i = _cpCumul.findIndex(v => v > r);
+    const c = CAR_PALETTE_WEIGHTED[i < 0 ? CAR_PALETTE_WEIGHTED.length - 1 : i];
+    return [c[0], c[1], c[2], c[3]];
+  }
+
+  // ── Car-following parameters ──────────────────────────────────────────────
+  //   Gebaseerd op vereenvoudigd IDM-achtig model.
+  const CF_MIN_GAP  = 5;    // minimale bumper-to-bumper afstand (m)
+  const CAR_LENGTH  = 4.5;  // gemiddelde voertuiglengte (m)
+
+  // ── Parkeerparameters ─────────────────────────────────────────────────────
+  const MAX_VEHICLES = 5000;
+  const PARK_MEAN_S  = 5400;   // gemiddelde parkeertijd Nederland ~90 min (sec)
+  const PARK_STD_S   = 1800;   // standaarddeviatie parkeertijd (sec)
+  const PARK_MIN_S   = 120;    // minimale parkeertijd (sec)
+  // Aandeel initieel geparkeerde auto's per dagdeel
+  const PARK_RATIOS  = { mrh: 0.50, erh: 0.15, rest: 0.35 };
+
+  /** Box-Muller transform: normaalverdeeld getal met gegeven gemiddelde en std */
+  function normalRandom(mean, std) {
+    let u, v;
+    do { u = Math.random(); } while (u === 0);
+    do { v = Math.random(); } while (v === 0);
+    return mean + std * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  // ── Applicatielogica ──────────────────────────────────────────────────────
+
+  const { MapboxOverlay, GeoJsonLayer, SimpleMeshLayer, ScatterplotLayer, PathLayer, IconLayer, PolygonLayer } = deck;
+
+  // ── Mesh-hulpfuncties ────────────────────────────────────────────────────────
+
+  function makeBoxGeom(lx, ly, lz, cx, cy, cz) {
+    const hx = lx / 2, hy = ly / 2, hz = lz / 2;
+    const pos = new Float32Array([
+      cx+hx,cy-hy,cz-hz, cx+hx,cy+hy,cz-hz, cx+hx,cy+hy,cz+hz, cx+hx,cy-hy,cz+hz,
+      cx-hx,cy-hy,cz-hz, cx-hx,cy+hy,cz-hz, cx-hx,cy+hy,cz+hz, cx-hx,cy-hy,cz+hz,
+      cx-hx,cy+hy,cz-hz, cx+hx,cy+hy,cz-hz, cx+hx,cy+hy,cz+hz, cx-hx,cy+hy,cz+hz,
+      cx-hx,cy-hy,cz-hz, cx+hx,cy-hy,cz-hz, cx+hx,cy-hy,cz+hz, cx-hx,cy-hy,cz+hz,
+      cx-hx,cy-hy,cz+hz, cx+hx,cy-hy,cz+hz, cx+hx,cy+hy,cz+hz, cx-hx,cy+hy,cz+hz,
+      cx-hx,cy-hy,cz-hz, cx+hx,cy-hy,cz-hz, cx+hx,cy+hy,cz-hz, cx-hx,cy+hy,cz-hz,
+    ]);
+    const nor = new Float32Array([
+       1,0,0, 1,0,0, 1,0,0, 1,0,0,
+      -1,0,0,-1,0,0,-1,0,0,-1,0,0,
+       0,1,0, 0,1,0, 0,1,0, 0,1,0,
+       0,-1,0,0,-1,0,0,-1,0,0,-1,0,
+       0,0,1, 0,0,1, 0,0,1, 0,0,1,
+       0,0,-1,0,0,-1,0,0,-1,0,0,-1,
+    ]);
+    const uv = new Float32Array(48).fill(0);
+    const idx = new Uint32Array([
+       0,1,2, 0,2,3,   4,6,5, 4,7,6,
+       8,9,10, 8,10,11, 12,14,13, 12,15,14,
+      16,17,18,16,18,19, 20,22,21,20,23,22,
+    ]);
+    return { pos, nor, uv, idx, vc: 24 };
+  }
+
+  /**
+   * Schuin geplaatst glasvlak (voor- en achterruit).
+   *   w       = breedte (Y-as)
+   *   h       = hoogte  (Z-as)
+   *   tiltDx  = hoeveel de bovenkant opschuift in de -X richting (>0 = achterover)
+   *   cx,cy,cz = middelpunt van het vlak
+   * Beide zijden worden gerenderd zodat het glas van binnen en buiten zichtbaar is.
+   */
+  function makeTiltedPane(w, h, tiltDx, cx, cy, cz) {
+    const bx = cx + tiltDx / 2;   // onderkant-X (iets naar voren)
+    const tx = cx - tiltDx / 2;   // bovenkant-X (iets naar achter)
+    const yw = w / 2;
+    const zh = h / 2;
+    // Normaalvector: loodrecht op het vlak, naar voren gericht (+X component)
+    const len = Math.sqrt(h * h + tiltDx * tiltDx) || 1;
+    const nx = h / len, nz = tiltDx / len;
+    const pos = new Float32Array([
+      // Voorzijde
+      bx, cy - yw, cz - zh,  // 0 BO-links
+      bx, cy + yw, cz - zh,  // 1 BO-rechts
+      tx, cy + yw, cz + zh,  // 2 BO-rechts boven
+      tx, cy - yw, cz + zh,  // 3 BO-links boven
+      // Achterzijde (zelfde vertices, omgekeerde volgorde)
+      bx, cy - yw, cz - zh,  // 4
+      bx, cy + yw, cz - zh,  // 5
+      tx, cy + yw, cz + zh,  // 6
+      tx, cy - yw, cz + zh,  // 7
+    ]);
+    const nor = new Float32Array([
+       nx, 0,  nz,  nx, 0,  nz,  nx, 0,  nz,  nx, 0,  nz,
+      -nx, 0, -nz, -nx, 0, -nz, -nx, 0, -nz, -nx, 0, -nz,
+    ]);
+    const uv  = new Float32Array(16).fill(0);
+    const idx = new Uint32Array([
+      0, 1, 2,  0, 2, 3,   // voorzijde
+      4, 6, 5,  4, 7, 6,   // achterzijde
+    ]);
+    return { pos, nor, uv, idx, vc: 8 };
+  }
+
+  /**
+   * Georiënteerde box: middelpunt c en drie onderling loodrechte halve-assen
+   * ax, ay, az (vectoren). az moet gelijk gericht zijn aan ax × ay.
+   */
+  function makeOrientedBoxGeom(c, ax, ay, az) {
+    const pos = [], nor = [], idx = [];
+    const add = (p, s, q, r) => {
+      // Vlak op c + s·p, opgespannen door q en r (CCW gezien van buitenaf)
+      const l = Math.hypot(p[0], p[1], p[2]) || 1;
+      const n = [s * p[0] / l, s * p[1] / l, s * p[2] / l];
+      const corners = s > 0 ? [[-1,-1],[1,-1],[1,1],[-1,1]] : [[-1,-1],[-1,1],[1,1],[1,-1]];
+      const b = pos.length / 3;
+      for (const [i, j] of corners) {
+        for (let k = 0; k < 3; k++) pos.push(c[k] + s * p[k] + i * q[k] + j * r[k]);
+        nor.push(...n);
+      }
+      idx.push(b, b+1, b+2, b, b+2, b+3);
+    };
+    for (const s of [1, -1]) { add(ax, s, ay, az); add(ay, s, az, ax); add(az, s, ax, ay); }
+    return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+             uv: new Float32Array(48), idx: new Uint32Array(idx), vc: 24 };
+  }
+
+  /** Balk (buis/ledemaat) van punt p0 naar p1 met doorsnede w (lateraal) × h. */
+  function makeBeamGeom(p0, p1, w, h = w) {
+    const d = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
+    const len = Math.hypot(...d) || 1e-6;
+    const dx = d.map(v => v / len);
+    // Referentie-as: Y (lateraal) tenzij de balk zelf vrijwel lateraal loopt
+    const ref = Math.abs(dx[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    let up = [dx[1]*ref[2]-dx[2]*ref[1], dx[2]*ref[0]-dx[0]*ref[2], dx[0]*ref[1]-dx[1]*ref[0]];
+    const ul = Math.hypot(...up); up = up.map(v => v / ul);
+    const side = [up[1]*dx[2]-up[2]*dx[1], up[2]*dx[0]-up[0]*dx[2], up[0]*dx[1]-up[1]*dx[0]];
+    const c = [(p0[0]+p1[0])/2, (p0[1]+p1[1])/2, (p0[2]+p1[2])/2];
+    return makeOrientedBoxGeom(c, dx.map(v => v * len / 2), side.map(v => v * w / 2), up.map(v => v * h / 2));
+  }
+
+  /** Wielband: ring in het XZ-vlak rond (cx, cy, cz), opgebouwd uit seg balkjes. */
+  function makeRingGeom(radius, tube, width, cx, cy, cz, seg = 16) {
+    const parts = [];
+    const ext = 1 + tube / radius;   // segmenten iets verlengen zodat de naden dicht zijn
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * 2 * Math.PI, a1 = ((i + 1) / seg) * 2 * Math.PI;
+      const am = (a0 + a1) / 2, half = (a1 - a0) / 2 * ext;
+      parts.push(makeBeamGeom(
+        [cx + Math.cos(am - half) * radius, cy, cz + Math.sin(am - half) * radius],
+        [cx + Math.cos(am + half) * radius, cy, cz + Math.sin(am + half) * radius],
+        width, tube));
+    }
+    return parts;
+  }
+
+  function makeCylinderGeom(radius, h, cx, cy, cz, seg = 12) {
+    const pos = [], nor = [], uv = [], idx = [];
+    const step = (2 * Math.PI) / seg;
+    for (let i = 0; i < seg; i++) {
+      const a0 = i * step, a1 = ((i + 1) % seg) * step;
+      const x0 = Math.cos(a0) * radius, z0 = Math.sin(a0) * radius;
+      const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
+      const b = pos.length / 3;
+      pos.push(cx+x0,cy-h/2,cz+z0, cx+x0,cy+h/2,cz+z0,
+               cx+x1,cy+h/2,cz+z1, cx+x1,cy-h/2,cz+z1);
+      nor.push(x0/radius,0,z0/radius, x0/radius,0,z0/radius,
+               x1/radius,0,z1/radius, x1/radius,0,z1/radius);
+      uv.push(0,0, 0,1, 1,1, 1,0);
+      idx.push(b,b+1,b+2, b,b+2,b+3);
+    }
+    const tc = pos.length / 3;
+    pos.push(cx, cy+h/2, cz); nor.push(0,1,0); uv.push(0.5,0.5);
+    for (let i = 0; i < seg; i++) {
+      const a = i * step;
+      pos.push(cx+Math.cos(a)*radius, cy+h/2, cz+Math.sin(a)*radius);
+      nor.push(0,1,0); uv.push(0,0);
+    }
+    for (let i = 1; i < seg; i++) idx.push(tc, tc+i, tc+i+1);
+    idx.push(tc, tc+seg, tc+1);
+    const bc = pos.length / 3;
+    pos.push(cx, cy-h/2, cz); nor.push(0,-1,0); uv.push(0.5,0.5);
+    for (let i = 0; i < seg; i++) {
+      const a = i * step;
+      pos.push(cx+Math.cos(a)*radius, cy-h/2, cz+Math.sin(a)*radius);
+      nor.push(0,-1,0); uv.push(0,0);
+    }
+    for (let i = 1; i < seg; i++) idx.push(bc, bc+i+1, bc+i);
+    idx.push(bc, bc+1, bc+seg);
+    const vc = pos.length / 3;
+    return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+             uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
+  }
+
+  function mergeMeshes(parts) {
+    let tv = 0, ti = 0;
+    for (const p of parts) { tv += p.vc; ti += p.idx.length; }
+    const pos = new Float32Array(tv * 3);
+    const nor = new Float32Array(tv * 3);
+    const uv  = new Float32Array(tv * 2);
+    const idx = new Uint32Array(ti);
+    let vo = 0, io = 0;
+    for (const p of parts) {
+      pos.set(p.pos, vo * 3); nor.set(p.nor, vo * 3); uv.set(p.uv, vo * 2);
+      for (let i = 0; i < p.idx.length; i++) idx[io + i] = p.idx[i] + vo;
+      vo += p.vc; io += p.idx.length;
+    }
+    return {
+      attributes: {
+        positions: { value: pos, size: 3 },
+        normals:   { value: nor, size: 3 },
+        texCoords: { value: uv,  size: 2 },
+      },
+      indices: { value: idx, size: 1 },
+    };
+  }
+
+  // ── Voertuigtype-definities (5 typen, gewogen naar RDW-kentekenbestand) ──────
+  //
+  //  Coördinatenstelsel per mesh:
+  //    X = rijrichting (voor = +X)
+  //    Y = breedte     (rechts = +Y)
+  //    Z = hoogte      (omhoog = +Z, onderkant voertuig = Z 0)
+  //
+  //  Gewichten (benaderd naar RDW-voertuigpopulatie):
+  //    Personenauto  55 %  — sedan / hatchback
+  //    Stadsauto     15 %  — city car (kort, hoge daklijn)
+  //    SUV / MPV     15 %  — hoger en breder, grotere wielen
+  //    Bestelwagen   10 %  — rechthoekige laadruimte
+  //    Vrachtauto     5 %  — cabine + laadbak, 6 wielen
+
+  const VEHICLE_TYPES = (() => {
+    const GROUND_CLEARANCE = 0.30;   // bodemplaat boven de grond (m); wielen blijven op Z 0
+
+    // Personenauto's naar het Montréal-automodel (vehicle-mesh `i()`):
+    // onderbak + smallere cabine met donker dak, staande ruiten, bumpers en
+    // lampen. Montréal gebruikt X = lateraal, Y = voor; hier omgezet naar
+    // X = voor, Y = lateraal. bodyH is gemeten vanaf 0.04 m (Montréal); de
+    // bodemplaat ligt op GROUND_CLEARANCE, de daklijn blijft gelijk. Wielen raken Z 0.
+    function makeMontrealCar({ L, W, bodyH, cabL, cabW, cabH, cabX, wheelR, wheelX, wheelW, length, weight }) {
+      const bodyBot = GROUND_CLEARANCE, bodyTop = 0.04 + bodyH;
+      const cabBot  = bodyTop - 0.04, cabZ = cabBot + cabH / 2;
+      const bumperZ = (bodyBot + bodyTop) / 2;
+      const lightZ  = bumperZ + 0.12, lightY = W / 2 - 0.18;
+      return {
+        body: mergeMeshes([
+          makeBoxGeom(L,    W,    bodyTop - bodyBot, 0, 0, (bodyBot + bodyTop) / 2),   // onderbak
+          makeBoxGeom(cabL, cabW, cabH,  cabX, 0, cabZ),                  // cabine
+        ]),
+        bumpers: mergeMeshes([   // dak + bumpers (trimColor)
+          makeBoxGeom(cabL + 0.10, cabW + 0.08, 0.07, cabX, 0, cabBot + cabH + 0.045),
+          makeBoxGeom(0.12, W - 0.16, 0.22,  L / 2 + 0.05, 0, bumperZ),
+          makeBoxGeom(0.12, W - 0.16, 0.22, -L / 2 - 0.05, 0, bumperZ),
+        ]),
+        windows: mergeMeshes([
+          makeBoxGeom(0.03, cabW + 0.05, cabH - 0.05, cabX + cabL / 2,        0, cabZ),         // voorruit
+          makeBoxGeom(0.03, cabW,        cabH - 0.10, cabX - cabL / 2 - 0.05, 0, cabZ - 0.02),  // achterruit
+          makeBoxGeom(cabL - 0.05, 0.03, cabH - 0.05, cabX,  cabW / 2 + 0.015, cabZ),           // zijruiten
+          makeBoxGeom(cabL - 0.05, 0.03, cabH - 0.05, cabX, -cabW / 2 - 0.015, cabZ),
+        ]),
+        headlights: mergeMeshes([
+          makeBoxGeom(0.05, 0.28, 0.16, L / 2 + 0.07,  lightY, lightZ),
+          makeBoxGeom(0.05, 0.28, 0.16, L / 2 + 0.07, -lightY, lightZ),
+        ]),
+        taillights: mergeMeshes([
+          makeBoxGeom(0.05, 0.24, 0.16, -L / 2 - 0.07,  lightY, lightZ),
+          makeBoxGeom(0.05, 0.24, 0.16, -L / 2 - 0.07, -lightY, lightZ),
+        ]),
+        wheels: mergeMeshes([
+          makeCylinderGeom(wheelR, wheelW,  wheelX, -(W / 2 - 0.02), wheelR, 16),
+          makeCylinderGeom(wheelR, wheelW,  wheelX,  (W / 2 - 0.02), wheelR, 16),
+          makeCylinderGeom(wheelR, wheelW, -wheelX, -(W / 2 - 0.02), wheelR, 16),
+          makeCylinderGeom(wheelR, wheelW, -wheelX,  (W / 2 - 0.02), wheelR, 16),
+        ]),
+        trimColor: [86, 95, 100, 255],   // Montréal 0x565F64
+        weight,
+        length,   // fysieke lengte (m) voor bezettingsgraad-berekening
+      };
+    }
+
+    // 1 ── Personenauto (sedan / hatchback) — maten van het Montréal-model
+    const personenauto = makeMontrealCar({
+      L: 4.3, W: 1.76, bodyH: 0.92, cabL: 2.15, cabW: 1.50, cabH: 0.60, cabX: -0.15,
+      wheelR: 0.33, wheelX: 1.40, wheelW: 0.20, length: 4.5, weight: 55,
+    });
+
+    // 2 ── Kleine stadsauto (city car — kort, hoge daklijn)
+    const stadsauto = makeMontrealCar({
+      L: 3.3, W: 1.66, bodyH: 0.85, cabL: 1.90, cabW: 1.44, cabH: 0.68, cabX: -0.20,
+      wheelR: 0.29, wheelX: 1.05, wheelW: 0.18, length: 3.5, weight: 15,
+    });
+
+    // 3 ── SUV / MPV (hoger, breder, grotere wielen, lange cabine)
+    const suv = makeMontrealCar({
+      L: 4.6, W: 1.90, bodyH: 1.05, cabL: 2.90, cabW: 1.70, cabH: 0.72, cabX: -0.45,
+      wheelR: 0.40, wheelX: 1.55, wheelW: 0.24, length: 4.8, weight: 15,
+    });
+
+    // 4 ── Bestelwagen (rechthoekige laadruimte, hoge dakrand)
+    const bestelwagen = {
+      body: mergeMeshes([
+        makeBoxGeom(5.5,  2.2,  1.9,   0,     0,  1.25),  // doos-carrosserie (0.3 → 2.2 m)
+      ]),
+      bumpers: mergeMeshes([
+        makeBoxGeom(0.12, 2.25, 0.38,  2.81,  0,  0.45),   // voorbumper
+        makeBoxGeom(0.12, 2.25, 0.38, -2.81,  0,  0.45),   // achterbumper
+      ]),
+      windows: mergeMeshes([
+        makeTiltedPane(1.95, 0.60,  0.10,  2.76, 0,     1.80),  // voorruit (licht achterover)
+        makeBoxGeom(0.55, 0.04, 0.50,  2.5,   1.12,  1.80),     // rechter cabine-zijraam
+        makeBoxGeom(0.55, 0.04, 0.50,  2.5,  -1.12,  1.80),     // linker cabine-zijraam
+      ]),
+      wheels: mergeMeshes([
+        makeCylinderGeom(0.36, 0.24,  2.0, -1.1, 0.36),
+        makeCylinderGeom(0.36, 0.24,  2.0,  1.1, 0.36),
+        makeCylinderGeom(0.36, 0.24, -1.9, -1.1, 0.36),
+        makeCylinderGeom(0.36, 0.24, -1.9,  1.1, 0.36),
+      ]),
+      weight: 10,
+      length: 5.5,
+    };
+
+    // 5 ── Vrachtauto (cabine voor + laadbak achter, 6 wielen)
+    //   Totale lengte ≈ 10 m; coördinaat-oorsprong op onderkant midden-voertuig.
+    //   Cabine: X van +2.5 → +5.0  (midden X = +3.75)
+    //   Laadbak: X van -5.0 → +2.5 (midden X = -1.25)
+    const vrachtauto = {
+      body: mergeMeshes([
+        makeBoxGeom(2.5,  2.5,  2.5,   3.75,  0,  1.55),  // cabine  (0.3 → 2.8 m)
+        makeBoxGeom(7.2,  2.45, 2.7,  -1.25,  0,  1.65),  // laadbak (0.3 → 3.0 m)
+      ]),
+      bumpers: mergeMeshes([
+        makeBoxGeom(0.15, 2.6,  0.42,  5.08,  0,  0.51),   // voorbumper
+      ]),
+      windows: mergeMeshes([
+        makeTiltedPane(2.1, 0.80,  0.12,  5.0,  0,     2.3),   // voorruit (licht achterover)
+        makeBoxGeom(0.65, 0.04, 0.65,  4.7,   1.26,  2.3),     // rechter zijraam
+        makeBoxGeom(0.65, 0.04, 0.65,  4.7,  -1.26,  2.3),     // linker zijraam
+      ]),
+      wheels: mergeMeshes([
+        // Vooras
+        makeCylinderGeom(0.48, 0.28,  3.8, -1.25, 0.48),
+        makeCylinderGeom(0.48, 0.28,  3.8,  1.25, 0.48),
+        // Aandrijfas 1
+        makeCylinderGeom(0.48, 0.28, -1.2, -1.35, 0.48),
+        makeCylinderGeom(0.48, 0.28, -1.2,  1.35, 0.48),
+        // Aandrijfas 2
+        makeCylinderGeom(0.48, 0.28, -3.0, -1.35, 0.48),
+        makeCylinderGeom(0.48, 0.28, -3.0,  1.35, 0.48),
+      ]),
+      weight: 5,
+      length: 10.0,
+    };
+
+    return [personenauto, stadsauto, suv, bestelwagen, vrachtauto];
+  })();
+
+  // ── Fiets (voor MODE=BIKE) ────────────────────────────────────────────────
+  // Eén type, één kleur — helder amber (goed zichtbaar op donkere kaart).
+  const BIKE_COLOR = [255, 185, 0, 255];
+
+  // Shirtkleuren voor de fietser (romp + armen) — gedempte "jersey"-tinten,
+  // overgenomen uit de Montreal-cyclistlaag. Ondoorzichtig (alpha 255).
+  const CLOTHING_PALETTE = [
+    [201,  78,  62, 255],  // steenrood
+    [ 40, 107, 156, 255],  // staalblauw
+    [227, 168,  59, 255],  // oker
+    [104,  81, 152, 255],  // paars
+    [ 56, 135, 109, 255],  // groen
+    [214, 118, 150, 255],  // roze
+    [231, 226, 205, 255],  // gebroken wit
+  ];
+  function randomClothingColor() {
+    return CLOTHING_PALETTE[Math.floor(Math.random() * CLOTHING_PALETTE.length)];
+  }
+
+  const BIKE_VEHICLE_TYPES = (() => {
+    // Coördinatenstelsel: X = voor, Y = rechts, Z = omhoog (meters).
+    // Rechtop zittende (stads)fietser; trappers in stand voor/achter.
+    const R = 0.34;                       // wielstraal (28")
+    const hubR = [-0.52, 0, R], hubF = [0.52, 0, R];
+    const bb   = [-0.06, 0, 0.30];        // trapas
+    const seatTop = [-0.22, 0, 0.80], seatStay = [-0.20, 0, 0.74];
+    const headTop = [ 0.38, 0, 0.80], headBot  = [ 0.42, 0, 0.64];
+    const T = 0.045;                      // buisdikte frame
+
+    // Frame (kleur = metriek/fietskleur)
+    const frame = [
+      makeBeamGeom(seatTop, headTop, T),          // bovenbuis
+      makeBeamGeom(bb, headBot, T),               // onderbuis
+      makeBeamGeom(bb, seatTop, T),               // zitbuis
+      makeBeamGeom(headBot, headTop, T * 1.3),    // balhoofd
+      makeBeamGeom([bb[0], 0.05, bb[2]], [hubR[0], 0.05, R], T * 0.8),   // liggende achtervork
+      makeBeamGeom([bb[0],-0.05, bb[2]], [hubR[0],-0.05, R], T * 0.8),
+      makeBeamGeom([seatStay[0], 0.04, seatStay[2]], [hubR[0], 0.05, R], T * 0.8),  // staande achtervork
+      makeBeamGeom([seatStay[0],-0.04, seatStay[2]], [hubR[0],-0.05, R], T * 0.8),
+      makeBeamGeom([headBot[0], 0.04, headBot[2]], [hubF[0], 0.05, R], T * 0.8),    // voorvork
+      makeBeamGeom([headBot[0],-0.04, headBot[2]], [hubF[0],-0.05, R], T * 0.8),
+    ];
+
+    // Donkere onderdelen: zadelpen, zadel, stuurpen, stuur, crank
+    const hands = [0.30, 0.25, 1.00];
+    const parts = [
+      makeBeamGeom(seatTop, [-0.25, 0, 0.92], 0.03),            // zadelpen
+      makeBoxGeom(0.26, 0.14, 0.05, -0.26, 0, 0.94),            // zadel
+      makeBeamGeom(headTop, [0.36, 0, 0.98], 0.035),            // stuurpen
+      makeBeamGeom([0.36, -0.27, 0.99], [0.36, 0.27, 0.99], 0.03),   // stuur
+      makeBeamGeom([0.36, 0.27, 0.99], [hands[0], 0.27, 1.00], 0.035), // handvat
+      makeBeamGeom([0.36,-0.27, 0.99], [hands[0],-0.27, 1.00], 0.035),
+      makeBeamGeom([bb[0], 0.07, bb[2]], [bb[0] + 0.17, 0.07, bb[2]], 0.03),  // crank voor
+      makeBeamGeom([bb[0],-0.07, bb[2]], [bb[0] - 0.17,-0.07, bb[2]], 0.03),  // crank achter
+    ];
+
+    // Wielen: band als ring + naaf + twee spaken-kruisen
+    const wheels = [];
+    for (const h of [hubR, hubF]) {
+      wheels.push(...makeRingGeom(R - 0.02, 0.045, 0.045, h[0], 0, h[2]));
+      wheels.push(makeBoxGeom(0.06, 0.10, 0.06, h[0], 0, h[2]));
+      wheels.push(makeBeamGeom([h[0] - R + 0.04, 0, h[2]], [h[0] + R - 0.04, 0, h[2]], 0.012));
+      wheels.push(makeBeamGeom([h[0], 0, h[2] - R + 0.04], [h[0], 0, h[2] + R - 0.04], 0.012));
+    }
+
+    // ── Fietser (zichtbaar bij zoom ≥ 15) ──────────────────────────────────
+    // Knie via twee-segment IK: heup → knie → voet, knie naar voren gebogen.
+    const knee = (hip, foot, l1 = 0.46, l2 = 0.47) => {
+      const dx = foot[0] - hip[0], dz = foot[2] - hip[2];
+      const d  = Math.min(Math.hypot(dx, dz), l1 + l2 - 1e-3);
+      const a  = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+      const hh = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+      const ux = dx / d, uz = dz / d;
+      return [hip[0] + ux * a - uz * hh, (hip[1] + foot[1]) / 2, hip[2] + uz * a + ux * hh];
+    };
+    const hipL = [-0.24,-0.10, 1.00], hipR = [-0.24, 0.10, 1.00];
+    const footR = [bb[0] + 0.17, 0.11, bb[2] + 0.02];   // trapper voor
+    const footL = [bb[0] - 0.17,-0.11, bb[2] + 0.02];   // trapper achter
+    const kneeR = knee(hipR, footR), kneeL = knee(hipL, footL);
+    const shL = [-0.10,-0.19, 1.47], shR = [-0.10, 0.19, 1.47];
+    const elL = [ 0.08,-0.24, 1.22], elR = [ 0.08, 0.24, 1.22];
+
+    // Shirt (clothingColor): romp licht voorovergebogen + armen
+    const shirt = [
+      makeOrientedBoxGeom([-0.17, 0, 1.24],              // romp, ~17° voorover
+        [ 0.09 * Math.cos(0.30), 0, -0.09 * Math.sin(0.30)],
+        [0, 0.19, 0],
+        [ 0.27 * Math.sin(0.30), 0,  0.27 * Math.cos(0.30)]),
+      makeBeamGeom(shL, elL, 0.085), makeBeamGeom(elL, [hands[0], -0.25, hands[2]], 0.075),
+      makeBeamGeom(shR, elR, 0.085), makeBeamGeom(elR, [hands[0],  0.25, hands[2]], 0.075),
+    ];
+
+    // Broek, schoenen en hoofd/helm (donker)
+    const rider = [
+      makeBoxGeom(0.24, 0.30, 0.14, -0.22, 0, 1.00),           // bekken
+      makeBeamGeom(hipR, kneeR, 0.13), makeBeamGeom(kneeR, footR, 0.10),
+      makeBeamGeom(hipL, kneeL, 0.13), makeBeamGeom(kneeL, footL, 0.10),
+      makeBoxGeom(0.22, 0.09, 0.07, footR[0] + 0.03, footR[1], footR[2]),   // schoenen
+      makeBoxGeom(0.22, 0.09, 0.07, footL[0] + 0.03, footL[1], footL[2]),
+      makeBeamGeom([-0.08, 0, 1.49], [-0.06, 0, 1.58], 0.09),  // nek
+      makeBoxGeom(0.22, 0.18, 0.22, -0.04, 0, 1.69),           // hoofd
+    ];
+
+    return [{
+      body:    mergeMeshes(frame),
+      bumpers: mergeMeshes(parts),
+      windows: mergeMeshes(shirt),   // kledingkleur via clothingColor
+      rider:   mergeMeshes(rider),   // broek/hoofd — alleen fietsers
+      wheels:  mergeMeshes(wheels),
+      weight:  1,
+      length:  1.85,
+    }];
+  })();
+
+  // Gewogen type-loting (zelfde patroon als kleurpalet)
+  const _vtTotal = VEHICLE_TYPES.reduce((s, v) => s + v.weight, 0);
+  const _vtCumul = (() => {
+    let acc = 0;
+    return VEHICLE_TYPES.map(v => { acc += v.weight; return acc; });
+  })();
+
+  function randomVehicleType(vehicleMode = MODE) {
+    if (vehicleMode === 'BIKE') return MODE === 'MIXED' ? VEHICLE_TYPES.length : 0;
+    const r = Math.random() * _vtTotal;
+    const i = _vtCumul.findIndex(v => v > r);
+    return i < 0 ? VEHICLE_TYPES.length - 1 : i;
+  }
+
+  // ── Gewogen gemiddelde voertuiglengte (voor de bezettingsgraad-metric) ──────
+  // Fysieke lengte per type, gewogen naar de type-verdeling (weight).
+  const AVG_CAR_LEN = (() => {
+    const wl = VEHICLE_TYPES.reduce((s, v) => s + (v.length ?? 4.5) * v.weight, 0);
+    return _vtTotal > 0 ? wl / _vtTotal : 4.7;
+  })();
+  const AVG_BIKE_LEN = (() => {
+    const tot = BIKE_VEHICLE_TYPES.reduce((s, v) => s + v.weight, 0);
+    const wl  = BIKE_VEHICLE_TYPES.reduce((s, v) => s + (v.length ?? 1.85) * v.weight, 0);
+    return tot > 0 ? wl / tot : 1.85;
+  })();
+  function avgVehicleLengthForMode(mode) {
+    return String(mode || MODE).toUpperCase() === 'BIKE' ? AVG_BIKE_LEN : AVG_CAR_LEN;
+  }
+
+  // ── Debounce helper ───────────────────────────────────────────────────────
+
+  function debounce(fn, ms) {
+    let timer;
+    return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+  }
+
+  // Globaal maximum flow — toegankelijk voor flowToRgba() die buiten de async IIFE staat
+  let globalMaxFlow     = 1;
+  let globalMaxFlowBike = 1;  // idem, alleen voor fietslinks (MIXED-modus)
+
+  /** Welke transportmodi zichtbaar zijn. Alleen relevant in MIXED-modus. */
+  const visibleModes = new Set(['CAR', 'BIKE', 'PEDESTRIAN']);
+
+  // OD-productie: voor elk OD-paar een set van paden gewogen op route.weight
+  let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
+  let lastProductionT      = 0;   // performance.now()/1000 van laatste productie-cyclus
+  let lastProductionSpawns = 0;   // aantal gespawnde auto's in de laatste productie-cyclus
+  let lastAttractionCount  = 0;   // aantal aangekomen (verdwenen) auto's in de laatste seconde
+  let attractionAccum      = 0;   // lopende teller aankomsten binnen huidig productie-interval
+
+  /**
+   * Haal een routes-collectie op als NDJSON-stream (?format=ndjson) en parse
+   * progressief, regel voor regel. Retourneert een FeatureCollection-achtig
+   * object { type, features, properties } dat identiek is aan de gewone
+   * GeoJSON-respons, zodat _parseAndAddRoutes() ongewijzigd kan blijven.
+   * Gooit bij een niet-OK status of ontbrekende stream, zodat de aanroeper
+   * kan terugvallen op de gewone fetch.
+   */
+  async function _fetchRoutesNdjson(url) {
+    const resp = await fetch(url, { headers: { Accept: 'application/x-ndjson' } });
+    if (!resp.ok) throw new Error(`routes ndjson ${resp.status}`);
+    const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+    if (!resp.body || !ct.includes('ndjson')) {
+      // Server ondersteunt geen streaming → gebruik de complete JSON.
+      return resp.json();
+    }
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const features = [];
+    let properties = {};
+    let buf = '';
+    let count = 0;
+
+    const handleLine = (line) => {
+      const s = line.trim();
+      if (!s) return;
+      let obj;
+      try { obj = JSON.parse(s); } catch { return; }
+      if (obj && obj.type === 'Header') {
+        properties = obj.properties || {};
+        return;
+      }
+      features.push(obj);
+      count++;
+      if ((count & 1023) === 0) setLoaderMsg(`${T('loaderRoutes')} (${count})`);
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    buf += decoder.decode();
+    if (buf.length) handleLine(buf);
+
+    return { type: 'FeatureCollection', features, properties };
+  }
+
+  /**
+   * Haal de panden-collectie op als NDJSON-stream (?format=ndjson), zelfde
+   * patroon als _fetchRoutesNdjson: header-regel + één feature per regel,
+   * progressief geparsed. Werkt het aantal al ontvangen panden bij in de
+   * statusregel van het "Pand weergave"-paneel. Valt terug op de gewone
+   * JSON-respons als de server geen streaming content-type teruggeeft.
+   */
+  async function _fetchBuildingsNdjson(url) {
+    const resp = await fetch(url, { headers: { Accept: 'application/x-ndjson' } });
+    if (!resp.ok) throw new Error(`buildings ndjson ${resp.status}`);
+    const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+    if (!resp.body || !ct.includes('ndjson')) {
+      return resp.json();
+    }
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const features = [];
+    let properties = {};
+    let buf = '';
+    const statusEl = document.getElementById('lmpBuildingsStatusText');
+
+    const handleLine = (line) => {
+      const s = line.trim();
+      if (!s) return;
+      let obj;
+      try { obj = JSON.parse(s); } catch { return; }
+      if (obj && obj.type === 'Header') {
+        properties = obj.properties || {};
+        return;
+      }
+      features.push(obj);
+      if (statusEl && (features.length & 1023) === 0) statusEl.textContent = `ophalen (${features.length})`;
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    buf += decoder.decode();
+    if (buf.length) handleLine(buf);
+
+    return { type: 'FeatureCollection', features, properties };
+  }
+
+  // Haalt panden op (NDJSON met JSON-fallback). Bestaan ze nog niet, dan start de
+  // server een achtergrondjob en antwoordt 201 + jobID: poll /jobs/{id} tot die
+  // klaar is en vraag daarna opnieuw op (zelfde patroon als vegetatie).
+  // isStale(): true als het resultaat niet meer nodig is (bv. ander gebied).
+  async function _fetchBuildingsWithJob(url, isStale = () => false) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const data = await _fetchBuildingsNdjson(url + '&format=ndjson')
+        .catch(() => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null));
+      if (!data || !data.jobID || Array.isArray(data.features)) return data;
+      let done = false;
+      for (let i = 0; i < 200 && !done; i++) {      // 200 × 3s ≈ 10 minuten timeout
+        await new Promise(res => setTimeout(res, 3000));
+        if (isStale()) return null;
+        let job = null;
+        try {
+          const jr = await fetch(`/jobs/${data.jobID}`);
+          if (jr.ok) job = await jr.json();
+        } catch (_) { /* netwerkhapering: gewoon blijven pollen */ }
+        if (job?.status === 'failed') {
+          console.warn('[buildings] ophalen mislukt:', (job.log || []).join(' | '));
+          return null;
+        }
+        done = job?.status === 'successful';
+      }
+      if (!done) return null;   // time-out
+    }
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  (async () => {
+    _trace(`init: start (areaId=${AREA_ID}, mode=${MODE})`);
+
+    // ── 0. Pre-fetch alle databestanden parallel (start vóór elke await) ───
+    const _nwFetch = fetch(GEOJSON_FILE).then(r => {
+      if (!r.ok) throw new Error(`Netwerkbestand niet gevonden (${r.status}) — gebied bestaat niet meer of is verplaatst.`);
+      return r.json();
+    });
+    const _zFetch  = fetch(apiUrl('ZONE')).then(r => r.ok ? r.json() : null).catch(() => null);
+    const _flFetch = fetch(apiUrl('FEEDLINK')).then(r => r.ok ? r.json() : null).catch(() => null);
+    // Routes progressief laden via NDJSON (?format=ndjson): één JSON-object per
+    // regel (header + features). Vermijdt één grote blokkerende JSON.parse en
+    // geeft voortgang. Valt terug op gewone GeoJSON bij fouten/oude caches.
+    const _fetchRoutes = (url) => {
+      const ndUrl = url + (url.includes('?') ? '&' : '?') + 'format=ndjson';
+      return _fetchRoutesNdjson(ndUrl)
+        .catch(() => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null));
+    };
+    const _rtFetch = MODE === 'MIXED'
+      ? Promise.all([
+          _fetchRoutes(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=CAR')),
+          _fetchRoutes(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=BIKE')),
+        ])
+      : _fetchRoutes(ROUTES_FILE);
+    // ── Daglichtdata (sunrise/sunset per maand, Rotterdam) ────────────────
+    const _daylightData = [
+      { month:  1, sunrise_hour: 8, sunset_hour: 16 },
+      { month:  2, sunrise_hour: 8, sunset_hour: 17 },
+      { month:  3, sunrise_hour: 7, sunset_hour: 18 },
+      { month:  4, sunrise_hour: 7, sunset_hour: 20 },
+      { month:  5, sunrise_hour: 6, sunset_hour: 21 },
+      { month:  6, sunrise_hour: 5, sunset_hour: 21 },
+      { month:  7, sunrise_hour: 5, sunset_hour: 22 },
+      { month:  8, sunrise_hour: 5, sunset_hour: 21 },
+      { month:  9, sunrise_hour: 6, sunset_hour: 20 },
+      { month: 10, sunrise_hour: 7, sunset_hour: 19 },
+      { month: 11, sunrise_hour: 7, sunset_hour: 17 },
+      { month: 12, sunrise_hour: 8, sunset_hour: 16 },
+    ];
+
+    // ── Zonlicht-helpers ──────────────────────────────────────────────────
+    /** Lineaire interpolatie tussen twee hex-kleuren (#rrggbb). */
+    function _lerpHex(a, b, t) {
+      t = Math.max(0, Math.min(1, t));
+      const h = s => parseInt(s, 16);
+      const ar = h(a.slice(1, 3)), ag = h(a.slice(3, 5)), ab = h(a.slice(5, 7));
+      const br = h(b.slice(1, 3)), bg = h(b.slice(3, 5)), bb = h(b.slice(5, 7));
+      return '#'
+        + Math.round(ar + (br - ar) * t).toString(16).padStart(2, '0')
+        + Math.round(ag + (bg - ag) * t).toString(16).padStart(2, '0')
+        + Math.round(ab + (bb - ab) * t).toString(16).padStart(2, '0');
+    }
+
+    /**
+     * Berekent zonpositie en lichtkleur voor Rotterdam (lat 51.9°N).
+     * @param {number} month  – maand 1–12
+     * @param {number} hour   – uur 0–23
+     * @returns {{ azimuthal, polar, intensity, lightColor, isDay, skyColor, horizonColor, fogColor }}
+     */
+    function _getSunState(month, hour) {
+      const entry = _daylightData.find(d => d.month === month)
+                 || { sunrise_hour: 7, sunset_hour: 19 };
+      const sr = entry.sunrise_hour, ss = entry.sunset_hour;
+      const isDay = hour >= sr && hour < ss;
+
+      if (!isDay) {
+        return {
+          azimuthal: 180, polar: 92, intensity: 0.06,
+          lightColor: '#1a2840', isDay: false,
+          skyColor: '#050a14', horizonColor: '#0c1828', fogColor: '#091220',
+        };
+      }
+
+      // Fractie van de dag: 0 = zonsopgang, 0.5 = middag, 1 = zonsondergang
+      const frac = (hour - sr) / (ss - sr);
+
+      // Max zonhoogte op middag voor Rotterdam: 90° - 51.9° + 23.5° × sin((maand-3)×π/6)
+      const maxAlt = 90 - 51.9 + 23.5 * Math.sin((month - 3) * Math.PI / 6);
+      const alt    = Math.sin(frac * Math.PI) * maxAlt;   // hoogte boven horizon in graden
+
+      // MapLibre setLight position: [r, azimuthal°, polar°]
+      //   azimuthal: 0=N, 90=O, 180=Z, 270=W (kloksgewijs)
+      //   polar:     0 = recht boven, 90 = horizon
+      const azimuthal = 90 + frac * 180;               // Oost → Zuid → West
+      const polar     = Math.max(5, 90 - alt);          // min. 5° om artefacten te vermijden
+
+      // Genormaliseerde hoogte t: 0 = horizon, 1 = middag
+      const t         = maxAlt > 0 ? alt / maxAlt : 0;
+      const intensity = 0.35 + t * 0.55;               // 0.35..0.90
+      const lightColor = _lerpHex('#ff9040', '#fffcee', t); // warm oranje → zacht wit
+
+      // Hemelkleuren: schemering (t < 0.15) interpoleren van donkeroranje naar blauw
+      const skyColor     = t < 0.15 ? _lerpHex('#1a2a6a', '#87b9e8', t / 0.15) : '#87b9e8';
+      const horizonColor = t < 0.15 ? _lerpHex('#e05520', '#c8dff0', t / 0.15) : '#c8dff0';
+      const fogColor     = t < 0.15 ? _lerpHex('#c04420', '#d8e8f0', t / 0.15) : '#d8e8f0';
+
+      return { azimuthal, polar, intensity, lightColor, isDay: true, skyColor, horizonColor, fogColor };
+    }
+
+    /**
+     * Leest de huidige tijdsbron (flow-scaler-paneel of dagdeel + vandaag)
+     * en past MapLibre belichting en hemelkleur aan.
+     */
+    let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
+    let daypart         = 'mrh'; // idem — moet overeenkomen met de startklok (08:00)
+    // Stuurt verkeersintensiteiten aan (dpFlowOf, routeproductie, PARK_RATIOS, …).
+    // Altijd gelijk aan `daypart`, die op zijn beurt volledig wordt afgeleid van de klok.
+    let flowDaypart     = 'mrh';
+    let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
+    let _sunIsDay       = true;  // idem — laatst berekende dag/nacht-status (updateSunLight)
+    let _sunState       = null;  // idem — laatst berekende zonnestand (o.a. 3D BAG-kleuren)
+    function updateSunLight() {
+      if (!map || !map.isStyleLoaded()) return;
+
+      let hour, month;
+      // De analoge simulatieklok is altijd actief: gebruik datum + uur daarvan.
+      const dateVal = document.getElementById('fspDate').value;
+      hour  = parseInt(document.getElementById('fspHour').value, 10);
+      month = dateVal
+        ? new Date(dateVal + 'T12:00:00').getMonth() + 1
+        : new Date().getMonth() + 1;
+
+      const sun = _getSunState(month, hour);
+      _sunIsDay = sun.isDay;
+      _applyGroundNightTint(_sunIsDay);
+      _sunState = sun;
+      window.AnimatedWater?.setSun(sun);
+      // 3D BAG-panden kleuren mee met de zon (zie _b3SunTint); vroeg in de
+      // init bestaan de BAG-variabelen nog niet → try.
+      try { if (_bag3dActive()) _bag3dRefreshOverlay(); } catch (_) {}
+
+      const lightProps = {
+        anchor:    'map',
+        color:     sun.lightColor,
+        intensity: sun.intensity,
+        position:  [1.15, sun.azimuthal, sun.polar],
+      };
+      const skyProps = {
+        'sky-color':         sun.skyColor,
+        'sky-horizon-blend': 0.5,
+        'horizon-color':     sun.horizonColor,
+        'horizon-fog-blend': 0.1,
+        'fog-color':         sun.fogColor,
+        'fog-ground-blend':  0.9,
+      };
+
+      map.setLight(lightProps);
+      map.setSky(skyProps);
+
+      // Rechterkaart meenemen als split-view actief is
+      if (map2 && map2.isStyleLoaded()) {
+        map2.setLight(lightProps);
+        map2.setSky(skyProps);
+      }
+    }
+
+    // ── 3. MapLibre kaart — start parallel met laden van data ─────────────
+    // OSM-afgeleide data (gebouwen, groen, verkeersobjecten) valt onder de
+    // OpenStreetMap ODbL-licentie; deze attributie is daarom verplicht zodra de
+    // data getoond wordt. Gebruikt in de attributionControl van alle kaarten.
+    const OSM_ATTRIBUTION =
+      'OSM-verrijking (gebouwen, groen, verkeersobjecten) ' +
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> ' +
+      'contributors (ODbL)';
+    // 3D BAG-panden (stand '3D' van 'Pand weergave', zie makeBag3dLayers).
+    const BAG3D_ATTRIBUTION =
+      '3D BAG &copy; <a href="https://3dbag.nl" target="_blank" rel="noopener">TU Delft 3D geoinformation</a> (CC BY 4.0)';
+    const map = new maplibregl.Map({
+      container: 'map',
+      style:     'https://tiles.openfreemap.org/styles/liberty',
+      center:    CENTER,
+      zoom:      14.5,
+      pitch:     (_fitParam || _MAQUETTE) ? 0 : 58,
+      bearing:   (_fitParam || _MAQUETTE) ? 0 : -10,
+      antialias: true,
+      maxPitch:  85,
+      // OSM/ODbL-attributie voor de OSM-afgeleide lagen (gebouwen, groen,
+      // verkeersobjecten). Deze worden deels via deck.gl gerenderd en zouden
+      // anders niet in de standaard-attributie verschijnen.
+      attributionControl: { customAttribution: [OSM_ATTRIBUTION, BAG3D_ATTRIBUTION] },
+    });
+    window.map = map;
+
+    // Deel de MapLibre-instantie met de closures in de buitenste scope
+    // (_startFollowMode, camera-toggle IIFE). Zonder dit verwijst `map` daar
+    // naar het <div id="map">-element (globale named-access), dat geen
+    // getSource/unproject heeft.
+    _maquetteMap = map;
+
+    // fitBounds en lucht worden ingesteld zodra zowel kaart als areaBounds gereed zijn
+    let _mapLoadFired  = false;
+    let _areaBoundsSet = false;
+
+    function _fitAndSky() {
+      if (_fitParam) {
+        // Top-left uitlijning: west=links, north=boven, zoom zo ver mogelijk in
+        // tot ofwel oost de rechterrand raakt ofwel zuid de onderrand.
+        const [[west, south], [east, north]] = _fitParam;
+        const W = map.getContainer().offsetWidth;
+        const H = map.getContainer().offsetHeight;
+        if (W && H) {
+          // Mercator-hulpfuncties (MapLibre: 512px tiles → wereldgrootte = 512 * 2^z)
+          const TILE = 512;
+          const mX = (lon) => (lon + 180) / 360;
+          const mY = (lat) => {
+            const s = Math.sin(lat * Math.PI / 180);
+            return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+          };
+          const bboxFracW = mX(east)  - mX(west);
+          const bboxFracH = mY(south) - mY(north); // south > north in Mercator (y-as omlaag)
+          const zoomX = Math.log2(W / (bboxFracW * TILE));
+          const zoomY = Math.log2(H / (bboxFracH * TILE));
+          const zoom  = Math.min(zoomX, zoomY);
+
+          const worldPx = TILE * Math.pow(2, zoom);
+          const nwX = mX(west)  * worldPx;
+          const nwY = mY(north) * worldPx;
+          const cX  = nwX + W / 2;
+          const cY  = nwY + H / 2;
+          const cLon = cX / worldPx * 360 - 180;
+          const cLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * cY / worldPx))) * 180 / Math.PI;
+
+          map.jumpTo({ center: [cLon, cLat], zoom, pitch: 0, bearing: 0 });
+        }
+      } else {
+        const bounds = [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]];
+        map.fitBounds(bounds, { padding: 60, pitch: _MAQUETTE ? 0 : 58, bearing: _MAQUETTE ? 0 : -10, duration: 0 });
+      }
+      updateSunLight();
+    }
+
+    map.once('load', () => {
+      _trace('kaart: load');
+      _mapLoadFired = true;
+      if (_areaBoundsSet) _fitAndSky();
+
+      // ── Maquette highlight-laag (oplichten bij link_preview SSE) ───────────
+      if (_MAQUETTE) {
+        map.addSource('maquette-highlight', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'maquette-highlight-line',
+          type: 'line',
+          source: 'maquette-highlight',
+          paint: {
+            'line-color': '#ff6600',
+            'line-width': 8,
+            'line-opacity': 0.9,
+          },
+        });
+
+        // ── Calibratie: het gebied dat de camera in beeld heeft ──────────────
+        map.addSource('maquette-calib-rect', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'maquette-calib-rect-fill',
+          type: 'fill',
+          source: 'maquette-calib-rect',
+          paint: { 'fill-color': '#00e0ff', 'fill-opacity': 0.15 },
+        });
+        map.addLayer({
+          id: 'maquette-calib-rect-line',
+          type: 'line',
+          source: 'maquette-calib-rect',
+          paint: { 'line-color': '#00e0ff', 'line-width': 2 },
+        });
+        // Herstel opgeslagen calibratie (kaartweergave + cameravoetafdruk).
+        if (typeof _maquetteRestore === 'function') _maquetteRestore();
+      }
+
+      // ── viewport-bounds meta bijwerken na elke kaartbeweging ───────────────
+      const _updateViewportMeta = () => {
+        const b = map.getBounds();
+        let meta = document.getElementById('map-viewport');
+        if (!meta) {
+          meta = document.createElement('meta');
+          meta.id = 'map-viewport';
+          document.head.appendChild(meta);
+        }
+        meta.dataset.west  = b.getWest().toFixed(8);
+        meta.dataset.south = b.getSouth().toFixed(8);
+        meta.dataset.east  = b.getEast().toFixed(8);
+        meta.dataset.north = b.getNorth().toFixed(8);
+      };
+      map.on('moveend', _updateViewportMeta);
+      // Direct één keer vullen zodat de viewport ook zonder kaartbeweging
+      // beschikbaar is (bijv. voor de maquette-camera).
+      _updateViewportMeta();
+
+      // ── Polygoon of bbox-rechthoek tekenen ─────────────────────────────────
+      if (_polygonParam || _bboxParam) {
+        const ring = _polygonParam
+          ? [..._polygonParam, _polygonParam[0]]  // sluit de ring
+          : (() => { const [[w,s],[e,n]] = _bboxParam; return [[w,s],[e,s],[e,n],[w,n],[w,s]]; })();
+        map.addSource('fit-shape-src', {
+          type: 'geojson',
+          data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] } }
+        });
+        map.addLayer({
+          id: 'fit-shape-fill',
+          type: 'fill',
+          source: 'fit-shape-src',
+          paint: { 'fill-color': '#7ec8e3', 'fill-opacity': 0.08 }
+        });
+        map.addLayer({
+          id: 'fit-shape-line',
+          type: 'line',
+          source: 'fit-shape-src',
+          paint: { 'line-color': '#7ec8e3', 'line-width': 2, 'line-opacity': 0.75, 'line-dasharray': [4, 3] }
+        });
+      }
+    });
+
+    // ── 1. Netwerkdata laden ────────────────────────────────────────────────
+    setLoaderMsg(T('loaderNetwork'));
+    const geojson = await _nwFetch;
+    _trace(`init: 1. netwerk ontvangen (${geojson?.features?.length} features)`);
+    if (!Array.isArray(geojson?.features))
+      throw new Error(`Ongeldig netwerkbestand — geen GeoJSON FeatureCollection ontvangen.`);
+
+     const features = geojson.features.filter(
+       f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+     );
+     _networkFeatures = features; // beschikbaar stellen voor maquette highlight
+     // Montréal-ondergrond: de wegen in de tiles krijgen breedte en verharding
+     // van deze links (geldt voor alle kaarten, ook als ze later laden).
+     try { window.MontrealBasemap?.setNetwork(_kaart2NetworkFeatures()); }
+     catch (e) { console.warn('Montréal-netwerkwegen:', e); }
+
+    const flowValues = features.map(f => f.properties.flow);
+    const minFlow    = Math.min(...flowValues);
+    const maxFlow    = Math.max(...flowValues);
+    const flowRange  = maxFlow - minFlow || 1;
+
+    /** Schat het maximaal aantal voertuigen tegelijk op de wegen via Little's Law.
+     *  λ = Σ dpFlowOf(seg) / 60  [vtg/min]
+     *  W = gewogen gem. rijtijd per segment  [min]
+     *  L = λ × W  [vtg] */
+    function updateCarCount() {
+      const el = document.getElementById('carCountStrip');
+      if (!el) return;
+      if (!segments || segments.length === 0) { el.textContent = ''; return; }
+      let totalFlow = 0;
+      let totalWeightedTimeSec = 0;
+      for (const seg of segments) {
+        const flow = dpFlowOf(seg.props);
+        if (flow <= 0 || !seg.speedMs) continue;
+        totalFlow += flow;
+        totalWeightedTimeSec += flow * (seg.length / seg.speedMs);
+      }
+      if (totalFlow === 0) { el.textContent = ''; return; }
+      const avgTripDurMin = (totalWeightedTimeSec / totalFlow) / 60;
+      const maxCars = Math.round((totalFlow / 60) * avgTripDurMin);
+      el.textContent = T('carCountFmt', maxCars);
+    }
+
+    /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
+    function updateLegend() {
+      const legendStrip = document.getElementById('legendStrip');
+      if (colorMetric === 'none') { legendStrip.style.display = 'none'; return; }
+      legendStrip.style.display = '';
+
+      // Verberg normale gradient-legende als de verschilplot actief is
+      const legendLabelsEl  = legendStrip.querySelector('.legend-labels');
+      if (diffPlotActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiff').style.display  = '';
+        document.getElementById('legendDiffSub').textContent =
+          'Breedte = schaal t.o.v. grootste verschil (' + metricShortLabel(colorMetric) + ')';
+        return;
+      }
+      if (diffStackActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiffStack').style.display = '';
+        document.getElementById('legendDiffStackSub').textContent =
+          'Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname (' +
+          metricShortLabel(colorMetric) + ')';
+        return;
+      }
+      if (diffSmileyActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiffSmiley').style.display = '';
+        return;
+      }
+      // Normaal: zorg dat alles weer zichtbaar is
+      document.getElementById('legendBar').style.display    = '';
+      if (legendLabelsEl) legendLabelsEl.style.display = '';
+      document.getElementById('legendDiff').style.display   = 'none';
+      document.getElementById('legendDiffStack').style.display = 'none';
+      document.getElementById('legendDiffSmiley').style.display = 'none';
+      const unit = T('legendUnit');
+      // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
+      const bp = Math.max(2, Math.round(25 / (currentFlowCeiling(false) || 1) * 100));
+      const flowGradient = `linear-gradient(to right, #1450dc, #00e676 ${bp}%, #ffea00 55%, #ff1744)`;
+      // Vaste 3-bands gradient voor grenswaarde-lagen: groen (toegestaan) →
+      // geel/oranje (grijs gebied) → rood (overschrijding). De legenda-uiteinden
+      // tonen de standaard- en grenswaarde, niet de dataspreiding.
+      const _limitGradient = 'linear-gradient(to right, #63d668, #63d668 18%, #ffdc00 40%, #e6551e 60%, #c81e1e 82%, #b00000)';
+      const metricMeta = {
+        flow:             { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
+        flow_scaled:      { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
+        occupancy:        { labelKey: 'legendIC', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        occupancy_scaled: { labelKey: 'legendIC', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        coverage:         { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        coverage_scaled:  { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        speed:            { labelKey: 'legendSpeed',     unit: 'km/h', gradient: 'linear-gradient(to right, #ff1744, #ffea00, #2196f3)' },
+        safety:           { labelKey: 'legendSafety',    unit: '',     gradient: 'linear-gradient(to right, #c62828, #e65100, #fbc02d, #388e3c)' },
+        capacity:         { labelKey: 'legendCapacity',  unit,         gradient: (() => {
+          const stops = [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000].map(v => {
+            const norm = Math.sqrt(v / 4000);
+            const r = Math.round(30 + (1 - norm) * 140);
+            const g = Math.round(80 + (1 - norm) * 120);
+            const b = Math.round(200 + norm * 55);
+            return `rgb(${r},${g},${b}) ${(v / 40).toFixed(1)}%`;
+          });
+          return `linear-gradient(to right, ${stops.join(', ')})`;
+        })() },
+        spectrum:         { labelKey: null, unit, gradient: flowGradient },
+        noise_lden:       { labelKey: 'legendNoiseLden',   unit: 'dB(A)',  gradient: _limitGradient },
+        noise_lnight:     { labelKey: 'legendNoiseLnight', unit: 'dB(A)',  gradient: _limitGradient },
+        emis_co2:         { labelKey: 'legendCo2',  unit: 'kg/km', gradient: _limitGradient },
+        emis_nox:         { labelKey: 'legendNox',  unit: 'kg/km', gradient: _limitGradient },
+        emis_pm10:        { labelKey: 'legendPm10', unit: 'kg/km', gradient: _limitGradient },
+        speed_crossings:       { labelKey: 'legendSpeedCrossings',       unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_cycle_crossings: { labelKey: 'legendSpeedCycleCrossings',  unit: '', gradient: 'linear-gradient(to right, #a0a0aa, #a0a0aa 30%, #505064 60%, #eb6e14)' },
+        speed_intersections:   { labelKey: 'legendSpeedIntersections',   unit: '', gradient: null },
+        speed_yield:           { labelKey: 'legendSpeedYield',           unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_refuge:          { labelKey: 'legendSpeedRefuge',          unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_from_right:      { labelKey: 'legendSpeedFromRight',       unit,         gradient: flowGradient },
+        speed_left_turn:       { labelKey: 'legendSpeedLeftTurn',        unit,         gradient: flowGradient },
+        speed_oncoming:        { labelKey: 'legendSpeedOncoming',        unit,         gradient: flowGradient },
+        speed_elevation:       { labelKey: 'legendSpeedElevation',       unit: '%',    gradient: 'linear-gradient(to right, rgb(30,160,60), rgb(255,220,80), rgb(220,50,40))' },
+        speed_penalty_total:   { labelKey: 'legendSpeedPenaltyTotal',    unit: 'sec', gradient: _limitGradient },
+        priority_roads:        { labelKey: 'legendPriorityRoads',        unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #1a73e8)' },
+      };
+      // Spectrum: aparte MapLibre-laag, legenda toont gradient van de laag zelf
+      if (colorMetric === 'spectrum') {
+        const dpLabel = { mrh: 'OS', erh: 'AS', rest: 'RD' }[daypart] || '';
+        document.getElementById('legendBar').style.background = flowGradient;
+        document.getElementById('legendBar').style.display    = '';
+        if (legendLabelsEl) legendLabelsEl.style.display = '';
+        document.getElementById('legendLabel').textContent = `Spectrum (${dpLabel})`;
+        document.getElementById('legendMin').textContent   = '0';
+        document.getElementById('legendMax').textContent   = 'hoog';
+        document.getElementById('legendBarBike').style.display    = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        updateCarCount();
+        return;
+      }
+      const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
+
+      // Categorische Snelheid-laag: toon drie gekleurde blokjes i.p.v. gradient.
+      if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+        const legendBar = document.getElementById('legendBar');
+        legendBar.style.background = 'transparent';
+        const catColors = [
+          { c: 'rgb(231,76,60)',  label: 'Verkeerslicht' },
+          { c: 'rgb(46,204,113)', label: 'Rotonde' },
+          { c: 'rgb(241,196,15)', label: 'Verkeersdrempel' },
+        ];
+        const html = catColors.map(x =>
+          `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;color:#6a757c">` +
+          `<span style="display:inline-block;width:14px;height:14px;border-radius:2px;background:${x.c};box-shadow:inset 0 0 0 1px rgba(0,0,0,0.15)"></span>${x.label}</span>`
+        ).join('');
+        legendBar.innerHTML = `<div style="display:flex;padding:2px 0">${html}</div>`;
+        document.getElementById('legendLabel').textContent = T(labelKey);
+        document.getElementById('legendMin').textContent = '';
+        document.getElementById('legendMax').textContent = '';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        updateCarCount();
+        return;
+      }
+      // Herstel gradient-weergave na categorische laag.
+      document.getElementById('legendBar').innerHTML = '';
+      document.getElementById('legendBar').style.background = gradient;
+
+      // MIXED + flow/flow_scaled: toon aparte balk voor fiets; label de auto-balk "Auto"
+      const showBike = MODE === 'MIXED' && (colorMetric === 'flow' || colorMetric === 'flow_scaled');
+      document.getElementById('legendLabel').textContent =
+        showBike ? T('legendFlow') + ' — Auto' : T(labelKey);
+      document.getElementById('legendBarBike').style.display   = showBike ? '' : 'none';
+      document.getElementById('legendLabelsBike').style.display = showBike ? '' : 'none';
+      if (showBike) {
+        document.getElementById('legendBarBike').style.background =
+          'linear-gradient(to right, #5000a0, #dc28c8 50%, #ffaa00)';
+      }
+
+      const fmt = u === '%'
+        ? v => Math.round(v) + ' %'
+        : v => (Math.abs(v) > 0 && Math.abs(v) < 10
+                  ? Number(v.toFixed(2)).toLocaleString(T('numberLocale'))
+                  : Math.round(v).toLocaleString(T('numberLocale'))) + ' ' + u;
+      if (colorMetric === 'flow' || colorMetric === 'flow_scaled' || colorMetric === 'speed_from_right') {
+        // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
+        document.getElementById('legendMin').textContent = fmt(0);
+        document.getElementById('legendMax').textContent = fmt(currentFlowCeiling(false));
+        if (showBike) {
+          document.getElementById('legendMinBike').textContent = fmt(0);
+          document.getElementById('legendMaxBike').textContent = fmt(currentFlowCeiling(true));
+        }
+      } else if (colorMetric === 'capacity') {
+        // Vaste schaal 0–4000, onafhankelijk van de data
+        document.getElementById('legendMin').textContent = fmt(0);
+        document.getElementById('legendMax').textContent = fmt(4000);
+      } else if (colorMetric === 'safety') {
+        // Veiligheidsscore: vaste tekstlabels
+        document.getElementById('legendMin').textContent = 'Slecht';
+        document.getElementById('legendMax').textContent = 'Goed';
+      } else if (METRIC_LIMITS[colorMetric]) {
+        // Grenswaarde-lagen: toon de standaardwaarde (links, grens toegestaan) en
+        // de grenswaarde (rechts, overschrijding) i.p.v. de dataspreiding.
+        const lim = METRIC_LIMITS[colorMetric];
+        document.getElementById('legendMin').textContent = fmt(lim.std);
+        document.getElementById('legendMax').textContent = fmt(lim.max);
+      } else if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        // Toekomstige Snelheid-lagen zonder brondata: geen min/max, wel tekstlabel.
+        document.getElementById('legendMin').textContent = '–';
+        document.getElementById('legendMax').textContent = '–';
+      } else if (FLOW_SPEED_METRICS.has(colorMetric) && colorMetric !== 'speed_from_right') {
+        // Continue Snelheid-lagen met eigen min/max (elevation/left_turn/oncoming).
+        let vMin = Infinity, vMax = -Infinity;
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < vMin) vMin = v;
+            if (v > vMax) vMax = v;
+          }
+        }
+        if (colorMetric === 'speed_elevation' && isFinite(vMin) && isFinite(vMax)) {
+          document.getElementById('legendMin').textContent = fmt(vMin);
+          document.getElementById('legendMax').textContent = fmt(vMax);
+        } else {
+          document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
+          document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
+        }
+      } else {
+        // Andere metrics: scan segmenten voor het actieve dagdeel
+        let vMin = Infinity, vMax = -Infinity;
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < vMin) vMin = v;
+            if (v > vMax) vMax = v;
+          }
+        }
+        document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
+        document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
+      }
+      updateCarCount();
+    }
+
+    // Netwerknaam instellen vanuit GeoJSON top-level properties
+    const networkName = geojson.properties?.name || AREA_ID;
+    window._networkName = networkName;
+    document.getElementById('networkTitle').textContent = T('networkTitle', networkName);
+    // document.title = T('pageTitle', networkName);
+
+    // Bepaal bbox voor kaartnavigatie: uit properties of berekend uit features
+    let areaBounds = geojson.properties?.bbox;  // [minLon, minLat, maxLon, maxLat]
+    if (!areaBounds || areaBounds.length < 4) {
+      let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+      for (const f of features) {
+        for (const [lon, lat] of f.geometry.coordinates) {
+          if (lon < minLon) minLon = lon;
+          if (lat < minLat) minLat = lat;
+          if (lon > maxLon) maxLon = lon;
+          if (lat > maxLat) maxLat = lat;
+        }
+      }
+      areaBounds = [minLon, minLat, maxLon, maxLat];
+    }
+    // Kaart kan nu naar het gebied navigeren (race met map.once('load'))
+    _areaBoundsSet = true;
+    if (_mapLoadFired) _fitAndSky();
+
+    // ── Gebouwen: classificatie, kleur en kaartlaag ──────────────────────────
+
+    let _buildingsGeoJson = null;
+    let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
+    let _buildingsLoadStarted = false;  // voorkomt dubbele fetch bij snel schakelen
+    let _trafficSignsGeoJson = null;
+    // Verkeersobjecten: per-categorie zichtbaarheid (standaard allemaal uit).
+    // _trafficAssetsVisible is een afgeleide master-vlag (true zodra minstens
+    // één categorie aanstaat) en blijft gebruikt door de data-laad-/hover-/
+    // rotatie-logica verderop; de losse layer-builders checken daarnaast hun
+    // eigen categorie zodat ze onafhankelijk aan/uit kunnen.
+    // Bewust NIET uit localStorage gelezen: deze 3D-weergaveopties moeten bij
+    // elk binnenkomen van een scenario altijd UIT staan, ook als een vorige
+    // sessie (in een ander scenario) ze had aangezet.
+    let _trafficAssetCategories = {
+      signs:     false,
+      paths:     false,
+      height:    false,
+      furniture: false,
+      bumps:     false,
+    };
+    let _trafficAssetsVisible = false;
+    // Vegetatie (bomen) is volledig losgekoppeld van verkeersobjecten: eigen
+    // vlag, eigen checkbox, eigen data-laad-trigger. Standaard uit.
+    let _vegetationVisible = false;
+    let _trafficSignsReady   = false;  // fallback-laag (NDW/Overpass) is eenmalig opgezet
+    let _trafficAssetsNoFile = false;  // TRAFFIC-ASSETS bestand ontbreekt → val terug op NDW
+    let _signsFallbackFetching = false;
+    let _lastAssetBbox       = null;   // laatst geladen bbox [w,s,e,n] (voorkomt overbodige requests)
+    let _zonesForJoin     = null;   // zone-features beschikbaar voor ruimtelijke koppeling
+    let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
+    let _currentPurpose   = 'off';  // actief geselecteerd motief ('off' = grondvlak verborgen)
+    let _mapReady         = false;
+    let _libBldOrigColor   = null;  // originele Liberty building-3d kleur (voor herstel bij 'off')
+    let _libBldOrigOpacity = null;  // originele Liberty building-3d opacity
+    let _isScaledMode      = false; // true wanneer geschaalde hoogte-modus actief is
+    let _libertyFillLayerIds = null; // Liberty fill/background/raster layer IDs (verborgen in satellietmodus)
+    let _libertyAllLayerIds  = null; // Alle Liberty layer IDs (verborgen in geen-kaart-modus)
+    // 'map' | 'satellite' | 'none' | 'white'. 'map' is hier de Montréal-ondergrond;
+    // een uit de analyzer meegekomen 'montreal' valt daarom samen met 'map'.
+    let basemapStyle       = localStorage.getItem('basemapStyle') || 'map';
+    if (basemapStyle === 'montreal') basemapStyle = 'map';
+    window._basemapStyleSafe = basemapStyle;
+
+    // Gebouwclassificatie op basis van OSM-tags
+     function classifyBuilding(props) {
+      // 'building' is vaak generiek ('yes'); de semantische waarde staat dan in
+      // 'buildingType' (bv. building=yes + buildingType=house). Val in dat geval
+      // terug op buildingType zodat woningen e.d. correct worden herkend.
+      let b         = (props.building         || '').toLowerCase();
+      const bType   = (props.buildingType     || '').toLowerCase();
+      if ((!b || b === 'yes') && bType) b = bType;
+      const amenity = (props.amenity          || '').toLowerCase();
+      const shop    = (props.shop             || '').toLowerCase();
+      const office  = (props.office           || '').toLowerCase();
+      const pt      = (props.public_transport || '').toLowerCase();
+      const railway = (props.railway          || '').toLowerCase();
+      const leisure = (props.leisure          || '').toLowerCase();
+
+      // Parkeren staat bewust NIET vooraan — parkeerlocaties erven eerst de landuse-context
+      // van hun omgeving (zie verderop). Alleen als er geen context is, komen ze hier terug.
+
+      // Stations en OV-hubs
+      if (['train_station','transportation','airport'].includes(b)
+          || railway === 'station' || railway === 'halt'
+          || pt === 'station' || pt === 'stop_area'
+          || amenity === 'bus_station' || amenity === 'ferry_terminal')
+        return 'transport';
+
+      // Sport & recreatie
+      if (['stadium','sports_centre','sports_hall','hotel','hostel','motel',
+           'guest_house'].includes(b)
+          || ['sports_centre','stadium','swimming_pool','ice_rink'].includes(leisure)
+          || (props.tourism || '').toLowerCase() === 'hotel'
+          || amenity === 'theatre' || amenity === 'cinema' || amenity === 'place_of_worship')
+        return 'recreation';
+
+      // Specifieke use-tags gaan altijd vóór het generieke building-type.
+      // Zo wint building=house + shop=bakery terecht → commercial,
+      // en building=residential + amenity=cafe → commercial.
+
+      // Kantoren
+      if (b === 'office' || office) return 'office';
+
+      // Winkels / horeca (inclusief cuisine-tag als indicator voor horecagelegenheid)
+      if (['retail','supermarket','commercial','kiosk'].includes(b) || shop
+          || ['restaurant','cafe','bar','fast_food','food_court',
+              'marketplace','fuel'].includes(amenity)
+          || props.cuisine)
+        return 'commercial';
+
+      // Onderwijs
+      if (['school','university','college','kindergarten'].includes(b)
+          || ['school','university','college','kindergarten','library'].includes(amenity))
+        return 'education';
+
+      // Industrie / opslag
+      if (['industrial','warehouse','factory','storage_tank',
+           'storage','container'].includes(b))
+        return 'industrial';
+
+      // Woningen — generiek building-type, alleen bereikt als geen specifieke use-tag matcht
+      if (['residential','house','apartments','detached','terrace',
+           'semidetached_house','bungalow','dormitory','cabin','houseboat'].includes(b))
+        return 'residential';
+
+      // Fallback: genormaliseerde buildingType-categorie uit de digital twin.
+      // Alleen benut als geen enkele OSM-use-tag of building-waarde matchte.
+      const _btCat = {
+        residential:'residential', house:'residential', apartments:'residential',
+        office:'office',
+        commercial:'commercial', retail:'commercial', shop:'commercial',
+        industrial:'industrial', warehouse:'industrial',
+        education:'education',
+        recreational:'recreation', recreation:'recreation', sport:'recreation',
+        transport:'transport', station:'transport',
+        parking:'parking',
+      };
+      if (_btCat[bType]) return _btCat[bType];
+
+      // Fallback 1: gebruik landuse-type van het omvattende gebied
+      const landuse = (props['_landuse'] || '').toLowerCase();
+      if (['residential','housing'].includes(landuse))                          return 'residential';
+      if (['commercial','retail'].includes(landuse))                            return 'commercial';
+      if (['industrial','port','depot','harbour','brownfield'].includes(landuse)) return 'industrial';
+      if (['education'].includes(landuse))                                      return 'education';
+      if (['recreation_ground','allotments','village_green','grass'].includes(landuse)) return 'recreation';
+      if (['railway','transportation'].includes(landuse))                       return 'transport';
+
+      // Fallback 2: parkeren — eigen categorie als er geen landuse-context beschikbaar is.
+      // Hierdoor erft een parkeerterrein in een woonwijk de woonwijk-scores, en een
+      // parkeergarage bij een winkelcentrum de commerciële scores.
+      if (['parking','garage','garages','carport','bicycle_parking'].includes(b)
+          || amenity === 'parking' || amenity === 'parking_space' || amenity === 'fuel')
+        return 'parking';
+
+      return 'other';
+    }
+
+    // Fysieke parkeer-detectie, onafhankelijk van classifyBuilding.
+    // classifyBuilding kan een parkeerplaats als 'residential' e.d. labelen (landuse-erfenis
+    // voor de kleur); deze helper bewaart of het pand fysiek een parkeervoorziening is,
+    // zodat het géén inwoners krijgt en niet meetelt in de vloeroppervlak-noemer per type.
+     function _isPhysicalParking(props) {
+      let b         = (props.building || '').toLowerCase();
+      const bType   = (props.buildingType || '').toLowerCase();
+      if ((!b || b === 'yes') && bType) b = bType;
+      const amenity = (props.amenity  || '').toLowerCase();
+      return ['parking','garage','garages','carport','bicycle_parking'].includes(b)
+          || amenity === 'parking' || amenity === 'parking_space';
+    }
+
+    // Richting per gebouwtype en dagdeel: -1 = productie (rood), 0 = neutraal, +1 = attractie (groen)
+    const _BUILDING_SCORES = {
+      residential: { mrh: -1.0, erh:  1.0, rest:  0.3 },  // restdag: lichte attractie (thuiskomen/thuis zijn)
+      office:      { mrh:  1.0, erh: -1.0, rest:  0.3 },
+      commercial:  { mrh:  0.2, erh: -0.6, rest: -0.2 },  // klein beetje attractie in mrh (personeel+wat publiek);
+                                                            // in erh verlaat het personeel het pand (productie);
+                                                            // restdag: lichte productie (winkelend publiek vertrekt weer)
+      education:   { mrh:  1.0, erh: -0.1, rest: -0.5 },  // mrh: enorme attractie (leerlingen komen aan);
+                                                            // erh: vrijwel opgelost (school is al leeg);
+                                                            // restdag: productie (naar huis/activiteit)
+      industrial:  { mrh:  0.6, erh: -0.6, rest:  0   },  // mrh: attractie (werknemers komen aan);
+                                                            // erh: productie (werknemers vertrekken)
+      parking:     { mrh:  0,   erh:  0,   rest:  0   },  // neutraal: context ontbreekt (zie herclassificatie in _tryZoneJoin)
+      transport:   { mrh:  0.8, erh:  0.8, rest:  0.5 },  // OV-hub: altijd attractief
+      recreation:  { mrh:  0,   erh:  0.7, rest:  0.8 },  // recreatie na werk/school
+      other:       { mrh:  0,   erh:  0,   rest:  0   },
+    };
+
+    // Motief-specifieke richtingsoverschrijvingen.
+    // Sommige gebouwtypen hebben een andere P/A-richting afhankelijk van het motief.
+    const _BUILDING_DIR_OVERRIDES = {
+      // Woningen zijn avondspits + restdag productieplek voor recreatie:
+      // bewoners vertrekken vanuit huis om te recreëren.
+      residential: {
+        recreatie: { mrh: 0, erh: -1.0, rest: -0.8 },
+      },
+    };
+
+    // Retourneert de richting (−1…+1) voor een gebouwtype, motief en dagdeel.
+    // Past _BUILDING_DIR_OVERRIDES toe vóór de algemene _BUILDING_SCORES.
+    function _getBuildingDir(type, purpose, dp) {
+      const override = _BUILDING_DIR_OVERRIDES[type]?.[purpose];
+      if (override !== undefined) return override[dp] ?? 0;
+      return (_BUILDING_SCORES[type] || _BUILDING_SCORES.other)[dp] ?? 0;
+    }
+
+    // Kleur: score ∈ [-1, 1] → rood (#d62728) ↔ grijs (#888888) ↔ groen (#2ca02c)
+    function buildingColor(score) {
+      const c = Math.max(-1, Math.min(1, score));
+      let r, g, b;
+      if (c >= 0) {
+        r = Math.round(0x88 + c * (0x2c - 0x88));
+        g = Math.round(0x88 + c * (0xa0 - 0x88));
+        b = Math.round(0x88 + c * (0x2c - 0x88));
+      } else {
+        const t = 1 + c;
+        r = Math.round(0xd6 + t * (0x88 - 0xd6));
+        g = Math.round(0x27 + t * (0x88 - 0x27));
+        b = Math.round(0x28 + t * (0x88 - 0x28));
+      }
+      return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+    }
+
+    // Point-in-polygon via ray casting
+    function _pointInPolygon(px, py, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi)
+          inside = !inside;
+      }
+      return inside;
+    }
+
+    // Centroïde van het buitenste polygoonring
+    function _buildingCentroid(coords) {
+      const ring = coords[0];
+      const n    = ring.length - 1;
+      let sx = 0, sy = 0;
+      for (let i = 0; i < n; i++) { sx += ring[i][0]; sy += ring[i][1]; }
+      return [sx / n, sy / n];
+    }
+
+    // Oppervlakte van de buitenste polygoonring via de schoenveterformule.
+    // Resultaat in graden² — voor relatieve weging binnen een zone volstaat dit.
+    function _polygonArea(coords) {
+      const ring = coords[0];
+      let area = 0;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        area += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+      }
+      return Math.abs(area) / 2;
+    }
+
+    // Grondoppervlak in m² (schoenveter in graden² → m² op basis van breedtegraad `lat`).
+    function _polygonAreaM2(coords, lat) {
+      const mPerDegLon = 111320 * Math.cos((lat || 0) * Math.PI / 180);
+      const mPerDegLat = 110540;
+      return _polygonArea(coords) * mPerDegLon * mPerDegLat;
+    }
+
+    // Demografische capaciteitsindicator per gebouwtype en motief
+    function _getBuildingCapacity(type, purpose, zp) {
+      const shopJobs = (zp.arbeidsplaatsen_overige_winkelfunctie          || 0)
+                     + (zp.arbeidsplaatsen_overige_voedselwinkelfunctie   || 0)
+                     + (zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie || 0);
+      const eduSeats = (zp.leerlingplaatsen_basisonderwijs           || 0)
+                     + (zp.leerlingplaatsen_middelbaaronderwijs       || 0)
+                     + (zp.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                     + (zp.leerlingplaatsen_hogeronderwijs            || 0)
+                     || (zp.arbeidsplaatsen_onderwijsfunctie          || 0);
+      switch (purpose) {
+        case 'all':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'office':      return zp.arbeidsplaatsen_kantoorfunctie || 0;
+            case 'commercial':  return shopJobs;
+            case 'education':   return eduSeats;
+            case 'industrial':  return zp.arbeidsplaatsen_industriefunctie || 0;
+            case 'parking':     return zp.autos || 0;
+            case 'transport':   return zp.inwoners || 0;
+            case 'recreation':  return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            case 'other':       return (zp.arbeidsplaatsen_overige_gebruiksfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+          }
+          break;
+        case 'werk':
+          switch (type) {
+            case 'residential': return zp.inwoners_arbeidssituatie_werkend || 0;
+            case 'office':      return zp.arbeidsplaatsen_kantoorfunctie || 0;
+            case 'commercial':  return Math.round(shopJobs * 0.3);
+            case 'industrial':  return zp.arbeidsplaatsen_industriefunctie || 0;
+            case 'parking':     return zp.inwoners_arbeidssituatie_werkend || 0;
+            case 'transport':   return zp.inwoners_arbeidssituatie_werkend || 0;
+            default: return 0;
+          }
+        case 'onderwijs':
+          switch (type) {
+            case 'residential': return zp.inwoners_leeftijd_00_17_jaar || 0;  // kinderen < 18 jaar
+            case 'education':   return eduSeats;                               // leerlingplaatsen (attractie)
+            case 'transport':   return zp.inwoners_leeftijd_00_17_jaar || 0;
+            default: return 0;
+          }
+        case 'winkelen':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'commercial':  return shopJobs;
+            case 'parking':     return zp.huishoudens || 0;
+            default: return 0;
+          }
+        case 'recreatie':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'recreation':  return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            case 'other':       return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            default: return 0;
+          }
+      }
+      return 0;
+    }
+
+    // Demografische maat per gebouwtype: welke zone-grootheid hoort bij het type
+    // (inwoners voor wonen, leerlingplaatsen voor onderwijs, arbeidsplaatsen voor werk).
+    // Retourneert { key: i18n-label, zoneVal: totaal in de zone }.
+    function _buildingDemographic(type, zp) {
+      const shopJobs = (zp.arbeidsplaatsen_overige_winkelfunctie          || 0)
+                     + (zp.arbeidsplaatsen_overige_voedselwinkelfunctie   || 0)
+                     + (zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie || 0);
+      const eduSeats = (zp.leerlingplaatsen_basisonderwijs           || 0)
+                     + (zp.leerlingplaatsen_middelbaaronderwijs       || 0)
+                     + (zp.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                     + (zp.leerlingplaatsen_hogeronderwijs            || 0)
+                     || (zp.arbeidsplaatsen_onderwijsfunctie          || 0);
+      switch (type) {
+        case 'residential': return { key:'capBaseResidents',   zoneVal: zp.inwoners || 0 };
+        case 'office':      return { key:'capBaseJobsOffice',   zoneVal: zp.arbeidsplaatsen_kantoorfunctie || 0 };
+        case 'commercial':  return { key:'capBaseJobsShop',     zoneVal: shopJobs };
+        case 'education':   return { key:'capBaseSeats',        zoneVal: eduSeats };
+        case 'industrial':  return { key:'capBaseJobsIndustry', zoneVal: zp.arbeidsplaatsen_industriefunctie || 0 };
+        case 'parking':     return { key:'capBaseCars',         zoneVal: zp.autos || 0 };
+        case 'transport':   return { key:'capBaseResidents',    zoneVal: zp.inwoners || 0 };
+        case 'recreation':  return { key:'capBaseJobsRec',      zoneVal: (zp.arbeidsplaatsen_sportfunctie || 0) + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0) };
+        default:            return { key:'capBaseJobsOther',    zoneVal: (zp.arbeidsplaatsen_overige_gebruiksfunctie || 0) + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0) };
+      }
+    }
+
+    /**
+     * Bouwt een HTML-breakdown die laat zien hoe de demografische maat van een pand
+     * wordt afgeleid: vloeroppervlak → aandeel in zone-type → zone-totaal → pand-waarde
+     * (inwoners bij wonen, leerlingen bij onderwijs, arbeidsplaatsen bij werk).
+     * Herbruikbaar in de latere bewerk-stap. Verwacht de (mogelijk JSON-geserialiseerde)
+     * gebouw-properties `p`; retourneert een HTML-string ('' als niets te tonen).
+     */
+    function _buildingCalcHtml(p) {
+      const floorArea = Number(p._floorArea) || 0;
+      const share     = Number(p._demoShare ?? p._areaShare) || 0;
+      const demoKey   = p._demoKey || null;
+      const zoneVal   = Number(p._demoZoneVal) || 0;
+
+      const nfmt = (v, d = 0) => Number(v).toLocaleString(T('numberLocale'),
+        { minimumFractionDigits: d, maximumFractionDigits: d });
+      const row = (label, value) => `<tr>
+        <td style="color:#6a757c;padding-right:10px;white-space:nowrap">${label}</td>
+        <td style="text-align:right;white-space:nowrap"><b>${value}</b></td></tr>`;
+
+      const rows = [];
+      rows.push(row(T('calcFloorArea'), floorArea > 0 ? nfmt(floorArea) + '\u202fm\u00b2' : '\u2013'));
+
+      // demoKey is leeg voor parkeren of ontbrekende zone → geen demografie tonen
+      if (demoKey) {
+        const perBuilding = zoneVal * share;
+        rows.push(row(`${T(demoKey)} ${T('calcInZone')}`, nfmt(zoneVal)));
+        if (share > 0) rows.push(row(T('calcShare'), nfmt(share * 100, 1) + '\u202f%'));
+        rows.push(row(`${T(demoKey)} ${T('calcInBuilding')}`, nfmt(perBuilding, perBuilding < 10 ? 1 : 0)));
+      }
+
+      if (!rows.length) return '';
+      return `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
+        <div style="color:var(--ga-rood);font-size:11px;margin-bottom:3px">${T('calcTitle')}</div>
+        <table style="border-collapse:collapse;font-size:12px;width:100%">${rows.join('')}</table>
+      </div>`;
+    }
+
+    // Ruimtelijke koppeling gebouwen ↔ zones; wordt uitgevoerd zodra beide datasets gereed zijn
+    let zoneAreaBreakdown = new Map(); // zoneId → { residential, office, industrial, commercial, education, recreation, other } in m²
+    function _tryZoneJoin() {
+      if (!_buildingsRaw || !_zonesForJoin) return;
+
+      // Bouw opzoekstructuur: niet-BOUNDARY zones; Polygon én MultiPolygon
+      const zoneLookup = [];
+      for (const f of _zonesForJoin) {
+        const cl = f.properties?.zoneClass;
+        if (cl === 'BOUNDARY') continue;
+        const geom = f.geometry;
+        if (!geom) continue;
+        // Normaliseer naar lijst van polygonen (elk een array van ringen)
+        let polys;
+        if      (geom.type === 'Polygon')      polys = [geom.coordinates];
+        else if (geom.type === 'MultiPolygon') polys = geom.coordinates;
+        else continue;
+        for (const poly of polys) {
+          const ring = poly[0];
+          if (!ring || ring.length < 3) continue;
+          let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+          for (const [x, y] of ring) {
+            if (x < mnX) mnX = x; if (y < mnY) mnY = y;
+            if (x > mxX) mxX = x; if (y > mxY) mxY = y;
+          }
+          zoneLookup.push({ props: f.properties, ring, mnX, mnY, mxX, mxY });
+        }
+      }
+
+      // Eerste pass: ken zone + type toe aan elk gebouw; sla centroïde op voor nabijheidsmatching
+      for (const f of _buildingsRaw.features) {
+        const p    = f.properties;
+        let   type = classifyBuilding(p);
+        const coords = f.geometry?.coordinates;
+        if (!coords) { p._bzoneProps = null; p._bzoneId = null; p._btype = type; p._floorArea = 0; p._cx = null; p._cy = null; continue; }
+
+        const [cx, cy] = _buildingCentroid(coords);
+        p._cx = cx; p._cy = cy;
+
+        // Vloeroppervlak = grondoppervlak (m²) × aantal verdiepingen × floorFraction
+        const footprintM2   = _polygonAreaM2(coords, cy);
+        const levels        = Math.max(1, parseFloat(p['building:levels']) || Math.round(p.height / 3) || 1);
+        const floorFraction = Number(p.floorFraction) > 0 ? Number(p.floorFraction) : 1;
+        p._footprintM2  = footprintM2;
+        p._levels       = levels;
+        p._floorFraction = floorFraction;
+        p._floorArea    = footprintM2 * levels * floorFraction;
+
+        let foundZone = null;
+        for (const z of zoneLookup) {
+          if (cx < z.mnX || cx > z.mxX || cy < z.mnY || cy > z.mxY) continue;
+          if (_pointInPolygon(cx, cy, z.ring)) { foundZone = z; break; }
+        }
+        p._bzoneId    = foundZone?.props?.zoneId ?? null;
+        p._bzoneProps = foundZone ? foundZone.props : null;
+        p._btype      = type;
+        p._bPark      = _isPhysicalParking(p);
+      }
+
+      // Herclassificeer parkeergebouwen op basis van nabijgelegen gebouwen (binnen 100 m).
+      // Inverse-afstand weging: dichter bij = meer invloed.
+      {
+        const _PARK_RADIUS_M = 100;
+        const R_LAT = _PARK_RADIUS_M / 110540;  // graden breedte voor snelle voorfilter
+        for (const f of _buildingsRaw.features) {
+          const p = f.properties;
+          if (p._btype !== 'parking' || p._cx == null) continue;
+          const latCos = Math.cos(p._cy * Math.PI / 180);
+          const scores = {};
+          for (const nb of _buildingsRaw.features) {
+            const np = nb.properties;
+            if (np._btype === 'parking' || np._btype === 'other' || np._cx == null) continue;
+            if (Math.abs(np._cy - p._cy) > R_LAT) continue;  // snelle lat-voorfilter
+            const dx = (np._cx - p._cx) * latCos * 111320;
+            const dy = (np._cy - p._cy) * 110540;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > _PARK_RADIUS_M || dist < 0.1) continue;
+            scores[np._btype] = (scores[np._btype] || 0) + 1 / dist;
+          }
+          // Kies type met hoogste gewogen score; geen buren → blijft 'parking' (neutraal grijs)
+          let bestType = null, bestScore = 0;
+          for (const [t, s] of Object.entries(scores)) {
+            if (s > bestScore) { bestScore = s; bestType = t; }
+          }
+          if (bestType) p._btype = bestType;
+        }
+      }
+
+      // Sommeer vloeroppervlak per zone×type (na herclassificatie parkeren).
+      // Fysieke parkeervoorzieningen krijgen een eigen 'parking'-bucket, zodat ze de
+      // residential-m² (en dus de inwoners-verdeling van échte woningen) niet vervuilen.
+      const zoneTypeAreaMap = new Map();
+      zoneAreaBreakdown = new Map();
+      for (const f of _buildingsRaw.features) {
+        const p = f.properties;
+        const effType = p._bPark ? 'parking' : (p._btype || 'other');
+        p._bEffType = effType;
+        if (p._bzoneId && p._floorArea) {
+          const key = `${p._bzoneId}|${effType}`;
+          zoneTypeAreaMap.set(key, (zoneTypeAreaMap.get(key) || 0) + p._floorArea);
+          // Bouw ook de per-zone breakdown voor de tooltip
+          if (!zoneAreaBreakdown.has(p._bzoneId)) zoneAreaBreakdown.set(p._bzoneId, {});
+          const bd = zoneAreaBreakdown.get(p._bzoneId);
+          bd[effType] = (bd[effType] || 0) + p._floorArea;
+        }
+      }
+
+      // Tweede pass: bepaal kleur-intensiteit per motief op basis van vloeroppervlak.
+      // (De granulaire zone-demografie per functie is niet meer beschikbaar; de richting
+      //  komt uit _BUILDING_SCORES, de felheid uit de m² van het pand.)
+      // Daarnaast: reken het zone-aggregaat (inwoners / arbeidsplaatsen) voor naar het pand,
+      // naar rato van vloeroppervlak binnen de functiegroep, voor de tooltip-breakdown.
+      const POP_TYPES = ['residential', 'transport'];              // → inwoners
+      const JOB_TYPES = ['office', 'industrial', 'commercial'];    // → arbeidsplaatsen (kantoor/industrie/winkel)
+      const purposes = ['all', 'werk', 'onderwijs', 'winkelen', 'recreatie'];
+      for (const f of _buildingsRaw.features) {
+        const p         = f.properties;
+        const type      = p._btype || 'other';
+        const zp        = p._bzoneProps;
+        p.color_mrh = p.color_erh = p.color_rest = '#888888';
+
+        // Demografie-toewijzing voor de tooltip: kies aggregaat + functiegroep.
+        const bd = zoneAreaBreakdown.get(p._bzoneId) || {};
+        let demoKey = null, zoneVal = 0, groupArea = 0;
+        if (p._bPark) {
+          // parkeren: geen demografie tonen
+        } else if (POP_TYPES.includes(type)) {
+          demoKey = 'capBaseResidents';
+          zoneVal = zp?.inwoners || 0;
+          groupArea = POP_TYPES.reduce((s, t) => s + (bd[t] || 0), 0);
+        } else if (JOB_TYPES.includes(type)) {
+          demoKey = 'capBaseJobs';
+          zoneVal = zp?.arbeidsplaatsen || 0;
+          groupArea = JOB_TYPES.reduce((s, t) => s + (bd[t] || 0), 0);
+        } else if (type === 'education') {
+          // Onderwijs → leerlingplaatsen (consistent met inwoners/arbeidsplaatsen).
+          demoKey = 'capBaseSeats';
+          zoneVal = (zp?.leerlingplaatsen_basisonderwijs            || 0)
+                  + (zp?.leerlingplaatsen_middelbaaronderwijs       || 0)
+                  + (zp?.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                  + (zp?.leerlingplaatsen_hogeronderwijs            || 0)
+                  || (zp?.arbeidsplaatsen_onderwijsfunctie          || 0);
+          groupArea = bd['education'] || 0;
+        }
+        // overige functies (onderwijs, recreatie, overig): geen passend aggregaat → alleen m²
+        const demoShare = groupArea > 0 ? (p._floorArea / groupArea) : 0;
+        p._demoKey     = demoKey;
+        p._demoZoneVal = zoneVal;
+        p._demoShare   = demoShare;
+        // _areaShare blijft het aandeel binnen dezelfde functiegroep (voor de tooltip)
+        p._areaShare   = demoShare;
+
+        // Geschat aantal personen voor dit pand (inwoners/arbeidsplaatsen/
+        // leerlingen), naar rato van vloeroppervlak-aandeel binnen de zone×
+        // functiegroep. Dit is de primaire maat voor kleur-intensiteit en
+        // geschaalde hoogte (zodat bv. 0.9 vs. 1.8 inwoners echt een ander
+        // pand oplevert, i.p.v. alleen het vloeroppervlak). Panden zonder
+        // passend demografie-aggregaat (recreatie/overig) vallen terug op
+        // het vloeroppervlak zelf.
+        const demoCount = zoneVal * demoShare;
+        p._demoCount = demoCount;
+
+        p._cap = {};
+        for (const pur of purposes) {
+          const rel   = _PURPOSE_RELEVANT_TYPES[pur];
+          const isRel = rel == null || rel.has(type);
+          if (!isRel) { p._cap[pur] = 0; continue; }
+          p._cap[pur] = demoCount > 0 ? demoCount : p._floorArea;
+        }
+      }
+
+      _buildingsGeoJson = _buildingsRaw;
+
+      // Normalisatie: mediaan (P50) van de vloeroppervlakken per motief, zodat een
+      // gemiddeld pand duidelijk gekleurd is en alleen erg kleine panden lichter zijn.
+      _NORM = {};
+      for (const pur of purposes) {
+        const vals = _buildingsGeoJson.features
+          .map(f => f.properties._cap?.[pur] || 0)
+          .filter(v => v > 0)
+          .sort((a, b) => a - b);
+        _NORM[pur] = vals.length > 0
+          ? (vals[Math.floor(vals.length * 0.5)] || vals[vals.length - 1])
+          : 1;
+      }
+
+      _doUpdateBuildingColors('all');
+
+      // Toon de gebouwengroep (icoon + beide dropdowns) nu gebouwen verrijkt zijn
+      const buildingGroup = document.getElementById('buildingGroup');
+      if (buildingGroup) buildingGroup.style.display = 'flex';
+
+      _tryAddBuildings();
+      _refreshBuildingsStatusUI();
+    }
+
+    // Schrijf color_mrh/erh/rest op elk gebouw voor het gegeven motief
+    // Welke gebouwtypen zijn relevant per motief (null = geen filter = alles)
+    const _PURPOSE_RELEVANT_TYPES = {
+      all:       null,
+      werk:      new Set(['residential','office','industrial','commercial','parking','transport']),
+      onderwijs: new Set(['residential','education','transport']),
+      winkelen:  new Set(['residential','commercial','parking']),
+      recreatie: new Set(['residential','recreation','transport','other']),
+    };
+
+    function _doUpdateBuildingColors(purpose, scaled = false, forceGrayColor = false) {
+      if (!_buildingsGeoJson || !_NORM) return;
+      const norm         = _NORM[purpose] || 1;
+      const relevantTypes = _PURPOSE_RELEVANT_TYPES[purpose] ?? null;
+
+      // ── Geschaalde hoogte: schaal t.o.v. het pand met de HOOGSTE productie-
+      // resp. attractie-waarde (per dagdeel), niet t.o.v. de mediaan. Het
+      // pand met de hoogste waarde krijgt zo de volledige hoogte (100%); een
+      // pand met bv. 1/10 van die waarde krijgt ook echt 1/10 van de hoogte.
+      // Eerste doorloop: bepaal de max. ruwe productie/attractie-waarde
+      // (= cap × |richting|) per dagdeel, over alle relevante panden.
+      const maxProd = { mrh: 0, erh: 0, rest: 0 };
+      const maxAttr = { mrh: 0, erh: 0, rest: 0 };
+      let maxCap = 0;
+      if (scaled) {
+        for (const f of _buildingsGeoJson.features) {
+          const p    = f.properties;
+          const type = p._btype || 'other';
+          const cap  = p._cap?.[purpose] ?? 0;
+          const isRelevant = relevantTypes === null || relevantTypes.has(type);
+          if (!isRelevant || cap <= 0) continue;
+          if (cap > maxCap) maxCap = cap;
+          for (const dp of ['mrh', 'erh', 'rest']) {
+            const dir = _getBuildingDir(type, purpose, dp);
+            if (dir < 0) {
+              const v = cap * Math.abs(dir);
+              if (v > maxProd[dp]) maxProd[dp] = v;
+            } else if (dir > 0) {
+              const v = cap * dir;
+              if (v > maxAttr[dp]) maxAttr[dp] = v;
+            }
+          }
+        }
+      }
+
+      for (const f of _buildingsGeoJson.features) {
+        const p    = f.properties;
+        const type = p._btype || 'other';
+        const cap  = p._cap?.[purpose] ?? 0;   // = geschat aantal (inwoners/arbeidsplaatsen/leerlingen), of vloeroppervlak als fallback
+        const isRelevant = relevantTypes === null || relevantTypes.has(type);
+
+        for (const dp of ['mrh', 'erh', 'rest']) {
+          const dir = _getBuildingDir(type, purpose, dp);
+          let score;
+          if (!isRelevant || dir === 0) {
+            score = 0;               // niet relevant of neutrale functie → grijs
+          } else if (cap > 0) {
+            score = dir * Math.min(1, cap / norm);   // richting × intensiteit (kleur blijft mediaan-genormaliseerd)
+          } else {
+            score = dir * 0.5;       // relevant maar geen m² bekend → halve intensiteit
+          }
+          p['color_' + dp] = buildingColor(forceGrayColor ? 0 : score);
+
+          // Geschaalde hoogte per productie/attractie-richting (per dagdeel,
+          // want de richting van een gebouwtype kan per dagdeel omslaan).
+          // Conventie (zie _BUILDING_SCORES hierboven): dir < 0 = productie
+          // (mensen VERLATEN het pand), dir > 0 = attractie (mensen KOMEN aan).
+          if (scaled) {
+            let prodFrac = 0, attrFrac = 0;
+            if (isRelevant && cap > 0 && dir < 0 && maxProd[dp] > 0) {
+              prodFrac = (cap * Math.abs(dir)) / maxProd[dp];
+            } else if (isRelevant && cap <= 0 && dir < 0) {
+              prodFrac = 0.5;   // relevant maar geen data bekend → halve hoogte
+            }
+            if (isRelevant && cap > 0 && dir > 0 && maxAttr[dp] > 0) {
+              attrFrac = (cap * dir) / maxAttr[dp];
+            } else if (isRelevant && cap <= 0 && dir > 0) {
+              attrFrac = 0.5;
+            }
+            p['height_sc_prod_' + dp] = 2 + prodFrac * 98;
+            p['height_sc_attr_' + dp] = 2 + attrFrac * 98;
+          }
+        }
+        // Geschaalde hoogte (totaal): schaal t.o.v. het pand met de hoogste
+        // waarde voor dit motief (ongeacht productie/attractie-richting).
+        if (scaled) {
+          const totalFrac = (cap > 0 && maxCap > 0) ? Math.min(1, cap / maxCap) : 0;
+          p.height_sc = 2 + totalFrac * 98;
+        }
+      }
+
+    }
+
+    // Herbereken kleuren en actualiseer lagen (schaalt ook hoogte in geschaalde modus).
+    // val-formaat: '<purpose>'          → normaal (fill + Liberty 3D)
+    //              '<purpose>_scaled'   → geschaald (custom fill-extrusion)
+    //              '<purpose>_hidden'   → vlakken zichtbaar, geen 3D (ook: 'hidden' = 'all_hidden')
+    //              'off'                → alles verborgen
+    function updateBuildingColors(val) {
+      const isHidden = val === 'hidden' || val.endsWith('_hidden');
+      const isScaled = !isHidden && val.endsWith('_scaled');
+      const purpose  = isHidden ? (val === 'hidden' ? 'all' : val.slice(0, -7))
+                     : isScaled ? val.slice(0, -7)
+                     : val;
+      _currentPurpose = purpose;
+      _isScaledMode   = isScaled;
+      if (!_buildingsGeoJson || !_NORM) return;
+      _doUpdateBuildingColors(_currentPurpose, isScaled);
+      if (!map.getSource('buildings')) return;
+      map.getSource('buildings').setData(_buildingsGeoJson);
+      if (isHidden) {
+        // Verborgen: toon gekleurde 2D producte/attractievlakken, verberg alle 3D geometrie
+        if (map.getLayer('buildings-3d'))  map.setLayoutProperty('buildings-3d',  'visibility', 'none');
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        if (map.getLayer('buildings-fill')) {
+          map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+          map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
+        }
+      } else if (isScaled) {
+        // Geschaalde modus: eigen fill-extrusion met height_sc, Liberty verbergen
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        if (map.getLayer('buildings-fill'))  map.setLayoutProperty('buildings-fill',  'visibility', 'none');
+        if (map.getLayer('buildings-3d')) {
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-color',  ['get', `color_${daypart}`]);
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-height', ['coalesce', ['get', 'height_sc'], 4]);
+          map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+        }
+      } else {
+        // Niet-geschaalde modus: 2D fill voor kleuren, Liberty semi-transparant voor 3D-vorm
+        if (map.getLayer('buildings-3d'))  map.setLayoutProperty('buildings-3d',  'visibility', 'none');
+        if (map.getLayer('buildings-fill')) {
+          map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+          map.setLayoutProperty('buildings-fill', 'visibility', 'visible');
+        }
+        try {
+          if (map.getLayer('building-3d')) {
+            map.setLayoutProperty('building-3d', 'visibility', 'visible');
+            map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
+            map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
+          }
+        } catch (_) {}
+      }
+    }
+
+    /** Past de fill-extrusion-height van 'buildings-3d' toe voor de gekozen
+     *  geschaalde sub-modus (totaal/productie/attractie), voor het huidige
+     *  dagdeel. Productie/attractie-hoogtes zijn per dagdeel berekend omdat
+     *  de productie/attractie-richting van een gebouwtype per dagdeel kan
+     *  omslaan (zie _doUpdateBuildingColors). */
+    function _applyScaledBuildingHeight(display) {
+      if (!map.getLayer('buildings-3d')) return;
+      let expr;
+      if (display === 'geschaald_productie') {
+        expr = ['coalesce', ['get', `height_sc_prod_${daypart}`], 2];
+      } else if (display === 'geschaald_attractie') {
+        expr = ['coalesce', ['get', `height_sc_attr_${daypart}`], 2];
+      } else {
+        expr = ['coalesce', ['get', 'height_sc'], 4];
+      }
+      map.setPaintProperty('buildings-3d', 'fill-extrusion-height', expr);
+    }
+
+    /** Leest #buildingDisplay (3D-weergave) en #buildingPurpose (kleur van het
+     *  grondvlak) en past ze onafhankelijk van elkaar toe:
+     *   - buildingDisplay stuurt alleen de 3D-geometrie (Liberty building-3d
+     *     wit/semi-transparant, of onze eigen geschaalde fill-extrusion, of uit).
+     *   - buildingPurpose stuurt alleen het gekleurde 2D-grondvlak
+     *     (buildings-fill); 'off' (standaard) verbergt dit grondvlak volledig.
+     *   - De geschaalde 3D-hoogte (totaal/productie/attractie) is afhankelijk
+     *     van de gekozen productie/attractie ('buildingPurpose'), want de
+     *     hoogte schaalt met het vloeroppervlak voor dat motief.
+     */
+    function _applyBuildingDisplay() {
+      const purpose = document.getElementById('buildingPurpose')?.value ?? 'off';
+      const display = document.getElementById('buildingDisplay')?.value ?? 'normaal';
+      const isScaledDisplay = display === 'geschaald_totaal'
+                           || display === 'geschaald_productie'
+                           || display === 'geschaald_attractie';
+      const is3D = display === 'normaal' || isScaledDisplay;
+      let _b3s = '?'; try { _b3s = _bag3dState; } catch (_) {}   // TDZ: vroeg in de init nog niet gedeclareerd
+      _trace(`gebouwweergave: display=${display}, purpose=${purpose}, 3D BAG=${_b3s}`);
+
+      // Gebouwen worden pas opgehaald zodra ze daadwerkelijk getoond moeten worden.
+      if (is3D || purpose !== 'off') _loadBuildingsIfNeeded();
+
+      // ── Kleuren altijd verversen zodra er iets in 3D getoond wordt (of het
+      // grondvlak zichtbaar is), zodat de 3D-extrusie straks dezelfde
+      // color_${daypart}-waarden kan hergebruiken als het grondvlak.
+      // Zonder gekozen motief ('off', standaard) valt de hoogteberekening terug
+      // op 'all' (zodat de geschaalde 3D-hoogte altijd blijft reageren), maar de
+      // kleur wordt in dat geval geforceerd naar grijs (score 0), ongeacht dagdeel.
+      const colorPurpose = purpose === 'off' ? 'all' : purpose;
+      _currentPurpose = purpose;
+      _isScaledMode = isScaledDisplay;
+      if (is3D || purpose !== 'off') {
+        if (_buildingsGeoJson && _NORM) {
+          _doUpdateBuildingColors(colorPurpose, isScaledDisplay, purpose === 'off');
+          if (map.getSource('buildings')) map.getSource('buildings').setData(_buildingsGeoJson);
+        }
+      }
+
+      // ── 3D-weergave (onafhankelijk van productie/attractie) ────────────
+      // Liberty's eigen 'building'/'building-3d' lagen worden nooit meer gebruikt
+      // voor de 3D-extrusie: onze eigen 'buildings-3d'-laag toont zowel de
+      // normale (werkelijke hoogte) als de geschaalde weergave, altijd gekleurd
+      // volgens hetzelfde color_${daypart} als het onderliggende grondvlak (dat
+      // bij 'Gebouw productie/attractie' = uit hierboven al op grijs staat).
+      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+      try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+
+      // 3D BAG-panden (echte dakvormen) in de stand '3D'; zolang die laden of
+      // niet beschikbaar zijn (buiten NL, netwerkfout) blijft de extrusie staan.
+      if (display === 'normaal') _loadBag3dIfNeeded();
+      _bag3dRefreshOverlay();
+
+      if (display === 'uit' || _bag3dActive()) {
+        if (map.getLayer('buildings-3d')) map.setLayoutProperty('buildings-3d', 'visibility', 'none');
+      } else if (map.getLayer('buildings-3d')) {
+        map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
+        map.setPaintProperty('buildings-3d', 'fill-extrusion-opacity', isScaledDisplay ? 0.85 : 0.55);
+        map.setLayoutProperty('buildings-3d', 'visibility', 'visible');
+        if (isScaledDisplay) {
+          // Hoogte wordt hieronder (na de kleur-/cap-herberekening) gezet,
+          // zodat de height_sc_*-velden al vers zijn.
+          _applyScaledBuildingHeight(display);
+        } else {
+          // Normale 3D-weergave: werkelijke gebouwhoogte (OSM), fallback 4 m.
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-height', ['coalesce', ['get', 'height'], 4]);
+        }
+      }
+
+
+      // ── Productie/attractie: het gekleurde grondvlak (buildings-fill) ──
+      // Zonder gekozen motief ('off', standaard) blijft het grondvlak verborgen.
+      if (map.getLayer('buildings-fill')) {
+        map.setLayoutProperty('buildings-fill', 'visibility', purpose === 'off' ? 'none' : 'visible');
+      }
+      if (purpose !== 'off' && map.getLayer('buildings-fill')) {
+        map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+      }
+
+      _refreshBuildingsStatusUI();
+    }
+
+    /** Werkt de statusregel onderaan het 'Pand weergave'-blok bij:
+     *  'nog niet opgehaald' (weergave nog uit), 'ophalen' (weergave aan maar
+     *  data nog niet klaar), of 'beschikbaar'. */
+    function _refreshBuildingsStatusUI() {
+      const textEl = document.getElementById('lmpBuildingsStatusText');
+      if (!textEl) return;
+      const spinEl    = document.getElementById('lmpBuildingsStatusSpinner');
+      const display   = document.getElementById('buildingDisplay')?.value ?? 'uit';
+      const available = !!(_buildingsGeoJson && _NORM);
+      const fetching  = !available && display !== 'uit';
+      let text = available ? 'beschikbaar' : (fetching ? 'ophalen' : 'nog niet opgehaald');
+      let busy = fetching;
+      // Stand '3D': toon ook de status van de 3D BAG-panden.
+      if (available && display === 'normaal') {
+        if (_bag3dState === 'indexing') {
+          text = '3D BAG: tegels zoeken…';
+          busy = true;
+        } else if (_bag3dState === 'ready') {
+          const nf = _bag3dPanden.toLocaleString('nl-NL');
+          if (_bag3dBusy) { text = `3D BAG: ${nf} panden, laden…`; busy = true; }
+          else if (!_bag3dTiles.length && map.getZoom() < _BAG3D_MIN_ZOOM) text = '3D BAG: zoom in om panden te laden';
+          else text = `3D BAG: ${nf} panden`;
+        } else if (_bag3dState === 'unavailable') {
+          text = 'beschikbaar (geen 3D BAG)';
+        }
+      }
+      textEl.textContent = text;
+      if (spinEl) spinEl.classList.toggle('visible', busy);
+    }
+
+    // Netwerklinks waarmee de Montréal-ondergrond de wegen breedte en
+    // verharding geeft (MontrealBasemap.setNetwork). Bij MIXED alleen de autowegen.
+    function _kaart2NetworkFeatures() {
+      if (MODE !== 'MIXED') return _networkFeatures;
+      if (_kaart2Src !== _networkFeatures) {
+        _kaart2Src   = _networkFeatures;
+        _kaart2Feats = _networkFeatures.filter(f => (f.properties.mode ?? 'CAR').toUpperCase() === 'CAR');
+      }
+      return _kaart2Feats;
+    }
+
+    // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
+    // Bij de luchtfoto blijven alleen de Liberty-symboollagen (labels) zichtbaar als overlay.
+    function _applyBasemapStyle(style) {
+      if (style === 'montreal') style = 'map';
+      basemapStyle = style;
+      window._basemapStyleSafe = style;
+      localStorage.setItem('basemapStyle', style);
+      // Houd beide radiogroepen (instellingen-paneel + linker menu) in sync
+      document.querySelectorAll('input[name="spBasemap"], input[name="lmpBasemap"]').forEach(r => {
+        r.checked = r.value === style;
+      });
+      const isSat   = style === 'satellite';
+      const isNone  = style === 'none';
+      const isWhite = style === 'white';
+      // 'Kaart' toont in de digital twin de Montréal-ondergrond (mtl-*-lagen,
+      // zie common/js/montreal-basemap.js) i.p.v. de Liberty-ondergrond.
+      const isMtl   = style === 'map';
+      // 'none' (zwart) en 'white' (wit) verbergen allebei de Liberty-kaartlagen;
+      // alleen de achtergrondkleur van de container verschilt.
+      const hideMap = isNone || isWhite;
+
+      // Helper: past de basemap-stijl toe op één MapLibre-instantie.
+      // Voegt de satelliet-source/laag toe indien die nog ontbreekt.
+      function _applyToMap(m) {
+        if (!m) return;
+        // Satelliet raster-laag
+        if (!m.getSource('esri-satellite')) {
+          m.addSource('esri-satellite', {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256, maxzoom: 19,
+            attribution: '© Esri, i-cubed, USDA, USGS, AEX, GeoEye',
+          });
+        }
+        if (!m.getLayer('satellite-bg')) {
+          const firstLayerId = m.getStyle().layers[0]?.id;
+          m.addLayer({
+            id: 'satellite-bg', type: 'raster', source: 'esri-satellite',
+            layout: { visibility: 'none' }, paint: { 'raster-opacity': 1 },
+          }, firstLayerId);
+        }
+        // deck.gl (interleaved) laat POLYGON_OFFSET_FILL aan staan met de offset
+        // van zijn laatste laag (standaard -layerIndex*100). MapLibre beheert die
+        // GL-state niet, dus het volgende frame tekent de sky met die offset en
+        // komt die in de dieptebuffer vóór de luchtfoto te liggen; het raster
+        // (gl.LESS) viel dan overal weg zodra de overlay veel lagen had (3D BAG-
+        // panden + auto's). Deze lege custom layer zet de offset vóór het frame uit.
+        if (!m.getLayer('gl-polygon-offset-reset')) {
+          const off = gl => gl.disable(gl.POLYGON_OFFSET_FILL);
+          m.addLayer({ id: 'gl-polygon-offset-reset', type: 'custom', renderingMode: '2d',
+                       prerender: off, render: off }, 'satellite-bg');
+        }
+        try { m.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none'); } catch (_) {}
+        // Liberty lagen aan/uit. De Liberty-gebouwlagen ('building'/'building-3d')
+        // en onze eigen 'buildings-*'-lagen worden hier bewust overgeslagen: hun
+        // zichtbaarheid wordt uitsluitend bepaald door de 'Gebouw weergave'/
+        // 'Gebouw productie/attractie'-radio's (zie _applyBuildingDisplay), niet
+        // door de achtergrondkeuze.
+        // Montréal- en luchtfotomodus: alle Liberty-lagen behalve de labels
+        // (symbol) uit; in Montréal-modus tekenen de 'mtl-*'-lagen de ondergrond,
+        // bij de luchtfoto mag er geen kaartbeeld (wegen, water, landgebruik)
+        // door de foto heen komen.
+        if (_libertyAllLayerIds) {
+          const mtlHidden = (isMtl || isSat) ? window.MontrealBasemap.hiddenBaseLayerIds(m) : null;
+          for (const id of _libertyAllLayerIds) {
+            if (id === 'building' || id === 'building-3d' || id.startsWith('buildings')) continue;
+            const show = !hideMap && !(mtlHidden && mtlHidden.has(id));
+            try { m.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none'); } catch (_) {}
+          }
+        }
+        try {
+          if (isMtl) {
+            window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+            // Bewegend water boven 'mtl-water' (common/js/animated-water.js);
+            // tekent alleen zolang 'mtl-water' zichtbaar is.
+            try { window.AnimatedWater?.ensure(m); } catch (e) { console.warn('Bewegend water:', e); }
+          }
+          window.MontrealBasemap.setVisible(m, isMtl);
+        } catch (e) { console.warn('Montréal-ondergrond:', e); }
+        m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
+        // Satelliet: verberg ook de Liberty fill/background lagen
+        if (!hideMap && !isMtl && _libertyFillLayerIds) {
+          for (const id of _libertyFillLayerIds) {
+            if (id === 'satellite-bg') continue;
+            try { m.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
+          }
+        }
+      }
+
+      _applyToMap(map);
+      if (map2) _applyToMap(map2);
+
+      // Herstel de gebouw-zichtbaarheid volgens de huidige 'Gebouw weergave'-radio:
+      // de generieke Liberty-toggle hierboven laat 'building'/'building-3d' met rust,
+      // maar bij het (opnieuw) tonen van de kaart-stijl moeten die twee lagen alsnog
+      // expliciet gesynchroniseerd worden met de radio-status.
+      if (typeof _applyBuildingDisplay === 'function') _applyBuildingDisplay();
+
+      // Dag/nacht-overlay opnieuw toepassen: een handmatige stijlwissel mag de
+      // eerder door updateSunLight() bepaalde nachtstatus niet ongedaan maken.
+      _applyGroundNightTint(_sunIsDay);
+    }
+    // Globaal beschikbaar maken zodat panelen buiten deze functie-scope
+    // (bijv. initLeftMenuPanel) hem ook kunnen aanroepen.
+    window._applyBasemapStyle = _applyBasemapStyle;
+
+    // ── Donkere grondtint bij nacht (gesimuleerde klok) ───────────────────────
+    // Tint alleen de grond (park/landuse/landcover) via één halfdoorzichtige
+    // achtergrondlaag die vlak vóór 'water' in de stijl-volgorde ligt —
+    // water/wegen/gebouwen worden daarna getekend en blijven dus ongewijzigd
+    // van kleur.
+    function _applyGroundNightTint(isDay) {
+      // Uit: 'map' is hier de Montréal-ondergrond; de tint ligt (vóór Liberty
+      // 'water') boven alle mtl-*-lagen en zou ook water/wegen donker maken.
+      const wantTint = false;
+
+      function _applyToMap(m) {
+        if (!m) return;
+        if (!m.getLayer('ground-night-tint')) {
+          m.addLayer({
+            id: 'ground-night-tint', type: 'background',
+            paint: { 'background-color': '#05080c', 'background-opacity': 0 },
+          }, m.getLayer('water') ? 'water' : undefined);
+        }
+        try { m.setPaintProperty('ground-night-tint', 'background-opacity', wantTint ? 0.4 : 0); } catch (_) {}
+      }
+
+      _applyToMap(map);
+      if (map2) _applyToMap(map2);
+    }
+
+    function _tryAddBuildings() {
+      if (!_mapReady || !_buildingsGeoJson) return;
+
+      // Maquette-modus: verberg alle gebouwlagen en stop hier
+      if (_MAQUETTE) {
+        try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('buildings-fill')) map.setLayoutProperty('buildings-fill', 'visibility', 'none'); } catch (_) {}
+        try { if (map.getLayer('buildings-3d'))   map.setLayoutProperty('buildings-3d',   'visibility', 'none'); } catch (_) {}
+        return;
+      }
+
+      // Verberg Liberty 2D building-laag (laag zoom); de 3D-laag blijft voor de vorm
+      try { if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none'); } catch (_) {}
+
+      // Maak Liberty building-3d semi-transparant zodat onze kleur-fill eronder zichtbaar is.
+      // Standaard verborgen: 'Gebouw weergave' staat standaard op 'uit'.
+      if (!_libBldOrigColor && map.getLayer('building-3d')) {
+        _libBldOrigColor   = map.getPaintProperty('building-3d', 'fill-extrusion-color');
+        _libBldOrigOpacity = map.getPaintProperty('building-3d', 'fill-extrusion-opacity') ?? 1.0;
+        map.setPaintProperty('building-3d', 'fill-extrusion-color',   '#ffffff');
+        map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.55);
+      }
+      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+
+      // OGC GeoJSON-source (kleuren). generateId → stabiele feature-ids voor
+      // feature-state (selectie-highlight).
+      if (!map.getSource('buildings')) {
+        map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson, generateId: true, attribution: OSM_ATTRIBUTION });
+      } else {
+        map.getSource('buildings').setData(_buildingsGeoJson);
+      }
+
+      if (!map.getLayer('buildings-fill')) {
+        // Voeg 2D fill-laag in vóór de Liberty building-3d zodat die er transparant overheen ligt.
+        // Standaard verborgen: 'Gebouw productie/attractie' staat standaard op 'uit'.
+        map.addLayer({
+          id:     'buildings-fill',
+          type:   'fill',
+          source: 'buildings',
+          layout: {
+            visibility: 'none',
+          },
+          paint: {
+            'fill-color':         ['get', `color_${daypart}`],
+            'fill-opacity':       0.9,
+            'fill-outline-color': 'transparent',
+          },
+        }, map.getLayer('building-3d') ? 'building-3d' : undefined);
+
+        // ── Selectie-highlight: gele contour rond het geselecteerde pand ────
+        if (!map.getLayer('buildings-selected')) {
+          map.addLayer({
+            id:     'buildings-selected',
+            type:   'line',
+            source: 'buildings',
+            paint: {
+              'line-color': '#ffd400',
+              'line-width': 3,
+              'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0],
+            },
+          }, map.getLayer('building-3d') ? 'building-3d' : undefined);
+        }
+
+        // Id van het momenteel geselecteerde pand (feature-state), of null.
+        let _bSelectedId = null;
+
+        // ── Gebouw-tooltip via native MapLibre-events ──────────────────────
+        const _bTip         = document.getElementById('buildingTooltip');
+        const _TOOLTIP_ZOOM = 15;   // tooltip alleen actief op straatniveau
+        let _bTipHideTimer = null;
+        let _bTipShowTimer = null;  // vertraagd tonen (2 s)
+        let _bTipLastEvent = null;  // meest recente mousemove-event
+        let _bTipVisible   = false; // is de tooltip momenteel zichtbaar?
+
+        const _bTipRender = e => {
+          if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
+          const f = e.features?.[0];
+          if (!f) { _bTip.style.display = 'none'; _bTipVisible = false; return; }
+          const p = f.properties;
+
+          // Properties met object-waarden zijn door MapLibre JSON-geserialiseerd
+          let cap = 0;
+          try { cap = (JSON.parse(p._cap || '{}')?.[_currentPurpose] ?? 0); } catch (_) {}
+          let zoneName = null;
+          try { zoneName = JSON.parse(p._bzoneProps || 'null')?.zoneName ?? null; } catch (_) {}
+
+          const _labelType = p._bEffType || p._btype || 'other';
+          const typeKey   = 'buildingType' + _labelType.charAt(0).toUpperCase()
+                            + _labelType.slice(1);
+          const typeLabel = T(typeKey) || _labelType || '–';
+          const heightM   = p.height ? Math.round(p.height) + '\u202fm' : '–';
+          const capFmt    = cap > 0 ? Math.round(cap).toLocaleString(T('numberLocale')) : '–';
+
+          // Productie/attractie voor het huidige motief + dagdeel
+          let dirHtml = '';
+          if (_currentPurpose && _currentPurpose !== 'off' && _NORM && _BUILDING_SCORES) {
+            const btype      = p._btype || 'other';
+            const norm       = _NORM[_currentPurpose] || 1;
+            const dir        = _getBuildingDir(btype, _currentPurpose, daypart);
+            const relTypes   = _PURPOSE_RELEVANT_TYPES[_currentPurpose] ?? null;
+            const isRelevant = relTypes === null || relTypes.has(btype);
+            let score = 0;
+            if (isRelevant) {
+              if (cap > 0)      score = dir * Math.min(1, cap / norm);
+              else if (dir !== 0) score = dir * 0.5;  // geen demografie: vaste richting, halve intensiteit
+            }
+            const dpLabel  = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') }[daypart] || daypart;
+            const purLabel = { all: T('tooltipPurposeAll'), werk: T('tooltipPurposeWerk'),
+                               onderwijs: T('tooltipPurposeOnderwijs'), winkelen: T('tooltipPurposeWinkelen'),
+                               recreatie: T('tooltipPurposeRecreat') }[_currentPurpose] || _currentPurpose;
+            const pct = Math.round(Math.abs(score) * 100);
+            if (Math.abs(score) > 0.02) {
+              const isAttr = score > 0;
+              const color  = isAttr ? '#2ca02c' : '#d62728';
+              const arrow  = isAttr ? '↑' : '↓';
+              const label  = T(isAttr ? 'tooltipBuildingAttraction' : 'tooltipBuildingProduction');
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
+                <b style="color:${color}">${arrow} ${label}</b><span style="color:#888"> (${pct}%)</span>
+              </div>`;
+            } else if (isRelevant) {
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
+                <b style="color:#888">${T('tooltipBuildingNeutral')}</b>
+              </div>`;
+            }
+          }
+
+          // OSM-tags: alleen 'building' en 'buildingType' tonen
+          const _SHOW = ['building', 'buildingType'];
+          const osmRows = _SHOW
+            .filter((k) => p[k] != null && p[k] !== '')
+            .map((k) => `<tr>
+              <td style="color:#6a757c;padding-right:10px;white-space:nowrap">${k}</td>
+              <td style="word-break:break-word"><b>${p[k]}</b></td>
+            </tr>`)
+            .join('');
+
+          const osmLink = p.osm_id
+            ? `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
+                <a href="https://www.openstreetmap.org/way/${p.osm_id}" target="_blank"
+                   style="color:var(--ga-rood);font-size:11px">OSM way/${p.osm_id} ↗</a>
+               </div>` : '';
+
+          _bTip.innerHTML = `
+            <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">${typeLabel}</div>
+            ${zoneName ? `<div><span style="color:#6a757c">${T('tooltipBuildingZone')}: </span><b>${zoneName}</b></div>` : ''}
+            <div><span style="color:#6a757c">${T('tooltipBuildingHeight')}: </span><b>${heightM}</b></div>
+            ${dirHtml}
+            ${_buildingCalcHtml(p)}
+            ${osmRows ? `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
+              <table style="border-collapse:collapse;font-size:12px;width:100%">${osmRows}</table>
+            </div>` : ''}
+            ${osmLink}
+          `;
+
+          // Positioneer net rechtsonder de cursor, pas aan als tooltip buiten scherm valt
+          const x = e.originalEvent.clientX;
+          const y = e.originalEvent.clientY;
+          _bTip.style.display = '';
+          const tw = _bTip.offsetWidth, th = _bTip.offsetHeight;
+          _bTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+          _bTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+        };
+
+        // Interactie op beide gebouwlagen: 'buildings-fill' (plat) is zichtbaar in
+        // de normale modus, 'buildings-3d' (extrusie) in de geschaalde 3D-modus.
+        // Zonder 'buildings-3d' zouden panden in 3D-modus onklikbaar zijn.
+        const _bLayers = ['buildings-fill', 'buildings-3d'];
+
+        map.on('mouseenter', _bLayers, () => {
+          if (map.getZoom() < _TOOLTIP_ZOOM) return;
+          map.getCanvas().style.cursor = 'pointer';
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          // Start vertraagd tonen (2 s) als tooltip nog niet zichtbaar is
+          if (!_bTipVisible && !_bTipShowTimer) {
+            _bTipShowTimer = setTimeout(() => {
+              _bTipShowTimer = null;
+              if (_bTipLastEvent) { _bTipRender(_bTipLastEvent); _bTipVisible = true; }
+            }, 2000);
+          }
+        });
+
+        map.on('mouseleave', _bLayers, () => {
+          map.getCanvas().style.cursor = '';
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
+          _bTipVisible = false;
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        // Keep tooltip visible when mouse moves over it (to allow clicking the OSM link)
+        _bTip.addEventListener('mouseenter', () => {
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+        });
+        _bTip.addEventListener('mouseleave', () => {
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        map.on('mousemove', _bLayers, e => {
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          _bTipLastEvent = e;
+          // Tooltip is al zichtbaar: direct positie/inhoud bijwerken
+          if (_bTipVisible) _bTipRender(e);
+        });
+
+        // ── Klik: pand selecteren/deselecteren ─────────────────────────────
+        // Selecteren → gele contour + tooltip direct tonen (vastgepind).
+        // Opnieuw klikken op hetzelfde pand → deselecteren + tooltip weg.
+        map.on('click', _bLayers, e => {
+          const f = e.features?.[0];
+          if (!f || f.id == null) return;
+          const id = f.id;
+
+          // Klik op reeds geselecteerd pand → deselecteren
+          if (_bSelectedId === id) {
+            map.setFeatureState({ source: 'buildings', id }, { selected: false });
+            _bSelectedId   = null;
+            _bTipVisible   = false;
+            _bTip.style.display = 'none';
+            return;
+          }
+
+          // Vorige selectie opheffen
+          if (_bSelectedId != null) {
+            map.setFeatureState({ source: 'buildings', id: _bSelectedId }, { selected: false });
+          }
+
+          _bSelectedId = id;
+          map.setFeatureState({ source: 'buildings', id }, { selected: true });
+
+          // Tooltip direct tonen op de klikpositie
+          if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          _bTipRender(e);
+          _bTipVisible = true;
+        });
+
+        // ── Klik náást een pand → huidige selectie opheffen ────────────────
+        // Algemene kaartklik: als er géén gebouw onder de cursor zit, deselecteren.
+        map.on('click', e => {
+          if (_bSelectedId == null) return;
+          const hits = map.getLayer('buildings-fill')
+            ? map.queryRenderedFeatures(e.point, {
+                layers: ['buildings-fill', 'buildings-3d'].filter(l => map.getLayer(l)) })
+            : [];
+          if (hits.length) return;   // op een pand geklikt → laat de laag-handler het afhandelen
+          map.setFeatureState({ source: 'buildings', id: _bSelectedId }, { selected: false });
+          _bSelectedId = null;
+          _bTipVisible = false;
+          _bTip.style.display = 'none';
+        });
+      }
+
+      // Fill-extrusion laag voor geschaalde modus (height_sc als hoogte, verborgen standaard)
+      if (!map.getLayer('buildings-3d')) {
+        map.addLayer({
+          id:     'buildings-3d',
+          type:   'fill-extrusion',
+          source: 'buildings',
+          layout: { visibility: 'none' },
+          paint: {
+            'fill-extrusion-color':                      ['get', 'color_mrh'],
+            'fill-extrusion-height':                     ['coalesce', ['get', 'height_sc'], 4],
+            'fill-extrusion-base':                       0,
+            'fill-extrusion-opacity':                    0.85,
+          },
+        });
+      }
+    }
+
+    // ─── 3D BAG-panden (LoD2.2, echte dakvormen) ──────────────────────────────
+    //
+    // In de stand '3D' van 'Pand weergave' vervangen de 3D BAG-panden (TU Delft)
+    // de platte fill-extrusion van 'buildings-3d', mits het gebied in NL ligt en
+    // het laden lukt; anders blijft de extrusie (terugvalpad, bv. Tampere).
+    //
+    // deck.gl's Tile3DLayer is hier onbruikbaar (8.9 kent geen 3D Tiles 1.1;
+    // loaders.gl 4 negeert de byteStride van de interleaved meshopt-bufferView),
+    // dus een eigen minimale loader: tileset-index binnen de bbox van de panden →
+    // per kaartbeeld de tegels in beeld ophalen (dichtstbijzijnde eerst, zoals
+    // F4) → .glb parsen → meshopt decoderen → ECEF → lokale ENU-meters per tegel
+    // → SimpleMeshLayer, met een opkomst-animatie per tegel.
+    // Zie plan-f4-gebouwen.md.
+    //
+    // Tegels komen via de server-proxy /3dbag/ (cache op schijf/S3, versie in
+    // server.py: _BAG3D_VERSION); lukt die niet, dan rechtstreeks van de 3D BAG.
+    const _BAG3D_TILESET_PROXY  = '/3dbag/tileset.json';
+    // Terugval — versie gelijk houden met _BAG3D_VERSION in server.py.
+    const _BAG3D_TILESET_DIRECT = 'https://data.3dbag.nl/v20250903/cesium3dtiles/lod22/tileset.json';
+    const _BAG3D_MESHOPT = 'https://cdn.jsdelivr.net/npm/meshoptimizer@1.3.0/meshopt_decoder.mjs';
+    const _BAG3D_NL_BBOX = [3.2, 50.7, 7.3, 53.6];
+    const _BAG3D_MIN_ZOOM    = 13;   // daaronder geen nieuwe tegels ophalen
+    const _BAG3D_CONCURRENCY = 6;    // tegels zijn ~1–3 MB elk
+    // Kleur per vlak-klasse: gevel, schuin dak (pannen), plat dak (bitumen/grind).
+    // deck.gl 8.9 overschrijft vertex-'colors' van een mesh, dus één laag per klasse.
+    const _BAG3D_COLORS = [[236, 226, 210], [172, 94, 70], [156, 153, 148]];
+    let _bag3dState   = 'idle';   // idle | indexing | ready | unavailable
+    let _bag3dIndex   = [];       // [{ url, bounds, center, status: todo|loading|done|failed }]
+    let _bag3dTiles   = [];       // { id, origin:[lon,lat], meshes:[3], features:[…], born }
+    let _bag3dPanden  = 0;        // aantal getoonde panden (na STUDY-filter)
+    let _bag3dBusy    = 0;        // aantal tegels dat nu geladen wordt
+    let _bag3dFailed  = 0;        // aantal mislukte tegels
+    let _bag3dDecoder = null;     // MeshoptDecoder (lazy import)
+    let _bag3dKeep    = null;     // (lon, lat) → ligt in het studiegebied?
+
+    /** True als de 3D BAG-laag de 3D-weergave verzorgt (anders: extrusie).
+     *  Delen van het beeld waarvan de tegel nog onderweg is blijven even leeg
+     *  en 'groeien' zodra die binnen is. */
+    function _bag3dActive() {
+      const display = document.getElementById('buildingDisplay')?.value ?? 'uit';
+      return display === 'normaal' && _bag3dState === 'ready' && !_MAQUETTE;
+    }
+
+    /** Overlay verversen; vroeg in de init (panden binnen vóórdat de deck.gl-
+     *  overlay bestaat) is dat nog niet mogelijk — dan pakt de eerste
+     *  updateOverlay() de BAG-lagen vanzelf mee. */
+    function _bag3dRefreshOverlay() {
+      try { updateOverlay(true); } catch (_) {}
+    }
+
+    // ── Opkomst-animatie (panden en bomen 'groeien' bij binnenkomst, zoals F4) ──
+    // Elk object krijgt een geboortetijd; de schaal loopt in _GROW_MS van ~0 naar
+    // 1 (easeOutBack: schiet iets door en zakt terug). Zolang er iets groeit,
+    // ververst een rAF-lus de overlay; daarna staat alles stil (geen kosten).
+    const _GROW_MS = 900;
+    const _GROW_ON = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    let _growUntil = 0, _growTick = 0, _growRaf = 0;
+    function _growFactor(born, now) {
+      if (!_GROW_ON || born == null) return 1;
+      const t = (now - born) / _GROW_MS;
+      if (t >= 1) return 1;
+      if (t <= 0) return 0.001;
+      const c = 1.4, u = t - 1;
+      return Math.max(0.001, 1 + (c + 1) * u * u * u + c * u * u);
+    }
+    function _growKick(born) {
+      if (!_GROW_ON) return;
+      _growUntil = Math.max(_growUntil, born + _GROW_MS + 50);
+      if (!_growRaf) _growRaf = requestAnimationFrame(_growStep);
+    }
+    function _growStep() {
+      _growTick++;
+      _growRaf = performance.now() < _growUntil ? requestAnimationFrame(_growStep) : 0;
+      _bag3dRefreshOverlay();
+    }
+
+    /** Kleurfactor uit de zonnestand (updateSunLight): overdag wit → warm bij
+     *  lage zon, 's nachts gedempt blauwig. */
+    function _b3SunTint() {
+      const sun = _sunState;
+      if (!sun) return [1, 1, 1];
+      // Nacht: gedempt blauwig, maar niet te donker — de lichte ondergrond
+      // (Montréal-kaart) wordt 's nachts nauwelijks donkerder.
+      if (!sun.isDay) return [0.58, 0.61, 0.72];
+      const hex = sun.lightColor || '#ffffff';
+      const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const b = 0.74 + 0.26 * Math.min(1, Math.max(0, (sun.intensity - 0.35) / 0.55));
+      return rgb.map(c => b * (0.86 + 0.14 * c));
+    }
+
+    function makeBag3dLayers() {
+      if (!_bag3dActive() || !_bag3dTiles.length) return [];
+      const now    = performance.now();
+      const tint   = _b3SunTint();
+      const colors = _BAG3D_COLORS.map(c => c.map((v, i) => Math.round(v * tint[i])));
+      return _bag3dTiles.flatMap(t => {
+        const g = _growFactor(t.born, now);
+        return t.meshes.map((mesh, k) => mesh && new SimpleMeshLayer({
+          id:          `bag3d-${t.id}-${k}`,
+          data:        t.data,
+          mesh,
+          getPosition: d => [d.origin[0], d.origin[1], 0],
+          // Functie + updateTrigger: een constante getScale wordt in deck.gl 8.9
+          // niet opnieuw in instanceModelMatrix verwerkt (bleef op de beginschaal).
+          getScale:    () => [1, 1, g],
+          updateTriggers: { getScale: g },
+          getColor:    colors[k],
+          material:    { ambient: 0.5, diffuse: 0.6, shininess: 8, specularColor: [25, 25, 25] },
+          pickable:    false,
+        })).filter(Boolean);
+      });
+    }
+
+    // ── Geodesie (WGS84) ──
+    const _B3_A = 6378137, _B3_E2 = 6.69437999014e-3, _B3_D2R = Math.PI / 180;
+    function _b3EcefToLla(X, Y, Z) {
+      const b = _B3_A * Math.sqrt(1 - _B3_E2), ep2 = (_B3_A * _B3_A - b * b) / (b * b), p = Math.hypot(X, Y);
+      const th  = Math.atan2(Z * _B3_A, p * b);
+      const lat = Math.atan2(Z + ep2 * b * Math.sin(th) ** 3, p - _B3_E2 * _B3_A * Math.cos(th) ** 3);
+      const N   = _B3_A / Math.sqrt(1 - _B3_E2 * Math.sin(lat) ** 2);
+      return [Math.atan2(Y, X) / _B3_D2R, lat / _B3_D2R, p / Math.cos(lat) - N];
+    }
+    function _b3LlaToEcef(lon, lat, h) {
+      const l = lon * _B3_D2R, f = lat * _B3_D2R, N = _B3_A / Math.sqrt(1 - _B3_E2 * Math.sin(f) ** 2);
+      return [(N + h) * Math.cos(f) * Math.cos(l), (N + h) * Math.cos(f) * Math.sin(l), (N * (1 - _B3_E2) + h) * Math.sin(f)];
+    }
+    /** Rotatiematrix (rij-gewijs, 3×3) van ECEF naar lokaal East-North-Up rond (lon, lat). */
+    function _b3EnuRot(lon, lat) {
+      const l = lon * _B3_D2R, f = lat * _B3_D2R, sl = Math.sin(l), cl = Math.cos(l), sf = Math.sin(f), cf = Math.cos(f);
+      return [-sl, cl, 0,  -sf * cl, -sf * sl, cf,  cf * cl, cf * sl, sf];
+    }
+
+    // ── Tileset doorlopen: alleen takken waarvan de box de bbox raakt ──
+    function _b3BoxBounds(box) {
+      const c = box.slice(0, 3), u = box.slice(3, 6), v = box.slice(6, 9), w = box.slice(9, 12);
+      let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+      for (const su of [-1, 1]) for (const sv of [-1, 1]) for (const sw of [-1, 1]) {
+        const [lon, lat] = _b3EcefToLla(c[0] + su * u[0] + sv * v[0] + sw * w[0],
+                                        c[1] + su * u[1] + sv * v[1] + sw * w[1],
+                                        c[2] + su * u[2] + sv * v[2] + sw * w[2]);
+        x0 = Math.min(x0, lon); x1 = Math.max(x1, lon); y0 = Math.min(y0, lat); y1 = Math.max(y1, lat);
+      }
+      return [x0, y0, x1, y1];
+    }
+    const _b3Overlaps = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+
+    /** Verzamel de blad-tegels (.glb) binnen bbox, met hun lon/lat-bounds. */
+    async function _b3CollectTiles(url, bbox, out) {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`tileset ${resp.status}`);
+      const ts   = await resp.json();
+      const base = url.slice(0, url.lastIndexOf('/') + 1);
+      const walk = async node => {
+        if (!node.boundingVolume?.box) return;
+        const bounds = _b3BoxBounds(node.boundingVolume.box);
+        if (!_b3Overlaps(bounds, bbox)) return;
+        const uri = node.content?.uri;
+        if (uri && uri.endsWith('.json')) await _b3CollectTiles(base + uri, bbox, out);
+        else if (uri && !(node.children && node.children.length)) {
+          out.push({ url: base + uri, bounds, status: 'todo',
+                     center: [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2] });
+        }
+        for (const ch of node.children || []) await walk(ch);
+      };
+      await walk(ts.root);
+      return out;
+    }
+
+    // ── glb parsen + meshopt decoderen ──
+    const _B3_COMP = { 5120: ['getInt8', 1, 127], 5121: ['getUint8', 1, 255], 5122: ['getInt16', 2, 32767],
+                       5123: ['getUint16', 2, 65535], 5125: ['getUint32', 4, 0], 5126: ['getFloat32', 4, 0] };
+    const _B3_NCOMP = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
+
+    function _b3ParseGlb(buf, decoder) {
+      const dv      = new DataView(buf);
+      const jsonLen = dv.getUint32(12, true);
+      const json    = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jsonLen)));
+      const bin     = new Uint8Array(buf, 20 + jsonLen + 8, dv.getUint32(20 + jsonLen, true));
+      const views = json.bufferViews.map(bv => {
+        const ext = bv.extensions?.EXT_meshopt_compression;
+        if (ext) {
+          const src = bin.subarray(ext.byteOffset || 0, (ext.byteOffset || 0) + ext.byteLength);
+          const dst = new Uint8Array(ext.count * ext.byteStride);
+          decoder.decodeGltfBuffer(dst, ext.count, ext.byteStride, src, ext.mode, ext.filter);
+          return { data: dst, stride: ext.byteStride };
+        }
+        return { data: bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength), stride: bv.byteStride || 0 };
+      });
+      // Accessor → Float32Array/Uint32Array, met respect voor byteStride en normalized.
+      const read = (ai, asFloat = true) => {
+        const acc = json.accessors[ai], view = views[acc.bufferView];
+        const [get, bytes, norm] = _B3_COMP[acc.componentType], n = _B3_NCOMP[acc.type];
+        const stride = view.stride || bytes * n, off = acc.byteOffset || 0;
+        const dvv = new DataView(view.data.buffer, view.data.byteOffset, view.data.byteLength);
+        const out = asFloat ? new Float32Array(acc.count * n) : new Uint32Array(acc.count * n);
+        for (let i = 0; i < acc.count; i++) for (let k = 0; k < n; k++) {
+          let v = dvv[get](i * stride + off + k * bytes, true);
+          if (acc.normalized && norm) v = Math.max(-1, v / norm);
+          out[i * n + k] = v;
+        }
+        return out;
+      };
+      // EXT_structural_metadata: kolom uit de (enige) property table
+      const prop = name => {
+        const sm = json.extensions?.EXT_structural_metadata; if (!sm) return null;
+        const tbl = sm.propertyTables[0], p = tbl.properties[name]; if (!p) return null;
+        const cls = sm.schema.classes[tbl.class].properties[name];
+        const vals = views[p.values].data;
+        if (cls.type === 'STRING') {
+          const offs = new Uint32Array(views[p.stringOffsets].data.slice().buffer);
+          const td = new TextDecoder();
+          return Array.from({ length: tbl.count }, (_, i) => td.decode(vals.subarray(offs[i], offs[i + 1])));
+        }
+        if (cls.componentType === 'FLOAT32') return new Float32Array(vals.slice().buffer, 0, tbl.count);
+        return null;
+      };
+      return { json, read, prop };
+    }
+
+    /** glb → drie meshes (gevel/schuin dak/plat dak) in ENU-meters rond de tegel-oorsprong.
+     *  keep(lon, lat) bepaalt per pand (middelpunt) of het getoond wordt. */
+    function _b3BuildTile(url, glb, keep) {
+      const { json, read, prop } = glb;
+      const node = json.nodes.find(n => n.mesh != null);
+      const M    = node.matrix || [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+      const prim = json.meshes[node.mesh].primitives[0];
+      const P = read(prim.attributes.POSITION), Nr = read(prim.attributes.NORMAL);
+      const F = read(prim.attributes._FEATURE_ID_0), I = read(prim.indices, false);
+      const nv = P.length / 3;
+
+      // Oorsprong = node-translatie (glTF Y-up → ECEF: x, -z, y)
+      const [lon0, lat0] = _b3EcefToLla(M[12], -M[14], M[13]);
+      const O = _b3LlaToEcef(lon0, lat0, 0), R = _b3EnuRot(lon0, lat0);
+      const L = [M[0], M[1], M[2], M[4], M[5], M[6], M[8], M[9], M[10]];
+      // Normaaltransformatie: inverse-transpose van het (orthogonale, geschaalde) lineaire deel
+      const s0 = L[0]*L[0] + L[1]*L[1] + L[2]*L[2], s1 = L[3]*L[3] + L[4]*L[4] + L[5]*L[5], s2 = L[6]*L[6] + L[7]*L[7] + L[8]*L[8];
+
+      const nFeat = json.extensions?.EXT_structural_metadata?.propertyTables?.[0]?.count || 0;
+      const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3);
+      const zMin = new Float64Array(nFeat).fill(Infinity);
+      const fb = Array.from({ length: nFeat }, () => [Infinity, Infinity, -Infinity, -Infinity]);
+      for (let i = 0; i < nv; i++) {
+        const x = P[i*3], y = P[i*3+1], z = P[i*3+2];
+        const gx = L[0]*x + L[3]*y + L[6]*z + M[12];
+        const gy = L[1]*x + L[4]*y + L[7]*z + M[13];
+        const gz = L[2]*x + L[5]*y + L[8]*z + M[14];
+        const dx = gx - O[0], dy = -gz - O[1], dz = gy - O[2];
+        const e = R[0]*dx + R[1]*dy + R[2]*dz, n = R[3]*dx + R[4]*dy + R[5]*dz, u = R[6]*dx + R[7]*dy + R[8]*dz;
+        pos[i*3] = e; pos[i*3+1] = n; pos[i*3+2] = u;
+        const f = F[i] | 0;
+        if (u < zMin[f]) zMin[f] = u;
+        const b = fb[f]; if (e < b[0]) b[0] = e; if (n < b[1]) b[1] = n; if (e > b[2]) b[2] = e; if (n > b[3]) b[3] = n;
+        const a = Nr[i*3] / s0, c = Nr[i*3+1] / s1, d = Nr[i*3+2] / s2;
+        const hx = L[0]*a + L[3]*c + L[6]*d, hy = L[1]*a + L[4]*c + L[7]*d, hz = L[2]*a + L[5]*c + L[8]*d;
+        const ex = hx, ey = -hz, ez = hy;
+        let ne = R[0]*ex + R[1]*ey + R[2]*ez, nn = R[3]*ex + R[4]*ey + R[5]*ez, nu = R[6]*ex + R[7]*ey + R[8]*ez;
+        const len = Math.hypot(ne, nn, nu) || 1;
+        nor[i*3] = ne / len; nor[i*3+1] = nn / len; nor[i*3+2] = nu / len;
+      }
+      // Per pand het laagste punt naar z=0 (vlakke kaart → geen NAP-/geoïde-correctie nodig).
+      for (let i = 0; i < nv; i++) pos[i*3+2] -= zMin[F[i] | 0];
+
+      // Panden buiten het studiegebied weglaten (middelpunt van de ENU-bbox).
+      const mPerDegLat = _B3_A * _B3_D2R, mPerDegLon = mPerDegLat * Math.cos(lat0 * _B3_D2R);
+      const kept = fb.map(b => isFinite(b[0]) &&
+        keep(lon0 + (b[0] + b[2]) / 2 / mPerDegLon, lat0 + (b[1] + b[3]) / 2 / mPerDegLat));
+
+      // Driehoeken per klasse (gevel / schuin dak / plat dak) op basis van de normaal.
+      const nTri = I.length / 3, cls = new Uint8Array(nTri), cnt = [0, 0, 0];
+      for (let t = 0; t < nTri; t++) {
+        const a = I[t*3], b = I[t*3+1], c = I[t*3+2];
+        if (!kept[F[a] | 0]) { cls[t] = 255; continue; }
+        const nu = (nor[a*3+2] + nor[b*3+2] + nor[c*3+2]) / 3;
+        const k = nu > 0.97 ? 2 : nu > 0.2 ? 1 : 0;
+        cls[t] = k; cnt[k]++;
+      }
+      const remap = new Int32Array(nv);
+      const meshes = [0, 1, 2].map(k => {
+        if (!cnt[k]) return null;
+        remap.fill(-1);
+        const idx = new Uint32Array(cnt[k] * 3);
+        let nvk = 0, io = 0;
+        for (let t = 0; t < nTri; t++) {
+          if (cls[t] !== k) continue;
+          for (let j = 0; j < 3; j++) {
+            const v = I[t*3+j];
+            if (remap[v] < 0) remap[v] = nvk++;
+            idx[io++] = remap[v];
+          }
+        }
+        const p = new Float32Array(nvk * 3), n = new Float32Array(nvk * 3);
+        for (let v = 0; v < nv; v++) {
+          const r = remap[v]; if (r < 0) continue;
+          p[r*3] = pos[v*3]; p[r*3+1] = pos[v*3+1]; p[r*3+2] = pos[v*3+2];
+          n[r*3] = nor[v*3]; n[r*3+1] = nor[v*3+1]; n[r*3+2] = nor[v*3+2];
+        }
+        return { attributes: { positions: { value: p, size: 3 }, normals: { value: n, size: 3 } },
+                 indices: { value: idx, size: 1 } };
+      });
+
+      const ids = prop('identificatie') || [], dak = prop('b3_dak_type') || [];
+      const hNok = prop('b3_h_nok'), hMv = prop('b3_h_maaiveld');
+      const features = [];
+      for (let i = 0; i < nFeat; i++) {
+        if (kept[i]) features.push({ id: ids[i], dak: dak[i], hNok: hNok?.[i], hMv: hMv?.[i] });
+      }
+      const tile = { id: url.split('/').slice(-3).join('-').replace('.glb', ''), origin: [lon0, lat0], meshes, features };
+      tile.data = [tile];   // vaste data-array: geen attribuut-herberekening per updateOverlay()
+      return tile;
+    }
+
+    /** STUDY-zonepolygonen als [{ rings, bb }] (leeg als de zones er nog niet zijn). */
+    function _b3StudyPolys() {
+      let zones = [];
+      try { zones = zoneFeaturesRaw || []; } catch (_) { /* zones nog niet gedeclareerd */ }
+      const polys = [];
+      for (const f of zones) {
+        if (f.properties?.zoneClass !== 'STUDY') continue;
+        const g = f.geometry;
+        const list = g?.type === 'Polygon' ? [g.coordinates] : g?.type === 'MultiPolygon' ? g.coordinates : [];
+        for (const rings of list) {
+          let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+          for (const [x, y] of rings[0]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+          polys.push({ rings, bb: [x0, y0, x1, y1] });
+        }
+      }
+      return polys;
+    }
+
+    /** Filter 'ligt in het studiegebied' voor een punt: STUDY-zonepolygonen
+     *  (zelfde regel als de server-side panden-filter), fail-open naar de bbox. */
+    function _b3StudyFilter(bbox) {
+      const polys = _b3StudyPolys();
+      if (!polys.length) {
+        return (lon, lat) => lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
+      }
+      return (lon, lat) => polys.some(p =>
+        lon >= p.bb[0] && lon <= p.bb[2] && lat >= p.bb[1] && lat <= p.bb[3] &&
+        _pointInPolygon(lon, lat, p.rings[0]) &&
+        !p.rings.slice(1).some(h => _pointInPolygon(lon, lat, h)));
+    }
+
+    /** Start de 3D BAG-weergave: eenmalig de tegel-index binnen het
+     *  studiegebied, daarna laden per kaartbeeld. De bbox komt van de STUDY-
+     *  zones (dan hoeft niet op onze panden-data gewacht te worden), anders van
+     *  onze (al op STUDY gefilterde) panden. */
+    async function _loadBag3dIfNeeded() {
+      _trace('3D BAG: _loadBag3dIfNeeded');
+      if (_bag3dState === 'ready') { _bag3dLoadInView(); return; }
+      if (_bag3dState !== 'idle' || _MAQUETTE) return;
+      const studyPolys = _b3StudyPolys();
+      if (!studyPolys.length && !_buildingsGeoJson) return;   // opnieuw zodra de panden er zijn
+      let bbox = [180, 90, -180, -90];
+      for (const p of studyPolys) {
+        bbox = [Math.min(bbox[0], p.bb[0]), Math.min(bbox[1], p.bb[1]), Math.max(bbox[2], p.bb[2]), Math.max(bbox[3], p.bb[3])];
+      }
+      for (const f of studyPolys.length ? [] : _buildingsGeoJson.features || []) {
+        const g = f.geometry;
+        const rings = g?.type === 'Polygon' ? [g.coordinates[0]] : g?.type === 'MultiPolygon' ? g.coordinates.map(p => p[0]) : [];
+        for (const r of rings) for (const [x, y] of r) {
+          if (x < bbox[0]) bbox[0] = x; if (x > bbox[2]) bbox[2] = x;
+          if (y < bbox[1]) bbox[1] = y; if (y > bbox[3]) bbox[3] = y;
+        }
+      }
+      const inNl = bbox[0] <= bbox[2] && bbox[0] >= _BAG3D_NL_BBOX[0] && bbox[2] <= _BAG3D_NL_BBOX[2]
+                && bbox[1] >= _BAG3D_NL_BBOX[1] && bbox[3] <= _BAG3D_NL_BBOX[3];
+      if (!inNl) { _bag3dState = 'unavailable'; _refreshBuildingsStatusUI(); return; }
+
+      const area = AREA_ID;
+      _bag3dState = 'indexing';
+      _refreshBuildingsStatusUI();
+      try {
+        const { MeshoptDecoder } = await import(_BAG3D_MESHOPT);
+        await MeshoptDecoder.ready;
+        let index;
+        try {
+          index = await _b3CollectTiles(_BAG3D_TILESET_PROXY, bbox, []);
+        } catch (e) {
+          console.warn('[3dbag] server-proxy niet beschikbaar, rechtstreeks naar 3D BAG:', e);
+          index = await _b3CollectTiles(_BAG3D_TILESET_DIRECT, bbox, []);
+        }
+        if (AREA_ID !== area) return;
+        _bag3dDecoder = MeshoptDecoder;
+        _bag3dKeep    = _b3StudyFilter(bbox);
+        _bag3dIndex   = index;
+        _bag3dState   = index.length ? 'ready' : 'unavailable';
+      } catch (e) {
+        console.warn('[3dbag] tegel-index laden mislukt, terugval op extrusie:', e);
+        _bag3dState = 'unavailable';
+      }
+      _applyBuildingDisplay();   // → _loadBag3dIfNeeded → _bag3dLoadInView()
+    }
+
+    /** Haal de nog ontbrekende tegels in (en rond) het kaartbeeld op, de
+     *  dichtstbijzijnde eerst. Geladen tegels blijven bewaard. */
+    function _bag3dLoadInView() {
+      _trace('3D BAG: _bag3dLoadInView');
+      if (!_bag3dActive() || map.getZoom() < _BAG3D_MIN_ZOOM) { _refreshBuildingsStatusUI(); return; }
+      const b  = map.getBounds();
+      const dw = (b.getEast() - b.getWest()) * 0.15, dh = (b.getNorth() - b.getSouth()) * 0.15;
+      const view = [b.getWest() - dw, b.getSouth() - dh, b.getEast() + dw, b.getNorth() + dh];
+      const c = map.getCenter();
+      const queue = _bag3dIndex
+        .filter(t => t.status === 'todo' && _b3Overlaps(t.bounds, view))
+        .sort((p, q) => Math.hypot(p.center[0] - c.lng, p.center[1] - c.lat)
+                      - Math.hypot(q.center[0] - c.lng, q.center[1] - c.lat));
+      const area = AREA_ID;
+      const loadOne = async entry => {
+        try {
+          const resp = await fetch(entry.url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const tile = _b3BuildTile(entry.url, _b3ParseGlb(await resp.arrayBuffer(), _bag3dDecoder), _bag3dKeep);
+          if (AREA_ID !== area) return;
+          entry.status = 'done';
+          if (tile.features.length) {
+            tile.born = performance.now();
+            _bag3dTiles.push(tile);
+            _bag3dPanden += tile.features.length;
+            _growKick(tile.born);
+            _bag3dRefreshOverlay();
+          }
+        } catch (e) {
+          entry.status = 'failed';
+          _bag3dFailed++;
+          console.warn('[3dbag] tegel overgeslagen:', entry.url, e);
+          // Niets lukt (bv. offline): terug naar de extrusie.
+          if (_bag3dFailed >= 3 && !_bag3dTiles.length) {
+            _bag3dState = 'unavailable';
+            _applyBuildingDisplay();
+          }
+        }
+      };
+      const pump = () => {
+        while (queue.length && _bag3dBusy < _BAG3D_CONCURRENCY) {
+          const entry = queue.shift();
+          if (entry.status !== 'todo') continue;
+          entry.status = 'loading';
+          _bag3dBusy++;
+          loadOne(entry).finally(() => { _bag3dBusy--; _refreshBuildingsStatusUI(); pump(); });
+        }
+        _refreshBuildingsStatusUI();
+      };
+      pump();
+    }
+    map.on('moveend', () => { if (_bag3dState === 'ready') _bag3dLoadInView(); });
+
+    // ─── Verkeersobjecten-ondersteuning (deck.gl) ─────────────────────────────
+    //
+    // Renderprincipe: elk object wordt als één deck.gl-IconLayer-billboard getoond
+    // (net als de auto's), zodat het VOLLEDIG perspectivisch meeschaalt met de
+    // 3D-scène. MapLibre-symboollagen klemmen de perspectief-ratio af bij de
+    // horizon → knik/verspringing t.o.v. de auto's; deck.gl doet dat niet.
+    //
+    // Elk billboard is een COMPOSIET-sprite (paal + plaat/behuizing in één canvas):
+    //   • bord    → paal + bordplaat (voorkant) of grijs silhouet (achterkant);
+    //   • licht   → paal + lampenkast;
+    //   • schuin  → alleen de paal.
+    // `sizeUnits:'meters'` + `getSize` = totale objecthoogte in meters, anchor
+    // onderaan → de voet staat op de grond en de hoogte is 1:1 in wereldmeters.
+
+    const _TA_PPM        = 40;    // sprite-pixels per meter (logisch, native)
+    const _TA_RS         = 1;     // render-supersampling: 1 voor scherpe pixels, 2 maakt iconen veel te klein
+    const _TA_POLE_H_M   = 1.8;   // paalhoogte (m)
+    const _TA_POLE_W_M   = 0.12;  // paaldikte (m)
+    const _TA_SIGN_M     = 0.75;  // bordplaat-diameter (m)
+    const _TA_SIGNAL_H_M = 0.90;  // lampenkast-hoogte (m)
+    const _TA_SIGNAL_W_M = 0.32;  // lampenkast-breedte (m)
+    const _TA_MINZOOM    = 16;
+    const _TA_SIGN_TOTAL_M   = _TA_POLE_H_M + _TA_SIGN_M;     // bord: paal+plaat
+    const _TA_SIGNAL_TOTAL_M = _TA_POLE_H_M + _TA_SIGNAL_H_M; // licht: paal+kast
+
+    // D1 (verplichte rijrichting) en D2 (verplicht voorbijrijden) staan doorgaans
+    // op een veel kortere paal dan andere borden (vaak vlak bij de grond/berm).
+    const _TA_SHORT_POLE_CODES = new Set(['D1', 'D2']);
+    function _taPoleHeightM(rvvCode) {
+      return _TA_SHORT_POLE_CODES.has(rvvCode) ? _TA_POLE_H_M / 2 : _TA_POLE_H_M;
+    }
+
+    // ── Canvas-tekenaars (leveren een <canvas>, niet ImageData) ───────────────
+
+    // Rechtopstaande metalen paal (alléén de paal).
+    function _taPoleCanvas(poleHM = _TA_POLE_H_M) {
+      const w = Math.round(Math.max(_TA_POLE_W_M * _TA_PPM + 1, 6)) * _TA_RS;
+      const h = Math.round(poleHM * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d');
+      _taDrawPole(ctx, w, 0, h);
+      return cv;
+    }
+
+    // Teken een paal in `ctx`, gecentreerd op breedte `w`, van y=`top` tot y=`bottom`.
+    function _taDrawPole(ctx, w, top, bottom) {
+      const pw = Math.max(3, Math.round(_TA_POLE_W_M * _TA_PPM * _TA_RS));
+      const cx = Math.round(w / 2);
+      ctx.fillStyle = '#9e9e9e';
+      ctx.fillRect(cx - Math.round(pw / 2), top, pw, bottom - top);
+      ctx.fillStyle = '#bdbdbd';   // hooglicht-strook
+      ctx.fillRect(cx - Math.round(pw / 2), top, Math.max(1, Math.round(pw / 4)), bottom - top);
+    }
+
+    // Canvas-gebaseerd fallback-bordplaat (alléén de plaat, vierkant S×S).
+    function _taSignPlateCanvas(rvvCode) {
+      const S = Math.round(_TA_SIGN_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = S; cv.height = S;
+      const ctx = cv.getContext('2d');
+      const cat = (rvvCode || '?').charAt(0).toUpperCase();
+      const lw = Math.max(2, Math.round(S * 0.07));
+      function rr(x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+        ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+        ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
+      }
+      const M = Math.round(S * 0.08);
+      if (cat === 'A' || cat === 'J') {
+        ctx.beginPath(); ctx.moveTo(S/2, M); ctx.lineTo(S-M, S-M); ctx.lineTo(M, S-M); ctx.closePath();
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw; ctx.stroke();
+      } else if (cat === 'B') {
+        ctx.beginPath(); ctx.moveTo(S/2, S-M); ctx.lineTo(S-M, M); ctx.lineTo(M, M); ctx.closePath();
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw; ctx.stroke();
+      } else if (cat === 'C') {
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(M+lw, S/2); ctx.lineTo(S-M-lw, S/2);
+        ctx.strokeStyle = '#e30613'; ctx.lineWidth = lw * 2; ctx.stroke();
+      } else if (cat === 'D') {
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fillStyle = '#1a73e8'; ctx.fill();
+        // Generieke witte pijl (rechtdoor) als redelijk-default silhouet,
+        // zodat het bord bij een ontbrekend icoon niet als kale schijf oogt.
+        ctx.save();
+        ctx.translate(S/2, S/2);
+        const aw = S * 0.30, ah = S * 0.42;
+        ctx.beginPath();
+        ctx.moveTo(0, -ah/2);
+        ctx.lineTo(aw/2, ah*0.12);
+        ctx.lineTo(aw*0.18, ah*0.12);
+        ctx.lineTo(aw*0.18, ah/2);
+        ctx.lineTo(-aw*0.18, ah/2);
+        ctx.lineTo(-aw*0.18, ah*0.12);
+        ctx.lineTo(-aw/2, ah*0.12);
+        ctx.closePath();
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.restore();
+      } else if (cat === 'E' || cat === 'F' || cat === 'G') {
+        rr(M, M, S-2*M, S-2*M, Math.round(S*0.08));
+        ctx.fillStyle = '#1a73e8'; ctx.fill();
+      } else if (cat === 'H') {
+        rr(M, M, S-2*M, S-2*M, Math.round(S*0.08));
+        ctx.fillStyle = '#f0f0f0'; ctx.fill();
+        ctx.strokeStyle = '#888'; ctx.lineWidth = lw; ctx.stroke();
+      } else if (cat === 'L') {
+        rr(M, S*0.32, S-2*M, S*0.36, Math.round(S*0.05));
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.strokeStyle = '#555'; ctx.lineWidth = lw; ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fillStyle = '#9b9b9b'; ctx.fill();
+      }
+      return cv;
+    }
+
+    // Grijs achterkant-silhouet per bordvorm ('tri' | 'tri-inv' | 'circle' | 'rect').
+    function _taSignBackCanvas(shape) {
+      const S = Math.round(_TA_SIGN_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = S; cv.height = S;
+      const ctx = cv.getContext('2d');
+      const M = Math.round(S * 0.08);
+      const lw = Math.max(2, Math.round(S * 0.06));
+      ctx.fillStyle   = '#b4b4b4';   // grijze achterplaat
+      ctx.strokeStyle = '#7d7d7d';
+      ctx.lineWidth   = lw;
+      function rr(x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+        ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+        ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
+      }
+      if (shape === 'tri') {
+        ctx.beginPath(); ctx.moveTo(S/2, M); ctx.lineTo(S-M, S-M); ctx.lineTo(M, S-M); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      } else if (shape === 'tri-inv') {
+        ctx.beginPath(); ctx.moveTo(S/2, S-M); ctx.lineTo(S-M, M); ctx.lineTo(M, M); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      } else if (shape === 'rect') {
+        rr(M, M, S-2*M, S-2*M, Math.round(S*0.08));
+        ctx.fill(); ctx.stroke();
+      } else { // 'circle'
+        ctx.beginPath(); ctx.arc(S/2, S/2, S/2-M, 0, Math.PI*2);
+        ctx.fill(); ctx.stroke();
+      }
+      // Verticale montagebeugel over het midden (donkerder grijs)
+      ctx.fillStyle = '#8f8f8f';
+      ctx.fillRect(Math.round(S/2 - S*0.05), Math.round(S*0.18), Math.round(S*0.10), Math.round(S*0.64));
+      return cv;
+    }
+
+    // Verkeerslicht-behuizing (rood/geel/groen, zonder paal).
+    function _taSignalCanvas() {
+      const W = Math.round(_TA_SIGNAL_W_M * _TA_PPM) * _TA_RS;
+      const H = Math.round(_TA_SIGNAL_H_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      const pad = Math.round(W * 0.12), r = Math.round(W * 0.18);
+      const x = pad, y = pad, w = W - 2*pad, h = H - 2*pad;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+      ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+      ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+      ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+      ctx.closePath();
+      ctx.fillStyle = '#212121'; ctx.fill();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(1, W * 0.04); ctx.stroke();
+      const cx = W / 2, rad = w / 2 - Math.round(W * 0.08);
+      const cols = ['#e53935', '#fdd835', '#43a047'];
+      for (let i = 0; i < 3; i++) {
+        const cyl = y + h * (i + 1) / 4;
+        ctx.beginPath(); ctx.arc(cx, cyl, rad, 0, Math.PI * 2);
+        ctx.fillStyle = cols[i]; ctx.fill();
+      }
+      return cv;
+    }
+
+    // Composiet: paal onderaan + `contentCanvas` (plaat/kast) bovenop, gecentreerd.
+    function _taCompositeWithPole(contentCanvas, poleHM = _TA_POLE_H_M) {
+      const poleH = Math.round(poleHM * _TA_PPM) * _TA_RS;
+      const cW = contentCanvas.width, cH = contentCanvas.height;
+      const poleMinW = Math.round(Math.max(_TA_POLE_W_M * _TA_PPM + 1, 6)) * _TA_RS;
+      const W = Math.max(cW, poleMinW);
+      const H = poleH + cH;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      _taDrawPole(ctx, W, cH, H);                       // paal onder de inhoud
+      ctx.drawImage(contentCanvas, Math.round((W - cW) / 2), 0);  // inhoud bovenaan
+      return cv;
+    }
+
+    // ── Icon-descriptor-cache (deck.gl getIcon → {url,width,height,anchor}) ────
+    // Descriptors zijn stabiele objecten (data-URL), zodat deck.gl ze cachet op
+    // `url` en de atlas niet elke frame herbouwt.
+    const _taIcons = {};        // key → {url,width,height,anchorX,anchorY,mask}
+    let   _taIconVersion = 0;   // bumpt zodra async plaat-iconen erbij komen
+
+    function _taDesc(cv) {
+      return { url: cv.toDataURL(), width: cv.width, height: cv.height,
+               anchorX: cv.width / 2, anchorY: cv.height, mask: false };
+    }
+
+    function _taPoleIcon(rvvCode) {
+      const short = _TA_SHORT_POLE_CODES.has(rvvCode);
+      const key = short ? 'pole:short' : 'pole';
+      if (!_taIcons[key]) _taIcons[key] = _taDesc(_taPoleCanvas(short ? _TA_POLE_H_M / 2 : _TA_POLE_H_M));
+      return _taIcons[key];
+    }
+    function _taSignalIcon() {
+      if (!_taIcons['signal'])
+        _taIcons['signal'] = _taDesc(_taCompositeWithPole(_taSignalCanvas()));
+      return _taIcons['signal'];
+    }
+
+    // Bushalte-bordje: blauw/wit paneel met bus-pictogram (zonder paal).
+    function _taBusStopCanvas() {
+      const W = Math.round(0.45 * _TA_PPM) * _TA_RS;
+      const H = Math.round(0.60 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      // Paneel
+      ctx.fillStyle = '#1565c0';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.round(W * 0.08), Math.round(H * 0.08), Math.round(W * 0.84), Math.round(H * 0.84));
+      // Bus-pictogram (blauw op wit)
+      ctx.fillStyle = '#1565c0';
+      const bx = Math.round(W * 0.20), by = Math.round(H * 0.22), bw = Math.round(W * 0.60), bh = Math.round(H * 0.42);
+      ctx.fillRect(bx, by, bw, bh);                                  // bus-body
+      ctx.fillStyle = '#bbdefb';                                     // ramen
+      ctx.fillRect(bx + Math.round(bw*0.10), by + Math.round(bh*0.15), Math.round(bw*0.80), Math.round(bh*0.35));
+      ctx.fillStyle = '#0d3c73';                                     // wielen
+      const wr = Math.round(bw * 0.10);
+      ctx.beginPath(); ctx.arc(bx + Math.round(bw*0.25), by + bh, wr, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(bx + Math.round(bw*0.75), by + bh, wr, 0, Math.PI*2); ctx.fill();
+      return cv;
+    }
+    function _taBusStopIcon() {
+      if (!_taIcons['busstop'])
+        _taIcons['busstop'] = _taDesc(_taCompositeWithPole(_taBusStopCanvas()));
+      return _taIcons['busstop'];
+    }
+    function _taBackShape(rvv) {
+      const c = (rvv || '?').charAt(0).toUpperCase();
+      if (c === 'A' || c === 'J') return 'tri';
+      if (c === 'B') return 'tri-inv';
+      if (c === 'C' || c === 'D') return 'circle';
+      if (c === 'E' || c === 'F' || c === 'G' || c === 'H' || c === 'L') return 'rect';
+      return 'circle';
+    }
+    function _taBackIcon(rvv) {
+      const shape = _taBackShape(rvv);
+      const short = _TA_SHORT_POLE_CODES.has(rvv);
+      const key = 'back:' + shape + (short ? ':short' : '');
+      if (!_taIcons[key])
+        _taIcons[key] = _taDesc(_taCompositeWithPole(_taSignBackCanvas(shape), _taPoleHeightM(rvv)));
+      return _taIcons[key];
+    }
+    // Voorkant-composiet voor een bord; null als het (nog) niet gebouwd is.
+    function _taFrontIcon(p) {
+      const rvv = p.rvvCode || '';
+      const black = (p.blackCode || '').trim();
+      const full = black ? `${rvv}-${black}` : rvv;
+      return _taIcons['front:' + full] || _taIcons['front:' + rvv] || null;
+    }
+
+    // Bouw een voorkant-composiet uit een plaat-canvas (uitgeknipt uit de sprite).
+    function _taBuildFront(code, plate) {
+      const S = Math.round(_TA_SIGN_M * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = S; cv.height = S;
+      cv.getContext('2d').drawImage(plate, 0, 0, S, S);
+      const rvvBase = String(code).split('-')[0];
+      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(cv, _taPoleHeightM(rvvBase)));
+    }
+    function _taBuildFrontFallback(code) {
+      const rvvBase = String(code).split('-')[0];
+      _taIcons['front:' + code] = _taDesc(_taCompositeWithPole(_taSignPlateCanvas(code), _taPoleHeightM(rvvBase)));
+    }
+
+    // ── NDW-sprite als iconbron ───────────────────────────────────────────────
+    // Eén sprite-sheet (sprite.json + sprite.png, @2x) van wegkenmerken.ndw.nu.
+    // Naamresolutie volgt NDW: rvv-black-zone → rvv-zone → rvv-black → rvv;
+    // niets gevonden → canvas-fallback.
+    let _taSpritePromise = null;
+    function _taLoadSprite() {
+      if (!_taSpritePromise) {
+        _taSpritePromise = Promise.all([
+          fetch('/traffic-sign-sprite/sprite.json').then(r => { if (!r.ok) throw new Error(`sprite.json HTTP ${r.status}`); return r.json(); }),
+          new Promise((res, rej) => {
+            const im = new Image();
+            im.onload = () => res(im);
+            im.onerror = () => rej(new Error('sprite.png laden mislukt'));
+            im.src = '/traffic-sign-sprite/sprite.png';
+          }),
+        ]).then(([index, img]) => ({ index, img }))
+          .catch(err => { console.warn('[TA] sprite niet beschikbaar, canvas-fallback:', err); return null; });
+      }
+      return _taSpritePromise;
+    }
+    function _taSpriteName(index, rvv, black, zone) {
+      const cands = [];
+      if (black && zone) cands.push(`${rvv}-${black}-${zone}`);
+      if (zone)          cands.push(`${rvv}-${zone}`);
+      if (black)         cands.push(`${rvv}-${black}`);
+      cands.push(rvv);
+      return cands.find(n => index[n]) || null;
+    }
+    // Knip een sprite-icoon uit naar een canvas (aspect behouden, gecentreerd in
+    // een vierkant, zodat rechthoekige borden als L51a niet uitgerekt worden).
+    function _taSpriteCanvas(sprite, name) {
+      const e = sprite.index[name];
+      const side = Math.max(e.width, e.height);
+      const cv = document.createElement('canvas');
+      cv.width = side; cv.height = side;
+      cv.getContext('2d').drawImage(sprite.img, e.x, e.y, e.width, e.height,
+                                    (side - e.width) / 2, (side - e.height) / 2, e.width, e.height);
+      return cv;
+    }
+    // Bouw ontbrekende voorkant-composieten uit de sprite (canvas-fallback als
+    // de code niet in de sprite staat). Bumpt _taIconVersion + hertekent.
+    async function _taEnsurePlates(features) {
+      const sprite = await _taLoadSprite();
+      let changed = false;
+      for (const f of (features || [])) {
+        const p = f.properties || {};
+        const rvv = p.rvvCode;
+        if (!rvv) continue;
+        const black = (p.blackCode || '').trim();
+        const key = black ? `${rvv}-${black}` : rvv;   // sleutel zoals _taFrontIcon hem zoekt
+        if (_taIcons['front:' + key]) continue;
+        const name = sprite && _taSpriteName(sprite.index, rvv, black, (p.zoneCode || '').trim());
+        if (name) _taBuildFront(key, _taSpriteCanvas(sprite, name));
+        else      _taBuildFrontFallback(key);
+        changed = true;
+      }
+      if (changed) { _taIconVersion++; updateOverlay(true); }
+    }
+
+    // ── Bearing-logica voor borden ────────────────────────────────────────────
+    // VOORKANT: `bearing` binnen ±TOL van de kijkrichting (map.getBearing()).
+    // ACHTERKANT: `bearing` binnen ±TOL van de tegenovergestelde richting (mb+180).
+    // Daartussen (schuin) → alleen de paal. Borden zonder bearing tonen de voorkant.
+    const _SIGN_BEARING_TOL       = 70;   // ± graden speling (achterkant)
+    const _SIGN_FRONT_BEARING_TOL = 40;   // ± graden speling (voorkant, smaller)
+
+    function _angDiff(a, b) {
+      let d = Math.abs(((a - b) % 360 + 360) % 360);
+      return d > 180 ? 360 - d : d;
+    }
+    function _signFrontVisible(fb) {
+      if (fb == null || isNaN(fb)) return true;   // geen richting bekend → voorkant tonen
+      const mb = ((map.getBearing() % 360) + 360) % 360;
+      return _angDiff(((fb % 360) + 360) % 360, mb) <= _SIGN_FRONT_BEARING_TOL;
+    }
+    function _signBackVisible(fb) {
+      if (fb == null || isNaN(fb)) return false;  // geen richting → geen achterkant
+      const mb = ((map.getBearing() % 360) + 360) % 360;
+      return _angDiff(((fb % 360) + 360) % 360, (mb + 180) % 360) <= _SIGN_BEARING_TOL;
+    }
+    // Gekwantiseerde kijkrichting → updateTrigger, zodat deck.gl getIcon/getSize
+    // alleen herberekent wanneer de kaart merkbaar draait (i.p.v. elke frame).
+    function _taBearingBucket() {
+      return Math.round((((map.getBearing() % 360) + 360) % 360) / 4);
+    }
+
+    // ── Data-store voor deck.gl-lagen ─────────────────────────────────────────
+    let _taSignFeatures      = [];   // trafficSign-features (voor de IconLayer)
+    let _taSignalFeatures    = [];   // trafficSignal-features
+    let _taSpeedBumpFeatures = [];   // speedBump-polygonen (lage 3D-drempel)
+    let _taMarkFeatures      = [];   // platte wegdekmarkeringen (voetganger/stop)
+    let _taGiveWayMarkFeatures = []; // haaientanden (B6) — afgeleid uit netwerk-links met numGiveWays>0
+    let _taViaductFeatures   = [];   // CIMLK viaduct-wegvakken (verhoogde ribbon)
+    let _taScreenQuads       = [];   // CIMLK geluidsschermen → geëxtrudeerde muur-quads
+    let _taBridgeFeatures    = [];   // CIMLK brug-wegvakken (verhoogd brugdek)
+    let _taTunnelFeatures    = [];   // CIMLK tunnel-wegvakken (dekband + doorschijnend dak)
+    let _taRetWallQuads      = [];   // CIMLK keermuren → geëxtrudeerde muur-quads
+     let _taCulvertFeatures   = [];   // CIMLK duikers (lage donkere kruising)
+     let _taSunkenFloors      = [];   // verzonken wegdelen (tunnel-polygonen) → donkere vloervlakken
+      let _taTunnelDecks       = [];   // grijs wegdek over de centrale tunnelband (onderdoorgang)
+    let _taUnderpassFeatures = [];   // CIMLK overspanningen boven verdiepte weg (belowGround)
+    let _taBusStopFeatures   = [];   // busStop-features (billboard-sprite met halte-bordje)
+    let _taFootPathFeatures  = [];   // footPath-lijnen (platte voetpad-ribbon)
+     let _taCyclePathFeatures = [];   // cyclePath-lijnen (platte fietspad-ribbon)
+     let _taLaneMarkArrowFeatures = [];  // laneMarkArrow-features (pijlen op middellijn)
+     let _taRefugeAreaCrossingFeatures = [];  // refugeAreaCrossing-polygonen (verhoogde voetganger-eilanden)
+     let _taRefugeAreaTrafficFeatures = [];   // refugeAreaTraffic-polygonen (verhoogde verkeersremmers)
+     let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
+     let _taHover             = null; // {props,lngLat} van het object onder de cursor
+     let _taDebugSignLink     = null; // {signPt,roadPt,linkId} — laatst geklikte bord → gekoppelde weg
+     let _networkHoverLink    = null; // {linkId} — laatst gehoverd wegvak (voor klik-op-wegvak debug)
+     let _taDebugLinkAssets   = null; // {linkId, items:[{assetPt,roadPt,label}]} — laatst geklikt wegvak → gekoppelde assets
+
+    // ── Platte wegdekmarkeringen (top-down canvas-iconen, center-anchor) ───────
+    // Deze liggen plat op het wegdek (IconLayer billboard:false) en schalen dus
+    // volledig perspectivisch mee. Geen bearing beschikbaar → noord-uitgelijnd.
+    const _TA_ZEBRA_M = 4.0;   // voetgangersoversteek (zebravlak)
+    const _TA_STOP_M  = 3.0;   // stopstreep + "STOP"
+    const _TA_SHARK_M = 2.4;   // haaientanden (B6, voorrang verlenen) — breedte over de weg
+
+    // Descriptor met center-anchor (voor platte grondmarkeringen).
+    function _taDescFlat(cv) {
+      return { url: cv.toDataURL(), width: cv.width, height: cv.height,
+               anchorX: cv.width / 2, anchorY: cv.height / 2, mask: false };
+    }
+
+    // Zebravlak: witte strepen op transparant (top-down).
+    function _taZebraCanvas() {
+      const W = Math.round(_TA_ZEBRA_M * _TA_PPM) * _TA_RS;   // langs de weg
+      const H = Math.round(_TA_ZEBRA_M * 0.75 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#f5f5f5';
+      const n = 6, gap = W / (n * 2 - 1);
+      for (let i = 0; i < n; i++) ctx.fillRect(Math.round(i * 2 * gap), 0, Math.ceil(gap), H);
+      return cv;
+    }
+
+    // Stopmarkering (B7): brede witte stopstreep + "STOP".
+    function _taStopMarkCanvas() {
+      const W = Math.round(_TA_STOP_M * _TA_PPM) * _TA_RS;
+      const H = Math.round(_TA_STOP_M * 0.7 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#f5f5f5';
+      const bar = Math.round(H * 0.22);
+      ctx.fillRect(0, 0, W, bar);                 // stopstreep
+      ctx.font = `bold ${Math.round(H * 0.5)}px Arial`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('STOP', W / 2, bar + (H - bar) / 2 + Math.round(H * 0.04));
+      return cv;
+    }
+
+    // Haaientanden (B6, voorrang verlenen): rij witte driehoeken die naar de
+    // bestuurder toe wijzen (in de rijrichting, dus "naar beneden" in de
+    // top-down canvas — dezelfde oriëntatie als de zebra/stopstreep-iconen).
+    function _taSharkTeethCanvas() {
+      const W = Math.round(_TA_SHARK_M * _TA_PPM) * _TA_RS;
+      const H = Math.round(_TA_SHARK_M * 0.45 * _TA_PPM) * _TA_RS;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#f5f5f5';
+      const n = 5, tw = W / n;
+      for (let i = 0; i < n; i++) {
+        const x = i * tw;
+        ctx.beginPath();
+        ctx.moveTo(x, 0); ctx.lineTo(x + tw, 0); ctx.lineTo(x + tw / 2, H);
+        ctx.closePath(); ctx.fill();
+      }
+      return cv;
+    }
+
+    function _taMarkIcon(assetType) {
+      const key = 'mark:' + assetType;
+      if (!_taIcons[key]) {
+        const cv = assetType === 'stopSign' ? _taStopMarkCanvas()
+                 : assetType === 'giveWay'  ? _taSharkTeethCanvas()
+                 : _taZebraCanvas();       // pedestrianCrossing (default)
+        _taIcons[key] = _taDescFlat(cv);
+      }
+      return _taIcons[key];
+    }
+    // getSize = icoonHOOGTE in meters (= lengte langs de weg). De breedte volgt
+    // uit de canvas-verhouding en spant de weg over (zie _taMarkAngle).
+    function _taMarkSize(assetType) {
+      return assetType === 'stopSign' ? _TA_STOP_M  * 0.70
+           : assetType === 'giveWay'  ? _TA_SHARK_M * 0.45
+           : _TA_ZEBRA_M * 0.75;
+    }
+
+    // ── Ruimtelijke grid-index over het netwerk ──────────────────────────────
+    // De "dichtstbijzijnde wegvak/knoop"-zoekfuncties hieronder liepen per
+    // verkeersobject ALLE wegvakken af; bij duizenden objecten × tienduizenden
+    // segmenten blokkeerde dat de main thread tientallen seconden (bevroren
+    // beeld, auto's stil). Nu: segmenten/knopen per grid-cel, lui opgebouwd en
+    // opnieuw opgebouwd zodra het netwerk wijzigt (_netIndexVersion of size).
+    const _NET_CELL_M = 50;
+    let _netIndexVersion = 0;   // ophogen na het herbouwen van linkGeomMap/nodeCoords
+    let _netSegIdx  = null;     // { key, cells, cLng, cLat, segs: Float64Array, ids, ix0, ix1, iy0, iy1 }
+    let _netNodeIdx = null;
+
+    function _netGridParams(firstLat) {
+      return { cLat: _NET_CELL_M / 110540, cLng: _NET_CELL_M / (111320 * Math.cos(firstLat * Math.PI / 180) || 1) };
+    }
+    function _netCellKey(ix, iy) { return (ix + 1e6) * 2e6 + (iy + 1e6); }
+
+    function _netSegIndex() {
+      const key = `${_netIndexVersion}:${linkGeomMap.size}`;
+      if (_netSegIdx && _netSegIdx.key === key) return _netSegIdx;
+      let firstLat = 52;
+      for (const c of linkGeomMap.values()) { if (c && c.length) { firstLat = c[0][1]; break; } }
+      const { cLat, cLng } = _netGridParams(firstLat);
+      const coordsArr = [], ids = [];
+      const cells = new Map();
+      let ix0 = Infinity, ix1 = -Infinity, iy0 = Infinity, iy1 = -Infinity;
+      for (const [linkId, coords] of linkGeomMap) {
+        if (!coords || coords.length < 2) continue;
+        for (let i = 0; i < coords.length - 1; i++) {
+          const a = coords[i], b = coords[i + 1];
+          if (a[0] === b[0] && a[1] === b[1]) continue;
+          const s = ids.length;
+          coordsArr.push(a[0], a[1], b[0], b[1]);
+          ids.push(linkId);
+          const xa = Math.floor(Math.min(a[0], b[0]) / cLng), xb = Math.floor(Math.max(a[0], b[0]) / cLng);
+          const ya = Math.floor(Math.min(a[1], b[1]) / cLat), yb = Math.floor(Math.max(a[1], b[1]) / cLat);
+          if (xa < ix0) ix0 = xa; if (xb > ix1) ix1 = xb;
+          if (ya < iy0) iy0 = ya; if (yb > iy1) iy1 = yb;
+          for (let x = xa; x <= xb; x++) for (let y = ya; y <= yb; y++) {
+            const k = _netCellKey(x, y);
+            let arr = cells.get(k); if (!arr) cells.set(k, arr = []);
+            arr.push(s);
+          }
+        }
+      }
+      _netSegIdx = { key, cells, cLng, cLat, segs: Float64Array.from(coordsArr), ids, ix0, ix1, iy0, iy1 };
+      return _netSegIdx;
+    }
+
+    function _netNodeIndex() {
+      const key = `${_netIndexVersion}:${nodeCoords.size}`;
+      if (_netNodeIdx && _netNodeIdx.key === key) return _netNodeIdx;
+      let firstLat = 52;
+      for (const c of nodeCoords.values()) { firstLat = c[1]; break; }
+      const { cLat, cLng } = _netGridParams(firstLat);
+      const cells = new Map();
+      for (const [nodeId, c] of nodeCoords) {
+        const k = _netCellKey(Math.floor(c[0] / cLng), Math.floor(c[1] / cLat));
+        let arr = cells.get(k); if (!arr) cells.set(k, arr = []);
+        arr.push(nodeId, c);
+      }
+      _netNodeIdx = { key, cells, cLng, cLat };
+      return _netNodeIdx;
+    }
+
+    /** Dichtstbijzijnde netwerksegment bij (lng,lat), binnen maxM meter
+     *  (Infinity = onbegrensd). Geeft { d2 (m²), linkId, ax, ay, bx, by, t,
+     *  vx, vy } of null. Zelfde metriek als de oude brute-force lussen. */
+    function _netNearestSeg(lng, lat, maxM = Infinity) {
+      const idx = _netSegIndex();
+      if (!idx.ids.length) return null;
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      // Ondergrens (m) voor wat buiten ring r ligt: r hele cellen.
+      const cellM = Math.min(idx.cLng * mLng, idx.cLat * mLat) * 0.999;
+      const cx = Math.floor(lng / idx.cLng), cy = Math.floor(lat / idx.cLat);
+      const maxRingData = Math.max(cx - idx.ix0, idx.ix1 - cx, cy - idx.iy0, idx.iy1 - cy, 0);
+      const maxRing = isFinite(maxM) ? Math.min(maxRingData, Math.ceil(maxM / cellM) + 1) : maxRingData;
+      const segs = idx.segs;
+      const seen = new Set();
+      let best = isFinite(maxM) ? maxM * maxM : Infinity, bestS = -1, bestT = 0;
+      for (let r = 0; r <= maxRing; r++) {
+        for (let x = cx - r; x <= cx + r; x++) {
+          const edgeX = x === cx - r || x === cx + r;
+          for (let y = cy - r; y <= cy + r; y += (edgeX ? 1 : 2 * r || 1)) {
+            const arr = idx.cells.get(_netCellKey(x, y));
+            if (!arr) continue;
+            for (const s of arr) {
+              if (seen.has(s)) continue;
+              seen.add(s);
+              const o = s * 4;
+              const ax = (segs[o] - lng) * mLng, ay = (segs[o + 1] - lat) * mLat;
+              const vx = (segs[o + 2] - lng) * mLng - ax, vy = (segs[o + 3] - lat) * mLat - ay;
+              const len2 = vx * vx + vy * vy;
+              let t = len2 > 0 ? -(ax * vx + ay * vy) / len2 : 0;
+              t = t < 0 ? 0 : t > 1 ? 1 : t;
+              const px = ax + t * vx, py = ay + t * vy;
+              const d = px * px + py * py;
+              if (d < best) { best = d; bestS = s; bestT = t; }
+            }
+          }
+        }
+        // Alles buiten ring r ligt minstens r cellen weg.
+        if (bestS >= 0 && best <= (r * cellM) * (r * cellM)) break;
+      }
+      if (bestS < 0) return null;
+      const o = bestS * 4;
+      return {
+        d2: best, linkId: idx.ids[bestS], t: bestT,
+        ax: segs[o], ay: segs[o + 1], bx: segs[o + 2], by: segs[o + 3],
+        vx: (segs[o + 2] - segs[o]) * mLng, vy: (segs[o + 3] - segs[o + 1]) * mLat,
+      };
+    }
+
+    // Wegrichting bij (lng,lat): hoek (° CCW t.o.v. oost) van het dichtstbijzijnde
+    // netwerksegment, of null als er geen netwerk is. Gebruikt voor het dwars
+    // over de weg leggen van markeringen.
+    function _taRoadBearingAt(lng, lat) {
+      const n = _netNearestSeg(lng, lat);
+      return n ? Math.atan2(n.vy, n.vx) * 180 / Math.PI : null;
+    }
+
+    // Zoek het dichtstbijzijnde punt op het netwerk (over alle links), incl.
+    // linkId en afstand in meter. Gebruikt voor de debug-verbindingslijn
+    // "bord → gekoppelde weg" (zie klik-handler hieronder).
+    function _taNearestLinkPoint(lng, lat) {
+      const n = _netNearestSeg(lng, lat);
+      if (!n) return null;
+      return {
+        point: [n.ax + n.t * (n.bx - n.ax), n.ay + n.t * (n.by - n.ay)],
+        linkId: n.linkId,
+        distM: Math.sqrt(n.d2),
+      };
+    }
+
+    // Max. afstand asset → wegvak om als "gekoppeld" te tellen bij de
+    // klik-op-wegvak debug-weergave.
+    const _TA_LINK_ASSET_SNAP_M = 20;
+
+    /** Zoek alle bekende verkeersobjecten die aan `linkId` gekoppeld zijn
+     *  (binnen _TA_LINK_ASSET_SNAP_M van dat specifieke wegvak). Geeft een
+     *  array van {assetPt, roadPt, label} terug, voor de debug-weergave bij
+     *  het klikken op een wegvak. */
+    function _taAssetsForLink(linkId) {
+      const idStr = String(linkId);
+      const items = [];
+      const tryPoint = (coord, label) => {
+        if (!coord) return;
+        const nearest = _taNearestLinkPoint(coord[0], coord[1]);
+        if (!nearest || nearest.distM > _TA_LINK_ASSET_SNAP_M) return;
+        if (String(nearest.linkId) !== idStr) return;
+        items.push({ assetPt: coord, roadPt: nearest.point, label });
+      };
+      for (const f of (_taSignFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, f.properties?.rvvCode || 'Verkeersbord');
+      }
+      for (const f of (_taSignalFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Verkeerslicht');
+      }
+      for (const f of (_taMarkFeatures || [])) {
+        const at = f.properties?.assetType;
+        const label = at === 'stopSign' ? 'Stopstreep (B7)' : 'Zebrapad';
+        tryPoint(f.geometry?.coordinates, label);
+      }
+      for (const f of (_taGiveWayMarkFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Haaientanden (B6)');
+      }
+      for (const f of (_taBusStopFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Bushalte');
+      }
+      for (const f of (_taLaneMarkArrowFeatures || [])) {
+        tryPoint(f.geometry?.coordinates, 'Rijstrookpijl');
+      }
+      for (const f of (_taSpeedBumpFeatures || [])) {
+        tryPoint(_speedFeatureCentroid(f), 'Verkeersdrempel');
+      }
+      for (const f of [..._taRefugeAreaCrossingFeatures, ..._taRefugeAreaTrafficFeatures]) {
+        tryPoint(_speedFeatureCentroid(f), 'Vluchtheuvel');
+      }
+      return items;
+    }
+
+    /** Bouw een pijlkop (driehoek, [lon,lat][]) die de rijrichting van een
+     *  link (fromNode → toNode) aangeeft, geplaatst op het middelste
+     *  segment van de geometrie. Voor de klik-op-wegvak debug-weergave. */
+    function _taBuildDirectionArrow(coords) {
+      if (!coords || coords.length < 2) return null;
+      const segIdx = Math.max(0, Math.min(coords.length - 2, Math.floor((coords.length - 1) / 2)));
+      const a = coords[segIdx], b = coords[segIdx + 1];
+      const midLng = (a[0] + b[0]) / 2, midLat = (a[1] + b[1]) / 2;
+      const mLng = 111320 * Math.cos(midLat * Math.PI / 180) || 1, mLat = 110540;
+      const vx = (b[0] - a[0]) * mLng, vy = (b[1] - a[1]) * mLat;
+      const vlen = Math.hypot(vx, vy) || 1;
+      const ux = vx / vlen, uy = vy / vlen;   // eenheidsvector langs de rijrichting
+      const px = -uy, py = ux;                // loodrecht daarop (breedte pijlkop)
+      const tipLenM = 5, headWM = 3;
+      const tip  = [midLng + (ux * tipLenM / 2) / mLng, midLat + (uy * tipLenM / 2) / mLat];
+      const back = [midLng - (ux * tipLenM / 2) / mLng, midLat - (uy * tipLenM / 2) / mLat];
+      const left  = [back[0] + (px * headWM / 2) / mLng, back[1] + (py * headWM / 2) / mLat];
+      const right = [back[0] - (px * headWM / 2) / mLng, back[1] - (py * headWM / 2) / mLat];
+      return { head: [tip, left, right] };
+    }
+
+      // Zet per markering de rotatie zodat de breedte-as dwars over de weg loopt.
+      // (icoon-breedte → wegloodrecht = wegrichting + 90°). Geen weg gevonden → 0.
+       function _taApplyMarkAngles(feats) {
+         for (const f of (feats || [])) {
+           const p = f.properties || (f.properties = {});
+           const c = (f.geometry && f.geometry.coordinates) || null;
+           if (!c) { p._taAngle = 0; p._taPhi = null; continue; }
+           const phi = _taRoadBearingAt(c[0], c[1]);
+           p._taPhi = phi;
+           p._taAngle = phi == null ? 0 : phi + 90;
+           if (_DEBUG_MARKS && phi != null) {
+             console.log(
+               `[debug-marks] ${p.assetType} lon=${c[0].toFixed(5)} lat=${c[1].toFixed(5)}`,
+               `roadBearing(phi)=${phi.toFixed(1)}`,
+               `perp=${(phi+90).toFixed(1)}`
+             );
+           }
+         }
+       }
+
+      // Bouw haaientanden-Point-features voor wegvakken die aan een B6-bord
+      // ("voorrang verlenen") gekoppeld zijn. Twee bronnen, gecombineerd:
+      //  1. NETWORK-CAR-kolom `numGiveWays` (indien aanwezig/betrouwbaar) →
+      //     plaatsing aan het eindpunt (toNode) van de link.
+      //  2. Ruimtelijke matching van trafficSign-features met rvvCode 'B6'
+      //     naar het dichtstbijzijnde netwerk-eindpunt (fromNode/toNode) —
+      //     nodig omdat `numGiveWays` in oudere/andere exports ontbreekt of
+      //     sterk onder-geteld is t.o.v. het werkelijke aantal B6-borden.
+      // Resultaat wordt gededupliceerd per (linkId, eindpunt).
+      const _TA_GIVEWAY_SNAP_M = 30;   // max. afstand bord → dichtstbijzijnde link
+      const _TA_GIVEWAY_BACK_M = 1.5;  // iets terug vanaf het eindpunt (op het wegdek, niet op de knoop)
+
+      // Bouw één haaientanden-feature bij coördinaat `end` (eindpunt van een
+      // link), met rijrichting bepaald door de vector `end - prev`.
+      function _taMakeGiveWayFeature(end, prev, linkId, roadName) {
+        const mLng = 111320 * Math.cos(end[1] * Math.PI / 180) || 1, mLat = 110540;
+        const vx = (end[0] - prev[0]) * mLng, vy = (end[1] - prev[1]) * mLat;
+        const vlen = Math.hypot(vx, vy) || 1;
+        const phi = Math.atan2(vy, vx) * 180 / Math.PI;
+        const lon = end[0] - (vx / vlen) * _TA_GIVEWAY_BACK_M / mLng;
+        const lat = end[1] - (vy / vlen) * _TA_GIVEWAY_BACK_M / mLat;
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [lon, lat] },
+          // +180: de driehoeken in _taSharkTeethCanvas wijzen in de canvas
+          // naar beneden (naar de kijker/bestuurder toe); zonder deze extra
+          // draai stonden ze in de praktijk 180° verkeerd om.
+          properties: { assetType: 'giveWay', linkId, roadName, _taPhi: phi, _taAngle: phi + 90 + 180 },
+        };
+      }
+
+      /** Herbouw `_taGiveWayMarkFeatures` uit de huidige `segments` +
+       *  `_taSignFeatures`. Aanroepen zodra één van beide bijgewerkt is
+       *  (netwerk geladen/gewisseld, of nieuwe borden binnen de bbox). */
+      function _taRebuildGiveWayMarks() {
+        const byKey = new Map();  // "linkId:from"|"linkId:to" → feature
+
+        // linkId → properties, voor de priorityRoad-check hieronder.
+        const linkPropsById = new Map();
+        for (const seg of (segments || [])) linkPropsById.set(seg.props.linkId, seg.props);
+
+        // Haaientanden horen niet op een voorrangsweg (RVV B3) thuis, tenzij
+        // het wegvak ná een "einde voorrangsweg"-bord (B4) ligt — de pipeline
+        // zet `priorityRoad` op dat punt al terug op false, dus deze ene
+        // check dekt beide gevallen.
+        const _isPriorityRoad = linkId => {
+          const props = linkPropsById.get(linkId) ?? linkPropsById.get(Number(linkId));
+          return props ? props.priorityRoad === true : false;
+        };
+
+        // Bron 1: NETWORK-CAR numGiveWays (toNode-eind van de link).
+        for (const seg of (segments || [])) {
+          const p = seg.props || {};
+          if (!((p.numGiveWays || 0) > 0)) continue;
+          if (_isPriorityRoad(p.linkId)) continue;
+          const c = seg.coords;
+          if (!c || c.length < 2) continue;
+          byKey.set(`${p.linkId}:to`, _taMakeGiveWayFeature(c[c.length - 1], c[c.length - 2], p.linkId, p.name));
+        }
+
+        // Bron 2: B6-borden ruimtelijk koppelen aan het netwerk. Een
+        // haaientand-rij hoort altijd bij de toNode-kant van een link (het
+        // einde van de rijrichting, vlak vóór het kruispunt) — nooit bij de
+        // fromNode-kant. Als het bord het dichtst bij het béginpunt van de
+        // gematchte link ligt, hoort de markering dus bij de tegengestelde
+        // rijrichting (reverseLinkId), waarvan dat punt juist het toNode-eind
+        // is; is die niet bekend, dan wordt dit bord overgeslagen.
+        for (const f of (_taSignFeatures || [])) {
+          const p = f.properties || {};
+          if (p.rvvCode !== 'B6') continue;
+          const c = f.geometry?.coordinates;
+          if (!c) continue;
+          const nearest = _taNearestLinkPoint(c[0], c[1]);
+          if (!nearest || nearest.distM > _TA_GIVEWAY_SNAP_M) continue;
+          let linkId = nearest.linkId;
+          let coords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+          if (!coords || coords.length < 2) continue;
+          const fromEnd = coords[0], toEnd = coords[coords.length - 1];
+          const mLng = 111320 * Math.cos(c[1] * Math.PI / 180) || 1, mLat = 110540;
+          const dFrom = Math.hypot((fromEnd[0] - c[0]) * mLng, (fromEnd[1] - c[1]) * mLat);
+          const dTo   = Math.hypot((toEnd[0]   - c[0]) * mLng, (toEnd[1]   - c[1]) * mLat);
+          if (dFrom < dTo) {
+            const linkProps = linkPropsById.get(linkId) ?? linkPropsById.get(Number(linkId));
+            const revIds = linkProps?.reverseLinkIds;
+            const revId = Array.isArray(revIds) && revIds.length ? revIds[0] : -linkId;
+            const revCoords = linkGeomMap.get(revId) ?? linkGeomMap.get(Number(revId));
+            if (!revCoords || revCoords.length < 2) continue;  // geen tegengestelde link bekend → overslaan
+            linkId = revId;
+            coords = revCoords;
+          }
+          if (_isPriorityRoad(linkId)) continue;
+          const key = `${linkId}:to`;
+          if (byKey.has(key)) continue;
+          byKey.set(key, _taMakeGiveWayFeature(coords[coords.length - 1], coords[coords.length - 2], linkId, p.roadName));
+        }
+
+        _taGiveWayMarkFeatures = [...byKey.values()];
+      }
+
+      // deck.gl's IconLayer (billboard:false) rotate_by_angle-shader roteert de
+     // afbeelding in een lokaal frame waarbij de bovenkant van de png (kleine
+     // texture-y) intern al "gespiegeld" wordt t.o.v. wereld-noord. Empirisch
+     // (via de debug-box/groene voorkant-lijn) bleek de volledige afbeelding-
+     // conventie 180° t.o.v. de eerste aanname te staan: om een gewenste
+     // kompasrichting β (0=noord, met de klok mee) te laten overeenkomen met
+     // "bovenkant van de png wijst naar β", moet getAngle = (360 − β) zijn
+     // (equivalent aan −β mod 360).
+     function _taDeckIconAngle(bearingDeg) {
+       return (360 - bearingDeg) % 360;
+     }
+
+     // ── Voorbereiding laneMarkArrow: plaats pijlen per lane op de middellijn ──────
+     // De input-LineString is een kort (2 m) stukje van de wegas zélf, vlak vóór
+     // het eindpunt van het wegvak (5 m → 3 m voor de toNode) — dus de richting
+     // van deze lijn = de rijrichting (zie gmt_calculation_lib/osm_asset_fetcher:
+     // lane_mark_arrows.py). De dwarslijn (haaks op de weg, waarlangs de lanes
+     // náást elkaar staan) is dus de 90°-gedraaide richting van deze lijn — niet
+     // de lijn zelf.
+     // Output: Array van Point features, elk met laterale offset voor een enkele lane
+     function _prepareLaneMarkArrows(feats) {
+       if (!feats || feats.length === 0) return [];
+
+       const result = [];
+       const laneWidth = 2.0;  // hart-tot-hart afstand tussen lanes (m)
+
+       for (const f of feats) {
+          const geom = f.geometry;
+          if (!geom || geom.type !== 'LineString' || !geom.coordinates || geom.coordinates.length < 2) continue;
+
+         const coords = geom.coordinates;
+         const p1 = coords[0];
+         const p2 = coords[coords.length - 1];
+
+         // Middelpunt van het lijntje
+         const midLng = (p1[0] + p2[0]) / 2;
+         const midLat = (p1[1] + p2[1]) / 2;
+
+         // Lokale meter-schaal bij dit punt
+         const mPerLng = 111320 * Math.cos(midLat * Math.PI / 180) || 1;
+         const mPerLat = 110540;
+
+         // Rijrichting = richting van de input-lijn zelf, als eenheidsvector
+         // in lokale oost/noord-meters.
+         const fwdE0 = (p2[0] - p1[0]) * mPerLng;
+         const fwdN0 = (p2[1] - p1[1]) * mPerLat;
+         const fwdLen = Math.hypot(fwdE0, fwdN0) || 1;
+         const fwdE = fwdE0 / fwdLen, fwdN = fwdN0 / fwdLen;
+
+         // Dwarsrichting (haaks ⟂ op de rijrichting, naar links) — hierlangs
+         // staan de lanes náást elkaar.
+         const acrossE = -fwdN, acrossN = fwdE;
+
+         // Kompas-bearing van de rijrichting (0° = noord, met de klok mee) —
+         // dit is de hoek die we ongewijzigd aan IconLayer.getAngle meegeven,
+         // zodat het plaatje zelf niet extra intern geroteerd hoeft te worden.
+         const bearing = (90 - Math.atan2(fwdN, fwdE) * 180 / Math.PI + 360) % 360;
+
+         // Parse turn:lanes
+         const turnLanesStr = f.properties?.['turn:lanes'] || '';
+         const lanes = turnLanesStr.split('|').map(s => s.trim());
+         const nLanes = lanes.length;
+
+         // Plaats pijl per lane
+         for (let i = 0; i < nLanes; i++) {
+           const turnDir = lanes[i];
+
+           // Skip 'none'
+           if (turnDir === 'none') continue;
+
+           // Laterale offset: centreer de groep lanes rond het middelpunt,
+           // verplaatst haaks op de rijrichting (over de dwarslijn).
+           // OSM turn:lanes somt lanes op van links → rechts (gezien in de rij-
+           // richting); i=0 ("left") moet dus de meest linkse (+across) positie
+           // krijgen, i=laatste ("right") de meest rechtse (−across) positie.
+           const offset = ((nLanes - 1) / 2 - i) * laneWidth;
+           const dLng = (acrossE * offset) / mPerLng;
+           const dLat = (acrossN * offset) / mPerLat;
+
+           const arrowLng = midLng + dLng;
+           const arrowLat = midLat + dLat;
+
+           // Maak Point feature
+           const arrowFeature = {
+             type: 'Feature',
+             geometry: {
+               type: 'Point',
+                coordinates: [arrowLng, arrowLat]
+               },
+               properties: {
+                 ...f.properties,
+                 assetType: 'laneMarkArrow',
+                 _taArrowTurn: turnDir,
+                 _taArrowAngle: bearing  // rijrichting
+               }
+             };
+
+            result.push(arrowFeature);
+         }
+       }
+
+       return result;
+     }
+
+      // ── Pijl-iconen laden van SVG-bestanden ────────────────────────────────────────
+      // Alle SVG-bestanden zitten in svg/ folder, benoemd naar turn:lanes waarde
+      function _taStoppingLaneArrowIcon(turnDirection) {
+        if (!turnDirection) turnDirection = 'through';
+        const key = 'arrow:' + turnDirection;
+        if (_taIcons[key]) return _taIcons[key];
+
+        // Bestandsnaam: vervang speciale tekens
+        const filename = turnDirection.replace(/\|/g, '_').replace(/;/g, '_');
+        const svgUrl = `svg/${filename}.svg`;
+
+        // Maak een icon descriptor die naar het SVG wijst
+        _taIcons[key] = {
+          url: svgUrl,
+          width: 48,
+          height: 48,
+          anchorX: 24,  // midden
+          anchorY: 24,  // midden
+          mask: false
+        };
+        return _taIcons[key];
+      }
+
+    // ── Witte blokjes bovenop de verkeersdrempels ─────────────────────────────
+    // Per drempel-polygon: zwaartepunt + hoofdas (PCA) bepalen en een rij witte
+    // blokjes over de breedte plaatsen (platte IconLayer, net boven de drempeltop).
+    const _TA_BUMP_BLOCK_M = 0.45;   // blokgrootte (m)
+    let   _taBumpBlocks    = [];     // [{position:[lng,lat,z], angleDeg}]
+
+    function _taBumpBlockIcon(active) {
+      const key = 'bumpblock' + (active ? ':active' : '');
+      if (!_taIcons[key]) {
+        const S = Math.round(_TA_BUMP_BLOCK_M * _TA_PPM) * _TA_RS;
+        const cv = document.createElement('canvas');
+        cv.width = S; cv.height = S;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = active ? '#f1c40f' : '#f5f5f5';
+        ctx.fillRect(0, 0, S, S);
+        if (active) {
+          ctx.lineWidth = Math.max(1, S * 0.08);
+          ctx.strokeStyle = '#c9a000';
+          ctx.strokeRect(0, 0, S, S);
+        }
+        _taIcons[key] = _taDescFlat(cv);
+      }
+      return _taIcons[key];
+    }
+
+    // Masten zonder subtype kunnen ook als toren getoond worden; kies op basis
+    // van de beschikbare properties het juiste procedurele 3D-mesh.
+    function _taFurnitureType(p) {
+      if (!p) return null;
+      if (p.emergency === 'siren') return 'siren';
+      if (p['tower:type']) return 'tower';
+      if (p.man_made === 'mast') return 'mast';
+      return null;
+    }
+
+    function _taComputeBumpBlocks(feats) {
+      const out = [];
+      for (const f of (feats || [])) {
+        const g = f.geometry; if (!g) continue;
+        const ring = g.type === 'Polygon'      ? g.coordinates[0]
+                   : g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0]
+                   : null;
+        if (!ring || ring.length < 3) continue;
+        // Zwaartepunt
+        let cx = 0, cy = 0;
+        for (const pt of ring) { cx += pt[0]; cy += pt[1]; }
+        cx /= ring.length; cy /= ring.length;
+        // Lokale meter-schaal
+        const mLng = 111320 * Math.cos(cy * Math.PI / 180) || 1, mLat = 110540;
+        // PCA → hoofdas-hoek
+        let sxx = 0, syy = 0, sxy = 0;
+        for (const pt of ring) {
+          const dx = (pt[0] - cx) * mLng, dy = (pt[1] - cy) * mLat;
+          sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+        }
+        const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+        const ca = Math.cos(angle), sa = Math.sin(angle);
+        // Uitgestrektheid langs de hoofdas
+        let minU = 1e9, maxU = -1e9;
+        for (const pt of ring) {
+          const dx = (pt[0] - cx) * mLng, dy = (pt[1] - cy) * mLat;
+          const u = dx * ca + dy * sa;
+          if (u < minU) minU = u; if (u > maxU) maxU = u;
+        }
+        const angleDeg = -angle * 180 / Math.PI;
+        const inset = 0.3, step = 0.7;
+        for (let u = minU + inset; u <= maxU - inset + 1e-6; u += step) {
+          const dx = u * ca, dy = u * sa;   // punt op de middenlijn (v=0)
+          out.push({ position: [cx + dx / mLng, cy + dy / mLat, 0.13], angleDeg });
+        }
+      }
+      return out;
+    }
+
+    function _taPosition(f) {
+      const c = (f.geometry && f.geometry.coordinates) || [0, 0];
+      return [c[0], c[1], 0];   // vlak maaiveld (auto's gebruiken ook z≈0)
+    }
+
+    // Bouw de deck.gl-lagen voor verkeersobjecten (aangeroepen in updateOverlay).
+    // Platte drempel-vlakken (speedBump-polygonen), plat op het wegdek.
+    // Aparte laag zodat ze ONDER de intensiteits-laag (network) getekend worden.
+    function makeSpeedBumpLayer() {
+      const active = colorMetric === 'speed_intersections';
+      // De Kruispunten-laag toont verkeersdrempels altijd, ook als de losse
+      // "Traffic assets"-laag is uitgeschakeld.
+      if ((!_trafficAssetsVisible || !_trafficAssetCategories.bumps) && !active) return null;
+      if (!_taSpeedBumpFeatures.length) return null;
+      // In normale weergave: grijze vulling. Wanneer de Kruispunten-laag actief
+      // is, worden drempels geel getoond en zonder zoom-drempel.
+      if (!active && map.getZoom() < _TA_MINZOOM) return null;
+      return new GeoJsonLayer({
+        id:            'ta-speedbumps-deck',
+        data:          { type: 'FeatureCollection', features: _taSpeedBumpFeatures },
+        extruded:      false,
+        filled:        true,
+        stroked:       active,
+        getFillColor:  active ? [241, 196, 15, 200] : [150, 150, 155, 170],
+        getLineColor:  [0, 0, 0, 255],
+        lineWidthUnits: 'pixels',
+        getLineWidth:  active ? 1 : 0,
+        getFillLineDash: active ? [2, 2] : null,
+        pickable:      true,
+        onHover:       info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+      });
+    }
+
+    function makeTrafficAssetLayers() {
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.signs) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      const bucket = _taBearingBucket();
+      const layers = [];
+
+      if (_taSignFeatures.length) {
+        layers.push(new IconLayer({
+          id:          'ta-signs-deck',
+          data:        _taSignFeatures,
+          billboard:   true,
+          sizeUnits:   'meters',
+          sizeScale:   1,
+          getPosition: _taPosition,
+          getIcon: f => {
+            const p = f.properties || {};
+            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) || _taPoleIcon(p.rvvCode);
+            if (_signBackVisible(p.bearing))  return _taBackIcon(p.rvvCode);
+            return _taPoleIcon(p.rvvCode);
+          },
+          getSize: f => {
+            const p = f.properties || {};
+            const poleH = _taPoleHeightM(p.rvvCode);
+            const totalM = poleH + _TA_SIGN_M;
+            if (_signFrontVisible(p.bearing)) return _taFrontIcon(p) ? totalM : poleH;
+            if (_signBackVisible(p.bearing))  return totalM;
+            return poleH;
+          },
+          pickable: true,
+          onHover:  info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+          updateTriggers: {
+            getIcon: [bucket, _taIconVersion],
+            getSize: [bucket, _taIconVersion],
+          },
+        }));
+      }
+
+      if (_taSignalFeatures.length) {
+        layers.push(new IconLayer({
+          id:          'ta-signals-deck',
+          data:        _taSignalFeatures,
+          billboard:   true,
+          sizeUnits:   'meters',
+          sizeScale:   1,
+          getPosition: _taPosition,
+          getIcon:     () => _taSignalIcon(),
+          getSize:     () => _TA_SIGNAL_TOTAL_M,
+          pickable:    true,
+          onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate, signal: true } : null; },
+        }));
+      }
+
+      // Platte wegdekmarkeringen (voetganger/stop/haaientanden) — liggen op het asfalt.
+      const _iconMarkFeatures = [..._taMarkFeatures, ..._taGiveWayMarkFeatures];
+      if (_iconMarkFeatures.length) {
+        layers.push(new IconLayer({
+          id:          'ta-marks-deck',
+          data:        _iconMarkFeatures,
+          billboard:   false,   // plat op het wegdek, schaalt perspectivisch mee
+          sizeUnits:   'meters',
+          sizeScale:   1,
+          getPosition: _taPosition,
+           getIcon:     f => _taMarkIcon((f.properties || {}).assetType),
+          getSize:     f => _taMarkSize((f.properties || {}).assetType),
+          getAngle:    f => (f.properties || {})._taAngle || 0,   // dwars over de weg
+          pickable:    true,
+          onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
+      // Hulplijnen voor debuggen markering-oriëntatie (alleen met ?debugMarks=1):
+      // - geel/groen lijn = hartlijn van het gekoppelde wegvak (linkId), volledige segmentgeometrie
+      // - rode lijn       = dwarsrichting (perp = phi+90), waar de markering over moet liggen
+      if (_DEBUG_MARKS && _taMarkFeatures.length) {
+        const dbgFeats = [];
+        for (const f of _taMarkFeatures) {
+          const p = f.properties || {};
+          const phi = p._taPhi;
+          if (phi == null) continue;
+          const [lng, lat] = f.geometry.coordinates;
+          const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1;
+          const mLat = 110540;
+          const roadRad = phi * Math.PI / 180;
+          const perpRad = (phi + 90) * Math.PI / 180;
+          const roadLen = 8;   // meters
+          const perpLen = 6;   // meters
+          const dLngRoad = Math.cos(roadRad) * roadLen / mLng;
+          const dLatRoad = Math.sin(roadRad) * roadLen / mLat;
+          const dLngPerp = Math.cos(perpRad) * perpLen / mLng;
+          const dLatPerp = Math.sin(perpRad) * perpLen / mLat;
+
+          // Kleuren als RGBA-arrays zodat GeoJsonLayer ze direct gebruikt.
+          const C_NEAREST = [255, 255, 0, 240];   // geel
+          const C_LINKID  = [255, 140, 0, 240];   // donkeroranje
+          const C_PERP    = [255, 0, 0, 240];     // rood
+
+          // 1) Hartlijn op basis van nearest-segment (geel)
+          dbgFeats.push({ type: 'Feature', properties: { c: C_NEAREST, w: 4 }, geometry: { type: 'LineString', coordinates: [[lng, lat], [lng + dLngRoad, lat + dLatRoad]] } });
+
+          // 2) Hartlijn van het gekoppelde linkId (oranje), als beschikbaar
+          const linkId = p.linkId;
+          if (linkId != null) {
+            const linkCoords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+            if (linkCoords && linkCoords.length >= 2) {
+              dbgFeats.push({ type: 'Feature', properties: { c: C_LINKID, w: 6 }, geometry: { type: 'LineString', coordinates: linkCoords } });
+            }
+          }
+
+          // rood: dwars op weg
+          dbgFeats.push({ type: 'Feature', properties: { c: C_PERP, w: 3 }, geometry: { type: 'LineString', coordinates: [[lng - dLngPerp, lat - dLatPerp], [lng + dLngPerp, lat + dLatPerp]] } });
+        }
+
+        if (dbgFeats.length) {
+          layers.push(new GeoJsonLayer({
+            id: 'ta-marks-debug',
+            data: { type: 'FeatureCollection', features: dbgFeats },
+            getColor: f => (f.properties || {}).c || [255,255,255,220],
+            getLineWidth: f => (f.properties || {}).w || 2,
+            lineWidthMinPixels: 2,
+            lineWidthUnits: 'pixels',
+            pickable: false,
+          }));
+        }
+      }
+
+       // Bushaltes (haltepaal + bordje) — billboard-composietsprite, camera-gericht.
+       if (_taBusStopFeatures.length) {
+         layers.push(new IconLayer({
+            id:          'ta-busstops-deck',
+            data:        _taBusStopFeatures,
+            billboard:   true,
+            sizeUnits:   'meters',
+            sizeScale:   1,
+            getPosition: _taPosition,
+            getIcon:     () => _taBusStopIcon(),
+            getSize:     () => _TA_POLE_H_M + 0.6,
+            pickable:    true,
+            onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+          }));
+        }
+
+         // Pijlen op middellijn (laneMarkArrow)
+         if (_taLaneMarkArrowFeatures.length) {
+           layers.push(new IconLayer({
+             id:          'ta-lanemarkarrows-deck',
+             data:        _taLaneMarkArrowFeatures,
+             billboard:   false,   // plat op het wegdek, schaalt perspectivisch mee
+             sizeUnits:   'meters',
+             sizeScale:   1,
+             getPosition: _taPosition,
+             getIcon:     f => _taStoppingLaneArrowIcon(f.properties?._taArrowTurn || 'through'),
+             getSize:     () => 1.2,  // breedte van de pijl (m)
+             getAngle:    f => _taDeckIconAngle(f.properties?._taArrowAngle || 0),
+             pickable:    true,
+             onHover:     info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+           }));
+         }
+
+       // Vluchtheuvels (refugeArea) — witte verhoogde vormen.
+       // Opmerking: momenteel zijn refugeArea-features Points; zodra Polygon-geometrieën beschikbaar zijn, 
+       // kunnen we deze rechtstreeks renderen. Tot die tijd filteren we op geometrie-type.
+       const _refugeFeatures = [..._taRefugeAreaCrossingFeatures, ..._taRefugeAreaTrafficFeatures]
+         .filter(f => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
+       if (_refugeFeatures.length) {
+         layers.push(new PolygonLayer({
+           id:                'ta-refugeareas-deck',
+           data:              _refugeFeatures,
+           getFillColor:      [255, 255, 255, 200],
+           getLineColor:      [100, 100, 100, 200],
+           lineWidthMinPixels: 1,
+           extruded:          true,
+           getElevation:      f => 0.25,  // 25cm height
+           pickable:          true,
+           onHover:           info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+         }));
+       }
+
+      // Debug: lijn van geklikt verkeersbord naar het dichtstbijzijnde punt
+      // op het gekoppelde wegvak (zie klik-handler op _taHover).
+      if (_taDebugSignLink) {
+        layers.push(new PathLayer({
+          id:          'ta-debug-sign-link',
+          data:        [{ path: [_taDebugSignLink.signPt, _taDebugSignLink.roadPt] }],
+          getPath:     d => d.path,
+          getColor:    [255, 0, 200, 230],
+          getWidth:    2,
+          widthUnits:  'pixels',
+          widthMinPixels: 2,
+        }));
+        layers.push(new ScatterplotLayer({
+          id:          'ta-debug-sign-link-pts',
+          data:        [
+            { pos: _taDebugSignLink.signPt,  color: [255, 0, 200, 230] },
+            { pos: _taDebugSignLink.roadPt,  color: [0, 200, 255, 230] },
+          ],
+          getPosition: d => d.pos,
+          getFillColor: d => d.color,
+          getRadius:   3,
+          radiusUnits: 'pixels',
+        }));
+      }
+
+      // Debug: lijntjes van een geklikt wegvak naar alle gekoppelde
+      // verkeersobjecten (borden, markeringen, drempels, ...). Zie
+      // klik-handler op _networkHoverLink.
+      if (_taDebugLinkAssets && _taDebugLinkAssets.items.length) {
+        layers.push(new PathLayer({
+          id:          'ta-debug-link-assets',
+          data:        _taDebugLinkAssets.items.map(i => ({ path: [i.roadPt, i.assetPt] })),
+          getPath:     d => d.path,
+          getColor:    [255, 140, 0, 230],
+          getWidth:    2,
+          widthUnits:  'pixels',
+          widthMinPixels: 2,
+        }));
+        layers.push(new ScatterplotLayer({
+          id:          'ta-debug-link-assets-pts',
+          data:        _taDebugLinkAssets.items.flatMap(i => ([
+            { pos: i.roadPt,   color: [0, 200, 255, 230] },
+            { pos: i.assetPt,  color: [255, 140, 0, 230] },
+          ])),
+          getPosition: d => d.pos,
+          getFillColor: d => d.color,
+          getRadius:   3,
+          radiusUnits: 'pixels',
+        }));
+      }
+
+      // Debug: richting (fromNode → toNode) van het geklikte wegvak — de
+      // volledige linkgeometrie gemarkeerd + een pijlkop op het midden.
+      if (_taDebugLinkAssets && _taDebugLinkAssets.dir) {
+        const dirCoords = linkGeomMap.get(_taDebugLinkAssets.linkId) ?? linkGeomMap.get(Number(_taDebugLinkAssets.linkId));
+        if (dirCoords) {
+          layers.push(new PathLayer({
+            id:          'ta-debug-link-dir',
+            data:        [{ path: dirCoords }],
+            getPath:     d => d.path,
+            getColor:    [40, 220, 90, 230],
+            getWidth:    3,
+            widthUnits:  'pixels',
+            widthMinPixels: 3,
+          }));
+        }
+        layers.push(new PolygonLayer({
+          id:          'ta-debug-link-dir-head',
+          data:        [{ polygon: _taDebugLinkAssets.dir.head }],
+          getPolygon:  d => d.polygon,
+          getFillColor: [40, 220, 90, 230],
+          getLineColor: [20, 120, 50, 255],
+          lineWidthMinPixels: 1,
+          stroked:     true,
+          filled:      true,
+          pickable:    false,
+        }));
+      }
+
+      return layers;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  CIMLK HOOGTE-/CONSTRUCTIE-OBJECTEN — viaducten, bruggen, tunnels,
+    //  keermuren, duikers en geluidsschermen.
+    //  Komen mee in het TRAFFIC-ASSETS-bestand via het `assetType`-veld.
+    //  Blijven 2.5D: verhoogde ribbons op z=heightM (viaduct/bridge/underpass),
+    //  geëxtrudeerde dunne muren (screen/retainingWall), dekband + doorschijnend
+    //  dak (tunnel) en een lage donkere kruising (culvert).
+    //  Features met belowGround=true worden apart als 'underpass' getekend.
+    // ═══════════════════════════════════════════════════════════════════════
+    const _TA_VIADUCT_WIDTH_M = 7.5;   // breedte van de verhoogde wegdek-ribbon
+    const _TA_SCREEN_HALF_M   = 0.15;  // halve dikte van een scherm-muur (m)
+    const _TA_SCREEN_DEF_H    = 3;     // fallback schermhoogte als heightM ontbreekt (m)
+    const _TA_BRIDGE_WIDTH_M  = 7.5;   // breedte van het brugdek (m)
+    const _TA_TUNNEL_WIDTH_M  = 8.0;   // breedte van de tunnelbuis-band (m)
+    const _TA_TUNNEL_DEF_H    = 4.5;   // fallback tunneldak-hoogte als heightM ontbreekt (m)
+    const _TA_RETWALL_HALF_M  = 0.30;  // halve dikte van een keermuur (m)
+    const _TA_RETWALL_DEF_H   = 2;     // fallback keermuurhoogte (m)
+    const _TA_CULVERT_WIDTH_M = 2.5;   // breedte van de duiker-kruising (m)
+     const _TA_UNDERPASS_H_M   = 4.0;   // hoogte waarop de overspanning boven de verdiepte weg zweeft (m)
+
+     // Verzonken wegdelen (tunnel-polygonen): donker vloervlak nét boven
+     // maaiveld. De satelliet-basemap is ondoorzichtig op z=0, dus een écht
+     // verdiept vlak zou onzichtbaar zijn.
+     const _TA_SUNKEN_FLOOR_Z    = 0.06;  // vloervlak nét boven maaiveld (m, tegen z-fighting)
+     const _TA_SUNKEN_FLOOR_COLOR = [26, 27, 31, 240];   // donkere tunnelmond/vloer
+     // Tunnel-onderdoorgang: grijs wegdek over de centrale band (de weg loopt door),
+     // met donkere vloer aan de uiteinden als portaalmonden.
+     const _TA_TUNNEL_DECK_Z      = 0.22;                 // dek net boven de donkere vloer (m)
+     const _TA_TUNNEL_DECK_COLOR  = [126, 128, 134, 250]; // wegdek-grijs (dek over tunnel)
+     const _TA_TUNNEL_DECK_FRAC   = 0.45;                 // aandeel van de langsas dat overdekt is
+     const _TA_TUNNEL_DECK_MIN_M  = 8;                    // min. deklengte (m)
+     const _TA_TUNNEL_DECK_MAX_M  = 22;                   // max. deklengte (m)
+     const _TA_TUNNEL_DECK_VPAD_M = 1.0;                  // overstek dek buiten footprint (m)
+
+     // Ringen (buitenring per polygon) uit een feature.
+     function _sunkenRings(f) {
+       const g = f.geometry || {};
+       if (g.type === 'Polygon')
+         return (g.coordinates || []).slice(0, 1).filter(r => r && r.length >= 4);
+       if (g.type === 'MultiPolygon')
+         return (g.coordinates || []).map(p => p && p[0]).filter(r => r && r.length >= 4);
+       return [];
+     }
+
+     // Centrale wegdek-band ("het dak") over een set tunnelringen. Bepaalt met een
+     // PCA de langsas van de (samengevoegde) footprint en legt een grijs dek over
+     // het centrale deel; de open donkere uiteinden vormen de portaalmonden.
+     function _tunnelDeckBand(rings) {
+       const pts = [];
+       for (const ring of rings)
+         for (const c of ring)
+           if (c && isFinite(c[0]) && isFinite(c[1])) pts.push(c);
+       if (pts.length < 3) return null;
+       let cLng = 0, cLat = 0;
+       for (const p of pts) { cLng += p[0]; cLat += p[1]; }
+       cLng /= pts.length; cLat /= pts.length;
+       const cosLat = Math.max(0.1, Math.cos(cLat * Math.PI / 180));
+       const mx = p => (p[0] - cLng) * 111320 * cosLat, my = p => (p[1] - cLat) * 110540;
+       // Covariantiematrix [[sxx,sxy],[sxy,syy]].
+       let sxx = 0, sxy = 0, syy = 0;
+       for (const p of pts) { const x = mx(p), y = my(p); sxx += x * x; sxy += x * y; syy += y * y; }
+       // Grootste eigenwaarde → hoofdrichting (langsas).
+       const tr = sxx + syy, det = sxx * syy - sxy * sxy;
+       const l = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det));
+       let ux, uy;
+       if (Math.abs(sxy) > 1e-9) { ux = l - syy; uy = sxy; }
+       else { ux = sxx >= syy ? 1 : 0; uy = sxx >= syy ? 0 : 1; }
+       const un = Math.hypot(ux, uy) || 1; ux /= un; uy /= un;
+       const vx = -uy, vy = ux;
+       let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+       for (const p of pts) {
+         const x = mx(p), y = my(p), u = x * ux + y * uy, v = x * vx + y * vy;
+         if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+         if (v < vMin) vMin = v; if (v > vMax) vMax = v;
+       }
+       const uLen = uMax - uMin;
+       const coverLen = Math.max(_TA_TUNNEL_DECK_MIN_M,
+                                 Math.min(uLen * _TA_TUNNEL_DECK_FRAC, _TA_TUNNEL_DECK_MAX_M));
+       const uMid = (uMin + uMax) / 2, uc0 = uMid - coverLen / 2, uc1 = uMid + coverLen / 2;
+       const v0 = vMin - _TA_TUNNEL_DECK_VPAD_M, v1 = vMax + _TA_TUNNEL_DECK_VPAD_M;
+       const toLL = (u, v) => {
+         const x = u * ux + v * vx, y = u * uy + v * vy;
+         return [cLng + x / (111320 * cosLat), cLat + y / 110540, _TA_TUNNEL_DECK_Z];
+       };
+       return [toLL(uc0, v0), toLL(uc1, v0), toLL(uc1, v1), toLL(uc0, v1), toLL(uc0, v0)];
+     }
+
+     // (Her)bouw de verzonken-wegdeel stores uit polygon-tunnels: donkere vloer
+     // (portaalmonden) + centraal dek. Bakken worden bewust niet afgebeeld.
+     function _taRebuildSunken(tunnelFeats) {
+       const floors = [], decks = [];
+       // Tunnels: donkere vloer over de hele footprint (overlappende/dubbele
+       // polygonen overlappen visueel → geen dubbele wanden). Eén dek over de
+       // samengevoegde langsas.
+       const tunnelRings = [];
+       for (const f of tunnelFeats) {
+         const props = f.properties || {};
+         for (const ring of _sunkenRings(f)) {
+           floors.push({ polygon: ring.map(c => [c[0], c[1], _TA_SUNKEN_FLOOR_Z]), props });
+           tunnelRings.push(ring);
+         }
+       }
+       if (tunnelRings.length) {
+         const deck = _tunnelDeckBand(tunnelRings);
+         if (deck) decks.push({ polygon: deck, props: (tunnelFeats[0] || {}).properties || {} });
+       }
+        _taSunkenFloors = floors;
+        _taTunnelDecks  = decks;
+      }
+
+
+
+    // Zet een lijn-feature om naar per-segment quads (dunne footprint) voor de
+    // geëxtrudeerde PolygonLayer. Perpendiculaire offset in meters → graden.
+    // halfW  = halve muurdikte (m); defH = fallback-hoogte als heightM ontbreekt.
+    function _screenQuadsFromFeature(f, halfW = _TA_SCREEN_HALF_M, defH = _TA_SCREEN_DEF_H) {
+      const g = f.geometry || {};
+      const props = f.properties || {};
+      let h = parseFloat(props.heightM);
+      if (isNaN(h) || h <= 0) h = defH;
+      // Ondersteun LineString en MultiLineString.
+      const lines = g.type === 'MultiLineString' ? (g.coordinates || [])
+                  : g.type === 'LineString'      ? [g.coordinates || []]
+                  : [];
+      const out = [];
+      for (const line of lines) {
+        for (let i = 0; i + 1 < line.length; i++) {
+          const a = line[i], b = line[i + 1];
+          if (!a || !b || a.length < 2 || b.length < 2) continue;
+          const latMid = (a[1] + b[1]) * 0.5;
+          const cosLat = Math.max(0.1, Math.cos(latMid * Math.PI / 180));
+          let dx = b[0] - a[0], dy = b[1] - a[1];
+          // Perpendiculair in meters normaliseren.
+          const dxm = dx * 111320 * cosLat, dym = dy * 110540;
+          const len = Math.hypot(dxm, dym) || 1;
+          // Loodrechte eenheidsvector (in meters), 90° gedraaid.
+          const px = -dym / len, py = dxm / len;
+          const ox = (px * halfW) / (111320 * cosLat);
+          const oy = (py * halfW) / 110540;
+          out.push({
+            polygon: [
+              [a[0] + ox, a[1] + oy],
+              [b[0] + ox, b[1] + oy],
+              [b[0] - ox, b[1] - oy],
+              [a[0] - ox, a[1] - oy],
+            ],
+            height: h,
+            props,
+          });
+        }
+      }
+      return out;
+    }
+
+    // Bouw de scherm-quads store opnieuw op (aangeroepen als data verandert).
+    function _taRebuildScreenQuads(features) {
+      const quads = [];
+      for (const f of features) quads.push(..._screenQuadsFromFeature(f));
+      _taScreenQuads = quads;
+    }
+
+    // Bouw de keermuur-quads store opnieuw op (dikkere muur dan een scherm).
+    function _taRebuildRetWallQuads(features) {
+      const quads = [];
+      for (const f of features) {
+        quads.push(..._screenQuadsFromFeature(f, _TA_RETWALL_HALF_M, _TA_RETWALL_DEF_H));
+      }
+      _taRetWallQuads = quads;
+    }
+
+    // Voet-/fietspad-ribbons als platte lijnen op wegniveau. Worden ONDER de
+    // netwerk-visualisatie getekend (staan vóór makeNetworkLayer in de overlay).
+    function makePathRibbonLayers() {
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.paths) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      const lineOf = f => {
+        const g = f.geometry || {};
+        const raw = g.type === 'MultiLineString'
+          ? (g.coordinates && g.coordinates[0]) || []
+          : g.coordinates || [];
+        const out = [];
+        for (const c of raw) {
+          if (!Array.isArray(c) || !isFinite(c[0]) || !isFinite(c[1])) continue;
+          const prev = out[out.length - 1];
+          if (prev && prev[0] === c[0] && prev[1] === c[1]) continue;
+          out.push(c);
+        }
+        return out;
+      };
+      const okLine = f => lineOf(f).length >= 2;
+      const elevatedPath = (f, h) => lineOf(f).map(c => [c[0], c[1], h]);
+      const hoverPath = info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; };
+      const layers = [];
+
+      // Voetpaden: dunne platte grijze/bruine ribbon op wegniveau. Kleur naar
+      // verharding (onverhard = bruin, verhard = licht grijs).
+      const _footFeats = _taFootPathFeatures.filter(okLine);
+      if (_footFeats.length) {
+        const unpaved = new Set(['dirt', 'ground', 'earth', 'unpaved', 'grass', 'sand', 'gravel', 'fine_gravel', 'compacted']);
+        layers.push(new PathLayer({
+          id:            'ta-footpaths-deck',
+          data:          _footFeats,
+          widthUnits:    'meters',
+          getWidth:      f => Math.max(0.8, parseFloat((f.properties || {}).width) || 1.2),
+          widthMinPixels: 1,
+          getColor:      f => unpaved.has(((f.properties || {}).surface || '').toLowerCase())
+                           ? [150, 120, 84, 220] : [176, 178, 182, 220],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.04),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Fietspaden: platte roodbruine ribbon op wegniveau (herkenbare fietspad-kleur).
+      const _cycleFeats = _taCyclePathFeatures.filter(okLine);
+      if (_cycleFeats.length) {
+        layers.push(new PathLayer({
+          id:            'ta-cyclepaths-deck',
+          data:          _cycleFeats,
+          widthUnits:    'meters',
+          getWidth:      f => Math.max(1.2, parseFloat((f.properties || {}).width) || 1.8),
+          widthMinPixels: 1.5,
+          getColor:      [178, 76, 60, 225],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.045),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+      return layers;
+    }
+
+    function makeHeightAssetLayers() {
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.height) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      const layers = [];
+
+      // Verhoogd pad op vaste hoogte h (m) uit een lijn-feature. Opeenvolgende
+      // identieke punten worden verwijderd, zodat er geen zero-length segmenten
+      // ontstaan (die bij capRounded/jointRounded tot NaN → luma.gl-assertion
+      // leiden).
+      const lineOf = f => {
+        const g = f.geometry || {};
+        const raw = g.type === 'MultiLineString'
+          ? (g.coordinates && g.coordinates[0]) || []
+          : g.coordinates || [];
+        const out = [];
+        for (const c of raw) {
+          if (!Array.isArray(c) || !isFinite(c[0]) || !isFinite(c[1])) continue;
+          const prev = out[out.length - 1];
+          if (prev && prev[0] === c[0] && prev[1] === c[1]) continue;
+          out.push(c);
+        }
+        return out;
+      };
+      // PathLayer vereist ≥ 2 verschillende punten per pad; degenererende
+      // (lege/enkel-punt/zero-length) features filteren voorkomt de assertion.
+      const okLine = f => lineOf(f).length >= 2;
+      const elevatedPath = (f, h) => lineOf(f).map(c => [c[0], c[1], h]);
+      const hoverPath = info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; };
+
+      // Viaducten: verhoogde grijze ribbon op z = heightM.
+      const _viaductFeats = _taViaductFeatures.filter(okLine);
+      if (_viaductFeats.length) {
+        layers.push(new PathLayer({
+          id:            'ta-viaducts-deck',
+          data:          _viaductFeats,
+          widthUnits:    'meters',
+          getWidth:      _TA_VIADUCT_WIDTH_M,
+          getColor:      [110, 110, 118, 235],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, Math.max(0.5, parseFloat((f.properties || {}).heightM) || 1)),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Bruggen: lichter betongrijs brugdek op z = heightM (apart van viaduct
+      // zodat styling kan divergeren, bv. leuningen in de toekomst).
+      const _bridgeFeats = _taBridgeFeatures.filter(okLine);
+      if (_bridgeFeats.length) {
+        layers.push(new PathLayer({
+          id:            'ta-bridges-deck',
+          data:          _bridgeFeats,
+          widthUnits:    'meters',
+          getWidth:      _TA_BRIDGE_WIDTH_M,
+          getColor:      [150, 148, 140, 240],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, Math.max(0.5, parseFloat((f.properties || {}).heightM) || 1.5)),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Tunnels: donkere dekband op wegniveau + doorschijnend tunneldak op
+      // z = heightM (fallback _TA_TUNNEL_DEF_H) → suggestie van overdekking.
+      const _tunnelFeats = _taTunnelFeatures.filter(okLine);
+      if (_tunnelFeats.length) {
+        const tunnelH = f => Math.max(2, parseFloat((f.properties || {}).heightM) || _TA_TUNNEL_DEF_H);
+        layers.push(new PathLayer({
+          id:            'ta-tunnels-floor',
+          data:          _tunnelFeats,
+          widthUnits:    'meters',
+          getWidth:      _TA_TUNNEL_WIDTH_M,
+          getColor:      [45, 47, 52, 230],
+          capRounded:    false,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.05),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+        layers.push(new PathLayer({
+          id:            'ta-tunnels-roof',
+          data:          _tunnelFeats,
+          widthUnits:    'meters',
+          getWidth:      _TA_TUNNEL_WIDTH_M,
+          getColor:      [120, 124, 132, 140],
+          capRounded:    false,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, tunnelH(f)),
+          pickable:      false,
+        }));
+      }
+
+      // Duikers: lage smalle donkere kruising op wegniveau.
+      const _culvertFeats = _taCulvertFeatures.filter(okLine);
+      if (_culvertFeats.length) {
+        layers.push(new PathLayer({
+          id:            'ta-culverts-deck',
+          data:          _culvertFeats,
+          widthUnits:    'meters',
+          getWidth:      _TA_CULVERT_WIDTH_M,
+          getColor:      [70, 72, 78, 220],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, 0.05),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Onderdoorgangen: overspanning die boven de verdiepte weg zweeft
+      // (belowGround-features). Doorschijnende grijze band op vaste hoogte.
+      const _underpassFeats = _taUnderpassFeatures.filter(okLine);
+      if (_underpassFeats.length) {
+        layers.push(new PathLayer({
+          id:            'ta-underpass-deck',
+          data:          _underpassFeats,
+          widthUnits:    'meters',
+          getWidth:      _TA_VIADUCT_WIDTH_M,
+          getColor:      [110, 110, 118, 160],
+          capRounded:    true,
+          jointRounded:  true,
+          getPath:       f => elevatedPath(f, Math.max(2, parseFloat((f.properties || {}).heightM) || _TA_UNDERPASS_H_M)),
+          pickable:      true,
+          onHover:       hoverPath,
+        }));
+      }
+
+      // Voetpaden: dunne platte grijze/bruine ribbon op wegniveau. Fiets- en
+      // voetpad-ribbons worden ONDER de netwerk-visualisatie getekend
+      // (zie makePathRibbonLayers) en zitten daarom niet meer in deze functie.
+
+      // Geluidsschermen: geëxtrudeerde dunne muur.
+      if (_taScreenQuads.length) {
+        layers.push(new PolygonLayer({
+          id:             'ta-screens-deck',
+          data:           _taScreenQuads,
+          extruded:       true,
+          wireframe:      false,
+          getPolygon:     d => d.polygon,
+          getElevation:   d => d.height,
+          getFillColor:   [180, 185, 190, 235],
+          material:       { ambient: 0.55, diffuse: 0.7, shininess: 16 },
+          pickable:       true,
+          onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
+      // Keermuren: dikkere geëxtrudeerde betonmuur (bruin-grijs).
+      if (_taRetWallQuads.length) {
+        layers.push(new PolygonLayer({
+          id:             'ta-retwalls-deck',
+          data:           _taRetWallQuads,
+          extruded:       true,
+          wireframe:      false,
+          getPolygon:     d => d.polygon,
+          getElevation:   d => d.height,
+          getFillColor:   [150, 140, 125, 240],
+          material:       { ambient: 0.55, diffuse: 0.7, shininess: 8 },
+          pickable:       true,
+          onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+        }));
+      }
+
+        return layers;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      //  VERZONKEN WEGDELEN — tunnel-polygonen
+      //  Donker vloervlak + grijs tunneldek. Wordt als ÉÉRSTE
+      //  deck-laaggroep getekend (direct boven de kaart), zodat alle andere
+      //  lagen er visueel bovenop liggen.
+      // ═══════════════════════════════════════════════════════════════════════
+      function makeSunkenLayers() {
+        if (!_trafficAssetsVisible || !_trafficAssetCategories.height) return [];
+        const layers = [];
+        if (_taSunkenFloors.length) {
+          layers.push(new PolygonLayer({
+            id:             'ta-sunken-floor',
+            data:           _taSunkenFloors,
+            extruded:       false,
+            stroked:        false,
+            filled:         true,
+            getPolygon:     d => d.polygon,
+            getFillColor:   _TA_SUNKEN_FLOOR_COLOR,
+            pickable:       true,
+            onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+          }));
+        }
+        // Grijs wegdek over de centrale tunnelband: leest als onderdoorgang.
+        if (_taTunnelDecks.length) {
+          layers.push(new PolygonLayer({
+            id:             'ta-tunnel-deck',
+            data:           _taTunnelDecks,
+            extruded:       false,
+            stroked:        false,
+            filled:         true,
+            getPolygon:     d => d.polygon,
+            getFillColor:   _TA_TUNNEL_DECK_COLOR,
+            pickable:       true,
+            onHover:        info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+          }));
+        }
+        return layers;
+      }
+
+     // ═══════════════════════════════════════════════════════════════════════
+     //  STRAATMEUBILAIR — procedurele SimpleMeshLayer-objecten
+     //  Volumetrische assets (brievenbus, bushokje, mast, fietssluis, infobord,
+    //  prullenbak) worden als kleine 3D-meshes getekend. Elke mesh bestaat uit
+    //  één of meer kleurgroepen; per kleurgroep één SimpleMeshLayer die dezelfde
+    //  instantie-array (positie + yaw) deelt. Oriëntatie per type:
+    //    'along'  → langs de rijrichting   (bushokje, infobord, brievenbus)
+    //    'across' → dwars op het pad       (fietssluis)
+    //    'none'   → rotatie-onafhankelijk  (mast, prullenbak)
+    // ═══════════════════════════════════════════════════════════════════════
+    let _taFurnMeshes = null;   // lazy cache: { type: [{mesh, color, material}] }
+
+    // Yaw (° rond Z) voor een feature. `bearing` is kompas (CW t.o.v. noord);
+    // math-hoek θ = 90 - bearing. Zonder bearing valt terug op de wegrichting.
+    function _taYawFor(f, mode) {
+      if (mode === 'none') return 0;
+      const p = f.properties || {};
+      const c = (f.geometry && f.geometry.coordinates) || null;
+      let theta;
+      if (p.bearing != null && !isNaN(p.bearing)) {
+        theta = 90 - Number(p.bearing);
+      } else if (c) {
+        const b = _taRoadBearingAt(c[0], c[1]);
+        theta = b == null ? 0 : b;
+      } else {
+        theta = 0;
+      }
+      return mode === 'across' ? theta + 90 : theta;   // 'along' = theta
+    }
+
+    // Bouw instantie-array [{position:[lng,lat,0], yaw}] uit Point-features.
+    function _taMkInstances(feats, mode) {
+      const out = [];
+      for (const f of (feats || [])) {
+        const g = f.geometry || {};
+        if (g.type !== 'Point') continue;
+        const c = g.coordinates || [];
+        if (c.length < 2) continue;
+        out.push({ position: [c[0], c[1], 0], yaw: _taYawFor(f, mode) });
+      }
+      return out;
+    }
+
+    // Materiaal-preset voor de meubilair-meshes (mat, licht glanzend).
+    const _TA_FURN_MAT = { ambient: 0.6, diffuse: 0.75, shininess: 12, specularColor: [25, 25, 25] };
+
+    // Lazy: bouw de gedeelde meshes per type. Elke groep = {mesh, color, material}.
+    function _taEnsureFurnMeshes() {
+      if (_taFurnMeshes) return;
+      const M = _TA_FURN_MAT;
+      _taFurnMeshes = {};
+
+      // Brievenbus: oranje body op twee dunne poten (~0,6 m).
+      _taFurnMeshes.mailbox = [{
+        mesh: mergeMeshes([
+          makeBoxGeom(0.50, 0.35, 0.45, 0, 0, 0.475),   // body
+          makeBoxGeom(0.05, 0.05, 0.25, -0.15, 0, 0.125),
+          makeBoxGeom(0.05, 0.05, 0.25,  0.15, 0, 0.125),
+        ]),
+        color: [255, 102, 0, 255], material: M,
+      }];
+
+      // Bushokje: grijs frame + dak, lichtblauw transparant achterpaneel (~2,2 m).
+      _taFurnMeshes.busShelter = [
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.08, 0.08, 2.20, -1.6, -0.6, 1.10),
+            makeBoxGeom(0.08, 0.08, 2.20,  1.6, -0.6, 1.10),
+            makeBoxGeom(0.08, 0.08, 2.20, -1.6,  0.6, 1.10),
+            makeBoxGeom(0.08, 0.08, 2.20,  1.6,  0.6, 1.10),
+            makeBoxGeom(3.60, 1.40, 0.12,  0.0,  0.0, 2.26),   // dak
+          ]),
+          color: [120, 124, 128, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(3.40, 0.05, 1.60, 0.0, -0.62, 1.00),   // glas achterpaneel
+          ]),
+          color: [150, 200, 230, 120], material: M },
+      ];
+
+      // Mast: metaalgrijze schacht + arm + lamp-kopje (~7,5 m).
+      _taFurnMeshes.mast = [{
+        mesh: mergeMeshes([
+          _vegCylZ(0.09, 7.5, 0),
+          makeBoxGeom(0.90, 0.10, 0.08, 0.45, 0, 7.40),   // arm
+          makeBoxGeom(0.35, 0.20, 0.15, 0.90, 0, 7.35),   // lamp
+        ]),
+        color: [150, 150, 155, 255], material: M,
+      }];
+
+      // Lantaarnpaal (streetLight): slanke antracietkleurige mast met uitkragende
+      // arm en een cobra-head-lamp met warme, licht-oplichtende lens (~8 m).
+      // Bewust afwijkend van 'mast' (donkerder + hoger + warme lampkop).
+      const LAMP = { ambient: 0.95, diffuse: 0.55, shininess: 24, specularColor: [70, 60, 35] };
+      _taFurnMeshes.streetLight = [
+        { mesh: mergeMeshes([
+            _vegCylZ(0.19, 0.45, 0),                          // voetstuk
+            _vegCylZ(0.085, 8.0, 0),                          // schacht
+            makeBoxGeom(1.25, 0.09, 0.09, 0.58, 0, 7.94),     // uitkragende arm
+          ]),
+          color: [64, 68, 76, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.60, 0.26, 0.16, 1.22, 0, 7.84),     // cobra-head lampkop
+          ]),
+          color: [255, 214, 130, 255], material: LAMP },
+      ];
+
+      // Fietssluis: twee verspringende rode bars + witte palen (dwars op pad).
+      _taFurnMeshes.bikeGate = [
+        { mesh: mergeMeshes([
+            makeBoxGeom(1.30, 0.08, 0.10, -0.35,  0.25, 0.90),
+            makeBoxGeom(1.30, 0.08, 0.10,  0.35, -0.25, 0.90),
+          ]),
+          color: [227, 6, 19, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.07, 0.07, 1.00, -1.00,  0.25, 0.50),
+            makeBoxGeom(0.07, 0.07, 1.00,  1.00, -0.25, 0.50),
+            makeBoxGeom(0.07, 0.07, 1.00,  0.30,  0.25, 0.50),
+            makeBoxGeom(0.07, 0.07, 1.00, -0.30, -0.25, 0.50),
+          ]),
+          color: [240, 240, 240, 255], material: M },
+      ];
+
+      // Infobord: blauw dubbelzijdig paneel op twee grijze palen (langs de weg).
+      // Paneelvlak in X-Z → faces wijzen ±Y, leesbaar vanaf de weg bij 'along'.
+      _taFurnMeshes.infoBoard = [
+        { mesh: mergeMeshes([
+            makeBoxGeom(0.06, 0.06, 1.60, -0.50, 0, 0.80),
+            makeBoxGeom(0.06, 0.06, 1.60,  0.50, 0, 0.80),
+          ]),
+          color: [150, 150, 155, 255], material: M },
+        { mesh: mergeMeshes([
+            makeBoxGeom(1.20, 0.06, 0.90, 0, 0, 1.65),   // paneel
+          ]),
+          color: [26, 115, 232, 255], material: M },
+      ];
+
+      // Prullenbak: donkergroene cilinder met iets bredere rand (~0,9 m).
+      _taFurnMeshes.trashBin = [{
+        mesh: mergeMeshes([
+          _vegCylZ(0.18, 0.75, 0.10, 12),
+          _vegCylZ(0.20, 0.06, 0.79, 12),   // rand
+        ]),
+        color: [60, 80, 64, 255], material: M,
+      }];
+    }
+
+    function makeFurnitureLayers() {
+      if (!_trafficAssetsVisible || !_trafficAssetCategories.furniture) return [];
+      if (map.getZoom() < _TA_MINZOOM) return [];
+      _taEnsureFurnMeshes();
+      const layers = [];
+      for (const type of Object.keys(_taFurniture)) {
+        const insts = _taFurniture[type];
+        const groups = _taFurnMeshes[type];
+        if (!insts || !insts.length || !groups) continue;
+        groups.forEach((grp, gi) => {
+          layers.push(new SimpleMeshLayer({
+            id:             `ta-furn-${type}-${gi}`,
+            data:           insts,
+            mesh:           grp.mesh,
+            getPosition:    d => d.position,
+            getOrientation: d => [0, d.yaw, 0],
+            getColor:       grp.color,
+            material:       grp.material,
+            sizeScale:      1,
+            pickable:       false,
+          }));
+        });
+      }
+      return layers;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  VEGETATIE — bomen (Point/tree_row) uit het VEGETATION-parquet, gerenderd
+    //  als procedurele SimpleMeshLayer-bomen. Niet-essentieel: lichte gating
+    //  (zoom), gedeelde mesh, gecapt aantal.
+    // ═══════════════════════════════════════════════════════════════════════
+    const _VEG_MINZOOM   = _TA_MINZOOM;  // gelijk aan verkeersborden: pas tonen bij ver inzoomen
+    const _VEG_REF_H     = 6;       // referentiehoogte van de basis-boommesh (m)
+    const _VEG_DEF_H     = 6;       // aangenomen hoogte als OSM 'height' ontbreekt
+    const _VEG_MIN_H     = 3;       // ondergrens hoogte (m)
+    const _VEG_MAX_H     = 22;      // bovengrens hoogte (m)
+    const _VEG_ROW_STEP  = 8;       // sample-afstand langs tree_row (m)
+    const _VEG_MAX_TREES = 4000;    // harde cap op getekende boom-instanties
+
+    let _vegTreeFeatures = [];      // Point/LineString-features → boom-instanties
+    let _vegPolyFeatures = [];      // Polygon/MultiPolygon-features → struik-/bosvlakken
+    let _vegTrees        = null;    // afgeleide boom-instanties [{position, yaw, scale, needle}]
+    let _vegBushes       = null;    // afgeleide struik-instanties [{position, yaw, sxy, sz, color}]
+    let _vegAreaTrees    = null;    // bomen verspreid over bos-vlakken (forest/wood)
+    let _lastVegBbox     = null;
+    let _vegPollJobId    = null;    // jobID van een lopende vegetatie-generatie (server haalt via Overpass op), of null
+    let _vegPollAreaId   = null;    // AREA_ID waarvoor die job gestart is
+    let _vegLoading      = 0;       // aantal lopende items-requests/generatiejobs
+    let _vegLoaded       = false;   // er is minstens één keer vegetatiedata binnengekomen
+    let _vegLoadFailed   = false;   // laatste generatiejob mislukt of time-out
+
+    // Struikvlakken (scrub) worden gevuld met verspreide lage struik-meshes.
+    // Bosvlakken (forest/wood) krijgen verspreide volwaardige bomen (zoals OSM).
+    // gras wordt niet getekend.
+    const _VEG_MAX_BUSHES   = 6000;                 // harde cap struiken
+    const _VEG_BUSH_SPACING = { scrub: 6.0 };       // m tussen struiken
+    const _VEG_BUSH_HEIGHT  = { scrub: 0.7 };       // volle struikhoogte (m)
+    const _VEG_BUSH_COLOR   = { scrub: [104, 142, 74, 255] };  // lichter struikgroen
+    // Bos: onderlinge boomafstand (m), hoogtebereik (m) en cap.
+    const _VEG_AREA_TREE_SPACING = { forest: 7.0, wood: 8.0 };
+    const _VEG_AREA_TREE_H       = { forest: [5, 10], wood: [4, 8] };  // [min,max] m
+    const _VEG_MAX_AREA_TREES    = 3000;
+
+    // ── Procedurele mesh-onderdelen (Z = omhoog, basis op z=0) ──────────────
+    function _vegCylZ(radius, h, z0, seg = 8) {
+      const pos = [], nor = [], uv = [], idx = [];
+      const step = (2 * Math.PI) / seg;
+      for (let i = 0; i < seg; i++) {
+        const a0 = i * step, a1 = ((i + 1) % seg) * step;
+        const x0 = Math.cos(a0) * radius, y0 = Math.sin(a0) * radius;
+        const x1 = Math.cos(a1) * radius, y1 = Math.sin(a1) * radius;
+        const b = pos.length / 3;
+        pos.push(x0, y0, z0,  x0, y0, z0 + h,  x1, y1, z0 + h,  x1, y1, z0);
+        nor.push(x0, y0, 0,  x0, y0, 0,  x1, y1, 0,  x1, y1, 0);
+        uv.push(0, 0, 0, 1, 1, 1, 1, 0);
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      }
+      const vc = pos.length / 3;
+      return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+               uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
+    }
+    function _vegConeZ(radius, h, z0, seg = 10) {
+      const pos = [], nor = [], uv = [], idx = [];
+      const step = (2 * Math.PI) / seg;
+      const apex = z0 + h;
+      for (let i = 0; i < seg; i++) {
+        const a0 = i * step, a1 = ((i + 1) % seg) * step;
+        const x0 = Math.cos(a0) * radius, y0 = Math.sin(a0) * radius;
+        const x1 = Math.cos(a1) * radius, y1 = Math.sin(a1) * radius;
+        const b = pos.length / 3;
+        pos.push(x0, y0, z0,  x1, y1, z0,  0, 0, apex);
+        nor.push(x0, y0, radius / h,  x1, y1, radius / h,  0, 0, 1);
+        uv.push(0, 0, 1, 0, 0.5, 1);
+        idx.push(b, b + 1, b + 2);
+      }
+      const vc = pos.length / 3;
+      return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+               uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
+    }
+    function _vegSphereZ(radius, cz, seg = 8) {
+      const pos = [], nor = [], uv = [], idx = [];
+      const rings = Math.max(4, seg >> 1);
+      for (let r = 0; r <= rings; r++) {
+        const phi = Math.PI * (r / rings - 0.5);   // -90..90
+        const zr = Math.sin(phi), rr = Math.cos(phi);
+        for (let s = 0; s <= seg; s++) {
+          const th = 2 * Math.PI * (s / seg);
+          const x = Math.cos(th) * rr, y = Math.sin(th) * rr;
+          pos.push(x * radius, y * radius, cz + zr * radius);
+          nor.push(x, y, zr);
+          uv.push(s / seg, r / rings);
+        }
+      }
+      const cols = seg + 1;
+      for (let r = 0; r < rings; r++) {
+        for (let s = 0; s < seg; s++) {
+          const a = r * cols + s, b = a + 1, c = a + cols, d = c + 1;
+          idx.push(a, c, b, b, c, d);
+        }
+      }
+      const vc = pos.length / 3;
+      return { pos: new Float32Array(pos), nor: new Float32Array(nor),
+               uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
+    }
+
+    // Gedeelde meshes (lazy, één keer gebouwd op referentiehoogte _VEG_REF_H).
+    let _vegTrunkMesh = null, _vegBroadMesh = null, _vegNeedleMesh = null, _vegBushMesh = null;
+    function _vegEnsureMeshes() {
+      if (_vegTrunkMesh) return;
+      const trunkH = _VEG_REF_H * 0.4;
+      _vegTrunkMesh  = mergeMeshes([_vegCylZ(0.16, trunkH, 0)]);
+      // Loofboom: bolvormige kroon bovenop de stam.
+      _vegBroadMesh  = mergeMeshes([_vegSphereZ(1.7, trunkH + 1.5)]);
+      // Naaldboom: kegelvormige kroon.
+      _vegNeedleMesh = mergeMeshes([_vegConeZ(1.5, _VEG_REF_H - trunkH, trunkH)]);
+      // Struik: bol met eenheidshoogte ~2 m (radius 1, centrum op z=1), zodat
+      // een instantie-schaal sz de struik op de gewenste hoogte zet.
+      _vegBushMesh   = mergeMeshes([_vegSphereZ(1.0, 1.0, 7)]);
+    }
+
+    // Deterministische pseudo-random uit een string (osmId) → [0,1).
+    function _vegHash(s) {
+      let h = 2166136261;
+      s = String(s || '');
+      for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return ((h >>> 0) % 100000) / 100000;
+    }
+
+    function _vegClampH(h) {
+      const v = Number(h);
+      if (!isFinite(v) || v <= 0) return _VEG_DEF_H;
+      return Math.min(_VEG_MAX_H, Math.max(_VEG_MIN_H, v));
+    }
+
+    // Geboortetijd per boom/struik (sleutel = seed/positie) voor de opkomst-
+    // animatie (_growFactor). Blijft bewaard bij herbouw na een nieuwe bbox-
+    // pagina, zodat al zichtbare bomen niet opnieuw groeien. Kleine vaste
+    // spreiding per boom, zodat ze niet allemaal tegelijk omhoogschieten.
+    const _vegBorn = new Map();
+    function _vegBornAt(key) {
+      let t = _vegBorn.get(key);
+      if (t === undefined) {
+        if (_vegBorn.size > 200000) _vegBorn.clear();
+        t = performance.now() + _vegHash(`g:${key}`) * 500;
+        _vegBorn.set(key, t);
+        _growKick(t);
+      }
+      return t;
+    }
+
+    // Bouw de boom-instanties uit punt-/lijnfeatures (gecapt op _VEG_MAX_TREES).
+    function _vegBuildTrees() {
+      const out = [];
+       const push = (lng, lat, props, seed) => {
+        if (out.length >= _VEG_MAX_TREES) return;
+        // Sla niet-eindige coördinaten over: BGT/OSM-punten kunnen een Z-waarde
+        // of ongeldige waarde bevatten die anders een NaN-instantie (→
+        // degenererende mesh-driehoek die de kaart zwart overtekent) oplevert.
+        if (!isFinite(lng) || !isFinite(lat)) return;
+        const h = _vegClampH(props.height);
+        const needle = props.leafType === 'needleleaved';
+        const r = _vegHash(seed);
+        const scale = (h / _VEG_REF_H) * (0.85 + r * 0.3);   // hoogte + jitter
+        if (!isFinite(scale)) return;
+        out.push({
+          position: [lng, lat, 0],
+          yaw:      r * 360,
+          scale,
+          needle,
+          born:     _vegBornAt(seed),
+        });
+      };
+      for (const f of _vegTreeFeatures) {
+        const g = f.geometry || {}, p = f.properties || {};
+        if (g.type === 'Point') {
+          const c = g.coordinates || [];
+          if (c.length >= 2) push(c[0], c[1], p, p.osmId || `${c[0]},${c[1]}`);
+        } else if (g.type === 'LineString') {
+          // Sample bomen om de ~_VEG_ROW_STEP meter langs de rij.
+          const cs = g.coordinates || [];
+          const mLng = 111320 * Math.cos((cs[0]?.[1] || 0) * Math.PI / 180) || 1, mLat = 110540;
+          let carry = 0;
+          for (let i = 0; i < cs.length - 1; i++) {
+            const a = cs[i], b = cs[i + 1];
+            const dx = (b[0] - a[0]) * mLng, dy = (b[1] - a[1]) * mLat;
+            const segLen = Math.hypot(dx, dy);
+            if (segLen === 0) continue;
+            let d = carry;
+            while (d <= segLen) {
+              const t = d / segLen;
+              push(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, p,
+                   `${p.osmId || 'row'}:${i}:${Math.round(d)}`);
+              d += _VEG_ROW_STEP;
+            }
+            carry = d - segLen;
+          }
+        }
+        if (out.length >= _VEG_MAX_TREES) break;
+      }
+      return out;
+    }
+
+    // Ray-casting point-in-ring test (ring = [[lng,lat],...]).
+    function _vegPointInRing(lng, lat, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+        if (((yi > lat) !== (yj > lat)) &&
+            (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+      return inside;
+    }
+    // Point in a single Polygon (rings[0] = buiten, rest = gaten).
+    function _vegPointInPolygon(lng, lat, rings) {
+      if (!rings.length || !_vegPointInRing(lng, lat, rings[0])) return false;
+      for (let k = 1; k < rings.length; k++)
+        if (_vegPointInRing(lng, lat, rings[k])) return false;   // in een gat
+      return true;
+    }
+
+    // Verspreid een deterministisch, gejitterd raster van punten binnen de
+    // polygon-vlakken van een feature.  Roept cb(jx, jy, r1, r2) voor elk punt
+    // binnen het vlak; stopt zodra stop() waar is.
+    function _vegScatterPolygon(f, spacing, stop, cb) {
+      const g = f.geometry || {};
+      // Polygon → [rings]; MultiPolygon → [[rings], ...].
+      const polys = g.type === 'Polygon' ? [g.coordinates]
+                  : g.type === 'MultiPolygon' ? g.coordinates : [];
+      for (const rings of polys) {
+        const ring = rings[0];
+        if (!ring || ring.length < 4) continue;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const c of ring) {
+          // Alleen eindige lng/lat meenemen; BGT-punten kunnen een Z-waarde of
+          // ongeldige coördinaten bevatten die anders NaN-instanties opleveren
+          // (→ degenererende mesh-driehoek die de kaart zwart kan overtekenen).
+          if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
+          if (c[0] < minX) minX = c[0]; if (c[0] > maxX) maxX = c[0];
+          if (c[1] < minY) minY = c[1]; if (c[1] > maxY) maxY = c[1];
+        }
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) continue;
+        const midLat = (minY + maxY) / 2;
+        const dLng = spacing / (111320 * Math.cos(midLat * Math.PI / 180) || 1);
+        const dLat = spacing / 110540;
+        if (!(dLng > 0) || !(dLat > 0)) continue;
+        for (let y = minY; y <= maxY; y += dLat) {
+          for (let x = minX; x <= maxX; x += dLng) {
+            if (stop()) return;
+            const r1 = _vegHash(`${x.toFixed(6)}:${y.toFixed(6)}`);
+            const r2 = _vegHash(`${y.toFixed(6)}:${x.toFixed(6)}`);
+            const jx = x + (r1 - 0.5) * dLng * 0.8;   // jitter binnen cel
+            const jy = y + (r2 - 0.5) * dLat * 0.8;
+            if (!isFinite(jx) || !isFinite(jy)) continue;
+            if (!_vegPointInPolygon(jx, jy, rings)) continue;
+            cb(jx, jy, r1, r2);
+          }
+          if (stop()) return;
+        }
+      }
+    }
+
+    // Struikvlakken (scrub) → verspreide lage struik-instanties (cap _VEG_MAX_BUSHES).
+    function _vegBuildBushes() {
+      const out = [];
+      const stop = () => out.length >= _VEG_MAX_BUSHES;
+      for (const f of _vegPolyFeatures) {
+        if (stop()) break;
+        const vt = (f.properties || {}).vegType;
+        const spacing = _VEG_BUSH_SPACING[vt];
+        if (!spacing) continue;                       // niet-scrub → geen struiken
+        const h     = _VEG_BUSH_HEIGHT[vt] || 1.0;
+        const color = _VEG_BUSH_COLOR[vt] || [80, 120, 60, 255];
+         _vegScatterPolygon(f, spacing, stop, (jx, jy, r1, r2) => {
+          const sz  = (h / 2) * (0.8 + r1 * 0.4);   // hoogtejitter
+          const sxy = sz * (1.1 + r2 * 0.4);        // iets breder dan hoog
+          if (!isFinite(sz) || !isFinite(sxy)) return;
+          out.push({ position: [jx, jy, 0], yaw: r1 * 360, sxy, sz, color,
+                     born: _vegBornAt(`b:${jx.toFixed(6)},${jy.toFixed(6)}`) });
+        });
+      }
+      return out;
+    }
+
+    // Bosvlakken (forest/wood) → verspreide volwaardige bomen, vergelijkbaar met
+    // de OSM-bomen (zelfde mesh/instantie-vorm), hoogte uit _VEG_AREA_TREE_H.
+    function _vegBuildAreaTrees() {
+      const out = [];
+      const stop = () => out.length >= _VEG_MAX_AREA_TREES;
+      for (const f of _vegPolyFeatures) {
+        if (stop()) break;
+        const p = f.properties || {}, vt = p.vegType;
+        const spacing = _VEG_AREA_TREE_SPACING[vt];
+        if (!spacing) continue;                       // niet-bos → geen bomen
+        const range  = _VEG_AREA_TREE_H[vt] || [6, 12];
+        const hMin = range[0], hSpan = range[1] - range[0];
+        const needle = p.leafType === 'needleleaved';
+         _vegScatterPolygon(f, spacing, stop, (jx, jy, r1, r2) => {
+          const h = hMin + r1 * hSpan;
+          const scale = (h / _VEG_REF_H) * (0.9 + r2 * 0.2);
+          if (!isFinite(scale)) return;
+          out.push({ position: [jx, jy, 0], yaw: r2 * 360, scale, needle,
+                     born: _vegBornAt(`a:${jx.toFixed(6)},${jy.toFixed(6)}`) });
+        });
+      }
+      return out;
+    }
+
+    function makeVegetationTreeLayers() {
+      if (!_vegetationVisible) return [];
+      if (map.getZoom() < _VEG_MINZOOM) return [];
+      const layers = [];
+      const now = performance.now();
+      _vegEnsureMeshes();
+      // Struikvlakken (scrub) als verspreide lage struik-meshes.
+      if (_vegBushes === null) _vegBushes = _vegBuildBushes();
+      if (_vegBushes.length) {
+        layers.push(new SimpleMeshLayer({
+          id:             'veg-bushes',
+          data:           _vegBushes,
+          mesh:           _vegBushMesh,
+          getPosition:    d => d.position,
+          getOrientation: d => [0, d.yaw, 0],
+          getScale:       d => { const g = _growFactor(d.born, now); return [d.sxy * g, d.sxy * g, d.sz * g]; },
+          getColor:       d => d.color,
+          updateTriggers: { getScale: _growTick },
+          material:       { ambient: 0.65, diffuse: 0.8, shininess: 4, specularColor: [8, 8, 8] },
+          pickable:       false,
+        }));
+      }
+      // OSM-bomen + verspreide bos-bomen (forest/wood) samen als volwaardige bomen.
+      if (_vegTrees === null) _vegTrees = _vegBuildTrees();
+      if (_vegAreaTrees === null) _vegAreaTrees = _vegBuildAreaTrees();
+      const allTrees = _vegAreaTrees.length ? _vegTrees.concat(_vegAreaTrees) : _vegTrees;
+      if (!allTrees.length) return layers;
+      const broad  = allTrees.filter(t => !t.needle);
+      const needle = allTrees.filter(t => t.needle);
+      const shared = (id, data) => ({
+        id, data,
+        getPosition:    d => d.position,
+        getOrientation: d => [0, d.yaw, 0],
+        getScale:       d => { const s = d.scale * _growFactor(d.born, now); return [s, s, s]; },
+        updateTriggers: { getScale: _growTick },
+        sizeScale:      1,
+        pickable:       false,
+      });
+      // Stammen (bruin) voor alle bomen.
+      layers.push(new SimpleMeshLayer({
+        ...shared('veg-trunks', allTrees),
+        mesh:     _vegTrunkMesh,
+        getColor: [96, 70, 44, 255],
+        material: { ambient: 0.6, diffuse: 0.7, shininess: 10, specularColor: [20, 20, 20] },
+      }));
+      if (broad.length) layers.push(new SimpleMeshLayer({
+        ...shared('veg-canopy-broad', broad),
+        mesh:     _vegBroadMesh,
+        getColor: [64, 118, 52, 255],
+        material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
+      }));
+      if (needle.length) layers.push(new SimpleMeshLayer({
+        ...shared('veg-canopy-needle', needle),
+        mesh:     _vegNeedleMesh,
+        getColor: [44, 92, 58, 255],
+        material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
+      }));
+      return layers;
+    }
+
+    // Laad-indicatoren (Drempels/Bomen e.a.) blijven minstens dit lang zichtbaar
+    // nadat ze zijn aangezet: een (deels) gecachte of 404-respons komt soms al
+    // binnen enkele milliseconden terug, dan knippert de spinner te snel om op
+    // te merken. Zelfde aanpak als SIM_BUSY_OVERLAY_MIN_MS verderop in dit bestand.
+    const ASSET_SPINNER_MIN_MS = 350;
+    function _makeMinDurationSpinner(setVisible) {
+      let shownAt = 0;
+      let hideTimer = null;
+      return function (show) {
+        if (show) {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          shownAt = performance.now();
+          setVisible(true);
+        } else {
+          const remaining = ASSET_SPINNER_MIN_MS - (performance.now() - shownAt);
+          if (remaining > 0) {
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => { setVisible(false); hideTimer = null; }, remaining);
+          } else {
+            setVisible(false);
+          }
+        }
+      };
+    }
+
+    // Welke assetTypes horen bij welke checkbox in het '3D weergave'-blok. Dient
+    // zowel voor het totaal tussen haakjes (telverzoek per categorie) als voor de
+    // bbox-fetch, die alleen deze types opvraagt (dus geen parkingArea).
+    const _TA_CATEGORY_TYPES = {
+      signs:     ['trafficSign', 'trafficSignal', 'pedestrianCrossing', 'stopSign', 'giveWay', 'busStop'],
+      paths:     ['footPath', 'cyclePath'],
+      height:    ['viaduct', 'bridge', 'tunnel', 'culvert', 'underpass', 'screen', 'retainingWall'],
+      furniture: ['mailbox', 'busShelter', 'mast', 'streetLight', 'bikeGate', 'infoBoard', 'trashBin'],
+      bumps:     ['speedBump'],
+    };
+    // Types die geen eigen checkbox hebben maar wel gerenderd/gebruikt worden
+    // (rijstrookpijlen, vluchtheuvels voor de snelheids-/kruispuntlogica).
+    const _TA_EXTRA_TYPES = ['laneMarkArrow', 'refugeAreaCrossing', 'refugeAreaTraffic'];
+    const _TA_ALL_3D_TYPES = [...Object.values(_TA_CATEGORY_TYPES).flat(), ..._TA_EXTRA_TYPES];
+
+    /** Fout van een OGC-items-request met de HTTP-status (en eventueel de
+     *  geparste body, b.v. de jobID bij een 201), zodat aanroepers 404/201
+     *  zelf kunnen afhandelen. */
+    class OgcHttpError extends Error {
+      constructor(status, body) {
+        super(`OGC-request mislukt (HTTP ${status})`);
+        this.status = status;
+        this.body = body;
+      }
+    }
+
+    async function _ogcGetJson(url, signal) {
+      const r = await fetch(url, { signal });
+      if (r.status !== 200) {
+        const body = await r.json().catch(() => null);
+        throw new OgcHttpError(r.status, body);
+      }
+      return r.json();
+    }
+
+    /**
+     * Haal alle features van een OGC API Features items-URL op als NDJSON-stream
+     * (?format=ndjson: headerregel met numberMatched + één feature per regel), in
+     * één verzoek. Sneller dan limit/offset-paging, waarbij de server per pagina
+     * opnieuw de hele set filtert. Tijdens het binnenkomen wordt periodiek
+     * `onPage(alleFeaturesTotNuToe, numberMatched)` aangeroepen (en één keer aan
+     * het eind), zodat de aanroeper progressief kan renderen. Geeft alle features
+     * terug. Gooit OgcHttpError bij een niet-200 status (ook 201 = generatiejob).
+     */
+    async function _fetchOgcStream(url, { onPage, signal } = {}) {
+      const sep = url.includes('?') ? '&' : '?';
+      const r = await fetch(`${url}${sep}format=ndjson`, { signal, headers: { Accept: 'application/x-ndjson' } });
+      if (r.status !== 200) {
+        const body = await r.json().catch(() => null);
+        throw new OgcHttpError(r.status, body);
+      }
+      const ct = (r.headers.get('Content-Type') || '').toLowerCase();
+      if (!r.body || !ct.includes('ndjson')) {
+        // Geen stream (oudere server) → gewone FeatureCollection.
+        const page = await r.json();
+        const all = Array.isArray(page.features) ? page.features : [];
+        if (onPage) onPage(all, page.numberMatched);
+        return all;
+      }
+      const reader  = r.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      const all = [];
+      let matched, buf = '', reported = 0, lastReport = performance.now();
+      const handleLine = (line) => {
+        const s = line.trim();
+        if (!s) return;
+        let obj;
+        try { obj = JSON.parse(s); } catch { return; }
+        if (obj && obj.type === 'Header') { matched = obj.numberMatched; return; }
+        all.push(obj);
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let start = 0, nl;
+        while ((nl = buf.indexOf('\n', start)) >= 0) { handleLine(buf.slice(start, nl)); start = nl + 1; }
+        buf = buf.slice(start);
+        // Tussentijds renderen: niet per chunk (de aanroeper verwerkt telkens de
+        // hele lijst), maar elke 3000 nieuwe features of 250 ms.
+        if (onPage && all.length > reported &&
+            (all.length - reported >= 3000 || performance.now() - lastReport >= 250)) {
+          reported = all.length; lastReport = performance.now();
+          onPage(all, matched);
+        }
+      }
+      buf += decoder.decode();
+      if (buf.length) handleLine(buf);
+      if (onPage) onPage(all, matched);
+      return all;
+    }
+
+    /** Totaal aantal features voor een items-URL (`limit=0` → numberMatched). */
+    async function _fetchOgcCount(url, { signal } = {}) {
+      const sep = url.includes('?') ? '&' : '?';
+      const page = await _ogcGetJson(`${url}${sep}limit=0`, signal);
+      return typeof page.numberMatched === 'number' ? page.numberMatched : 0;
+    }
+
+    // Laad-indicator naast de 'Bomen'-checkbox terwijl vegetatiedata wordt opgehaald.
+    const _setVegetationSpinner = _makeMinDurationSpinner(show => {
+      const el = document.getElementById('lmpVegetationSpinner');
+      if (el) el.classList.toggle('visible', show);
+    });
+
+    // Totaal aantal bomen (vegType=tree) in het HELE gebied, via een OGC-
+    // telverzoek (limit=0); los van wat er in beeld geladen is.
+    let _vegTotal        = undefined;
+    let _vegTotalArea    = null;
+    let _vegTotalPending = false;
+
+    /** Toont het totaal aantal bomen in het gebied tussen haakjes achter de
+     *  'Bomen'-checkbox; leeg zolang de checkbox uit staat of het totaal nog
+     *  niet bekend is (anders suggereert "(0)" tijdens het ophalen "geen
+     *  bomen"). Onder de minimale zoom gedimd, met een zoom-hint. */
+    function _updateVegetationCount() {
+      const el = document.getElementById('lmpVegetationCount');
+      if (!el) return;
+      const total = _vegTotalArea === AREA_ID ? _vegTotal : undefined;
+      el.textContent = _vegetationVisible && typeof total === 'number' ? ` (${total})` : '';
+      const zoomHint = _vegetationVisible && total > 0 && map.getZoom() < _VEG_MINZOOM;
+      el.classList.toggle('lmp-asset-count-dim', zoomHint);
+      el.title = _vegetationVisible && _vegLoadFailed ? 'Ophalen van bomen mislukt'
+               : zoomHint ? 'Zoom verder in om te tonen' : '';
+    }
+
+    /** Laadstatus + spinner; de spinner is alleen zichtbaar als de checkbox aan staat. */
+    function _setVegLoading(v) {
+      _vegLoading = Math.max(0, _vegLoading + (v ? 1 : -1));
+      _setVegetationSpinner(_vegLoading > 0 && _vegetationVisible);
+    }
+
+    // Wacht tot een server-side vegetatie-generatiejob (gestart na een 201 op
+    // /collections/vegetation/items) klaar is, door /jobs/<id> te pollen. Zelfde
+    // vorm als pollWegenscanJob: vaste wachttijd + begrensd aantal pogingen i.p.v.
+    // een ongelimiteerde lus. Stopt vroegtijdig (zonder de job zelf te annuleren —
+    // die loopt op de server gewoon door) zodra de gebruiker van gebied wisselt.
+    // Uitzetten van de 'Bomen'-checkbox stopt de poll níet: anders valt een
+    // snelle her-aanvink weg op de _vegPollJobId-guard en laadt er niets.
+    async function _waitForVegetationJob(jobId, areaId) {
+      _vegPollJobId = jobId;
+      _vegPollAreaId = areaId;
+      try {
+        return await _pollJob(jobId, areaId);
+      } finally {
+        _vegPollJobId = null;
+        _vegPollAreaId = null;
+      }
+    }
+
+    /** Poll /jobs/<id> tot de server-side generatiejob klaar is. true bij
+     *  succes; false bij mislukken, time-out (≈10 min) of gebiedswissel. */
+    async function _pollJob(jobId, areaId) {
+      for (let i = 0; i < 200; i++) {               // 200 × 3s ≈ 10 minuten timeout
+        if (AREA_ID !== areaId) return false;
+        await new Promise(res => setTimeout(res, 3000));
+        if (AREA_ID !== areaId) return false;
+        try {
+          const jr = await fetch(`/jobs/${jobId}`);
+          if (!jr.ok) continue;
+          const job = await jr.json();
+          if (job.status === 'successful') return true;
+          if (job.status === 'failed') return false;
+        } catch (_) { /* netwerkhapering: gewoon blijven pollen */ }
+      }
+      return false;   // time-out
+    }
+
+    // Eén gedeelde wachtlus per verkeersobjecten-ophaaljob: telverzoeken van
+    // meerdere categorieën kunnen dezelfde jobID krijgen (één job per gebied).
+    const _taJobWaits = new Map();   // jobID -> Promise<boolean>
+    function _waitForTaJobShared(jobId, areaId) {
+      if (!_taJobWaits.has(jobId)) {
+        _taJobWaits.set(jobId, _pollJob(jobId, areaId)
+          .finally(() => _taJobWaits.delete(jobId)));
+      }
+      return _taJobWaits.get(jobId);
+    }
+
+    // Eén gedeelde wachtlus per generatiejob: het telverzoek en de bbox-load
+    // kunnen allebei een 201 met dezelfde jobID krijgen (de server hergebruikt
+    // een lopende job per gebied).
+    const _vegJobWaits = new Map();   // jobID -> Promise<boolean>
+    function _waitForVegetationJobShared(jobId, areaId) {
+      if (!_vegJobWaits.has(jobId)) {
+        _vegJobWaits.set(jobId, _waitForVegetationJob(jobId, areaId)
+          .finally(() => _vegJobWaits.delete(jobId)));
+      }
+      return _vegJobWaits.get(jobId);
+    }
+
+    /** Vraag (eenmalig per gebied) het totaal aantal bomen op. Bestaat het
+     *  VEGETATION-bestand nog niet (201 + jobID), dan blijft de spinner draaien
+     *  tot de generatiejob klaar is en wordt daarna opnieuw geteld. */
+    async function _ensureVegTotal() {
+      if (_vegTotalArea !== AREA_ID) {
+        _vegTotal = undefined;
+        _vegTotalPending = false;
+        _vegTotalArea = AREA_ID;
+      }
+      if (typeof _vegTotal === 'number' || _vegTotalPending) return;
+      const area = AREA_ID;
+      _vegTotalPending = true;
+      _setVegLoading(true);
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const n = await _fetchOgcCount(`/collections/vegetation/items?areaId=${area}&vegType=tree`);
+            if (area === _vegTotalArea) _vegTotal = n;
+            return;
+          } catch (e) {
+            if (!(e instanceof OgcHttpError) || e.status !== 201 || !e.body?.jobID) {
+              if (area === AREA_ID) _vegLoadFailed = true;
+              return;
+            }
+            const ready = await _waitForVegetationJobShared(e.body.jobID, area);
+            if (!ready) { if (area === AREA_ID) _vegLoadFailed = true; return; }
+            loadVegetationInView();   // bbox-load wachtte (via _vegPollJobId) op deze job
+          }
+        }
+      } finally {
+        if (area === _vegTotalArea) _vegTotalPending = false;
+        _setVegLoading(false);
+        _updateVegetationCount();
+      }
+    }
+
+    /** Verdeel vegetatie-features over bomen (punten/rijen) en vlakken en hertekenen.
+     *  Idempotent, zodat dit na elke binnengekomen pagina kan (progressief renderen). */
+    function _applyVegetationFeatures(features) {
+      const trees = [];
+      const polys = [];
+      for (const f of features) {
+        const t = (f.geometry || {}).type;
+        if (t === 'Point' || t === 'LineString' || t === 'MultiLineString') trees.push(f);
+        else if (t === 'Polygon' || t === 'MultiPolygon') polys.push(f);
+      }
+      _vegTreeFeatures = trees;
+      _vegPolyFeatures = polys;
+      _vegTrees = null;   // opnieuw afleiden bij volgende render
+      _vegBushes = null;
+      _vegAreaTrees = null;
+      _vegLoaded = true;
+      updateOverlay(true);
+    }
+
+    let _vegLoadAbort   = null;   // AbortController van de lopende bbox-load
+    let _vegLoadingBbox = null;
+    async function loadVegetationInView() {
+      _trace('vegetatie: loadVegetationInView');
+      if (!_mapReady || !_vegetationVisible) return;
+      if (_vegPollJobId) return;   // generatie loopt al; wacht tot die klaar is
+      if (map.getZoom() < _VEG_MINZOOM) return;
+      const b  = map.getBounds();
+      const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      if (_bboxContains(_lastVegBbox, vw)) return;
+      if (_vegLoadAbort && _bboxContains(_vegLoadingBbox, vw)) return;   // wordt al geladen
+      const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
+      const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
+      const requestedForArea = AREA_ID;
+
+      if (_vegLoadAbort) _vegLoadAbort.abort();
+      const ctrl = new AbortController();
+      _vegLoadAbort = ctrl;
+      _vegLoadingBbox = bbox;
+      _setVegLoading(true);
+      _vegLoadFailed = false;
+      _updateVegetationCount();
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await _fetchOgcStream(`/collections/vegetation/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`, {
+              signal: ctrl.signal,
+              onPage: feats => { if (_vegLoadAbort === ctrl) _applyVegetationFeatures(feats); },
+            });
+            _lastVegBbox = bbox;
+            return;
+          } catch (e) {
+            if (e.name === 'AbortError') return;
+            if (!(e instanceof OgcHttpError) || e.status !== 201 || !e.body?.jobID) {
+              _vegLoadFailed = true;
+              return;
+            }
+            const ready = await _waitForVegetationJobShared(e.body.jobID, requestedForArea);
+            if (!ready) {         // mislukt, time-out, of ondertussen van gebied gewisseld
+              if (AREA_ID === requestedForArea) _vegLoadFailed = true;
+              return;
+            }
+            // bestand zou er nu moeten staan → nog eenmaal proberen
+          }
+        }
+      } finally {
+        _setVegLoading(false);
+        if (_vegLoadAbort === ctrl) { _vegLoadAbort = null; _vegLoadingBbox = null; }
+        _updateVegetationCount();
+      }
+    }
+
+    // Klik-popup voor verkeersobjecten (deck.gl onClick is onbetrouwbaar in
+    // interleaved-modus → onHover houdt _taHover bij, map-klik toont de popup).
+    map.on('click', () => {
+      if (!_trafficAssetsVisible || !_taHover) {
+        // Klik buiten een verkeersobject → debug-lijntje weer opruimen.
+        if (_taDebugSignLink) { _taDebugSignLink = null; updateOverlay(true); }
+        // Klik op een wegvak (geen asset eronder) → toon/verberg de
+        // gekoppelde verkeersobjecten voor dat wegvak (toggle per linkId).
+        if (_networkHoverLink) {
+          const linkId = _networkHoverLink.linkId;
+          if (_taDebugLinkAssets && String(_taDebugLinkAssets.linkId) === String(linkId)) {
+            _taDebugLinkAssets = null;   // zelfde wegvak nogmaals geklikt → verbergen
+          } else {
+            const linkCoords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+            _taDebugLinkAssets = {
+              linkId,
+              items: _taAssetsForLink(linkId),
+              dir:   _taBuildDirectionArrow(linkCoords),
+            };
+          }
+          updateOverlay(true);
+        } else if (_taDebugLinkAssets) {
+          _taDebugLinkAssets = null;
+          updateOverlay(true);
+        }
+        return;
+      }
+      // Klik op een asset → eventuele wegvak-debug-weergave opruimen.
+      if (_taDebugLinkAssets) { _taDebugLinkAssets = null; }
+      const p = _taHover.props || {};
+      let html;
+      const at = p.assetType;
+      // Debug-lijntje alleen tonen bij een klik op een generiek verkeersbord
+      // (de laatste `else`-tak hieronder); bij elk ander object weer wissen.
+      let _nextDebugSignLink = null;
+      if (_taHover.signal) {
+        const road = p.roadName || '';
+        html = '<div style="text-align:center;min-width:90px"><strong>Verkeerslicht</strong>';
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
+        html += '</div>';
+      } else if (at === 'speedBump' || at === 'pedestrianCrossing' || at === 'stopSign' || at === 'giveWay') {
+        const label = { speedBump: 'Verkeersdrempel', pedestrianCrossing: 'Voetgangersoversteek',
+                        stopSign: 'Stopbord (B7)', giveWay: 'Voorrang verlenen (B6)' }[at];
+        const road = p.roadName || p.road_name || '';
+        html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
+        html += '</div>';
+      } else if (at === 'footPath' || at === 'cyclePath') {
+        const label = at === 'footPath' ? 'Voetpad' : 'Fietspad';
+        const surf  = (p.surface || '').replace(/_/g, ' ');
+        const road  = p.roadName || p.road_name || p.name || '';
+        html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
+        if (surf) html += `<br><span style="font-size:0.8em;color:#777">${surf}</span>`;
+        html += '</div>';
+      } else if (at === 'tunnel') {
+        const label = 'Tunnel';
+        const road  = p.roadName || p.road_name || p.name || '';
+        html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
+        html += '</div>';
+      } else {
+        const road   = p.roadName || p.road_name || '';
+        const imgUrl = p.imageUrl || '';
+        html = '<div style="text-align:center;min-width:90px">';
+        if (imgUrl) html += `<img src="${imgUrl}" style="display:block;max-width:130px;max-height:90px;margin:0 auto 6px;border-radius:4px" onerror="this.style.display='none'">`;
+        html += `<strong>${p.rvvCode || ''}</strong>`;
+        if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
+        html += '</div>';
+        // Debug: teken een lijntje van het bord naar het dichtstbijzijnde
+        // punt op het netwerk, zodat zichtbaar is aan welke weg het bord
+        // gekoppeld is (nuttig om linkId/roadSectionId-koppeling te checken).
+        const signLngLat = _taHover.lngLat;
+        const nearest = _taNearestLinkPoint(signLngLat[0], signLngLat[1]);
+        _nextDebugSignLink = nearest
+          ? { signPt: [signLngLat[0], signLngLat[1]], roadPt: nearest.point, linkId: nearest.linkId, distM: nearest.distM }
+          : null;
+      }
+      _taDebugSignLink = _nextDebugSignLink;
+      updateOverlay(true);
+      new maplibregl.Popup({ closeButton: false, offset: 10 })
+        .setLngLat(_taHover.lngLat).setHTML(html).addTo(map);
+    });
+
+    // Bij draaien van de kaart de billboards opnieuw evalueren (voor/achter/paal),
+    // ook als de animatielus gepauzeerd is.
+    let _taRotRaf = null;
+    map.on('rotate', () => {
+      if (!_trafficAssetsVisible || _taRotRaf || typeof overlay === 'undefined') return;
+      _taRotRaf = requestAnimationFrame(() => { _taRotRaf = null; updateOverlay(true); });
+    });
+
+    // Fallback: bestaande NDW/Overpass-borden (volledige area, geen bbox).
+    async function _tryAddTrafficSigns() {
+      if (!_mapReady || !_trafficSignsGeoJson) return;
+      _trafficSignsReady  = true;
+      _taSignFeatures     = _trafficSignsGeoJson.features || [];
+      _taEnsurePlates(_taSignFeatures);   // async: bumpt + hertekent zodra klaar
+      _taRebuildGiveWayMarks();           // haaientanden (B6) opnieuw koppelen aan het netwerk
+      updateOverlay(true);                // toon direct (palen), platen volgen
+      _updateTrafficAssetCounts();        // totaal 'Borden' = alle fallback-borden van het gebied
+    }
+
+    function _loadTrafficSignsFallback() {
+      if (_trafficSignsGeoJson) { _tryAddTrafficSigns(); return; }
+      if (_signsFallbackFetching) return;
+      _signsFallbackFetching = true;
+      _setTaCatLoading('signs', true);   // NDW-dataset kan bij serverstart nog downloaden
+      fetch(`/collections/traffic_signs/items?areaId=${AREA_ID}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data || !Array.isArray(data.features)) return;
+          for (const f of data.features) {
+            if (f.properties?.blackCode) {
+              f.properties.blackCode = f.properties.blackCode.trim().replace(/,/g, '.');
+            }
+          }
+          _trafficSignsGeoJson = data;
+          _tryAddTrafficSigns();
+        })
+        .catch(() => {})
+        .finally(() => {
+          _signsFallbackFetching = false;
+          _setTaCatLoading('signs', false);
+        });
+    }
+
+    const _TRAFFIC_ASSET_MINZOOM = _TA_MINZOOM;
+    // "Snelheid" v0-lagen mogen altijd het netwerk inkleuren zodra de
+    // traffic assets minstens een keer geladen zijn; ze hoeven niet op zoom 16
+    // te wachten. Voor de eerste keer nog wel de zoom-drempel.
+    let _speedAssetsEverLoaded = false;
+    function _speedShouldSkipLoad() {
+      if (_speedAssetsEverLoaded) return !map.getBounds;
+      return map.getZoom() < _TRAFFIC_ASSET_MINZOOM;
+    }
+    function _bboxContains(outer, inner) {
+      return !!outer && !!inner &&
+        outer[0] <= inner[0] && outer[1] <= inner[1] &&
+        outer[2] >= inner[2] && outer[3] >= inner[3];
+    }
+
+    // Cache per assetType-bbox, zodat een globale speedBump-fetch niet
+    // telkens herhaald wordt en niet conflict geeft met de gefilterde loads.
+    let _lastAssetBboxFull = null; // bbox waarvoor we alle assets hebben
+    let _lastAssetBboxSpeedBump = null; // bbox waarvoor we alle speedBumps hebben
+
+    async function _loadSpeedBumpsForArea() {
+      // Haal ALLE speedBumps voor het gebied op zodra de Kruispunten-laag actief
+      // is. Het TRAFFIC-ASSETS bestand bevat doorgaans maximaal enkele duizenden
+      // drempels; dit is een acceptabele eenmalige payload.
+      if (_lastAssetBboxSpeedBump) {
+        console.debug('[TA] speedBump fetch al compleet (full area)');
+        return;
+      }
+      if (_trafficAssetsNoFile) return;
+      let feats;
+      _setTaCatLoading('bumps', true);
+      try {
+        feats = await _fetchOgcStream(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump&fetch=0`);
+      } catch (e) {
+        if (e instanceof OgcHttpError && e.status === 404) _trafficAssetsNoFile = true;
+        else console.debug('[TA] speedBump fetch mislukt', e);
+        return;
+      } finally {
+        _setTaCatLoading('bumps', false);
+      }
+      if (!feats.length) return;
+      _taSpeedBumpFeatures = feats;
+      _lastAssetBboxSpeedBump = [ -180, -90, 180, 90 ]; // markeer als globaal compleet
+      _updateTrafficAssetCounts();
+    }
+
+    // Totaal aantal objecten per categorie in het HELE gebied (niet alleen het
+    // beeld), opgehaald met een OGC-telverzoek (limit=0). Geldt voor
+    // _taTotalsArea; bij een gebiedswissel worden de totalen opnieuw opgevraagd.
+    let _taTotals        = {};   // cat -> aantal
+    let _taTotalsPending = {};   // cat -> true zolang het telverzoek loopt
+    let _taTotalsFailed  = {};   // cat -> true als het ophalen van de bron mislukte
+    let _taTotalsArea    = null;
+
+    // Laad-indicator per categorie: telt lopende requests (telverzoek, bbox-load,
+    // drempel-/bordenfetch). Alleen zichtbaar als die categorie is aangevinkt.
+    const _taCatLoading  = {};
+    const _taCatSpinners = {};
+    for (const cat of Object.keys(_TA_CATEGORY_TYPES)) {
+      _taCatLoading[cat]  = 0;
+      _taCatSpinners[cat] = _makeMinDurationSpinner(show => {
+        document.querySelectorAll(`[data-ta-spinner="${cat}"]`).forEach(el => el.classList.toggle('visible', show));
+      });
+    }
+    function _refreshTaCatSpinner(cat) {
+      _taCatSpinners[cat](_taCatLoading[cat] > 0 && !!_trafficAssetCategories[cat]);
+    }
+    function _setTaCatLoading(cat, on) {
+      _taCatLoading[cat] = Math.max(0, _taCatLoading[cat] + (on ? 1 : -1));
+      _refreshTaCatSpinner(cat);
+    }
+
+    /** Vraag (eenmalig per gebied) het totaal van een categorie op. Ontbreekt
+     *  de bron nog (201 + jobID), dan haalt de server die op; de spinner blijft
+     *  draaien tot de job klaar is, daarna wordt opnieuw geteld en geladen. */
+    async function _ensureTaTotal(cat) {
+      if (_taTotalsArea !== AREA_ID) {
+        _taTotals = {};
+        _taTotalsPending = {};
+        _taTotalsFailed = {};
+        _taTotalsArea = AREA_ID;
+      }
+      if (cat in _taTotals || _taTotalsPending[cat]) return;
+      const area = AREA_ID;
+      _taTotalsPending[cat] = true;
+      delete _taTotalsFailed[cat];
+      _setTaCatLoading(cat, true);
+      try {
+        // Meerdere pogingen: een lopende job van een andere categorie kan
+        // eerst klaar zijn, waarna voor deze categorie nog een job volgt.
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            const n = await _fetchOgcCount(
+              `/collections/traffic_assets/items?areaId=${area}&assetType=${_TA_CATEGORY_TYPES[cat].join(',')}`);
+            if (area === _taTotalsArea) _taTotals[cat] = n;
+            return;
+          } catch (e) {
+            if (e instanceof OgcHttpError && e.status === 201 && e.body?.jobID) {
+              const ready = await _waitForTaJobShared(e.body.jobID, area);
+              if (!ready) {
+                if (area === _taTotalsArea) _taTotalsFailed[cat] = true;
+                return;
+              }
+              _reloadTrafficAssetsInView();   // nieuwe bron → beeld opnieuw laden
+              continue;
+            }
+            if (e instanceof OgcHttpError && e.status === 404) {
+              // Geen TRAFFIC-ASSETS bestand en server kan niet ophalen: borden
+              // komen uit de NDW/Overpass-fallback, de rest is er niet.
+              _trafficAssetsNoFile = true;
+              if (area === _taTotalsArea && cat !== 'signs') _taTotals[cat] = 0;
+              if (cat === 'signs') _loadTrafficSignsFallback();
+            } else {
+              console.debug('[TA] telverzoek mislukt', cat, e);
+            }
+            return;
+          }
+        }
+      } finally {
+        if (area === _taTotalsArea) delete _taTotalsPending[cat];
+        _setTaCatLoading(cat, false);
+        _updateTrafficAssetCounts();
+      }
+    }
+
+    /** Toont het TOTAAL aantal objecten in het gebied tussen haakjes achter
+     *  elke aangevinkte checkbox in het '3D weergave'-blok. Onder de
+     *  minimale zoom wordt (nog) niets getekend: dan staat het totaal er
+     *  gedimd, met een tooltip dat verder inzoomen nodig is. */
+    function _updateTrafficAssetCounts() {
+      const belowZoom = map.getZoom() < _TRAFFIC_ASSET_MINZOOM;
+      document.querySelectorAll('[data-ta-count]').forEach(el => {
+        const cat = el.getAttribute('data-ta-count');
+        let total = _taTotalsArea === AREA_ID ? _taTotals[cat] : undefined;
+        if (cat === 'signs' && _trafficAssetsNoFile && _trafficSignsGeoJson) {
+          total = (_trafficSignsGeoJson.features || []).length;
+        }
+        const on = !!_trafficAssetCategories[cat];
+        el.textContent = on && typeof total === 'number' ? ` (${total})` : '';
+        const zoomHint = on && belowZoom && total > 0;
+        el.classList.toggle('lmp-asset-count-dim', zoomHint);
+        const failed = on && _taTotalsArea === AREA_ID && _taTotalsFailed[cat];
+        el.title = failed ? 'Ophalen van deze objecten mislukt'
+                 : zoomHint ? 'Zoom verder in om te tonen' : '';
+      });
+    }
+
+    /** Verdeel opgehaalde verkeersobjecten per assetType over de data-stores
+     *  van de deck.gl-lagen en hertekenen. Idempotent (alle stores worden
+     *  opnieuw toegewezen), zodat dit na elke binnengekomen pagina met alle
+     *  features tot dan toe aangeroepen kan worden (progressief renderen). */
+    function _applyTrafficAssetFeatures(features) {
+      _speedAssetsEverLoaded = true;
+      try {
+        const byType = {};
+        for (const f of features) {
+          const p = f.properties || {};
+          if (p.blackCode) p.blackCode = p.blackCode.trim().replace(/,/g, '.');
+          const t = p.assetType;
+          if (!t) continue;
+          (byType[t] || (byType[t] = [])).push(f);
+        }
+        // Data-stores voor de deck.gl-lagen bijwerken, zonder speedBump te
+        // overschrijven als die al globaal geladen is voor Kruispunten.
+        _taSignFeatures      = byType.trafficSign   || [];
+        _taSignalFeatures    = byType.trafficSignal || [];
+        console.debug('[TA] trafficSign count:', _taSignFeatures.length,
+          'met bearing:', _taSignFeatures.filter(f => (f.properties||{}).bearing != null).length,
+          'met rvvCode:', _taSignFeatures.filter(f => (f.properties||{}).rvvCode).length);
+        if (!_lastAssetBboxSpeedBump) {
+          _taSpeedBumpFeatures = byType.speedBump || [];
+        }
+        _taMarkFeatures      = [
+          ...(byType.pedestrianCrossing || []),
+          ...(byType.stopSign || []),
+        ];
+        _taApplyMarkAngles(_taMarkFeatures);   // dwars over de weg uitlijnen
+        _taRebuildGiveWayMarks();              // haaientanden (B6) opnieuw koppelen aan het netwerk
+        // CIMLK hoogte-/constructie-objecten. belowGround-viaducten/bruggen worden
+        // als 'underpass' (zwevende overspanning) getekend i.p.v. weggelaten.
+        const _below = f => !!(f.properties || {}).belowGround;
+        const _isPoly = f => { const t = f.geometry?.type; return t === 'Polygon' || t === 'MultiPolygon'; };
+        _taViaductFeatures = (byType.viaduct || []).filter(f => !_below(f));
+        _taBridgeFeatures  = (byType.bridge  || []).filter(f => !_below(f));
+        // Tunnels: lijn-features via de bestaande dekband/dak-render; polygon-tunnels
+        // (BGT) via het verzonken-wegdeel vloervlak + tunneldek.
+        const _tunnels = byType.tunnel || [];
+        _taTunnelFeatures  = _tunnels.filter(f => !_isPoly(f));
+        _taRebuildSunken(_tunnels.filter(_isPoly));
+        _taCulvertFeatures = byType.culvert || [];
+        _taUnderpassFeatures = [
+          ...(byType.underpass || []),
+          ...(byType.viaduct || []).filter(_below),
+          ...(byType.bridge  || []).filter(_below),
+        ];
+        _taRebuildScreenQuads((byType.screen || []).filter(f => !_below(f)));
+        _taRebuildRetWallQuads(byType.retainingWall || []);
+        // Bushalte-billboard + straatmeubilair (procedurele meshes, per-type oriëntatie).
+         _taBusStopFeatures = byType.busStop || [];
+          // Voet-/fietspaden als platte lijn-ribbons.
+          _taFootPathFeatures  = byType.footPath  || [];
+          _taCyclePathFeatures = byType.cyclePath || [];
+          // Pijlen op middellijn (laneMarkArrow) — plaats per lane met laterale offset
+          _taLaneMarkArrowFeatures = _prepareLaneMarkArrows(byType.laneMarkArrow || []);
+           // Vluchtheuvels (verhoogde geometrie)
+           _taRefugeAreaCrossingFeatures = byType.refugeAreaCrossing || [];
+           _taRefugeAreaTrafficFeatures = byType.refugeAreaTraffic || [];
+           // De "Kruispunten"-laag heeft traffic-assets nodig om te bepalen of
+           // een drempel op een kruispunt ligt; initialiseer direct, niet pas
+           // bij eerste zoom-16 fetch.
+           rebuildSpeedLayers();                  // "Snelheid": knooppunt-classificatie + straf-seconden v0
+        _taFurniture = {
+          mailbox:    _taMkInstances(byType.mailbox,    'along'),
+          busShelter: _taMkInstances(byType.busShelter, 'along'),
+          mast:       _taMkInstances(byType.mast,       'none'),
+          streetLight: _taMkInstances(byType.streetLight, 'none'),
+          bikeGate:   _taMkInstances(byType.bikeGate,   'across'),
+          infoBoard:  _taMkInstances(byType.infoBoard,  'along'),
+          trashBin:   _taMkInstances(byType.trashBin || [], 'none'),
+        };
+        // Voorkant-plaaticonen async bijladen (bumpt + hertekent zodra klaar);
+        // ondertussen tonen borden alvast hun paal.
+        _taEnsurePlates(_taSignFeatures);
+        _updateTrafficAssetCounts();
+      } catch (e) {
+        console.error('loadTrafficAssetsInView: fout bij verwerken traffic assets', e);
+      }
+      updateOverlay(true);
+    }
+
+    // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
+    // Gepagineerd via OGC API Features (limit/offset, rel=next); alleen de
+    // assetTypes die de 3D-weergave gebruikt (dus geen parkingArea).
+    let _taLoadAbort = null;    // AbortController van de lopende bbox-load
+    let _taLoadingBbox = null;  // bbox die nu geladen wordt
+    async function loadTrafficAssetsInView() {
+      _trace('verkeersobjecten: loadTrafficAssetsInView');
+      console.debug('[TA] loadTrafficAssetsInView called', { ready: _mapReady, visible: _trafficAssetsVisible, noFile: _trafficAssetsNoFile, zoom: map.getZoom(), minzoom: _TRAFFIC_ASSET_MINZOOM });
+      if (!_mapReady)            { console.debug('[TA] skip: map niet ready'); return; }
+      if (!_trafficAssetsVisible){ console.debug('[TA] skip: _trafficAssetsVisible=false (checkbox/localStorage)'); return; }
+      if (_trafficAssetsNoFile) { console.debug('[TA] skip: _trafficAssetsNoFile=true (eerdere 404) → fallback NDW-borden'); _loadTrafficSignsFallback(); return; }
+      if (map.getZoom() < _TRAFFIC_ASSET_MINZOOM) { console.debug(`[TA] skip: zoom ${map.getZoom().toFixed(2)} < minzoom ${_TRAFFIC_ASSET_MINZOOM}`); return; }
+
+      const b  = map.getBounds();
+      const vw = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      if (_bboxContains(_lastAssetBbox, vw)) { console.debug('[TA] skip: bbox al gedekt door vorige load'); return; }  // al gedekt → geen request
+      if (_taLoadAbort && _bboxContains(_taLoadingBbox, vw)) { console.debug('[TA] skip: bbox wordt al geladen'); return; }
+
+      const dw = (vw[2] - vw[0]) * 0.2, dh = (vw[3] - vw[1]) * 0.2;
+      const bbox = [vw[0] - dw, vw[1] - dh, vw[2] + dw, vw[3] + dh];
+
+      if (_taLoadAbort) _taLoadAbort.abort();   // vorige (nu verouderde) bbox-load afbreken
+      const ctrl = new AbortController();
+      _taLoadAbort = ctrl;
+      _taLoadingBbox = bbox;
+      const cats = Object.keys(_TA_CATEGORY_TYPES);
+      cats.forEach(c => _setTaCatLoading(c, true));
+      try {
+        console.debug('[TA] fetch traffic_assets', bbox);
+        // fetch=0: alleen tonen wat er is; ontbrekende bronnen worden via de
+        // telverzoeken van de aangevinkte categorieën opgehaald (_ensureTaTotal).
+        // Wel alle types, want de Snelheid-/Kruispuntlagen gebruiken ze ook.
+        const url = `/collections/traffic_assets/items?areaId=${AREA_ID}&bbox=${bbox.join(',')}`
+                  + `&assetType=${_TA_ALL_3D_TYPES.join(',')}&fetch=0`;
+        const features = await _fetchOgcStream(url, {
+          signal: ctrl.signal,
+          onPage: feats => { if (_taLoadAbort === ctrl) _applyTrafficAssetFeatures(feats); },
+        });
+        console.log('[TA] features ontvangen:', features.length);
+        _lastAssetBbox = bbox;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+        if (e instanceof OgcHttpError && e.status === 404) {
+          console.debug('[TA] 404 → traffic_assets bestand ontbreekt, fallback NDW-borden');
+          _trafficAssetsNoFile = true;
+          _loadTrafficSignsFallback();
+          return;
+        }
+        console.debug('[TA] fetch mislukt', e);
+      } finally {
+        cats.forEach(c => _setTaCatLoading(c, false));
+        if (_taLoadAbort === ctrl) { _taLoadAbort = null; _taLoadingBbox = null; }
+      }
+    }
+
+    /** Na het ophalen van een nieuwe bron: lopende load afbreken en het beeld
+     *  opnieuw laden (de bbox-cache dekt de nieuwe objecten nog niet). */
+    function _reloadTrafficAssetsInView() {
+      if (_taLoadAbort) { _taLoadAbort.abort(); _taLoadAbort = null; _taLoadingBbox = null; }
+      _lastAssetBbox = null;
+      loadTrafficAssetsInView();
+    }
+
+    function _setTrafficAssetsVisibility(vis) {
+      _trafficAssetsVisible = vis;
+      updateOverlay(true);
+      if (vis) loadTrafficAssetsInView();
+    }
+
+    // Zet de zichtbaarheid van één verkeersobject-categorie (signs/paths/
+    // height/furniture/bumps), herberekent de afgeleide master-vlag en
+    // ververst de kaart. Wordt aangeroepen vanuit de checkboxen in het
+    // 'Verkeersobjecten weergave'-blok in het linker menu-paneel.
+    // Let op: vegetatie (bomen) is hier volledig los van — zie
+    // _setVegetationVisibility hieronder.
+    function _setTrafficAssetCategory(cat, vis) {
+      if (!(cat in _trafficAssetCategories)) return;
+      _trafficAssetCategories[cat] = vis;
+      _trafficAssetsVisible = Object.values(_trafficAssetCategories).some(Boolean);
+      window._trafficAssetCategories = _trafficAssetCategories;
+      updateOverlay(true);
+      _updateTrafficAssetCounts();
+      _refreshTaCatSpinner(cat);          // een load kan al lopen (andere categorie)
+      if (vis) _ensureTaTotal(cat);       // totaal in het hele gebied, los van de zoom
+      if (_trafficAssetsVisible) {
+        loadTrafficAssetsInView();
+      }
+    }
+
+    // Vegetatie (bomen) volledig losgekoppeld van verkeersobjecten.
+    function _setVegetationVisibility(vis) {
+      _vegetationVisible = vis;
+      updateOverlay(true);
+      _updateVegetationCount();
+      _setVegetationSpinner(vis && _vegLoading > 0);   // job kan nog lopen van een eerdere aanvink
+      if (vis) {
+        _ensureVegTotal();       // totaal in het hele gebied, los van de zoom
+        loadVegetationInView();
+      }
+    }
+    window._setVegetationVisibility = _setVegetationVisibility;
+    window._getVegetationVisible = () => _vegetationVisible;
+
+    // Globaal beschikbaar maken zodat initLeftMenuPanel (buiten deze
+    // functie-scope) de categorieën kan lezen en wijzigen.
+    window._trafficAssetCategories = _trafficAssetCategories;
+    window._setTrafficAssetCategory = _setTrafficAssetCategory;
+
+    /**
+     * Zet alle 3D-weergaveopties (gebouwen, verkeersobjecten, bomen) terug op
+     * hun standaard UIT-stand. Wordt aangeroepen bij het binnenkomen van een
+     * (nieuw of aangepast) scenario, zodat een keuze uit een vorig scenario
+     * niet blijft "doorlekken" naar het volgende.
+     */
+    function _resetSceneryDisplayDefaults() {
+      // Pand weergave / Pand productie-attractie
+      const buildingDisplaySel = document.getElementById('buildingDisplay');
+      if (buildingDisplaySel && buildingDisplaySel.value !== 'uit') {
+        buildingDisplaySel.value = 'uit';
+        buildingDisplaySel.dispatchEvent(new Event('change'));
+      }
+      const buildingPurposeSel = document.getElementById('buildingPurpose');
+      if (buildingPurposeSel && buildingPurposeSel.value !== 'off') {
+        buildingPurposeSel.value = 'off';
+        buildingPurposeSel.dispatchEvent(new Event('change'));
+      }
+      // Verkeersobjecten (borden, paden, kunstwerken, straatmeubilair, drempels)
+      for (const cat of Object.keys(_trafficAssetCategories)) {
+        _setTrafficAssetCategory(cat, false);
+      }
+      document.querySelectorAll('input[name="lmpTrafficAsset"]').forEach(chk => {
+        chk.checked = false;
+      });
+      // Bomen
+      _setVegetationVisibility(false);
+      const vegetationCheck = document.getElementById('lmpVegetation');
+      if (vegetationCheck) vegetationCheck.checked = false;
+      // Auto/fiets/voetganger-lagen: ook buiten MIXED-modus standaard UIT bij
+      // binnenkomen van een scenario. De netwerklaag zelf blijft zichtbaar
+      // (die filtert niet op visibleModes buiten MIXED-modus); alleen het
+      // plaatsen van auto's wordt uitgesteld tot de gebruiker het vinkje aanzet.
+      // In maquette-modus kan niemand dat vinkje aanzetten (alle panelen zijn
+      // verborgen): daar moeten de auto's juist blijven rijden na elke
+      // aanpassing of automatische terugkeer naar het initiële scenario.
+      document.querySelectorAll('.modeBtn').forEach(btn => {
+        if (_MAQUETTE) {
+          if (btn.style.display === 'none') return;
+          btn.classList.add('active');
+          visibleModes.add(btn.dataset.mode);
+        } else {
+          btn.classList.remove('active');
+          visibleModes.delete(btn.dataset.mode);
+        }
+      });
+      rebuildCars();
+      updateOverlay(true);
+      updateLegend();
+    }
+    window._resetSceneryDisplayDefaults = _resetSceneryDisplayDefaults;
+
+    // Herlaad bij kaartbeweging (gedebounced), maar alleen als de laag actief is.
+    let _assetMoveTimer = null;
+    function _scheduleAssetLoad() {
+      if (_assetMoveTimer) clearTimeout(_assetMoveTimer);
+      _assetMoveTimer = setTimeout(() => {
+        _assetMoveTimer = null;
+        _updateTrafficAssetCounts();   // zoom-hint (gedimd totaal) bijwerken
+        _updateVegetationCount();
+        loadTrafficAssetsInView();
+        loadVegetationInView();
+      }, 300);
+    }
+    map.on('moveend', _scheduleAssetLoad);
+
+    // Laad gebouwen pas zodra een gebouwweergave (3D of plat) daadwerkelijk is
+    // aangezet — zie _applyBuildingDisplay(). In maquette-modus blijven
+    // gebouwen sowieso altijd verborgen (_tryAddBuildings), dus daar nooit fetchen.
+    function _loadBuildingsIfNeeded() {
+      if (_buildingsLoadStarted || _MAQUETTE) return;
+      _buildingsLoadStarted = true;
+
+      // Verrijking vindt plaats zodra ook zones beschikbaar zijn.
+      // Progressief via NDJSON (?format=ndjson), met fallback op de gewone JSON-respons.
+      const _buildingsUrl = `/collections/buildings/items?areaId=${AREA_ID}`;
+      const _buildingsArea = AREA_ID;
+      _fetchBuildingsWithJob(_buildingsUrl, () => AREA_ID !== _buildingsArea)
+      .then(data => {
+        if (!data || !Array.isArray(data.features)) {
+          // Mislukt/time-out (of ander gebied): een volgende keer opnieuw proberen.
+          if (AREA_ID === _buildingsArea) _buildingsLoadStarted = false;
+          return;
+        }
+        // Verwijder brugpijlers en ondergrondse niet-parkeer objecten.
+        // Parkeerlocaties (ook ondergronds) worden altijd bewaard maar krijgen hoogte 0.
+        data.features = data.features.filter(f => {
+          const p     = f.properties;
+          const bldg  = (p.building || '').toLowerCase();
+          const isParking = (p.amenity || '').toLowerCase() === 'parking'
+            || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
+          if (p['bridge:support']) return false;
+          // Ondergronds: parkeren bewaren, rest verwijderen
+          if ((p.location || '').toLowerCase() === 'underground' && !isParking) return false;
+          // Negatief level: zelfde logica
+          const levelStr = String(p.level ?? '');
+          if (!isParking) {
+            if (levelStr.startsWith('-')) return false;
+            const lvl = parseFloat(levelStr);
+            if (!isNaN(lvl) && lvl < 0) return false;
+          }
+          return true;
+        });
+        // Hoogte toekennen (eenmalig; kleur wordt later berekend in _tryZoneJoin)
+        for (const f of data.features) {
+          const p       = f.properties;
+          const bldg    = (p.building || '').toLowerCase();
+          const amenity = (p.amenity  || '').toLowerCase();
+          const parking = (p.parking  || '').toLowerCase();
+          const isParking = amenity === 'parking'
+            || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
+
+          // Ondergrondse parkeergarages en maaiveld-parkeerterreinen: altijd hoogte 0
+          const levelStr    = String(p.level ?? '');
+          const levelNeg    = levelStr.startsWith('-')
+            || (!isNaN(parseFloat(levelStr)) && parseFloat(levelStr) < 0);
+          const isUnderground = (p.location || '').toLowerCase() === 'underground'
+            || parking === 'underground' || (isParking && levelNeg);
+          const isSurface = isParking && !isUnderground
+            && parking !== 'multi-storey' && parking !== 'rooftop'
+            && !['garage','garages','multi-storey'].includes(bldg);
+
+          if (isParking && (isUnderground || isSurface)) {
+            p.height = 0;
+          } else {
+            const hRaw = parseFloat(p.height);
+            if (p.height != null && !isNaN(hRaw)) {
+              p.height = Math.max(0, hRaw);
+            } else if (p['building:levels']) {
+              const lvls = parseFloat(p['building:levels']);
+              p.height = isNaN(lvls) ? 4 : Math.max(0, lvls) * 3;
+            } else {
+              p.height = 4;
+            }
+          }
+        }
+        _buildingsRaw = data;
+        _tryZoneJoin();
+        // Lagen zijn net (verborgen) toegevoegd door _tryZoneJoin → _tryAddBuildings;
+        // pas nu de al gekozen weergavestand toe zodat ze meteen zichtbaar worden.
+        _applyBuildingDisplay();
+      })
+      .catch(() => {
+        _buildingsLoadStarted = false;  // laat een volgende poging toe na een netwerkfout
+      });  // gebouwen zijn optioneel; stil negeren bij fout
+    }
+
+    // Verkeersobjecten worden lazy geladen op basis van het zichtbare kaartdeel
+    // (zie loadTrafficAssetsInView / moveend-hook) zodra de kaart klaar is.
+
+    // Verzamelproperty-namen die in het netwerk bestaan, zodat we later kunnen
+    // detecteren of toekomstige Snelheid-kolommen al geleverd zijn.
+    const _speedSegmentsPropSearch = new Set();
+    for (const f of features) {
+      if (!f.properties) continue;
+      for (const k of Object.keys(f.properties)) _speedSegmentsPropSearch.add(k);
+    }
+
+    // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
+    const segments    = features.map(f => ({
+      coords:  f.geometry.coordinates,
+      length:  linkLengthM(f),
+      speedMs: f.properties.speed / 3.6,
+      flow:    f.properties.flow,
+      norm:    (f.properties.flow - minFlow) / flowRange,
+      props:   f.properties,
+    }));
+
+    // Schaalfactoren per dagdeel op basis van totale netwerk-flow.
+    // Worden gebruikt in route-modus om het auto-aantal te schalen.
+    const dpScales = (() => {
+      const sums = { mrh: 0, erh: 0, rest: 0 };
+      for (const seg of segments) {
+        const dp = seg.props.flowsPerDaypart;
+        if (!dp) continue;
+        sums.mrh  += dp.mrh  || 0;
+        sums.erh  += dp.erh  || 0;
+        sums.rest += dp.rest || 0;
+      }
+      const ref = sums.erh || 1;
+      return { mrh: sums.mrh / ref, erh: 1.0, rest: sums.rest / ref };
+    })();
+
+    // ── 2. Routes laden (optioneel) ─────────────────────────────────────────
+    _trace('init: 2. routes/graph opbouwen');
+
+    // linkId → geometrie (voor route-reconstructie)
+    const linkGeomMap      = new Map();
+    // linkId → snelheid in m/s (voor per-link snelheidsmodel)
+    const linkSpeedMap     = new Map();
+    // linkId → capaciteit in veh/u (voor CB-vulmethode)
+    const linkCapacityMap  = new Map();
+    // linkId → lengte in m volgens het netwerkattribuut (linkLengthM); voor reistijd/dichtheid.
+    // Niet voor pad-geometrie gebruiken, zie segmentLengthCached.
+    const linkLenAttrMap   = new Map();
+    // linkId → flow per dagdeel (vtg/u), wordt bijgewerkt via rebuildLinkFlowMap()
+    const linkFlowMap   = new Map();
+    // linkId → route[] — gebouwd door buildLinkRouteMap() na het vullen van routeList
+    const linkRouteMap  = new Map();
+    for (const seg of segments) {
+      linkGeomMap.set(seg.props.linkId,     seg.coords);
+      linkSpeedMap.set(seg.props.linkId,    seg.speedMs);
+      linkCapacityMap.set(seg.props.linkId, seg.props.capacity ?? 1800);
+      linkLenAttrMap.set(seg.props.linkId,  seg.length);
+    }
+    // Haaientanden (B6) — eerste opbouw op basis van het netwerk alleen;
+    // wordt aangevuld/herbouwd zodra trafficSign-features (B6-borden) binnenkomen.
+    _taRebuildGiveWayMarks();
+
+    /** Herbouw linkFlowMap voor het huidige dagdeel (aanroepen na dagdeel-wijziging) */
+    function rebuildLinkFlowMap() {
+      _trace('rebuildLinkFlowMap');
+      linkFlowMap.clear();
+      for (const seg of segments) {
+        linkFlowMap.set(seg.props.linkId, segFlow(seg));
+      }
+    }
+    // Initiële vulling gebeurt na declaratie van `daypart` (verderop)
+
+    // Netwerk-graph voor pathfinding (Dijkstra)
+    // Alle links inclusief voedingslinks zodat zone-nodes bereikbaar zijn.
+    const nodeCoords  = new Map();   // nodeId → [lon, lat]
+    const nodeLinkMap = new Map();   // linkId → { fromNode, toNode }
+    const adj         = new Map();   // nodeId → [{ toNode, linkId, length, coords, speedMs }]
+    const adjReverse  = new Map();   // nodeId → [{ toNode, linkId, length, coords, speedMs }] (omgekeerde graph)
+    for (const f of geojson.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const p = f.properties, c = f.geometry.coordinates;
+      nodeCoords.set(p.fromNode, c[0]);
+      nodeCoords.set(p.toNode,   c[c.length - 1]);
+      nodeLinkMap.set(p.linkId, { fromNode: p.fromNode, toNode: p.toNode });
+      if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
+      adj.get(p.fromNode).push({
+        toNode:   p.toNode,
+        linkId:   p.linkId,
+        length:   p.length || 1,
+        coords:   c,
+        speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+        linkMode: p.mode ? p.mode.toUpperCase() : null,
+      });
+      if (!adjReverse.has(p.toNode)) adjReverse.set(p.toNode, []);
+      adjReverse.get(p.toNode).push({
+        toNode:   p.fromNode,
+        linkId:   p.linkId,
+        length:   p.length || 1,
+        coords:   c,
+        speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+        linkMode: p.mode ? p.mode.toUpperCase() : null,
+      });
+    }
+
+    // Focus naar eventueel in de URL gevraagde link of node. Bij beide wordt
+    // de node voorrang gegeven. Dit gebeurt nadat zowel kaart als netwerk
+    // geometrie beschikbaar zijn, en overschrijft de initiele gebieds-fit.
+    function _focusUrlLinkOrNode() {
+      if (NODE_ID_PARAM) {
+        const coord = nodeCoords.get(NODE_ID_PARAM) ?? nodeCoords.get(Number(NODE_ID_PARAM));
+        if (coord) {
+          map.easeTo({ center: coord, zoom: 18, pitch: 0, bearing: 0, essential: true });
+          return;
+        }
+        console.warn(`[focus] nodeId ${NODE_ID_PARAM} niet gevonden`);
+      }
+      if (LINK_ID_PARAM) {
+        const coords = linkGeomMap.get(LINK_ID_PARAM) ?? linkGeomMap.get(Number(LINK_ID_PARAM));
+        if (coords && coords.length >= 2) {
+          let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+          for (const [lon, lat] of coords) {
+            if (lon < minLon) minLon = lon;
+            if (lat < minLat) minLat = lat;
+            if (lon > maxLon) maxLon = lon;
+            if (lat > maxLat) maxLat = lat;
+          }
+          map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+            padding: 80, pitch: 0, bearing: 0, duration: 1000, essential: true
+          });
+          return;
+        }
+        console.warn(`[focus] linkId ${LINK_ID_PARAM} niet gevonden`);
+      }
+    }
+    if (NODE_ID_PARAM || LINK_ID_PARAM) {
+      if (map.loaded()) {
+        _focusUrlLinkOrNode();
+      } else {
+        map.once('load', _focusUrlLinkOrNode);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  "SNELHEID" — knooppunt-classificatie + straf-seconden (v0, fallback)
+    //  ---------------------------------------------------------------------
+    //  Fallback-implementatie zonder gmt-library-data (zie
+    //  docs/plan-snelheid-strafseconden.md, Deel A). Knooppunten worden
+    //  geclassificeerd o.b.v. de dichtstbijzijnde bestaande punt-assets
+    //  (verkeerslicht/voorrangsbord), en wegvakken krijgen vaste straf-
+    //  seconden o.b.v. zebra/verkeerslicht/haaientanden/stopbord in de buurt.
+    //  Flow-afhankelijke componenten (verkeer van rechts, linksaf-hinder,
+    //  tegenliggerhinder) zitten hier bewust nog niet in.
+    // ═══════════════════════════════════════════════════════════════════════
+    const SPEED_NODE_SNAP_M = 20;   // marge punt → knooppunt (zelfde als geplande gmt-library-marge)
+    const SPEED_LINK_SNAP_M = 15;   // marge punt → wegvak
+    const SPEED_REFUGE_END_MARGIN_M = 15;   // vluchtheuvels binnen deze afstand van een knooppunt gelden als "aan het eind" en tellen niet mee
+    const SPEED_PENALTY_SEC = { zebra: 2, signal: 10, yield: 2, stop: 4, refuge: 2, elevationMax: 6 };  // voorstelwaarden, zie plan
+    const SPEED_ELEVATION_MIN_PCT = 3;   // vanaf dit hellingspercentage telt omhoog rijden mee
+    const SPEED_ELEVATION_MAX_PCT = 15;  // boven dit percentage is de straf maximaal
+
+    let nodeControlMap  = new Map();   // nodeId → 'signalized' | 'priority' | 'uncontrolled'
+    let nodeIntersectionsMap = new Map(); // nodeId → 1=verkeerslicht, 2=rotonde, 3=verkeersdrempel op kruispunt
+    let speedLinkFlags  = new Map();   // linkId → { zebra, signal, yield, stop }
+    let penaltyByLinkId = new Map();   // linkId → { zebra, cycleX, signal, yield, stop, refuge, elevation, fromRight, leftTurn, rightTurn, oncoming, total }
+    let _speedLayersVersion = 0;       // bumpt bij elke rebuildSpeedLayers(), voor deck.gl updateTriggers
+
+    function _mPerDeg(lat) {
+      return [111320 * Math.cos(lat * Math.PI / 180) || 1, 110540];
+    }
+
+    /** Weegfactoren dagdeel → uurintensiteit.
+     *  OS=2u, AS=2u, restdag=20u; wegingsbasis 14.4
+     *  Formule: (weging/duur) / 14.4
+     *  Ge-declareerd vóór de Snelheid-functies zodat rebuildSpeedLayers()
+     *  dpFlowOf() veilig kan aanroepen zonder TDZ-fout. */
+    const DP_FRACTION = { mrh: (2/2)/14.4, erh: (2/2)/14.4, rest: (10.4/20)/14.4 };
+
+    /** Controleer of in het geladen netwerk minstens een segment een bepaald
+     *  attribuut draagt. Gebruikt om te bepalen of toekomstige Snelheid-lagen
+     *  al zinvolle data hebben (grijs = nog niet beschikbaar). */
+    function _speedHasAnySegmentWith(checkProp) {
+      if (!_speedSegmentsPropSearch) return false;
+      for (const key of _speedSegmentsPropSearch) {
+        if (checkProp(key)) return true;
+      }
+      return false;
+    }
+
+    /** Hellingspercentage (%) van een wegvak; positief = omhoog rijden
+     *  (van elevationFrom naar elevationTo). */
+    function _speedSlopePct(p) {
+      const from = p.elevationFrom, to = p.elevationTo, len = p.length;
+      if (from == null || to == null || !(len > 0)) return null;
+      return ((to - from) / len) * 100;
+    }
+
+    /** Effectieve wegbreedte voor tegenliggerhinder: roadWidthM lijkt de
+     *  rijstrookbreedte per richting te zijn; vermenigvuldig met het aantal
+     *  rijstroken en met 2 voor tweerichtingsverkeer. */
+    function _speedEffectiveRoadWidth(p) {
+      const widthPerLane = p.roadWidthM != null ? p.roadWidthM : 0;
+      const lanes = p.lanes != null ? p.lanes : 1;
+      return widthPerLane * lanes * 2;
+    }
+
+    /** Actuele uurintensiteit (vtg/u) van een conflict-link opvragen, op basis
+     *  van het huidige dagdeel. Fallback op statische 24u-flow. */
+    function _speedConflictFlow(linkId) {
+      if (linkId == null) return 0;
+      if (linkFlowMap) {
+        const live = linkFlowMap.get(linkId);
+        if (live != null && isFinite(live)) return live;
+      }
+      // Fallback: zoek de segment-properties in het geladen netwerk.
+      const seg = segments && segments.find(s => s.props && s.props.linkId === linkId);
+      if (seg) return segFlow(seg) ?? 0;
+      return 0;
+    }
+
+    /** Straf-seconden voor omhoog rijden, lineair vanaf 3% tot 15%. */
+    function _speedElevationPenaltySec(p) {
+      const slope = _speedSlopePct(p);
+      if (slope == null || slope < SPEED_ELEVATION_MIN_PCT) return 0;
+      const t = Math.min(1, (slope - SPEED_ELEVATION_MIN_PCT) / (SPEED_ELEVATION_MAX_PCT - SPEED_ELEVATION_MIN_PCT));
+      return Math.round(t * SPEED_PENALTY_SEC.elevationMax * 10) / 10;
+    }
+
+    function _speedDistMeters(lon1, lat1, lon2, lat2) {
+      const [mPerLng, mPerLat] = _mPerDeg((lat1 + lat2) / 2);
+      const dx = (lon2 - lon1) * mPerLng, dy = (lat2 - lat1) * mPerLat;
+      return Math.hypot(dx, dy);
+    }
+
+    // Via de grid-index (_netNodeIndex): alleen de cellen binnen maxM.
+    function _speedNearestNodeId(lon, lat, maxM) {
+      const idx = _netNodeIndex();
+      const [mLng, mLat] = _mPerDeg(lat);
+      const rx = Math.ceil(maxM / (idx.cLng * mLng)) + 1, ry = Math.ceil(maxM / (idx.cLat * mLat)) + 1;
+      const cx = Math.floor(lon / idx.cLng), cy = Math.floor(lat / idx.cLat);
+      let bestId = null, bestD = maxM;
+      for (let x = cx - rx; x <= cx + rx; x++) for (let y = cy - ry; y <= cy + ry; y++) {
+        const arr = idx.cells.get(_netCellKey(x, y));
+        if (!arr) continue;
+        for (let i = 0; i < arr.length; i += 2) {
+          const c = arr[i + 1];
+          const d = _speedDistMeters(lon, lat, c[0], c[1]);
+          if (d < bestD) { bestD = d; bestId = arr[i]; }
+        }
+      }
+      return bestId;
+    }
+
+    function _speedNearestLinkId(lon, lat, maxM) {
+      const n = _netNearestSeg(lon, lat, maxM);
+      return n ? n.linkId : null;
+    }
+
+    // Representatief punt [lon,lat] voor een feature-geometrie (Point of
+    // Polygon/MultiPolygon — voor vluchtheuvels, die als vlak of punt
+    // kunnen binnenkomen).
+    function _speedFeatureCentroid(f) {
+      const g = f.geometry; if (!g) return null;
+      if (g.type === 'Point') return g.coordinates;
+      let ring = null;
+      if (g.type === 'Polygon') ring = g.coordinates?.[0];
+      else if (g.type === 'MultiPolygon') ring = g.coordinates?.[0]?.[0];
+      if (!ring || !ring.length) return null;
+      let sx = 0, sy = 0;
+      for (const [x, y] of ring) { sx += x; sy += y; }
+      return [sx / ring.length, sy / ring.length];
+    }
+
+    /** Herbouw knooppunt-classificatie + straf-seconden-maps. Aanroepen
+     *  zodra `_taSignalFeatures`/`_taMarkFeatures` zijn (bij)gewerkt. */
+    function rebuildSpeedLayers() {
+      // Bereken knoopgraad om echte kruispunten (≥3 links) te vinden.
+      const nodeDegree = new Map();
+      for (const nlm of nodeLinkMap.values()) {
+        nodeDegree.set(nlm.fromNode, (nodeDegree.get(nlm.fromNode) || 0) + 1);
+        nodeDegree.set(nlm.toNode,   (nodeDegree.get(nlm.toNode)   || 0) + 1);
+      }
+      const junctionNodeIds = new Set();
+      for (const [nid, deg] of nodeDegree) { if (deg >= 3) junctionNodeIds.add(nid); }
+      // Log hulp voor debuggen van kruispunt-classificatie.
+      console.debug('[speed] junction nodes:', junctionNodeIds.size, 'intersection nodes:', junctionNodeIds.size);
+
+      // 1a. Kruispunt-categorieën (nieuwe laag "Kruispunten")
+      // Prioriteit: verkeerslicht (1) > rotonde (2) > verkeersdrempel (3).
+      const niMap = new Map();
+      // Rotondes op basis van de NETWORK-CAR-kolom `isRoundabout`/`roundaboutType`
+      // (nieuwe exports), met OSM-weg/junction-tag als fallback voor oudere data.
+      for (const f of geojson.features) {
+        const p = f.properties;
+        const isRoundabout = p.isRoundabout === true || p.roundaboutType === 'roundabout' ||
+          p.junction === 'roundabout' || p.highway === 'roundabout' || p.highway === 'mini_roundabout';
+        if (!isRoundabout) continue;
+        const nlm = nodeLinkMap.get(p.linkId);
+        if (!nlm) continue;
+        niMap.set(nlm.fromNode, 2);
+        niMap.set(nlm.toNode,   2);
+      }
+      // Verkeerslichten: pas op kruispunt-nodes met >=3 links.
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid == null || !junctionNodeIds.has(nid)) continue;
+        if (!niMap.has(nid)) niMap.set(nid, 1);
+      }
+      // Fallback voor netwerken die de trafficSignal boolean meeleveren:
+      // markeer kruispunt-nodes aan het einde van een signaal-link als
+      // verkeerslicht.
+      const _signalNodeSet = new Set();
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null) _signalNodeSet.add(nid);
+      }
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!('trafficSignal' in p) || p.trafficSignal !== true) continue;
+        const nlm = nodeLinkMap.get(p.linkId);
+        if (!nlm) continue;
+        const toJunction   = junctionNodeIds.has(nlm.toNode);
+        const fromJunction = junctionNodeIds.has(nlm.fromNode);
+        if (toJunction)   _signalNodeSet.add(nlm.toNode);
+        if (fromJunction) _signalNodeSet.add(nlm.fromNode);
+      }
+      for (const nid of _signalNodeSet) {
+        if (!junctionNodeIds.has(nid)) continue;
+        if (!niMap.has(nid)) niMap.set(nid, 1);
+      }
+        nodeIntersectionsMap = niMap;
+
+      // 1b. Knooppunt-classificatie voor straf-seconden: signalized > priority
+      //    (voorrangs-/stopbord/haaientanden) > uncontrolled (default, geen entry).
+      const ncMap = new Map();
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null) ncMap.set(nid, 'signalized');
+      }
+      for (const f of _taMarkFeatures) {
+        const t = f.properties?.assetType;
+        if (t !== 'giveWay' && t !== 'stopSign') continue;
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null && !ncMap.has(nid)) ncMap.set(nid, 'priority');
+      }
+      nodeControlMap = ncMap;
+
+      // 2. Sub-laag-vlaggen per wegvak (zebra/verkeerslicht/haaientanden/stopbord).
+      const flagMap = new Map();
+      const flag = (linkId, key) => {
+        if (linkId == null) return;
+        let e = flagMap.get(linkId);
+        if (!e) { e = {}; flagMap.set(linkId, e); }
+        e[key] = true;
+      };
+      for (const f of _taMarkFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const t = f.properties?.assetType;
+        const key = t === 'pedestrianCrossing' ? 'zebra'
+                  : t === 'giveWay'             ? 'yield'
+                  : t === 'stopSign'            ? 'stop'
+                  : null;
+        if (!key) continue;
+        flag(_speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M), key);
+      }
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        flag(_speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M), 'signal');
+      }
+      // Vluchtheuvels (refugeAreaCrossing/refugeAreaTraffic) — alleen degene die
+      // NIET aan het eind van het wegvak liggen (binnen SPEED_REFUGE_END_MARGIN_M
+      // van een knooppunt): die horen bij de kruising zelf, niet bij een losse
+      // midden-op-het-wegvak-hindernis.
+      const _refugeFeaturesForSpeed = [
+        ..._taRefugeAreaCrossingFeatures,
+        ..._taRefugeAreaTrafficFeatures,
+      ];
+      for (const f of _refugeFeaturesForSpeed) {
+        const c = _speedFeatureCentroid(f); if (!c) continue;
+        const linkId = _speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M);
+        if (linkId == null) continue;
+        const nlm = nodeLinkMap.get(linkId);
+        if (nlm) {
+          const fromC = nodeCoords.get(nlm.fromNode);
+          const toC   = nodeCoords.get(nlm.toNode);
+          const dFrom = fromC ? _speedDistMeters(c[0], c[1], fromC[0], fromC[1]) : Infinity;
+          const dTo   = toC   ? _speedDistMeters(c[0], c[1], toC[0],   toC[1])   : Infinity;
+          if (dFrom < SPEED_REFUGE_END_MARGIN_M || dTo < SPEED_REFUGE_END_MARGIN_M) continue;  // aan het eind → overslaan
+        }
+        flag(linkId, 'refuge');
+      }
+      speedLinkFlags = flagMap;
+
+      // 3. Straf-seconden v0 — vaste componenten + flow-onafhankelijke
+      //    bronkolommen die nu al in NETWORK-CAR zitten (elevationFrom/To,
+      //    numCycleCrossings), plus flow-afhankelijke kolommen (fromRightLinkId,
+      //    oppositeLinkId, fromRightFlow, oppositeFlow, fromLeftFlow,
+      //    leftTurnRatio, rightTurnRatio, roadWidthM) als deze beschikbaar
+      //    zijn. Zie docs/plan-snelheid-strafseconden.md.
+      const penMap = new Map();
+      const hasFromRight   = _speedHasAnySegmentWith(k => k === 'fromRightLinkId');
+      const hasFromLeft    = _speedHasAnySegmentWith(k => k === 'fromLeftFlow');
+      const hasOpposite    = _speedHasAnySegmentWith(k => k === 'oppositeLinkId');
+      const hasTurnRatio   = _speedHasAnySegmentWith(k => k === 'leftTurnRatio' || k === 'rightTurnRatio');
+      const hasRoadWidth   = _speedHasAnySegmentWith(k => k === 'roadWidthM');
+      const hasElevation   = _speedHasAnySegmentWith(k => k === 'elevationFrom' || k === 'elevationTo');
+      const hasCycleCross  = _speedHasAnySegmentWith(k => k === 'numCycleCrossings');
+
+      for (const f of geojson.features) {
+        const p = f.properties;
+        const linkId = p.linkId;
+        const flags = flagMap.get(linkId) || {};
+
+        const zebra  = flags.zebra  || ('numPedestrianCrossings' in p && (p.numPedestrianCrossings || 0) > 0) ? SPEED_PENALTY_SEC.zebra  : 0;
+        const cycleX = hasCycleCross && ((p.numCycleCrossings || 0) > 0 || (p.numCyclePaths || 0) > 0) ? SPEED_PENALTY_SEC.zebra : 0; // zelfde orde als zebra
+        const signal = flags.signal || ('trafficSignal' in p && p.trafficSignal === true) ? SPEED_PENALTY_SEC.signal : 0;
+        const yieldS = flags.yield  || (('numGiveWays' in p && (p.numGiveWays || 0) > 0) || ('numStoppingLanes' in p && (p.numStoppingLanes || 0) > 0)) ? SPEED_PENALTY_SEC.yield  : 0;
+        const stop   = flags.stop   ? SPEED_PENALTY_SEC.stop   : 0;
+        const refuge = flags.refuge || ('numRefugeAreas' in p && (p.numRefugeAreas || 0) > 0) ? SPEED_PENALTY_SEC.refuge : 0;
+        const elevation = hasElevation ? _speedElevationPenaltySec(p) : 0;
+
+        // Flow-afhankelijke componenten (fase 3 + fase 4). De kalibratie-
+        // constanten zijn voorlopige startwaarden; zie plan.
+        const k_rechts      = 3 / 600;   // verkeer van rechts: ≈ 3 sec bij 600 veh/24h
+        const k_links       = 4 / 800;   // linksaf-hinder: ≈ 4 sec bij 800 veh/24h
+        const k_rechts_af   = 1 / 800;   // rechtsaf-hinder: marginaal, ≈ 1 sec bij 800 veh/24h
+        const k_oncoming    = 2 / 600;   // tegenliggerhinder op smalle weg
+
+        // Verkeer-van-rechts-straf geldt alleen bij een ongeregeld knooppunt
+        // (uncontrolled). Bij verkeerslicht, voorrangsweg of rotonde is deze
+        // straf niet van toepassing (wordt via andere componenten afgevangen).
+        const uncontrolledTo = p.nodeControlTo === 'uncontrolled';
+        const fromRightFlow = hasFromRight && uncontrolledTo && p.fromRightLinkId != null
+          ? _speedConflictFlow(p.fromRightLinkId) : 0;
+        const fromRight = Math.round(fromRightFlow * k_rechts * 10) / 10;
+
+        // Linksaf kruist zowel tegenliggers als verkeer van links;
+        // rechtsaf alleen verkeer van links. Beide worden gewogen door het
+        // daadwerkelijke aandeel afslaand verkeer op de toNode.
+        const leftRatio  = hasTurnRatio && p.leftTurnRatio  != null ? p.leftTurnRatio  : 0;
+        const rightRatio = hasTurnRatio && p.rightTurnRatio != null ? p.rightTurnRatio : 0;
+        const fromLeft   = hasFromLeft && p.fromLeftLinkId != null ? _speedConflictFlow(p.fromLeftLinkId) : 0;
+        const opposite   = hasOpposite && p.oppositeLinkId != null ? _speedConflictFlow(p.oppositeLinkId) : 0;
+        const leftTurn  = Math.round((opposite + fromLeft) * k_links * leftRatio * 10) / 10;
+        const rightTurn = Math.round(fromLeft * k_rechts_af * rightRatio * 10) / 10;
+
+        // Tegenliggerhinder (fase 4): smalle weg zonder middenscheiding.
+        // roadWidthM wordt geinterpreteerd als rijstrookbreedte per richting;
+        // effectieve breedte = roadWidthM * lanes * 2.
+        // Fallback: geen middenscheiding aannemen. TODO: vervangen zodra
+        // hasCenterSeparation geleverd wordt.
+        let oncoming = 0;
+        if (hasRoadWidth && p.roadWidthM != null) {
+          const narrowThreshold = 5.5;   // m, onder deze breedte wordt het krap
+          const effectiveWidth = _speedEffectiveRoadWidth(p);
+          const widthShortage = Math.max(0, narrowThreshold - effectiveWidth);
+          const oncomingFlow = hasOpposite && p.oppositeLinkId != null ? _speedConflictFlow(p.oppositeLinkId) : 0;
+          oncoming = Math.round(widthShortage * oncomingFlow * k_oncoming * 10) / 10;
+        }
+
+        const total = zebra + cycleX + signal + yieldS + stop + refuge + elevation + fromRight + leftTurn + rightTurn + oncoming;
+        penMap.set(linkId, {
+          zebra, cycleX, signal, yield: yieldS, stop, refuge, elevation,
+          fromRight, leftTurn, rightTurn, oncoming, total
+        });
+      }
+      penaltyByLinkId = penMap;
+      _speedLayersVersion++;
+    }
+
+    // Initiële opbouw van Snelheid-lagen direct op basis van het netwerk —
+    // de variabelen nodeControlMap/speedLinkFlags/penaltyByLinkId zijn nu
+    // gedeclareerd, dus dit kan veilig.
+    rebuildSpeedLayers();
+
+    // Zone-data laden: fromNodeProportions / toNodeProportions
+    setLoaderMsg(T('loaderZones'));
+    const zoneMap = new Map();   // zoneId → { from: {nodeId: prop}, to: {nodeId: prop} }
+    let zoneFeaturesRaw = [];    // alle zone-features (voor node-laag)
+    try {
+      const zoneData = await _zFetch;
+      _trace(`init: zones ontvangen (${zoneData?.features?.length ?? 'geen'})`);
+      if (zoneData) {
+        zoneFeaturesRaw = zoneData.features || [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties;
+          if (p.zoneId) zoneMap.set(p.zoneId, {
+            from:       p.fromNodeProportions || {},
+            to:         p.toNodeProportions   || {},
+            boundary:   p.zoneClass === 'BOUNDARY',
+            production: p.production          || 0,   // veh/u voor dit dagdeel
+          });
+        }
+        console.info(`Zones geladen: ${zoneMap.size}`);
+      }
+    } catch (e) { console.info('Zone-bestand niet beschikbaar:', e.message); }
+
+    // Voedingslinks laden: de authoritative connector tussen zone-centroïde en
+    // het echte wegennet (apart FEEDLINK-bestand — niet af te leiden uit
+    // route.linkIds, want voedingslink-IDs zitten niet in het NETWERK-bestand
+    // en dus ook niet in linkGeomMap). Per zone max. 1 productie- + 1 attractie-
+    // richting; welke is welke wordt bepaald via capacity-match met de zone's
+    // eigen productie/attractie-waarde (zie gmt_network_core.feedlink_fetcher).
+    const feedLinkByZone = new Map();  // zoneId → { production: coords|null, attraction: coords|null }
+    try {
+      const feedData = await _flFetch;
+      _trace(`init: feedlinks ontvangen (${feedData?.features?.length ?? 'geen'})`);
+      if (feedData?.features?.length) {
+        const zonePropsById = new Map(zoneFeaturesRaw.map(f => [f.properties?.zoneId, f.properties]));
+        for (const f of feedData.features) {
+          const p = f.properties || {};
+          const zId = p.zoneId;
+          if (!zId || f.geometry?.type !== 'LineString' || !f.geometry.coordinates?.length) continue;
+          const zp = zonePropsById.get(zId);
+          const cap = p.capacity ?? 0;
+          const isProduction = zp
+            ? Math.abs(cap - (zp.production ?? 0)) <= Math.abs(cap - (zp.attraction ?? 0))
+            : true;
+          const entry = feedLinkByZone.get(zId) ?? { production: null, attraction: null };
+          entry[isProduction ? 'production' : 'attraction'] = f.geometry.coordinates;
+          feedLinkByZone.set(zId, entry);
+        }
+        console.info(`Voedingslinks geladen: ${feedLinkByZone.size} zones`);
+      }
+    } catch (e) { console.info('Voedingslinken-bestand niet beschikbaar:', e.message); }
+
+    // Koppel gebouwen aan zones zodra zone-geometrie beschikbaar is
+    _zonesForJoin = zoneFeaturesRaw;
+    _tryZoneJoin();
+
+    /** Kies gewogen willekeurig een nodeId uit een proporties-object */
+    function pickNode(proportions) {
+      const entries = Object.entries(proportions);
+      if (!entries.length) return null;
+      const total = entries.reduce((s, [, v]) => s + v, 0);
+      let r = Math.random() * total;
+      for (const [k, v] of entries) { r -= v; if (r <= 0) return parseInt(k); }
+      return parseInt(entries[entries.length - 1][0]);
+    }
+
+    /**
+     * Dijkstra van source → target langs het netwerk.
+     * Geeft array van link-segmenten terug: [{ coords, length, speedMs }, ...]
+     * of null als onbereikbaar. Resultaten worden gecached.
+     */
+    const dijkstraCache = new Map();
+    function dijkstraPath(source, target, vehicleMode) {
+      if (source === target) return [];
+      const key = MODE === 'MIXED' ? `${vehicleMode ?? ''}:${source}→${target}` : `${source}→${target}`;
+      if (dijkstraCache.has(key)) return dijkstraCache.get(key);
+
+      const dist = new Map([[source, 0]]);
+      const prev = new Map();
+      const open = [[0, source]];
+
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        if (u === target) break;
+        for (const e of (adj.get(u) || [])) {
+          if (vehicleMode && e.linkMode && e.linkMode !== vehicleMode) continue;
+          const nd = d + e.length;
+          if (nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            prev.set(e.toNode, { via: u, coords: e.coords, speedMs: e.speedMs });
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+
+      if (!prev.has(target)) { dijkstraCache.set(key, null); return null; }
+
+      // Bouw de lijst van link-segmenten op (van achter naar voor)
+      const segs = [];
+      let cur = target;
+      while (prev.has(cur)) {
+        const { via, coords, speedMs } = prev.get(cur);
+        segs.unshift({ coords, speedMs, toNode: cur });
+        cur = via;
+      }
+      dijkstraCache.set(key, segs);
+      return segs;
+    }
+
+    /**
+     * Single-source Dijkstra vanuit startNode.
+     * Stopt zodra alle bereikbare knopen binnen maxDistM zijn bezocht.
+     * Geeft Map<nodeId, distanceM> terug.
+     */
+    function dijkstraDistances(startNode, maxDistM) {
+      const dist = new Map([[startNode, 0]]);
+      const open = [[0, startNode]];
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > maxDistM) break;
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        for (const e of (adj.get(u) || [])) {
+          const nd = d + e.length;
+          if (nd <= maxDistM && nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+      return dist;
+    }
+
+    /**
+     * Dijkstra met padreconstructie.
+     * Geeft { dist: Map<node,m>, prev: Map<node,{fromNode,linkId}> }
+     */
+    function dijkstraWithPaths(startNode, maxDistM, adjMap = adj) {
+      const dist = new Map([[startNode, 0]]);
+      const prev = new Map();           // node → { fromNode, linkId }
+      const open = [[0, startNode]];
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > maxDistM) break;
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        for (const e of (adjMap.get(u) || [])) {
+          const nd = d + e.length;
+          if (nd <= maxDistM && nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            prev.set(e.toNode, { fromNode: u, linkId: e.linkId });
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+      return { dist, prev };
+    }
+
+    /** Reconstrueer een lijst van linkIds van startNode naar targetNode via prev-map. */
+    function _reconstructLinkPath(prev, startNode, targetNode) {
+      const links = [];
+      let cur = targetNode;
+      let safety = 2000;
+      while (cur !== startNode && safety-- > 0) {
+        const p = prev.get(cur);
+        if (!p) return null;          // geen pad gevonden
+        if (p.linkId != null) links.push(p.linkId);
+        cur = p.fromNode;
+      }
+      return links.reverse();
+    }
+
+    /**
+     * Zoek de nodeId die geografisch het dichtst bij (lon, lat) ligt
+     * én aanwezig is in nodeDistMap. Geeft { nodeId, distM } of null.
+     */
+    function _nearestReachableNode(lon, lat, nodeDistMap) {
+      let bestNode = null, bestGeo = Infinity;
+      for (const [nodeId] of nodeDistMap) {
+        const c = nodeCoords.get(nodeId);
+        if (!c) continue;
+        const dx = (c[0] - lon) * 80000;   // ~m per degree lon (BE)
+        const dy = (c[1] - lat) * 111000;  // ~m per degree lat
+        const geo = dx * dx + dy * dy;
+        if (geo < bestGeo) { bestGeo = geo; bestNode = nodeId; }
+      }
+      return bestNode ? { nodeId: bestNode, distM: nodeDistMap.get(bestNode) } : null;
+    }
+
+    /** EXTERNAL highway-types die Groep B bepalen */
+    const _EXTERNAL_HW = new Set([
+      'motorway','motorway_link','trunk','trunk_link','primary','primary_link'
+    ]);
+
+    /**
+     * Schat de motiefverdeling voor een link zonder route-data.
+     * Combineert:
+     *   Groep A – Top-20 zones (intern + EXTERN) op basis van Dijkstra-afstand
+     *   Groep B – EXTERNAL zones waarvan centroid dicht bij een hoofdweg-link ligt
+     * Geeft Map<motief, gewogenFlow> of null als niets gevonden.
+     */
+    function estimatePurposeFlowForLink(linkId) {
+      const nlm = nodeLinkMap.get(linkId) ?? nodeLinkMap.get(Number(linkId));
+      if (!nlm) return null;
+
+      const nodeDistMap = dijkstraDistances(nlm.fromNode, 15000);
+      if (nodeDistMap.size < 2) return null;
+
+      // ── Groep B: EXTERNAL zones bij een hoofdweg-link ──────────────────────
+      const externalMainNodes = new Set();
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!p) continue;
+        const hw = p.highway ?? p.linkType ?? p.road_type ?? '';
+        if (!_EXTERNAL_HW.has(hw)) continue;
+        // Neem fromNode/toNode van dit wegvak als potentieel zone-koppelknoop
+        const lnm = nodeLinkMap.get(p.linkId) ?? nodeLinkMap.get(Number(p.linkId));
+        if (lnm) { externalMainNodes.add(lnm.fromNode); externalMainNodes.add(lnm.toNode); }
+      }
+
+      // ── Alle zones rangschikken op afstand ──────────────────────────────────
+      const zoneScores = [];
+      for (const f of zoneFeaturesRaw) {
+        const p = f.properties;
+        if (!p?.zoneId) continue;
+        const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+        const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+        if (lon == null || lat == null) continue;
+
+        const nr = _nearestReachableNode(lon, lat, nodeDistMap);
+        if (!nr) continue;
+
+        const isExternal = p.zoneClass === 'EXTERNAL';
+        const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
+        const distKm     = nr.distM / 1000;
+        const weight     = (p.production || 0) / (1 + distKm * distKm);
+
+        zoneScores.push({ zoneId: p.zoneId, weight, isGroupB });
+      }
+
+      if (!zoneScores.length) return null;
+
+      // Groep A: top 20 op weight
+      zoneScores.sort((a, b) => b.weight - a.weight);
+      const selectedZones = new Set(zoneScores.slice(0, 20).map(z => z.zoneId));
+      // Groep B: EXTERNAL zones bij hoofdwegen (altijd toevoegen)
+      for (const z of zoneScores) { if (z.isGroupB) selectedZones.add(z.zoneId); }
+
+      // ── Aggregeer motifRatio van matching routes ────────────────────────────
+      const purposeFlow = new Map();
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+
+      for (const route of routeList) {
+        if (!selectedZones.has(route.fromZoneId)) continue;
+        if (!route.motifRatio) continue;
+        const zs = zoneScores.find(z => z.zoneId === route.fromZoneId);
+        const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0) * (zs ? zs.weight : 1);
+        for (const [m, ratio] of Object.entries(route.motifRatio)) {
+          purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + flow * ratio);
+        }
+      }
+
+      return purposeFlow.size > 0 ? purposeFlow : null;
+    }
+
+    /**
+     * Schat route-paden voor een link zonder route-data via Dijkstra.
+     * Geeft { pathData, flowByFromZone, flowByToZone } — zelfde structuur als computeLinkRouteData.
+     * pathData-items hebben extra veld `estimated: true`.
+     */
+    function computeEstimatedLinkRouteData(linkId) {
+      const nlm = nodeLinkMap.get(linkId) ?? nodeLinkMap.get(Number(linkId));
+      if (!nlm) return { pathData: [], flowByFromZone: new Map(), flowByToZone: new Map() };
+
+      // Dijkstra vanuit fromNode op reverse graph (productiekant: zones → fromNode)
+      const { dist: distFwd, prev: prevFwd } = dijkstraWithPaths(nlm.fromNode, 25000, adjReverse);
+      // Dijkstra vanuit toNode op forward graph (attractiekant: toNode → zones)
+      const { dist: distBwd, prev: prevBwd } = dijkstraWithPaths(nlm.toNode,   25000, adj);
+
+      // ── Groep B: EXTERNAL zones bij hoofdwegen ──────────────────────────────
+      const externalMainNodes = new Set();
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!p) continue;
+        const hw = p.highway ?? p.linkType ?? p.road_type ?? '';
+        if (!_EXTERNAL_HW.has(hw)) continue;
+        const lnm = nodeLinkMap.get(p.linkId) ?? nodeLinkMap.get(Number(p.linkId));
+        if (lnm) { externalMainNodes.add(lnm.fromNode); externalMainNodes.add(lnm.toNode); }
+      }
+
+      // ── Helper: score zones gegeven een distMap en gewichtskolom ───────────
+      function scoreZones(distMap, weightKey) {
+        const scores = [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties;
+          if (!p?.zoneId) continue;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) continue;
+          const nr = _nearestReachableNode(lon, lat, distMap);
+          if (!nr) continue;
+          const isExternal = p.zoneClass === 'EXTERNAL';
+          const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
+          const distKm     = nr.distM / 1000;
+          const wVal       = (p[weightKey] || p.production || 1);
+          const weight     = wVal / (1 + distKm * distKm);
+          scores.push({ zoneId: p.zoneId, lon, lat, nr, weight, isGroupB,
+                        production: p.production || 0, attraction: p.attraction || 0 });
+        }
+        scores.sort((a, b) => b.weight - a.weight);
+        const selected = new Set(scores.slice(0, 20).map(z => z.zoneId));
+        for (const z of scores) { if (z.isGroupB) selected.add(z.zoneId); }
+        return { scores, selected };
+      }
+
+      // ── Bouw paden voor één richting ────────────────────────────────────────
+      function buildPaths(scores, selected, prev, anchorNode, flowKey, color, flowByZone, reverseOrder = false) {
+        const dpFrac   = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+        const maxW     = scores[0]?.weight ?? 1;
+        let count = 0;
+        for (const z of scores) {
+          if (!selected.has(z.zoneId)) continue;
+          const linkPath = _reconstructLinkPath(prev, anchorNode, z.nr.nodeId);
+          if (!linkPath || !linkPath.length) continue;
+          // Bij reverse Dijkstra zit de volgorde omgekeerd door de built-in reverse() in
+          // _reconstructLinkPath: nog een keer omdraaien geeft de juiste zone→anchorNode volgorde.
+          if (reverseOrder) linkPath.reverse();
+          const coords = [];
+          for (const lid of linkPath) {
+            const geom = linkGeomMap.get(lid) ?? linkGeomMap.get(Number(lid));
+            if (geom) for (const c of geom) coords.push(c);
+          }
+          if (coords.length < 2) continue;
+          const flow = (z.weight / maxW) * dpFrac * (z[flowKey] || 1);
+          pathData.push({ coords, flow, color, zoneId: z.zoneId });
+          flowByZone.set(z.zoneId, (flowByZone.get(z.zoneId) ?? 0) + flow);
+          count++;
+        }
+        return count;
+      }
+
+      const pathData       = [];
+      const flowByFromZone = new Map();
+      const flowByToZone   = new Map();
+
+      // Productiekant: zones → fromNode via reverse graph (oranje)
+      const { scores: prodScores, selected: prodSel } = scoreZones(distFwd, 'production');
+      const nProd = buildPaths(prodScores, prodSel, prevFwd, nlm.fromNode,
+                               'production', [255, 120, 0, 200], flowByFromZone, true);
+
+      // Attractiekant: toNode → attractiezones via forward graph (cyaan)
+      const { scores: attrScores, selected: attrSel } = scoreZones(distBwd, 'attraction');
+      const nAttr = buildPaths(attrScores, attrSel, prevBwd, nlm.toNode,
+                               'attraction', [0, 210, 255, 200], flowByToZone, false);
+
+      console.log('[Dijkstra] linkId:', linkId,
+        '| productie:', nProd, '/', prodSel.size,
+        '| attractie:', nAttr, '/', attrSel.size,
+        '| pathData totaal:', pathData.length);
+      return { pathData, flowByFromZone, flowByToZone };
+    }
+
+    // Routes worden hieronder op de achtergrond geladen (niet ge-await't): de kaart
+    // hoeft er niet op te wachten. "Routes laden…" wordt dus niet meer als blokkerende
+    // laadtekst getoond; de resterende synchrone init leidt naar de kaart zelf.
+    setLoaderMsg(T('loaderMap'));
+    let routeMode        = false;
+    let routeList        = [];
+    let totalRouteWeight = 1;
+
+    /**
+     * Parst een routes-GeoJSON en voegt routes toe aan routeList.
+     * Gebruikt het volledige linkPath; voedingslinks die niet in linkGeomMap staan
+     * worden gefilterd. Geen N_SKIP-trim, geen Dijkstra aanloop/uitloop.
+     * @param {object|null} routesFc    - GeoJSON FeatureCollection met routes (null → skip)
+     * @param {string}      vehicleMode - 'CAR' | 'BIKE' | 'PEDESTRIAN' of MODE
+     */
+    function _parseAndAddRoutes(routesFc, vehicleMode) {
+      if (!routesFc?.features) return;
+      // linkId → lengte (m); -1 = niet in linkGeomMap / < 2 coördinaten.
+      // Voorgevuld met de segmentlengtes (meestal het `length`-attribuut uit het netwerkbestand).
+      const linkLenCache = new Map();
+      for (const seg of segments) {
+        if (seg.coords?.length >= 2) linkLenCache.set(seg.props.linkId, seg.length);
+      }
+      // Pass 1: bereken zone-totaal én OD-totaal voor de isAbsolute-detectie
+      const zoneTripSumMap = new Map(); // fromZoneId → totaal r.trips
+      const odTripSumMap   = new Map(); // "from_to"  → totaal r.trips voor dit OD-paar
+      for (const feat of routesFc.features) {
+        const fz  = feat.properties.fromZoneId;
+        const tz  = feat.properties.toZoneId;
+        const key = `${fz}_${tz}`;
+        for (const r of feat.properties.routes ?? []) {
+          const t = r.trips ?? 0;
+          zoneTripSumMap.set(fz, (zoneTripSumMap.get(fz) ?? 0) + t);
+          odTripSumMap.set(key,  (odTripSumMap.get(key)  ?? 0) + t);
+        }
+      }
+      for (const feat of routesFc.features) {
+        const routes     = feat.properties.routes;
+        const fromZoneId = feat.properties.fromZoneId;
+        const toZoneId   = feat.properties.toZoneId;
+        if (!routes) continue;
+        const zoneSum    = zoneTripSumMap.get(fromZoneId) ?? 1;
+        const isAbsolute = zoneSum > 1.5;
+        const odKey      = `${fromZoneId}_${toZoneId}`;
+        const odSum      = odTripSumMap.get(odKey) ?? 0;
+
+        // originProduction: absolute dagproductie van de herkomstzone (veh/dag)
+        // tripFraction: aandeel van de productie dat naar deze bestemming gaat
+        const originProd = feat.properties.originProduction ?? (isAbsolute ? zoneSum : 0);
+        const tripFrac   = feat.properties.tripFraction
+                         ?? (isAbsolute && zoneSum > 0 ? odSum / zoneSum : odSum);
+
+        for (const r of routes) {
+          if (!r.linkPath || !r.linkPath.length) continue;
+          // Gebruik het volledige linkPath; filter op aanwezigheid in linkGeomMap
+          // Normaliseer linkPath IDs naar het type dat linkGeomMap gebruikt:
+          // - string-keyed maps (bijv. Vreden: linkId is large_string met _N-suffix)
+          // - number-keyed maps (bijv. Hasselt: linkId is int64)
+          const linkIds = [];
+          let totalLen  = 0;
+          for (const raw of r.linkPath) {
+            const id = linkGeomMap.has(raw) ? raw : parseInt(raw);
+            // Linklengte één keer per link berekenen (haversine over alle
+            // coördinaten), niet opnieuw voor elke route die de link gebruikt.
+            let len = linkLenCache.get(id);
+            if (len === undefined) {
+              const c = linkGeomMap.get(id);
+              len = c?.length >= 2 ? segmentLength(c) : -1;  // -1 = geen bruikbare geometrie
+              linkLenCache.set(id, len);
+            }
+            if (len < 0) continue;
+            linkIds.push(id);
+            totalLen += len;
+          }
+          if (!linkIds.length) continue;
+          if (totalLen < 30) continue;
+          routeList.push({
+            linkIds,
+            fromZoneId,
+            toZoneId,
+            originProduction: originProd,
+            tripFraction:     tripFrac,
+            weight:           isAbsolute ? r.trips / zoneSum : r.trips,
+            vehicleMode,
+            motifRatio:       feat.properties.motifRatio ?? null,
+          });
+        }
+      }
+    }
+
+    // Routes zijn optioneel en sturen alleen de route-gebaseerde animatiemodus aan
+    // (segment-modus, hieronder al met `segments` opgebouwd, werkt zonder routes).
+    // Daarom wordt er hier niet op _rtFetch gewacht: de rest van de initialisatie
+    // (kaart, zones, UI) gaat direct verder in segment-modus, en deze achtergrond-
+    // taak schakelt — zodra de (potentieel grote) routes-fetch/parse klaar is —
+    // naar route-modus over via rebuildCars(), zonder de kaart opnieuw te laden.
+    const _tPost = performance.now();
+    async function _loadRoutesInBackground() {
+      try {
+        if (MODE === 'MIXED') {
+          const [carFc, bikeFc] = await _rtFetch;
+          _trace(`routes (achtergrond): ontvangen CAR=${carFc?.features?.length} BIKE=${bikeFc?.features?.length}`);
+          const _tP0 = performance.now();
+          _parseAndAddRoutes(carFc,  'CAR');
+          _parseAndAddRoutes(bikeFc, 'BIKE');
+          console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
+        } else {
+          const routesFc = await _rtFetch;
+          _trace(`routes (achtergrond): ontvangen (${routesFc?.features?.length} features)`);
+          if (!routesFc) throw new Error('geen data');
+          const _tP0 = performance.now();
+          _parseAndAddRoutes(routesFc, MODE);
+          console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
+        }
+        totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
+        routeMode = routeList.length > 0;
+        const _tBlrm = performance.now();
+        buildLinkRouteMap();
+        console.log('[perf] buildLinkRouteMap:', (performance.now() - _tBlrm).toFixed(0), 'ms | routes:', routeList.length);
+        _traceTime('routes (achtergrond): calibrateRouteProductions', () => calibrateRouteProductions());  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
+        if (routeMode) {
+          document.getElementById('odEditBtn').style.display = '';
+          _traceTime('routes (achtergrond): rebuildCars', () => rebuildCars());  // was al gestart in segment-modus; nu overschakelen naar route-modus
+        }
+        console.log('[perf] routes geladen (achtergrond):', (performance.now() - _tPost).toFixed(0), 'ms');
+      } catch (e) {
+        console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
+      }
+    }
+    _trace('init: routes-achtergrondtaak gestart');
+    _loadRoutesInBackground();
+
+    // ── 4. Applicatiestatus ─────────────────────────────────────────────────
+    _trace('init: 4. Applicatiestatus');
+     let timeScale = 1;
+     let threshold = 0;
+     let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
+     let selectedZoneId   = null;    // zoneId van geselecteerde zone (voor route-highlight)
+     let hoveredZoneId    = null;    // zoneId onder de cursor (bijgehouden via onHover)
+     let hoveredOdArrowZoneId   = null; // counterpartId van de OD-pijl onder de cursor (via onHover)
+     let highlightedOdZoneId   = null; // counterpartId van de "vastgeklikte" OD-pijl: dimt overige pijlen/routes
+    // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
+    let initFillMethod = localStorage.getItem('initFillMethod') || 'little';
+    const _tRlfm = performance.now();
+    rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan); onafhankelijk van routes
+    console.log('[perf] rebuildLinkFlowMap:', (performance.now() - _tRlfm).toFixed(0), 'ms');
+    // calibrateRouteProductions() gebeurt pas in _loadRoutesInBackground() hierboven,
+    // zodra routeList daadwerkelijk gevuld is (hier zou het nog altijd een no-op zijn).
+    let widthScale = false;
+    let colorMetric = 'flow';
+    let cars      = [];
+    let carData   = [];
+
+    // ── Afgeleide lagen (geluid / emissie) ────────────────────────────────────
+    // Deze worden niet in het NETWORK-bestand meegeleverd, maar los opgehaald via
+    // /collections/noise|emission/items en op linkId gejoind met de netwerk-props.
+    /** Map linkId → geluid-props ({noiseLden, noiseLnight, …}); null = nog niet geladen. */
+    let noiseByLinkId = null;
+    /** Map linkId → emissie-props ({co2Kg, noxKg, pm10Kg, length, …}); null = nog niet geladen. */
+    let emisByLinkId = null;
+
+    /** Haal de afgeleide laag ('noise' of 'emission') op en vul de bijbehorende
+     *  linkId-lookup. Idempotent: doet niets als de map al gevuld is. */
+    async function ensureDerivedLayer(kind) {
+      const already = kind === 'noise' ? noiseByLinkId : emisByLinkId;
+      if (already) return already;
+      const url = `/collections/${kind}/items?areaId=${AREA_ID}&mode=${MODE}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${kind} laden mislukt: ${r.status} ${r.statusText}`);
+      const fc = await r.json();
+      const m = new Map();
+      for (const f of (fc.features || [])) {
+        const p = f.properties || {};
+        if (p.linkId != null) m.set(p.linkId, p);
+      }
+      if (kind === 'noise') noiseByLinkId = m; else emisByLinkId = m;
+      return m;
+    }
+
+    /** Metric-ids die een afgeleide laag vereisen → welke laag ('noise'/'emission'). */
+    const DERIVED_METRIC_KIND = {
+      noise_lden:   'noise',
+      noise_lnight: 'noise',
+      emis_co2:     'emission',
+      emis_nox:     'emission',
+      emis_pm10:    'emission',
+    };
+
+    /** Metrieken waarvoor de verschilplot (Δ) beschikbaar is.
+     *  Geschaalde varianten (_scaled) vallen hier buiten: daar werkt het niet op.
+     *  Veiligheid (categorisch), spectrum/compare/none vallen ook buiten. */
+    const DIFF_SUPPORTED = new Set([
+      'flow', 'occupancy', 'coverage', 'speed', 'capacity',
+      'noise_lden', 'noise_lnight', 'emis_co2', 'emis_nox', 'emis_pm10',
+    ]);
+
+    /** Metrieken die optelbaar zijn → de gestapelde plot (Δ▤, grijze kern + gekleurde
+     *  rand) is fysiek zinvol. Verhoudingen (I/C, bezetting), snelheid en het
+     *  logaritmische geluid (dB) vallen hier buiten: alleen de gewone deltaplot. */
+    const DIFF_ADDITIVE = new Set([
+      'flow', 'capacity', 'emis_co2', 'emis_nox', 'emis_pm10',
+    ]);
+
+    /** Metrieken waarbij een TOENAME een verbetering is (blije smiley). Voor alle
+     *  overige DIFF_SUPPORTED-metrieken geldt: een AFNAME is de verbetering. */
+    const DIFF_HIGHER_IS_BETTER = new Set([
+      'speed', 'capacity',
+    ]);
+
+    // ── Wegenscan state ───────────────────────────────────────────────────────
+    /** GeoJSON van het WEGENSCAN-bestand; null als nog niet geladen. */
+    let wegenscanData = null;
+    /** Map van linkId (string) → safety-properties object */
+    let wegenscanByLinkId = new Map();
+    /** deck.gl layer-id voor de wegenscan-overlay */
+    const WS_SOURCE = 'wegenscan-src';
+    const WS_LAYER  = 'wegenscan-layer';
+
+    /** Veiligheidskleur (RGBA) voor een generic_safety waarde */
+    function safetyToRgba(score) {
+      switch (score) {
+        case 'GOED':     return [56,  142,  60, 220];   // groen
+        case 'REDELIJK': return [251, 192,  45, 220];   // geel
+        case 'MATIG':    return [230, 120,  20, 220];   // oranje
+        case 'SLECHT':   return [198,  40,  40, 220];   // rood
+        default:         return [90,  90,  110, 160];   // grijs (NVT/onbekend)
+      }
+    }
+
+    /** KPI-namen voor het zijpaneel */
+    const KPI_LABELS = {
+      r_functional_usage:       'Functioneel gebruik',
+      r_longitudinal_marking:   'Kantmarkering',
+      r_directional_separation: 'Rijrichtingscheiding',
+      r_lane_width:             'Rijstrookbreedte',
+      r_road_surface:           'Wegdek',
+      r_pedestrian_facility:    'Voetgangersfaciliteit',
+      r_bicycle_facility:       'Fietsfaciliteit',
+      r_parking_facility:       'Parkeerfaciliteit',
+      r_bus_stop_facility:      'Bushaltefaciliteit',
+      r_speed_bumps:            'Drempels',
+      r_roadside_damage:        'Bermschade',
+      r_road_width:             'Rijbaanbreedte',
+      r_pedestrian_width:       'Breedte voetpad',
+      r_bicycle_width:          'Breedte fietspad',
+      r_parking_location:       'Parkeerlocatie',
+      r_bus_location:           'Buslocatie',
+      r_pedestrian_crossing:    'Voetgangersoversteek',
+      r_bicycle_crossing:       'Fietsoversteek',
+      r_bike_speed:             'Fietssnelheid',
+      r_bike_usage:             'Fietsgebruik',
+      r_bike_parking:           'Fietsparkeren',
+      r_social_interaction:     'Sociale interactie',
+    };
+
+    /** Kleur (hex) per KPI-score voor het zijpaneel */
+    function kpiColor(score) {
+      return { GOED:'#388e3c', REDELIJK:'#fbc02d', MATIG:'#e65100', SLECHT:'#c62828' }[score] ?? '#5a6272';
+    }
+
+    /** Laad WEGENSCAN-GeoJSON van de server, bouw lookupMap op. */
+    async function loadWegenscanData() {
+      const url = `/collections/wegenscan/items?areaId=${AREA_ID}&mode=${MODE}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.statusText);
+      wegenscanData = await r.json();
+      wegenscanByLinkId.clear();
+      for (const f of (wegenscanData.features ?? [])) {
+        const p = f.properties ?? {};
+        const id = p.linkId ?? p.spectrumId;
+        if (id != null) wegenscanByLinkId.set(String(id), p);
+      }
+      console.log('[wegenscan] geladen:', wegenscanByLinkId.size, 'features');
+    }
+
+    /** Toon het KPI-zijpaneel voor de gegeven feature-properties. */
+    function openWegenscanPanel(props) {
+      const panel   = document.getElementById('wegenscanPanel');
+      const linkEl  = document.getElementById('wegenscanPanelLinkId');
+      const scoreEl = document.getElementById('wegenscanGenericScore');
+      const listEl  = document.getElementById('wegenscanKpiList');
+
+      const linkId  = props?.linkId ?? props?.spectrumId ?? '?';
+      const safety  = props?.safety ?? {};
+      const generic = props?.generic_safety ?? 'NVT';
+
+      linkEl.textContent  = `Wegvak ${linkId}`;
+      scoreEl.textContent = generic;
+      scoreEl.style.color = kpiColor(generic);
+
+      listEl.innerHTML = Object.entries(KPI_LABELS).map(([key, label]) => {
+        const score = safety[key] ?? 'NVT';
+        const color = kpiColor(score);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;
+          padding:5px 0;border-bottom:1px solid rgba(35,41,49,0.05)">
+          <span style="color:#aab4c8">${label}</span>
+          <span style="font-weight:600;color:${color}">${score}</span>
+        </div>`;
+      }).join('');
+
+      panel.style.display = 'block';
+    }
+
+    /** Sluit het KPI-zijpaneel. */
+    function closeWegenscanPanel() {
+      document.getElementById('wegenscanPanel').style.display = 'none';
+    }
+
+    /** Stel de wegenscan-banner in (zichtbaar/verborgen, tekst). */
+    function setWegenscanBanner(visible, msg) {
+      const el = document.getElementById('wegenscanBanner');
+      el.style.display = visible ? 'flex' : 'none';
+      if (msg) document.getElementById('wegenscanBannerMsg').textContent = msg;
+    }
+
+    /** Poll job-status en laad data na voltooiing. */
+    async function pollWegenscanJob(jobId) {
+      const progress = document.getElementById('wegenscanProgress');
+      progress.style.display = '';
+      progress.textContent = 'Bezig…';
+      for (let i = 0; i < 600; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const r = await fetch(`/jobs/${jobId}`);
+          if (!r.ok) continue;
+          const job = await r.json();
+          if (job.status === 'successful') {
+            progress.textContent = 'Klaar!';
+            await loadWegenscanData();
+            setWegenscanBanner(false);
+            updateOverlay(true);
+            updateLegend();
+            return;
+          }
+          if (job.status === 'failed') {
+            progress.textContent = 'Mislukt';
+            document.getElementById('wegenscanRunBtn').disabled = false;
+            return;
+          }
+          const lastLog = job.log?.slice(-1)[0] ?? '';
+          if (lastLog) progress.textContent = lastLog.slice(0, 60);
+        } catch (_) {}
+      }
+      progress.textContent = 'Time-out';
+    }
+
+    // ── Flow-scaler staat ────────────────────────────────────────────────────
+    /** Originele flow-waarden per linkId; gevuld bij eerste toepassing, null als niet actief. */
+    let _fspOriginal = null;  // Map<linkId, {flow, flow24hrs, flowsPerDaypart}>
+    /** Teller die oploopt bij elke apply/reset; dient als deck.gl updateTrigger. */
+    let _fspVersion  = 0;
+    /** Overschreven max-flow voor de legenda terwijl de flow-scaler actief is; null = gebruik per-dagdeel scan. */
+    let _fspMaxFlow  = null;
+    // _fspActiveLabel is declared near updateSunLight() (above) to avoid temporal dead zone errors.
+
+    /** Ververs het debug-paneel met actuele statistieken over data en simulatie. */
+    function updateDebugPanel() {
+      if (!window._debugMode) return;
+      const nMoving   = cars.filter(c => c.state === 'moving').length;
+      const nParked   = cars.filter(c => c.state === 'parked').length;
+      const nSpawning = cars.filter(c => c.state === 'spawning').length;
+      const nBoundary = [...zoneMap.values()].filter(z => z.boundary).length;
+      document.getElementById('dbgArea').innerHTML =
+        `areaId: <b>${AREA_ID}</b><br>` +
+        `mode: <b>${MODE}</b><br>` +
+        `dagdeel: <b>${daypart}</b><br>` +
+        `bbox: <b>[${areaBounds.map(v => v.toFixed(5)).join(', ')}]</b>`;
+      document.getElementById('dbgNetwork').innerHTML =
+        `wegvakken: <b>${segments.length}</b><br>` +
+        `knopen: <b>${nodeCoords.size}</b><br>` +
+        `zones: <b>${zoneMap.size}</b> (boundary: <b>${nBoundary}</b>)<br>` +
+        `routes: <b>${routeList.length}</b> &mdash; ${routeMode
+          ? `route-modus, gewicht: <b>${Math.round(totalRouteWeight)}</b>`
+          : `<b>segment-modus</b>`}<br>` +
+        `globalMaxFlow: <b>${Math.round(currentFlowCeiling(false))}</b> vtg/u &mdash; flowDaypart: <b>${flowDaypart}</b>`;
+      document.getElementById('dbgSim').innerHTML =
+        `auto's: <b>${cars.length}</b> totaal &nbsp; (Little's Law: <b>${Math.round(
+          segments.reduce((s, sg) => {
+            const f = segFlow(sg), v = sg.speedMs || 10;
+            return s + (f > 0 ? f * sg.length / (v * 3600) : 0);
+          }, 0)
+        )}</b>)<br>` +
+        `rijdend: <b>${nMoving}</b> &nbsp;` +
+        `geparkeerd: <b>${nParked}</b> &nbsp;` +
+        (routeMode
+          ? `productie: <b>${lastProductionSpawns}</b>/s &nbsp;` +
+            `attractie: <b>${lastAttractionCount}</b>/s`
+          : `spawning: <b>${nSpawning}</b>`);
+    }
+    // Exporteer zodat de globale DBG-handler (buiten IIFE) het paneel kan verversen
+    window._updateDebugPanel = updateDebugPanel;
+    setInterval(updateDebugPanel, 300);
+
+    /** Uurintensiteit voor het actieve dagdeel (stuurt op flowDaypart, niet op daypart).
+     *  Als dp[flowDaypart] gevuld (>0): direct teruggeven.
+     *  Anders (bijv. Tampere: dp=0 maar flow24hrs gevuld): fractie van flow24hrs. */
+    function dpFlowOf(props) {
+      const dp = props.flowsPerDaypart;
+      if (dp && dp[flowDaypart]) return dp[flowDaypart];
+      const base = props.flow24hrs ?? props.flow ?? 0;
+      return base * (DP_FRACTION[flowDaypart] ?? (1/14.4));
+    }
+
+    /** Schaalplafond voor kleur-/breedtenormalisatie. */
+    function currentFlowCeiling(isBike) {
+      return isBike ? globalMaxFlowBike : globalMaxFlow;
+    }
+
+    /** Flow voor het actieve dagdeel (segment-modus) */
+    function segFlow(seg) {
+      return dpFlowOf(seg.props);
+    }
+
+    /** Globaal maximum uurintensiteit (vtg/h) over álle dagdelen en álle wegvakken.
+     *  Wordt als vaste schaalbovengrens gebruikt, zodat kleuren per dagdeel vergelijkbaar zijn. */
+    globalMaxFlow = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        for (const dp of Object.keys(DP_FRACTION)) {
+          const props   = seg.props;
+          const dpFlows = props.flowsPerDaypart;
+          const v = (dpFlows && dpFlows[dp])
+            ? dpFlows[dp]
+            : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
+          if (v > mx) mx = v;
+        }
+      }
+      return mx || 1;
+    })();
+
+    /** Maximum uurintensiteit uitsluitend over fietslinks; schaalbovengrens voor bikeFlowToRgba(). */
+    globalMaxFlowBike = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        if ((seg.props.mode ?? '').toUpperCase() !== 'BIKE') continue;
+        for (const dp of Object.keys(DP_FRACTION)) {
+          const props   = seg.props;
+          const dpFlows = props.flowsPerDaypart;
+          const v = (dpFlows && dpFlows[dp])
+            ? dpFlows[dp]
+            : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
+          if (v > mx) mx = v;
+        }
+      }
+      return mx || 1;
+    })();
+
+    /** Set van absolute link-IDs die zowel als positief als negatief voorkomen in het netwerk.
+     *  Gebruikt in de intensiteit-view om bidirectionele wegen (30 km/u) smaller te tekenen. */
+    const biDirLinkIds = (() => {
+      const pos = new Set(), neg = new Set();
+      for (const seg of segments) {
+        const id = seg.props.linkId;
+        if (id > 0) pos.add(id);
+        else if (id < 0) neg.add(-id);
+      }
+      return new Set([...pos].filter(id => neg.has(id)));
+    })();
+
+    /** Waarde van de actieve metric voor een feature-properties object */
+    function getMetricValue(p) {
+      return evalMetric(p, colorMetric, noiseByLinkId, emisByLinkId);
+    }
+
+    /** Bereken de metriekwaarde voor een wegvak, met expliciet meegegeven
+     *  geluid-/emissie-lookups. Zo kan zowel het huidige scenario (globale maps)
+     *  als het bronscenario (aparte maps) geëvalueerd worden. */
+    function evalMetric(p, metric, noiseMap, emisMap) {
+      switch (metric) {
+        case 'flow':
+        case 'flow_scaled': {
+          return dpFlowOf(p);
+        }
+        case 'occupancy':
+        case 'occupancy_scaled': {
+          const v = dpFlowOf(p);
+          return p.capacity > 0 ? (v / p.capacity) * 100 : null;
+        }
+        case 'coverage':
+        case 'coverage_scaled': {
+          // Fysieke bezettingsgraad: aandeel wegdek bedekt door voertuig-
+          // footprints + veilige remweg (2-secondenregel), volle rijstrook-
+          // breedte geblokkeerd. Weglengte en strookbreedte vallen weg:
+          //   dekking% = 0.1 × q × (L_voertuig + v/1.8) / (v × rijstroken)
+          // met q=flow (vtg/u), v=snelheid (km/h). Mag > 100% (oververzadiging).
+          const q     = dpFlowOf(p);
+          const vKmh  = p.speed;
+          const lanes = p.lanes || 1;
+          if (!(q > 0) || !(vKmh > 0) || !(lanes > 0)) return null;
+          const Lveh   = avgVehicleLengthForMode(p.mode);
+          const occLen = Lveh + vKmh / 1.8;   // eigen lengte + remweg (v_ms × 2)
+          return 0.1 * q * occLen / (vKmh * lanes);
+        }
+        case 'speed':    return p.speed ?? null;
+        case 'capacity': return p.capacity ?? null;
+        case 'priority_roads': return p.priorityRoad === true ? 1 : 0;
+        // "Snelheid"-sub-lagen: binaire aanwezigheid van de betreffende factor
+        // op dit wegvak. Voor de v0-lagen kijken we bij voorkeur naar de
+        // NETWORK-CAR attributen (geen zoom-16 drempel), met de verkregen
+        // traffic-assets als fallback voor oudere exports zonder deze kolommen.
+        case 'speed_crossings': {
+          if ('numPedestrianCrossings' in p) return (p.numPedestrianCrossings || 0) > 0 ? 1 : 0;
+          const flags = speedLinkFlags.get(p.linkId);
+          return flags?.zebra ? 1 : null;
+        }
+        case 'speed_intersections': {
+          const nlm = nodeLinkMap.get(p.linkId);
+          if (!nlm) return null;
+          // Categorie op basis van doelknoop; fallback op beginknoop (bijv. richting rotonde).
+          const toCat   = nodeIntersectionsMap.get(nlm.toNode);
+          const fromCat = nodeIntersectionsMap.get(nlm.fromNode);
+          return toCat != null ? toCat : (fromCat != null ? fromCat : null);
+        }
+        case 'speed_yield': {
+          if ('numGiveWays' in p || 'numStoppingLanes' in p) {
+            return ((p.numGiveWays || 0) > 0 || (p.numStoppingLanes || 0) > 0) ? 1 : 0;
+          }
+          const flags = speedLinkFlags.get(p.linkId);
+          return (flags?.yield || flags?.stop) ? 1 : null;
+        }
+        case 'speed_refuge': {
+          // Alleen op basis van NETWORK-CAR registratie (numRefugeAreas).
+          // Traffic-assets worden wel getekend als aparte visuele laag, maar
+          // niet gebruikt voor de penalty/kaartlaag. Zie plan-snelheid-
+          // strafseconden.md, Fase 1.
+          if ('numRefugeAreas' in p) return (p.numRefugeAreas || 0) > 0 ? 1 : 0;
+          const flags = speedLinkFlags.get(p.linkId);
+          return flags?.refuge ? 1 : null;
+        }
+        // Toekomstige Snelheid-sub-lagen: al zichtbaar in het menu; grijs zolang
+        // de bronkolommen (Deel A / numCycleCrossings / fietspaden) ontbreken.
+        // Beschikbaarheid wordt gedetecteerd op basis van het geladen netwerk.
+        case 'speed_cycle_crossings': {
+          if ('numCycleCrossings' in p) return (p.numCycleCrossings || 0) > 0 ? 1 : 0;
+          if ('numCyclePaths' in p) return (p.numCyclePaths || 0) > 0 ? 1 : 0;
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'cycleCrossing' || attr === 'numCycleCrossings' || attr === 'numCyclePaths');
+          if (!hasAttr) return null;
+          return p.cycleCrossing === true ? 1 : 0;
+        }
+        case 'speed_from_right': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'fromRightLinkId');
+          if (!hasAttr) return null;
+          // Toon de actuele uurintensiteit (dagdeel) van de link van rechts,
+          // net als bij de gewone intensiteitskaart. Geen ID = geen weg van rechts.
+          return _speedConflictFlow(p.fromRightLinkId);
+        }
+        case 'speed_left_turn': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'oppositeLinkId');
+          if (!hasAttr) return null;
+          // Raw flows die gekruist worden bij linksafslaan: tegenliggers + van links.
+          const opposite = _speedConflictFlow(p.oppositeLinkId);
+          const fromLeft = _speedConflictFlow(p.fromLeftLinkId);
+          return Math.round((opposite + fromLeft) * 10) / 10;
+        }
+        case 'speed_oncoming': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'roadWidthM');
+          if (!hasAttr) return null;
+          // Raw tegenliggers-flow op smalle weg (effectieve breedte < 5,5 m).
+          const effectiveWidth = _speedEffectiveRoadWidth(p);
+          if (effectiveWidth >= 5.5) return 0;
+          return _speedConflictFlow(p.oppositeLinkId);
+        }
+        case 'speed_elevation': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'elevationFrom' || attr === 'elevationTo');
+          if (!hasAttr) return null;
+          // Toon de werkelijke helling (%), negatief = omlaag, positief = omhoog.
+          const slope = _speedSlopePct(p);
+          return slope != null ? Math.round(slope * 10) / 10 : null;
+        }
+        case 'speed_penalty_total': {
+          const d = penaltyByLinkId.get(p.linkId);
+          return d ? d.total : 0;
+        }
+        // Geluid (dB(A)) — losse laag, gejoind op linkId
+        case 'noise_lden':
+        case 'noise_lnight': {
+          const d = noiseMap && noiseMap.get(p.linkId);
+          if (!d) return null;
+          const v = metric === 'noise_lden' ? d.noiseLden : d.noiseLnight;
+          return (v != null) ? v : null;
+        }
+        // Emissie per km — kg/etmaal gedeeld door linklengte (lengte-onafhankelijk)
+        case 'emis_co2':
+        case 'emis_nox':
+        case 'emis_pm10': {
+          const d = emisMap && emisMap.get(p.linkId);
+          if (!d) return null;
+          const kg = metric === 'emis_co2' ? d.co2Kg
+                   : metric === 'emis_nox' ? d.noxKg
+                   : d.pm10Kg;
+          if (kg == null) return null;
+          const len = (d.length != null) ? d.length : p.length;
+          const lenKm = (len > 0) ? len / 1000 : null;
+          return lenKm ? kg / lenKm : null;
+        }
+        default:         return p.flow;
+      }
+    }
+
+    // Initialiseer legenda met avondspits-waarden
+    updateLegend();
+
+    /**
+     * Bouw een path-object uit een array van link-segmenten.
+     *
+     * linkObjs: [{ coords: [[lon,lat],...], speedMs: number }, ...]
+     *
+     * Geeft terug:
+     *   coords      — samengevoegde coördinaten (voor rendering + interpolatePosition)
+     *   length      — totale lengte in meters
+     *   links       — [{ length, speedMs }, ...]  één entry per deellink
+     *   boundaries  — [0, d0, d0+d1, ..., total]  cumulatieve afstand per linkgrens
+     *   speedMs     — snelheid van de eerste link (fallback voor segment-modus)
+     */
+    function buildPathFromLinks(linkObjs) {
+      if (!linkObjs.length) return null;
+
+      const links           = [];
+      const boundaries      = [0];
+      const nodeIds         = [];   // nodeIds[i] = toNode van link i (null als onbekend)
+      const approachBearings = [];  // approachBearings[i] = echte aanrijrichting link i
+                                    // → op-één-na-laatste segment (vóór knik naar knooppunt)
+      const mergedCoords = [...linkObjs[0].coords];
+
+      for (let i = 0; i < linkObjs.length; i++) {
+        const lo    = linkObjs[i];
+        const coords = lo.coords;
+        const len   = segmentLengthCached(coords);
+        links.push({ length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0 });
+        boundaries.push(boundaries[boundaries.length - 1] + len);
+        nodeIds.push(lo.toNode ?? null);
+        if (i > 0) mergedCoords.push(...coords.slice(1));
+
+        // Aanrijrichting: gebruik op-één-na-laatste segment om de kunstmatige knik
+        // naar het knooppuntmiddelpunt (diamantvorm) te vermijden.
+        // coords.length >= 3 → neem coords[n-3]→coords[n-2]  (vóór de knik)
+        // coords.length == 2 → neem het enige beschikbare segment
+        if (coords.length >= 3) {
+          approachBearings.push(segmentBearing(coords[coords.length - 3], coords[coords.length - 2]));
+        } else {
+          approachBearings.push(segmentBearing(coords[0], coords[coords.length - 1]));
+        }
+      }
+
+      const totalLength = boundaries[boundaries.length - 1];
+      return {
+        coords:          mergedCoords,
+        length:          totalLength,
+        links,
+        boundaries,
+        nodeIds,
+        approachBearings,
+        speedMs:         links[0].speedMs,  // fallback
+      };
+    }
+
+    /**
+     * Bouw een vlakke [lon,lat][] uit een reeks link-ID's via linkGeomMap.
+     * Het eerste punt van elke volgende link (dubbel eindpunt) wordt overgeslagen.
+     * Opeenvolgende identieke punten worden gededupliceerd (zelfde als Python _path_to_linestring).
+     * @param {number[]} linkIds
+     * @returns {number[][]}
+     */
+    function _linkIdsToCoords(linkIds) {
+      const result = [];
+      let first = true;
+      for (const id of linkIds) {
+        const seg = linkGeomMap.get(id);
+        if (!seg || seg.length < 2) continue;
+        const start = first ? 0 : 1;
+        for (let j = start; j < seg.length; j++) result.push(seg[j]);
+        first = false;
+      }
+      // Dedupliceer opeenvolgende identieke punten
+      const deduped = [];
+      for (const pt of result) {
+        const last = deduped[deduped.length - 1];
+        if (!last || pt[0] !== last[0] || pt[1] !== last[1]) deduped.push(pt);
+      }
+      return deduped;
+    }
+
+    /**
+     * Geeft de doelsnelheid voor een auto op basis van zijn huidige positie:
+     *   - 90 % van de linksnelheid bij vrij rijden
+     *   - lineair teruggebracht naar 50 % in de laatste SLOW_ZONE meter van de link
+     *
+     * Voor paden zonder per-link data (segment-modus fallback):
+     *   altijd 90 % van path.speedMs.
+     */
+    const SLOW_ZONE = 30;   // meters voor het linkeinde waarop wordt afgereden
+
+    function computeLinkTargetSpeed(car) {
+      const path = car.path;
+
+      // Segment-modus of pad zonder link-info: vaste 90%
+      if (!path.boundaries || path.boundaries.length < 2) {
+        return path.speedMs * 0.9;
+      }
+
+      const distM = car.offset * path.length;
+      const bnd   = path.boundaries;
+
+      // Binary search: zoek linkIdx zodat bnd[linkIdx] <= distM < bnd[linkIdx+1]
+      let lo = 0, hi = bnd.length - 2;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (bnd[mid] <= distM) lo = mid; else hi = mid - 1;
+      }
+      const linkIdx    = Math.min(lo, path.links.length - 1);
+      const linkSpeedMs = path.links[linkIdx].speedMs;
+      const distToEnd  = bnd[linkIdx + 1] - distM;
+
+      if (distToEnd <= SLOW_ZONE) {
+        // Lineair: 90% op 30m voor einde → 50% op het einde
+        const t = distToEnd / SLOW_ZONE;          // 1.0 = ver weg, 0.0 = op eindpunt
+        return linkSpeedMs * (0.50 + 0.40 * t);
+      }
+      return linkSpeedMs * 0.90;
+    }
+
+    /**
+     * Bouw de auto-lijst opnieuw op.
+     *
+     * Route-modus:
+     *   - Filter routes op minimum trips-gewicht (threshold / 10000).
+     *   - Verdeel N = targetCarCount(zoom) auto's over routes naar rato van weight.
+     *   - Elke auto heeft car.path = route-object.
+     *
+     * Segment-modus (fallback):
+     *   - Filter segmenten op flow >= threshold.
+     *   - Auto-aantallen via flowToCarCount (ongewijzigd gedrag).
+     *   - Elke auto heeft car.path = segment-object.
+     */
+    /** Geeft het tijdsinterval (in gesimuleerde seconden) waarbinnen auto's op een route
+     *  gespreid vertrekken. Schaalt mee met timeScale zodat het er bij lage snelheid
+     *  ook goed uitziet. */
+    function parkDepartInterval() { return 60; }
+
+    /**
+     * Gewogen willekeurig sample: geef index terug op basis van weights-array.
+     * weights: array van niet-negatieve getallen.
+     */
+    function weightedSample(weights) {
+      const total = weights.reduce((s, w) => s + w, 0);
+      if (total <= 0) return Math.floor(Math.random() * weights.length);
+      let r = Math.random() * total;
+      for (let i = 0; i < weights.length; i++) {
+        r -= weights[i];
+        if (r <= 0) return i;
+      }
+      return weights.length - 1;
+    }
+
+    /**
+     * Initiële offset [0, 1) op een bestaand pad, gewogen naar flow×length per link.
+     */
+    function weightedOffsetOnPath(path) {
+      // Gewichten per link: flow × length
+      const linkWeights = path.links.map(l => Math.max(0, (l.flow || 0) * l.length));
+      const totalW = linkWeights.reduce((s, w) => s + w, 0);
+
+      let offset;
+      if (totalW > 0) {
+        // Kies een link proportioneel aan flow×length
+        const li = weightedSample(linkWeights);
+        // Kies een random positie binnen die link
+        const linkStart = path.boundaries[li] / path.length;
+        const linkEnd   = path.boundaries[li + 1] / path.length;
+        offset = linkStart + Math.random() * (linkEnd - linkStart);
+      } else {
+        offset = Math.random();
+      }
+      return Math.min(Math.max(offset, 0), 0.999);
+    }
+
+    /**
+     * Route-pad-object voor buildCarList en odGroups. `allLinkObjs` en `path` worden pas
+     * bij eerste gebruik opgebouwd en daarna bewaard (zelfde object, zodat
+     * enforceInitialSpacing op `car.path` kan groeperen). Van de tienduizenden routes
+     * krijgt maar een klein deel ooit een auto; vooraf alle paden met samengevoegde
+     * geometrie bouwen bevroor de pagina tientallen seconden (Deventer: 66 K routes).
+     */
+    function _makeRoutePath(route, isBoundary, canPark) {
+      let linkObjs = null, path = null;
+      return {
+        route, isBoundary, canPark,
+        approachCount: 0,
+        // Link-objecten uit het volledige linkpad (voedingslinks al gefilterd in _parseAndAddRoutes)
+        get allLinkObjs() {
+          return linkObjs ??= route.linkIds.map(id => {
+            const coords  = linkGeomMap.get(id);
+            const speedMs = linkSpeedMap.get(id) ?? 10;
+            const flow    = linkFlowMap.get(id) ?? 0;
+            const nodes   = nodeLinkMap.get(id);
+            return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
+          }).filter(Boolean);
+        },
+        get innerLinkPairs() { return this.allLinkObjs; },
+        get path() { return path ??= buildPathFromLinks(this.allLinkObjs); },
+      };
+    }
+
+    /**
+     * Bouw de auto-lijst opnieuw op.
+     *
+     * Route-modus:
+     *   - Totaal voertuigen via Little's Law: Σ(flow×length/speed) × 0.80, capped op MAX_VEHICLES
+     *   - Initiële verdeling (geparkeerd/rijdend/spawning) op basis van dagdeel (PARK_RATIOS)
+     *   - Gewogen plaatsing op links via flow×length
+     *   - ~30% krijgt route-chaining (pendingPath)
+     *
+     * Segment-modus (fallback):
+     *   - Filter segmenten op flow >= threshold.
+     *   - Aantal auto's via Little's Law: N = round(flow × lengte / (speedMs × 3600)).
+     *   - Spawn-vertraging per auto: N × (3600/flow) − traversaalTijd → effectieve doorvoer = flow.
+     *   - Auto's starten gespreid over één cyclus (geen burst bij initialisatie).
+     */
+    function buildCarList(thresh) {
+      const list = [];
+
+      if (routeMode) {
+        const minWeight = thresh / 10000;
+        const _bT0 = performance.now();
+        let _bLinks = 0;
+
+        // Stap 1: verzamel de route-paden. Alleen lengte en beginsnelheid worden hier
+        // bepaald; het pad zelf wordt lazy gebouwd (zie _makeRoutePath).
+        const routePaths = [];  // _makeRoutePath-objecten
+        for (const route of routeList) {
+          if (route.weight < minWeight) continue;
+          if (!visibleModes.has(route.vehicleMode ?? MODE)) continue;
+
+          let length = 0, nLinks = 0, firstSpeedMs = 10;
+          for (const id of route.linkIds) {
+            const coords = linkGeomMap.get(id);
+            if (!coords) continue;
+            if (nLinks++ === 0) firstSpeedMs = linkSpeedMap.get(id) ?? 10;
+            length += segmentLengthCached(coords);
+          }
+          if (!nLinks || length < 30) continue;
+          _bLinks += nLinks;
+
+          const isBoundary = false;
+          // Fietsen parkeren niet in de digital twin: alleen onderweg zichtbaar.
+          const canPark    = firstSpeedMs <= (50 / 3.6) && (route.vehicleMode ?? MODE) !== 'BIKE';
+          routePaths.push(_makeRoutePath(route, isBoundary, canPark));
+        }
+
+        const _bT1 = performance.now();
+        _trace(`buildCarList stap 1 (paden): ${routeList.length} routes → ${routePaths.length} paden, ${_bLinks} links, ${(_bT1 - _bT0).toFixed(0)}ms (vulmethode=${initFillMethod})`);
+        if (!routePaths.length) return list;
+
+        // Stap 3b: sla OD-groepen op voor het productiemechanisme (altijd nodig, ongeacht vulmethode).
+        // totalFlow [veh/u] = originProduction × DP_FRACTION[daypart] × r.trips
+        //   • originProduction: gekalibreerde dagproductie uit het routebestand (veh/dag,
+        //     zelfde eenheid als flow24hrs) — geldig voor zowel CBS-zones als boundary-zones.
+        //     Gebruik NIET zone.production uit ZONE-bestand: dat is CBS-demografisch en
+        //     kan honderden keren groter zijn dan de werkelijke gemodelleerde stroom.
+        //   • DP_FRACTION[daypart]: conversiefactor dagproductie → uurproductie voor dit dagdeel
+        //   • r.trips: aandeel van die productie dat via dit specifieke routepad gaat [0–1]
+        odGroups.clear();
+        for (const rp of routePaths) {
+          const key = `${rp.route.vehicleMode ?? MODE}:${rp.route.fromZoneId}→${rp.route.toZoneId}`;
+          if (!odGroups.has(key)) odGroups.set(key, { totalFlow: 0, paths: [] });
+          const g            = odGroups.get(key);
+          const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[flowDaypart] ?? (1 / 14.4));
+          g.totalFlow += productionDp * rp.route.weight * (rp.route.calib ?? 1);
+          g.paths.push(rp);
+        }
+
+        // Preprocessing gedeeld door LD en CB: bouw per inner-link een route-map en
+        // per route-pad een offset-tabel (path.boundaries[approachCount + j]).
+        _trace(`buildCarList stap 3b (odGroups=${odGroups.size}): ${(performance.now() - _bT1).toFixed(0)}ms`);
+        let innerLinkRouteMap = null;
+        if (initFillMethod === 'link' || initFillMethod === 'cap') {
+          innerLinkRouteMap = new Map(); // linkId → [{rp, weight}]
+          for (const rp of routePaths) {
+            const w = (rp.route.originProduction ?? 0) * (rp.route.weight ?? 0);
+            if (w <= 0) continue;
+            rp.innerLinkOffsets = new Map(); // linkId → {startOffset [m], linkLength [m]}
+            // Zelfde waarden als rp.path.boundaries/links (approachCount = 0), maar zonder
+            // het pad met geometrie te bouwen.
+            let startOffset = 0;
+            for (const { id: linkId, coords } of rp.innerLinkPairs) {
+              const linkLength = segmentLengthCached(coords);
+              if (linkLength > 0) rp.innerLinkOffsets.set(linkId, { startOffset, linkLength });
+              startOffset += linkLength;
+              if (!innerLinkRouteMap.has(linkId)) innerLinkRouteMap.set(linkId, []);
+              innerLinkRouteMap.get(linkId).push({ rp, weight: w });
+            }
+          }
+        }
+
+        if (initFillMethod === 'link') {
+          // ── Methode LD: Linkdichtheid ───────────────────────────────────────
+          // k = q/v → N_link = flow [veh/u] × linkLength [m] / (speedMs [m/s] × 3600)
+          // linkFlowMap is al dagdeel-geschaald (via rebuildLinkFlowMap).
+          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
+          let totalLd = 0;
+          for (const [linkId, entries] of innerLinkRouteMap) {
+            if (totalLd >= MAX_VEHICLES) break;
+            const flow    = linkFlowMap.get(linkId) ?? 0;
+            const speedMs = linkSpeedMap.get(linkId) ?? 10;
+            if (flow <= 0) continue;
+            const firstOffsets = entries[0].rp.innerLinkOffsets.get(linkId);
+            if (!firstOffsets || firstOffsets.linkLength <= 0) continue;
+            const linkLength = firstOffsets.linkLength;
+            const density    = flow * linkLength / (speedMs * 3600);
+            const n_s        = Math.floor(density) + (Math.random() < (density % 1) ? 1 : 0);
+            if (n_s < 1) continue;
+
+            // Normaliseer sampling-gewichten (DP_FRACTION valt weg bij normalisatie)
+            const totalW = entries.reduce((s, e) => s + e.weight, 0);
+            if (totalW <= 0) continue;
+
+            for (let i = 0; i < n_s; i++) {
+              if (totalLd >= MAX_VEHICLES) break;
+              // Sample route proportioneel aan originProduction × weight
+              let r = Math.random() * totalW;
+              let chosen = entries[entries.length - 1];
+              for (const entry of entries) { r -= entry.weight; if (r <= 0) { chosen = entry; break; } }
+              const rp      = chosen.rp;
+              const offsets = rp.innerLinkOffsets.get(linkId);
+              if (!offsets) continue;
+              // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
+              const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
+              const offset      = Math.min(posInMetres / rp.path.length, 0.999);
+              const isParked    = rp.canPark && Math.random() < parkRatio;
+              const pendingPath = null;
+              const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
+              list.push({
+                path:          rp.path,
+                offset,
+                speed:         rp.path.speedMs * 0.9,
+                color:         randomCarColor(rp.route.vehicleMode),
+                clothingColor: randomClothingColor(),
+                typeIdx:       randomVehicleType(rp.route.vehicleMode),
+                vehicleMode:   rp.route.vehicleMode ?? MODE,
+                state:         isParked ? 'parked' : 'moving',
+                departAt,
+                canPark:   rp.canPark,
+                noRespawn: true,
+                pendingPath,
+                spawnRate:  null,
+                spawnDelay: null,
+                waitingAtNode:      null,
+                waitStartT:         null,
+                yieldOverrideUntil: null,
+                stopTarget:         null,
+              });
+              totalLd++;
+            }
+          }
+        } else if (initFillMethod === 'cap') {
+          // ── Methode CB: Capaciteitsbezetting ──────────────────────────────
+          // safeSpacingM = speedKmh/2 × 1.1 = speedMs × 3.6/2 × 1.1 = speedMs × 1.98
+          // occupancy    = flow / capacity  (gecapped op 1.0)
+          // n_s          = round(linkLength / safeSpacingM × occupancy)
+          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
+          let totalCb = 0;
+          for (const [linkId, entries] of innerLinkRouteMap) {
+            if (totalCb >= MAX_VEHICLES) break;
+            const flow     = linkFlowMap.get(linkId) ?? 0;
+            const speedMs  = linkSpeedMap.get(linkId) ?? 10;
+            const capacity = linkCapacityMap.get(linkId) ?? 1800;
+            if (flow <= 0 || capacity <= 0) continue;
+            const firstOffsets = entries[0].rp.innerLinkOffsets.get(linkId);
+            if (!firstOffsets || firstOffsets.linkLength <= 0) continue;
+            const linkLength   = firstOffsets.linkLength;
+            const safeSpacingM = speedMs * 1.98;        // speedKmh/2 × 1.1
+            const occupancy    = Math.min(flow / capacity, 1.0);
+            const raw          = (linkLength / safeSpacingM) * occupancy;
+            const n_s          = Math.floor(raw) + (Math.random() < (raw % 1) ? 1 : 0);
+            if (n_s < 1) continue;
+
+            // Normaliseer sampling-gewichten (DP_FRACTION valt weg bij normalisatie)
+            const totalW = entries.reduce((s, e) => s + e.weight, 0);
+            if (totalW <= 0) continue;
+
+            for (let i = 0; i < n_s; i++) {
+              if (totalCb >= MAX_VEHICLES) break;
+              // Sample route proportioneel aan originProduction × weight
+              let r = Math.random() * totalW;
+              let chosen = entries[entries.length - 1];
+              for (const entry of entries) { r -= entry.weight; if (r <= 0) { chosen = entry; break; } }
+              const rp      = chosen.rp;
+              const offsets = rp.innerLinkOffsets.get(linkId);
+              if (!offsets) continue;
+              // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
+              const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
+              const offset      = Math.min(posInMetres / rp.path.length, 0.999);
+              const isParked    = rp.canPark && Math.random() < parkRatio;
+              const pendingPath = null;
+              const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
+              list.push({
+                path:          rp.path,
+                offset,
+                speed:         rp.path.speedMs * 0.9,
+                color:         randomCarColor(rp.route.vehicleMode),
+                clothingColor: randomClothingColor(),
+                typeIdx:       randomVehicleType(rp.route.vehicleMode),
+                vehicleMode:   rp.route.vehicleMode ?? MODE,
+                state:         isParked ? 'parked' : 'moving',
+                departAt,
+                canPark:   rp.canPark,
+                noRespawn: true,
+                pendingPath,
+                spawnRate:  null,
+                spawnDelay: null,
+                waitingAtNode:      null,
+                waitStartT:         null,
+                yieldOverrideUntil: null,
+                stopTarget:         null,
+              });
+              totalCb++;
+            }
+          }
+        } else {
+          // ── Methode LL: Little's Law (standaard) ────────────────────────────
+          // Stap 2: Little's Law – netwerk-totaal N = Σ(flow × lengte / (speedMs × 3600))
+          // Dit is het verwachte aantal voertuigen dat tegelijkertijd op het hele netwerk rijdt.
+          let littlesN = 0;
+          for (const seg of segments) {
+            const flow    = segFlow(seg);
+            const speedMs = seg.speedMs || 10;
+            if (flow > 0) littlesN += (flow * seg.length) / (speedMs * 3600);
+          }
+          const N = Math.max(1, Math.min(Math.round(littlesN), MAX_VEHICLES));
+
+          // Stap 3: OD-gebaseerde Little's Law density per route.
+          // density = originProduction × DP_FRACTION × r.trips × reistijd
+          // Gebruik de OD-specifieke flow (niet de totale linkflow) zodat de initiële verdeling
+          // consistent is met het productiemechanisme. Gedeelde links worden hierdoor niet
+          // dubbel geteld. N uit Stap 2 blijft het anker voor het totale voertuigaantal.
+          for (const rp of routePaths) {
+            const odFlowVehHr = (rp.route.originProduction ?? 0)
+                              * (DP_FRACTION[flowDaypart] ?? (1 / 14.4))
+                              * (rp.route.weight ?? 0)
+                              * (rp.route.calib ?? 1);
+            let travelTime = 0;
+            for (const id of rp.route.linkIds) {
+              const coords = linkGeomMap.get(id);
+              if (!coords) continue;
+              const len = linkLenAttrMap.get(id) ?? segmentLengthCached(coords);
+              travelTime += len / (linkSpeedMap.get(id) || 10);
+            }
+            rp.density = odFlowVehHr * travelTime / 3600;
+          }
+          const totalRouteDensity = routePaths.reduce((s, rp) => s + rp.density, 0) || 1;
+          _trace(`buildCarList LL stap 2+3 (N=${N}): ${(performance.now() - _bT1).toFixed(0)}ms sinds stap 1`);
+
+          // Verdeel N proportioneel; probabilistische afronding zodat Σ count ≈ N.
+          for (const rp of routePaths) {
+            const share  = rp.density / totalRouteDensity;
+            const routeN = N * share;
+            rp.count = Math.floor(routeN) + (Math.random() < (routeN % 1) ? 1 : 0);
+          }
+          const parkRatio = PARK_RATIOS[flowDaypart] ?? 0.35;
+
+          for (const rp of routePaths) {
+            const count = rp.count;
+
+            for (let i = 0; i < count; i++) {
+              const isParked = rp.canPark && Math.random() < parkRatio;
+
+              // Gewogen startpositie (ook voor geparkeerde auto's — verspreid over de route)
+              const offset = weightedOffsetOnPath(rp.path);
+
+              const pendingPath = null;
+
+              // Geparkeerde auto's: resterende wachttijd uniform verdeeld over [0, PARK_MEAN_S].
+              // Ze staan er al een tijdje — niet allemaal tegelijk vertrekken.
+              const departAt = isParked
+                ? Math.random() * PARK_MEAN_S / timeScale
+                : 0;
+
+              list.push({
+                path:          rp.path,
+                offset,
+                speed:         rp.path.speedMs * 0.9,
+                color:         randomCarColor(rp.route.vehicleMode),
+                clothingColor: randomClothingColor(),
+                typeIdx:       randomVehicleType(rp.route.vehicleMode),
+                vehicleMode:   rp.route.vehicleMode ?? MODE,
+                state:         isParked ? 'parked' : 'moving',
+                departAt,
+                canPark:   rp.canPark,
+                noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
+                pendingPath,
+                spawnRate:  null,             // niet meer gebruikt (noRespawn=true)
+                spawnDelay: null,
+                waitingAtNode:      null,
+                waitStartT:         null,
+                yieldOverrideUntil: null,
+                stopTarget:         null,
+              });
+            }
+          }
+          _trace(`buildCarList LL plaatsing (${list.length} auto's): ${(performance.now() - _bT1).toFixed(0)}ms sinds stap 1`);
+        }
+      } else {
+        // Segment-modus: één link per pad.
+        // Aantal auto's via Little's Law: N = flow × traversaalTijd / 3600
+        // Spawn-vertraging: N × (3600/flow) − traversaalTijd  → auto verschijnt precies met
+        // tussentijd 3600/flow seconden, zodat de zichtbare doorvoer overeenkomt met de flow.
+        const now = performance.now() / 1000;
+        for (const seg of segments) {
+          if (seg.length < 30 || segFlow(seg) < thresh) continue;
+          const flow          = segFlow(seg);
+          const traversalTime = seg.length / seg.speedMs;          // seconden
+          // Probabilistische afronding: density 0.1 → 10% kans op 1 auto (i.p.v. altijd 0)
+          const density = flow * traversalTime / 3600;
+          const count   = Math.floor(density) + (Math.random() < (density % 1) ? 1 : 0);
+          if (count < 1) continue;
+          const path       = buildPathFromLinks([{ coords: seg.coords, speedMs: seg.speedMs, flow }]);
+          // Tijd dat de auto onzichtbaar is (spawning) zodat effectieve doorvoer = flow
+          const spawnDelay = Math.max(0, count * (3600 / flow) - traversalTime);
+          const cycleTime  = traversalTime + spawnDelay;
+          for (let i = 0; i < count; i++) {
+            // Spreid N auto's gelijkmatig over één cyclus
+            const departAt = now + (i / count) * cycleTime / timeScale;
+            const segVehicleMode = MODE === 'MIXED' ? ((seg.props.mode || 'CAR').toUpperCase()) : MODE;
+            if (!visibleModes.has(segVehicleMode)) continue;
+            list.push({
+              path,
+              offset:        0,
+              speed:         0,
+              color:         randomCarColor(segVehicleMode),
+              clothingColor: randomClothingColor(),
+              typeIdx:       randomVehicleType(segVehicleMode),
+              vehicleMode:   segVehicleMode,
+              state:    'spawning',
+              departAt,
+              canPark:  false,     // geen parkeren in segment-modus
+              spawnDelay,
+              pendingPath:        null,
+              waitingAtNode:      null,
+              waitStartT:         null,
+              yieldOverrideUntil: null,
+              stopTarget:         null,
+            });
+          }
+        }
+      }
+
+      return list;
+    }
+
+    // ── Productie-helpers ─────────────────────────────────────────────────────
+
+    /** Kies een route-pad gewogen op route.weight × route.calib (proportioneel aan de gekalibreerde fractie). */
+    function pickWeightedRoute(paths) {
+      const wOf = rp => rp.route.weight * (rp.route.calib ?? 1);
+      const totalW = paths.reduce((s, rp) => s + wOf(rp), 0) || 1;
+      let r = Math.random() * totalW;
+      for (const rp of paths) {
+        r -= wOf(rp);
+        if (r <= 0) return rp;
+      }
+      return paths[paths.length - 1];
+    }
+
+    /**
+     * Spawnt één productie-auto aan het begin (offset=0) van het gegeven route-pad.
+     * De auto start bij het beginpunt van de route (herkomst) en rijdt naar de bestemming.
+     * Bij aankomst verdwijnt de auto (noRespawn=true); nieuwe auto's worden door het
+     * productiemechanisme aangemaakt.
+     */
+    function spawnProductionCar(rp) {
+      const vm          = rp.route.vehicleMode ?? MODE;
+      if (!visibleModes.has(vm)) return;
+      const pendingPath = null;
+
+      cars.push({
+        path:        rp.path,
+        offset:      0,
+        speed:       0,
+        color:       randomCarColor(vm),
+        typeIdx:     randomVehicleType(vm),
+        vehicleMode: vm,
+        state:     'moving',
+        departAt:  0,
+        canPark:   rp.canPark,
+        noRespawn: true,
+        pendingPath,
+        spawnRate:  null,
+        spawnDelay: null,
+        waitingAtNode:      null,
+        waitStartT:         null,
+        yieldOverrideUntil: null,
+        stopTarget:         null,
+      });
+    }
+
+    /** Na buildCarList: herpositioneer auto's per pad zodat ze minimaal MIN_GAP uit elkaar staan */
+    function enforceInitialSpacing(list) {
+      const byPath = new Map();
+      for (const car of list) {
+        let g = byPath.get(car.path);
+        if (!g) { g = []; byPath.set(car.path, g); }
+        g.push(car);
+      }
+      for (const [path, group] of byPath) {
+        group.sort((a, b) => a.offset - b.offset);
+        const minOff  = (CF_MIN_GAP + CAR_LENGTH) / path.length;
+        const maxCars = Math.max(1, Math.floor(1.0 / minOff));
+        // Verwijder overtollige auto's als het pad te kort is
+        if (group.length > maxCars) group.splice(maxCars);
+        // Herpositioneer gelijkmatig met kleine jitter; bewaar bestaande state
+        const step = 1.0 / group.length;
+        for (let i = 0; i < group.length; i++) {
+          // Geparkeerde auto's blijven op hun offset; rijdende auto's worden herverdeeld
+          if (group[i].state !== 'parked') {
+            group[i].offset = (i * step + Math.random() * step * 0.25) % 1.0;
+            group[i].speed  = path.speedMs * 0.9;
+          }
+        }
+      }
+      const kept = new Set();
+      for (const g of byPath.values()) for (const car of g) kept.add(car);
+      return list.filter(car => kept.has(car));
+    }
+
+    /** Bereken positie/oriëntatie per auto vanuit car.path (unified interface) */
+    function computeCarData() {
+      if (carData.length !== cars.length) carData = new Array(cars.length);
+      const PARK_OFFSET_M = 3.5;
+      const BIKE_OFFSET_M = 0.4;  // fietsen rijden rechts van het wegmidden (max fietspad-halfbreedte = 0.6 m)
+      for (let i = 0; i < cars.length; i++) {
+        const c = cars[i];
+        if (c.state === 'spawning') {
+          // Onzichtbaar: buiten beeld plaatsen
+          carData[i] = { position: [0, 0, -9999], orientation: [0, 0, 0], color: [0,0,0,0], clothingColor: [0,0,0,0], typeIdx: c.typeIdx };
+          continue;
+        }
+        const [lon, lat, bearing] = interpolatePosition(
+          c.path.coords, c.offset, c.path.length
+        );
+        let pLon = lon, pLat = lat;
+        if (c.state === 'parked') {
+          const bearRad = (bearing + 90) * Math.PI / 180;
+          const cosLat  = Math.cos(lat * Math.PI / 180);
+          pLon = lon + (PARK_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
+          pLat = lat + (PARK_OFFSET_M / 110540) * Math.cos(bearRad);
+        } else if ((c.vehicleMode ?? MODE) === 'BIKE') {
+          // Fiets: 1.5 m naar rechts (bearing + 90° = loodrecht rechts)
+          const bearRad = (bearing + 90) * Math.PI / 180;
+          const cosLat  = Math.cos(lat * Math.PI / 180);
+          pLon = lon + (BIKE_OFFSET_M / 111320) / cosLat * Math.sin(bearRad);
+          pLat = lat + (BIKE_OFFSET_M / 110540) * Math.cos(bearRad);
+        }
+        carData[i] = {
+          position:     [pLon, pLat, 0],   // meshes staan zelf op Z 0 (wielen raken de grond)
+          orientation:  [0, 90 - bearing, 0],
+          color:        c.color,
+          clothingColor: c.clothingColor ?? [100, 100, 100, 230],
+          typeIdx:      c.typeIdx,
+        };
+      }
+    }
+
+    /**
+     * Groepeer auto's per pad en sorteer op offset.
+     * @param {boolean} movingOnly  - als true, alleen auto's met state='moving'
+     */
+    function buildPathGroups(movingOnly = false) {
+      const groups = new Map();
+      for (const car of cars) {
+        if (movingOnly && car.state !== 'moving') continue;
+        let g = groups.get(car.path);
+        if (!g) { g = []; groups.set(car.path, g); }
+        g.push(car);
+      }
+      for (const g of groups.values()) {
+        g.sort((a, b) => a.offset - b.offset);
+      }
+      return groups;
+    }
+
+    // ── OD-paar bewerking — state ────────────────────────────────────────────
+    let odEditActive   = false;       // true als OD-edit modus actief
+    let odEditStep     = 'from';      // 'from' | 'to'
+    let odEditFromZone = null;        // { zoneId, label }
+    let odEditToZone   = null;        // { zoneId, label }
+
+    /** Verberg het OD-edit paneel en reset de state volledig. */
+    function deactivateOdEdit() {
+      if (!odEditActive) return;
+      odEditActive   = false;
+      odEditStep     = 'from';
+      odEditFromZone = null;
+      odEditToZone   = null;
+      document.getElementById('odEditBtn').classList.remove('active');
+      document.getElementById('odEditPanel').style.display = 'none';
+      map.getCanvas().style.cursor = '';
+      // Zone productie/attractie-weergave weer uitzetten
+      if (zoneCentroidMode !== 'off') {
+        document.getElementById('zoneCentroidSelect').value = 'off';
+        document.getElementById('zoneCentroidSelect').dispatchEvent(new Event('change'));
+      }
+      updateOverlay(true);
+    }
+
+    /** Toon het OD-edit paneel in stap-1 (herkomst kiezen) toestand. */
+    function _odEditShowPanel() {
+      const panel = document.getElementById('odEditPanel');
+      panel.style.display = 'block';
+      _odEditUpdateStepDisplay();
+    }
+
+    /** Bijwerken van de step-labels en cursor. */
+    function _odEditUpdateStepDisplay() {
+      const fromVal  = document.getElementById('odEditFromVal');
+      const toVal    = document.getElementById('odEditToVal');
+      const fields   = document.getElementById('odEditFields');
+
+      if (odEditFromZone) {
+        fromVal.textContent = odEditFromZone.label;
+        fromVal.classList.remove('waiting');
+      } else {
+        fromVal.textContent = T('odEditWaiting');
+        fromVal.classList.add('waiting');
+      }
+      if (odEditToZone) {
+        toVal.textContent = odEditToZone.label;
+        toVal.classList.remove('waiting');
+      } else {
+        toVal.textContent = T('odEditWaiting');
+        toVal.classList.add('waiting');
+      }
+
+      const bothSelected = odEditFromZone && odEditToZone;
+      fields.style.display = bothSelected ? 'block' : 'none';
+      if (bothSelected) _odEditLoadPair();
+
+      // Cursor: kruishaar zolang in kies-modus
+      map.getCanvas().style.cursor = (!bothSelected || odEditStep !== 'done') ? 'crosshair' : '';
+      // Herbereken lagen (toon/verberg bestemmingszones)
+      updateOverlay(true);
+    }
+
+    /** Lees de routes voor het geselecteerde OD-paar en vul het formulier. */
+    function _odEditLoadPair() {
+      const fromId = odEditFromZone.zoneId;
+      const toId   = odEditToZone.zoneId;
+
+      // Zoek het matching OD-paar in routeList
+      const pairRoutes = routeList.filter(
+        r => String(r.fromZoneId) === String(fromId)
+          && String(r.toZoneId)   === String(toId)
+      );
+
+      // originProduction van eerste route (alle routes in het paar hebben dezelfde)
+      const originProd = pairRoutes.length > 0 ? (pairRoutes[0].originProduction ?? 0) : 0;
+      const tripFrac   = pairRoutes.length > 0 ? (pairRoutes[0].tripFraction    ?? 0) : 0;
+      const totalTrips = originProd * tripFrac;
+
+      // Aggregeer motifRatio (gewogen op weight/trips)
+      const motifAgg = {};
+      let   motifTotal = 0;
+      for (const r of pairRoutes) {
+        if (!r.motifRatio) continue;
+        const w = r.weight ?? 0;
+        for (const [m, v] of Object.entries(r.motifRatio)) {
+          motifAgg[m] = (motifAgg[m] ?? 0) + v * w;
+          motifTotal += v * w;
+        }
+      }
+      // Normaliseer
+      if (motifTotal > 0) {
+        for (const m of Object.keys(motifAgg)) motifAgg[m] /= motifTotal;
+      }
+
+      // Toon info-rij
+      const infoEl = document.getElementById('odEditRouteInfo');
+      const loc    = T('numberLocale');
+      infoEl.innerHTML = pairRoutes.length
+        ? `${T('odEditFoundRoutes', pairRoutes.length)} &nbsp;·&nbsp; `
+          + `${T('odEditCurrentTrips')} <b>${totalTrips.toLocaleString(loc, {maximumFractionDigits:1})}</b>`
+        : `<span style="color:#e63312">${T('odEditNoRoutes')}</span>`;
+
+      // Trips invoer
+      document.getElementById('odEditTripsInput').value = totalTrips.toFixed(1);
+
+      // Sla originProduction op als data-attribuut voor later gebruik
+      document.getElementById('odEditTripsInput').dataset.originProd = String(originProd);
+
+      // Bouw motief-grid: altijd alle (standaard-)motieven tonen, ook als er
+      // (nog) geen trips voor zijn, zodat je die alsnog een aandeel kunt geven.
+      // Onbekende motieven uit de data zelf blijven ook meegenomen.
+      const grid = document.getElementById('odEditMotifGrid');
+      grid.innerHTML = '';
+      const _baseMotifKeys = ['work','shopping','recreational','school','hospital','parking','other','unclassified'];
+      const motifKeys = [...new Set([..._baseMotifKeys, ...Object.keys(motifAgg)])];
+
+      for (const key of motifKeys) {
+        if (key === 'house' || key === 'unknown') continue;
+        const pct = ((motifAgg[key] ?? 0) * 100).toFixed(1);
+        const color = _motifColor(key);
+        const label = T(`motifLabel_${key}`) ?? key;
+        grid.insertAdjacentHTML('beforeend', `
+          <span class="ode-motif-dot" style="background:${color};display:inline-block"></span>
+          <span class="ode-motif-key">${label}</span>
+          <input type="number" class="ode-motif-pct" data-motif="${key}"
+            min="0" max="100" step="0.1" value="${pct}"/>
+        `);
+      }
+      _odEditCheckMotifSum();
+
+      // Toon routes op de kaart (hergebruik zone-centroid modus)
+      _odEditHighlightRoutes(fromId, toId);
+    }
+
+    /** Controleer of de motiefpercentages optellen tot ~100 %. */
+    function _odEditCheckMotifSum() {
+      const inputs = document.querySelectorAll('.ode-motif-pct');
+      const sum    = [...inputs].reduce((s, el) => s + (parseFloat(el.value) || 0), 0);
+      const sumEl  = document.getElementById('odEditMotifSum');
+      const ok     = Math.abs(sum - 100) < 0.5;
+      sumEl.textContent = `∑ = ${sum.toFixed(1)} %`;
+      sumEl.className   = `ode-motif-sum ${ok ? 'ok' : 'bad'}`;
+      document.getElementById('odEditSaveBtn').disabled = !ok;
+    }
+
+    /** Markeer routes van het geselecteerde OD-paar op de kaart (PathLayer). */
+    function _odEditHighlightRoutes(fromId, toId) {
+      // Vul _odEditHighlightedRoutes voor use in makeLayers (hergebruikt selectedLinkId-flow)
+      window._odEditRouteData = routeList.filter(
+        r => String(r.fromZoneId) === String(fromId)
+          && String(r.toZoneId)   === String(toId)
+      );
+      updateOverlay(true);
+    }
+
+    /** Sla de bewerking op als pendingChange en sluit het paneel. */
+    function _odEditSave() {
+      if (!odEditFromZone || !odEditToZone) return;
+
+      const tripsInput = document.getElementById('odEditTripsInput');
+      const originProd = parseFloat(tripsInput.dataset.originProd) || 0;
+      const newTrips   = parseFloat(tripsInput.value) || 0;
+      const newFrac    = originProd > 0 ? newTrips / originProd : 0;
+
+      // Bouw motifRatio
+      const motifRatio = {};
+      let   total = 0;
+      for (const el of document.querySelectorAll('.ode-motif-pct')) {
+        const v = parseFloat(el.value) || 0;
+        motifRatio[el.dataset.motif] = v / 100;
+        total += v;
+      }
+      // Normaliseer naar 1.0 als nodig
+      if (Math.abs(total - 100) > 0.1 && total > 0) {
+        for (const k of Object.keys(motifRatio)) motifRatio[k] /= (total / 100);
+      }
+
+      const change = {
+        _isOd:            true,
+        fromZoneId:       odEditFromZone.zoneId,
+        toZoneId:         odEditToZone.zoneId,
+        originProduction: originProd,
+        tripFraction:     newFrac,
+        motifRatio,
+        _label: `${odEditFromZone.label} → ${odEditToZone.label}`,
+      };
+      pendingChanges.push(change);
+      renderChangesList();
+
+      // Paneel sluiten na het toevoegen aan de wijzigingen
+      deactivateOdEdit();
+    }
+
+    // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
+    _trace('init: 5. Deck.gl lagen');
+
+    // ── ScenarioVergelijker — state (vóór makeCarLayers zodat er geen TDZ-fout optreedt) ──
+    let splitViewActive    = false;
+    let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
+    var diffPlotActive     = false;  // verschilplot actief
+    var diffStackActive    = false;  // gestapelde verschilplot (grijze kern + gekleurde rand) actief
+    var diffSmileyActive   = false;  // smiley-verschilplot actief
+    var diffSmileyThreshold = 0.10;  // relatieve drempel (0..1) voor "duidelijke" wijziging
+    var diffSmileyMode     = 'rel';  // 'rel' = relatieve drempel, 'abs' = absolute drempel
+    var diffSmileyAbsThreshold = 0;  // absolute drempel in metriek-eenheden
+    var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (voor actieve metriek)
+    var curValByLinkId     = new Map(); // linkId → huidige metriekwaarde (berekend scenario)
+    var diffMaxOrigFlow    = 1;      // max bron-metriekwaarde (schaalreferentie stapelplot)
+    var diffMaxAbs         = 1;      // max |verschil| (breedte-referentie gewone deltaplot)
+    var diffMetric         = 'flow'; // metriek waarvoor de verschilplot berekend is
+    var diffVersion        = 0;      // ophoog-teller: forceert deck.gl-accessors te hertekenen
+
+    // ── Spectrum — state ─────────────────────────────────────────────────────
+    var _spectrumLayerDpKey = null;  // dpKey waarvoor de MapLibre-laag momenteel zichtbaar is
+
+    /** Verwijder bestaande Spectrum MapLibre source + layers */
+    function _removeSpectrumLayer() {
+      if (map.getLayer('spectrum-label'))  map.removeLayer('spectrum-label');
+      if (map.getLayer('spectrum-line'))   map.removeLayer('spectrum-line');
+      if (map.getSource('spectrum-tiles')) map.removeSource('spectrum-tiles');
+      _spectrumLayerDpKey = null;
+    }
+
+    /** Voeg Spectrum MVT-laag toe of update hem als het dagdeel wijzigt */
+    function updateSpectrumLayer() {
+      const dpKey  = { mrh: 'OS', erh: 'AS', rest: 'RD' }[daypart] || 'AS';
+      const layerUuid   = localStorage.getItem(`spSpectrumLayer${dpKey}`)   || '';
+      const mappingUuid = localStorage.getItem(`spSpectrumMapping${dpKey}`) || '';
+
+      if (!layerUuid || !mappingUuid) {
+        _removeSpectrumLayer();
+        return;
+      }
+
+      // Als de laag al bestaat voor hetzelfde dagdeel, niets doen
+      if (_spectrumLayerDpKey === dpKey && map.getSource('spectrum-tiles')) return;
+
+      _removeSpectrumLayer();
+
+      map.addSource('spectrum-tiles', {
+        type: 'vector',
+        tiles: [`${window.location.origin}/proxy/mvt/${layerUuid}/{z}/{x}/{y}.mvt?mappingUuid=${encodeURIComponent(mappingUuid)}`],
+        minzoom: 10,
+        maxzoom: 16,
+      });
+
+      map.addLayer({
+        id: 'spectrum-line',
+        type: 'line',
+        source: 'spectrum-tiles',
+        'source-layer': 'geometries',
+        paint: {
+          'line-color': [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'sizeSlice'], 0],
+            0,    '#313695',
+            100,  '#4575b4',
+            500,  '#74add1',
+            1000, '#fee090',
+            3000, '#f46d43',
+            6000, '#d73027',
+            10000,'#a50026',
+          ],
+          'line-width': [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'sizeSlice'], 0],
+            0,    1,
+            500,  3,
+            5000, 8,
+          ],
+          'line-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: 'spectrum-label',
+        type: 'symbol',
+        source: 'spectrum-tiles',
+        'source-layer': 'geometries',
+        minzoom: 14,
+        layout: {
+          'text-field': ['to-string', ['round', ['coalesce', ['get', 'sizeSlice'], 0]]],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-anchor': 'center',
+          'symbol-placement': 'line-center',
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+        },
+        paint: {
+          'text-color': '#111111',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      _spectrumLayerDpKey = dpKey;
+    }
+    // map2 is declared near updateSunLight() (above) to avoid TDZ in async IIFE
+    let overlay2           = null;   // deck.gl MapboxOverlay voor rechterkaart
+    let origSegments       = [];     // segments-array voor rechterkaart
+    let origGeojsonFeatures = [];    // geojson.features voor rechterkaart
+    let origZoneFeatures   = [];     // zoneFeaturesRaw voor rechterkaart
+    let _mapSyncing        = false;  // guard tegen recursieve camera-sync
+    let overlayMode        = false;  // swipe-modus: kaarten gestapeld, splitter = clip-lijn
+    let overlayX           = 0;      // huidige splitter-positie in px (overlay-modus)
+    // Splitter-drag state
+    let _splitterDragging  = false;
+    let _splitterStartX    = 0;
+    let _splitterLeftBasis = 0;
+
+    let nodeEditActive = false;
+    let linkEditActive = false;
+    let linkFlowEditActive = false;
+    let linkAddActive  = false;        // Nieuw wegvak intekenen
+    let linkAddVertices = [];          // [[lon,lat], ...] vertices van de lijn in aanbouw
+    let _linkAddMouseCoord = null;     // huidige muispositie (rubberbanding)
+    // ── Selected Link Analysis — state ──────────────────────────────────────
+    let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
+    let selectedLinkActive = false;   // true als de link-selectie-modus actief is
+    let hoveredLinkId      = null;    // linkId onder de cursor (bijgehouden via onHover)
+    const _estimatedRouteCache = new Map(); // linkId → {pathData, flowByFromZone, flowByToZone} (Dijkstra-schatting)
+
+    // ── Voertuigtellers ───────────────────────────────────────────────────────
+    let _counterList      = [];           // [{ id, linkId, line, bearing, midLon, midLat, counts, startTime }]
+    let _counterPlaceMode = false;        // true terwijl plaatsings-modus actief is
+    let _counterIdSeq     = 0;            // oplopende teller voor counter-ID's
+    const _counterPrevPos = new WeakMap(); // car → { pos:[lon,lat], path } vorige frame
+    let nodeSelectMode   = 'click';  // 'click' | 'polygon'
+    let polygonVertices  = [];       // [[lon, lat], ...]
+    let polygonNodesInside = [];     // zone-knopen binnen de gesloten polygon
+
+    let linkSelectMode        = 'click';  // 'click' | 'polygon'
+    let linkPolygonVertices   = [];       // [[lon, lat], ...]
+    let linkPolygonLinksInside = [];      // link-features binnen de gesloten polygon
+
+    // ── What-if wegafsluiting — state ────────────────────────────────────────
+    let whatifRcActive = false;           // true als what-if wegafsluiting-modus actief is
+    let whatifRcLinks  = new Map();       // linkId (string) → label (string)
+
+    // ── Segment-tooltip — state en render ───────────────────────────────────
+    let _segTipTimer    = null;
+    let _segTipVisible  = false;
+    let _segTipLastInfo = null;
+    const _segTip = document.getElementById('segmentTooltip');
+    const _segTipRender = (info, sourceMap) => {
+      const p = info?.object?.properties;
+      if (!p) { _segTip.style.display = 'none'; return; }
+      const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+      const dpFlow = dpFlowOf(p);
+      const occ = p.capacity > 0 ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
+      // Fysieke bezettingsgraad (zelfde model als de 'coverage'-metric)
+      const _cov = (() => {
+        const lanes = p.lanes || 1;
+        if (!(dpFlow > 0) || !(p.speed > 0) || !(lanes > 0)) return '–';
+        const occLen = avgVehicleLengthForMode(p.mode) + p.speed / 1.8;
+        return (0.1 * dpFlow * occLen / (p.speed * lanes)).toFixed(0) + '%';
+      })();
+      const loc = T('numberLocale');
+      const contextLabel = _fspActiveLabel ?? dpLabels[flowDaypart];
+      const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
+      _segTip.innerHTML = `
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', p.linkId)}
+        </div>
+        <div><span style="color:#6a757c">${contextKey}: </span><b>${contextLabel}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipSpeed')}: </span><b>${p.speed} km/h</b></div>
+        <div><span style="color:#6a757c">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
+        ${p.roadWidthM != null ? `<div><span style="color:#6a757c">${T('tooltipWidth')}: </span><b>${Number(p.roadWidthM).toFixed(1)} m</b></div>` : ''}
+        ${(() => {
+          const nd = noiseByLinkId && noiseByLinkId.get(p.linkId);
+          if (!nd) return '';
+          let h = '';
+          if (nd.noiseLden != null)   h += `<div><span style="color:#6a757c">${T('legendNoiseLden')}: </span><b>${nd.noiseLden.toFixed(1)} dB(A)</b></div>`;
+          if (nd.noiseLnight != null) h += `<div><span style="color:#6a757c">${T('legendNoiseLnight')}: </span><b>${nd.noiseLnight.toFixed(1)} dB(A)</b></div>`;
+          return h;
+        })()}
+        ${(() => {
+          const ed = emisByLinkId && emisByLinkId.get(p.linkId);
+          if (!ed) return '';
+          const len = (ed.length != null) ? ed.length : p.length;
+          if (!(len > 0)) return '';
+          const km = len / 1000;
+          let h = '';
+          if (ed.co2Kg  != null) h += `<div><span style="color:#6a757c">CO\u2082: </span><b>${(ed.co2Kg/km).toFixed(1)} kg/km</b></div>`;
+          if (ed.noxKg  != null) h += `<div><span style="color:#6a757c">NO\u2093: </span><b>${(ed.noxKg/km).toFixed(2)} kg/km</b></div>`;
+          if (ed.pm10Kg != null) h += `<div><span style="color:#6a757c">PM10: </span><b>${(ed.pm10Kg/km).toFixed(2)} kg/km</b></div>`;
+          return h;
+        })()}
+        ${(() => {
+          const wsProps = wegenscanByLinkId.get(String(p.linkId));
+          if (!wsProps?.generic_safety) return '';
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            <span style="color:#6a757c">Veiligheid: </span>
+            <b style="color:${kpiColor(wsProps.generic_safety)}">${wsProps.generic_safety}</b>
+            ${colorMetric === 'safety'
+              ? `<span style="color:var(--ga-rood);margin-left:6px;cursor:pointer" onclick="openWegenscanPanel(wegenscanByLinkId.get('${p.linkId}'))">→ details</span>`
+              : ''}
+          </div>`;
+        })()}
+        ${(() => {
+          const pen = penaltyByLinkId.get(p.linkId);
+          if (!pen || !pen.total) return '';
+          const parts = [];
+          if (pen.zebra)  parts.push(`Zebra: +${pen.zebra} sec`);
+          if (pen.cycleX) parts.push(`Fietsoversteek: +${pen.cycleX} sec`);
+          if (pen.signal) parts.push(`Verkeerslicht: +${pen.signal} sec`);
+          if (pen.yield)  parts.push(`Haaientanden: +${pen.yield} sec`);
+          if (pen.stop)   parts.push(`Stopbord: +${pen.stop} sec`);
+          if (pen.refuge) parts.push(`Vluchtheuvel: +${pen.refuge} sec`);
+          if (pen.elevation) parts.push(`Helling: +${pen.elevation} sec`);
+          if (pen.fromRight) parts.push(`Verkeer van rechts: +${pen.fromRight} sec`);
+          if (pen.leftTurn)  parts.push(`Linksaf-hinder: +${pen.leftTurn} sec`);
+          if (pen.rightTurn) parts.push(`Rechtsaf-hinder: +${pen.rightTurn} sec`);
+          if (pen.oncoming)  parts.push(`Tegenliggerhinder: +${pen.oncoming} sec`);
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            <span style="color:#6a757c">Straf-seconden: </span>
+            <b>${pen.total} sec</b>
+            <div style="color:#6a757c;font-size:11px">${parts.join(' · ')}</div>
+          </div>`;
+        })()}
+        ${(() => {
+          // Tooltip-line voor actieve Snelheid-sub-laag (bestaand en toekomstig).
+          if (![...BINARY_SPEED_METRICS, ...FUTURE_BINARY_SPEED_METRICS, ...FLOW_SPEED_METRICS, 'speed_penalty_total', 'priority_roads'].includes(colorMetric)) return '';
+          const v = getMetricValue(p);
+          if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            if (v == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v ? T('tooltipSpeedFactorPresent') : T('tooltipSpeedFactorAbsent')}</b>
+            </div>`;
+          } else if (FLOW_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            const unit = (colorMetric === 'speed_from_right' ||
+                          colorMetric === 'speed_left_turn'   ||
+                          colorMetric === 'speed_oncoming') ? 'vtg/u'
+                       : colorMetric === 'speed_elevation' ? '%'
+                       : 'sec';
+            if (v == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v}${unit ? ' ' + unit : ''}</b>
+            </div>`;
+           } else if (colorMetric === 'speed_elevation') {
+            const slope = _speedSlopePct(p);
+            if (slope == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T('legendSpeedElevation')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T('legendSpeedElevation')}: </span>
+              <b>${slope > 0 ? '+' : ''}${slope.toFixed(1)}%</b>
+            </div>`;
+          } else if (colorMetric === 'priority_roads') {
+            const key = metricShortLabelKey(colorMetric);
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v ? T('tooltipSpeedFactorPresent') : T('tooltipSpeedFactorAbsent')}</b>
+            </div>`;
+          } else if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            const catName = v === 1 ? 'Verkeerslicht'
+                          : v === 2 ? 'Rotonde'
+                          : null;
+            if (catName == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${catName}</b>
+            </div>`;
+          }
+          return '';
+        })()}
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      // In deck.gl interleaved mode is info.x/y soms t.o.v. het hele scherm/venster
+      // en soms t.o.v. het canvas. We kiezen voor de betrouwbaarste bron: het
+      // oorspronkelijke pointer-event van de browser.
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    function makeNetworkLayer() {
+      // Bereken min/max voor de actieve metric. Voor toekomstige Snelheid-lagen
+      // zonder brondata tellen we de null-waarden niet mee zodat (metricMin,
+      // metricMax) ongedefinieerd blijft; de renderer springt dan naar grijs.
+      let metricMin = Infinity, metricMax = -Infinity;
+      let slopeMaxAbs = 0;
+      if (!FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < metricMin) metricMin = v;
+            if (v > metricMax) metricMax = v;
+          }
+          if (colorMetric === 'speed_elevation') {
+            const s = _speedSlopePct(seg.props);
+            if (s != null && isFinite(s)) slopeMaxAbs = Math.max(slopeMaxAbs, Math.abs(s));
+          }
+        }
+      }
+      slopeMaxAbs = Math.max(slopeMaxAbs, 0.01);
+      // Bewaar ook de flow-range apart voor breedte-schaling
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of segments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      const metricRange = metricMax - metricMin || 1;
+      const dpRange     = dpMax - dpMin || 1;
+
+      return new GeoJsonLayer({
+        id: 'network',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum' && !selectedZoneId && !selectedLinkId && !diffPlotActive && !diffStackActive,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+         getLineWidth: f => {
+           if (f.properties.capacity === 0) return 1;
+           const lanes = f.properties.lanes || 1;
+           const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
+           const maxW = isBike ? 1.2 : 12;   // max meter per rijstrook (fiets: 1.2 m, auto: 12 m)
+           const baseW = isBike ? 1.2 : 3;   // statische breedte per rijstrook
+           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+             let v;
+             if (colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+               v = getMetricValue(f.properties) ?? 0;
+               // Logaritmische schaal op 0–100 (waarden > 100% worden geklemd voor breedte)
+               const t = Math.log1p(Math.max(0, Math.min(100, v))) / Math.log1p(100);
+               return Math.max(1.5, t * lanes * maxW);
+             } else {
+              v = dpFlowOf(f.properties);
+              const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
+              return Math.max(1.5, t * lanes * maxW);
+            }
+          }
+          if (colorMetric === 'flow') {
+             // Intensiteit-view: smal voor wegen met vrijwel geen flow
+             const flowNorm = dpFlowOf(f.properties) / (currentFlowCeiling(isBike) || 1);
+             if (flowNorm < 0.04) return 1;   // nauwelijks gebruik: minimaal lijntje
+             if (isBike) return Math.max(1.5, lanes * 1);
+             const speed = f.properties.speed ?? 999;
+             const absId = Math.abs(f.properties.linkId ?? 0);
+             if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
+             return Math.max(1.5, lanes * 3);
+           }
+           return Math.max(1.5, lanes * baseW);
+         },
+          getLineColor: f => {
+           if (f.properties.capacity === 0) return [210, 40, 40, 200];
+           // Veiligheidsmodus: kleur op basis van wegenscan generic_safety
+           if (colorMetric === 'safety') {
+             const wsProps = wegenscanByLinkId.get(String(f.properties.linkId));
+             return safetyToRgba(wsProps?.generic_safety);
+           }
+              // Spectrum: aparte MapLibre-laag, netwerk-links normaal inkleuren
+              const v = getMetricValue(f.properties);
+            // Binaire toekomstige Snelheid-lagen zonder brondata: grijs tonen.
+            if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+              if (v == null) return UNAVAILABLE_GREY_RGBA;
+              return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+            }
+            // Continue Snelheid-lagen (flow/penalty-gebaseerd).
+            if (FLOW_SPEED_METRICS.has(colorMetric)) {
+              if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
+              // speed_from_right gebruikt de gewone intensiteitskleuren (flowGradient)
+              // zodat de kaart er identiek uitziet als de intensiteiten-laag.
+              if (colorMetric === 'speed_from_right') {
+                const _ceil = currentFlowCeiling(false);
+                const flowNorm = (_ceil || 1) > 0 ? v / _ceil : 0;
+                return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
+              }
+              if (v === 0) return [80, 80, 100, 120];
+              const norm = metricRange > 0 ? Math.max(0, Math.min(1, (v - metricMin) / metricRange)) : 0;
+              return redOrangeRgba(norm);
+            }
+            if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+            // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+            { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+             // Binaire Snelheid-sub-lagen: oranje indien factor aanwezig (1),
+             // anders de neutrale netwerk-kleur.
+             if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+             // Voorrangswegen: blauw indien voorrangsweg, anders neutrale kleur.
+             if (colorMetric === 'priority_roads') return v ? [26, 115, 232, 230] : [80, 80, 100, 120];
+             // Categorische Snelheid-laag "Kruispunten": twee vaste kleuren.
+             if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+               if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+               return v === 1 ? [231, 76, 60, 230]
+                    : v === 2 ? [46, 204, 113, 230]
+                    : [80, 80, 100, 120];
+             }
+             // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+            { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+             // Binaire Snelheid-sub-lagen: oranje indien factor aanwezig (1).
+             if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+              // Categorische Snelheid-laag "Kruispunten": twee vaste kleuren.
+              if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+                if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+                return v === 1 ? [231, 76, 60, 230]
+                     : v === 2 ? [46, 204, 113, 230]
+                     : [80, 80, 100, 120];
+              }
+             const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
+            let norm;
+           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+               colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
+             norm = Math.max(0, Math.min(1, v / 100));
+           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+             norm = Math.max(0, Math.min(1, v / (currentFlowCeiling(isMultimodalBike) || 1)));
+           } else if (colorMetric === 'capacity') {
+             // Vaste schaal 0–4000 met sqrt-schaling
+             norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
+           } else {
+             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+           }
+           switch (colorMetric) {
+             case 'speed':     return speedRgba(norm);
+             case 'capacity':  return capacityRgba(norm);
+             case 'occupancy': return greenRedRgba(norm);
+            case 'coverage':  return greenRedRgba(norm);
+            default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
+          }
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          // Voor de klik-op-wegvak debug ("welke assets horen bij dit wegvak"):
+          // houd het gehoverde linkId bij, onafhankelijk van de tooltip-logica.
+          _networkHoverLink = object ? { linkId: object.properties?.linkId } : null;
+          // hoveredLinkId is de generieke "welk wegvak staat onder de cursor"-
+          // vlag die map.on('click') gebruikt voor o.a. veiligheidsmodus,
+          // voertuigteller plaatsen, link-selectie en what-if wegafsluiting.
+          hoveredLinkId = object ? (object.properties?.linkId ?? null) : null;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
+        },
+      });
+    }
+
+    /**
+     * Netwerklaag voor de rechterkaart in split-view (bronscenario).
+     * Herbruikt de logica van makeNetworkLayer() maar dan op de originele
+     * data (origSegments / origGeojsonFeatures) i.p.v. het actieve scenario.
+     */
+    function makeNetworkLayer2() {
+      // Bereken min/max over het bronscenario
+      let metricMin = Infinity, metricMax = -Infinity;
+      if (!FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        for (const seg of origSegments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < metricMin) metricMin = v;
+            if (v > metricMax) metricMax = v;
+          }
+        }
+      }
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of origSegments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      const metricRange = metricMax - metricMin || 1;
+      const dpRange     = dpMax - dpMin || 1;
+
+      const data = MODE !== 'MIXED'
+        ? origGeojsonFeatures
+        : origGeojsonFeatures.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      return new GeoJsonLayer({
+        id: 'network-orig',
+        data,
+        visible: colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum',
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth: f => {
+          if (f.properties.capacity === 0) return 1;
+          const lanes = f.properties.lanes || 1;
+          const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
+          const maxW = isBike ? 1.2 : 12;
+          const baseW = isBike ? 1.2 : 3;
+          if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+            let v;
+            if (colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+              v = getMetricValue(f.properties) ?? 0;
+              const t = Math.log1p(Math.max(0, Math.min(100, v))) / Math.log1p(100);
+              return Math.max(1.5, t * lanes * maxW);
+            } else {
+              v = dpFlowOf(f.properties);
+              const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
+              return Math.max(1.5, t * lanes * maxW);
+            }
+          }
+          if (colorMetric === 'flow') {
+            const flowNorm = dpFlowOf(f.properties) / (currentFlowCeiling(isBike) || 1);
+            if (flowNorm < 0.04) return 1;
+            if (isBike) return Math.max(1.5, lanes * 1);
+            return Math.max(1.5, lanes * 3);
+          }
+          return Math.max(1.5, lanes * baseW);
+        },
+        getLineColor: f => {
+          if (f.properties.capacity === 0) return [210, 40, 40, 200];
+          const v = getMetricValue(f.properties);
+          if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+            if (v == null) return UNAVAILABLE_GREY_RGBA;
+            return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+          }
+          if (FLOW_SPEED_METRICS.has(colorMetric)) {
+            if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
+            if (colorMetric === 'speed_from_right') {
+              const _ceil = currentFlowCeiling(false);
+              const flowNorm = (_ceil || 1) > 0 ? v / _ceil : 0;
+              return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
+            }
+            if (v === 0) return [80, 80, 100, 120];
+            const norm = metricRange > 0 ? Math.max(0, Math.min(1, (v - metricMin) / metricRange)) : 0;
+            return redOrangeRgba(norm);
+          }
+          if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+          if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+          if (colorMetric === 'priority_roads') return v ? [26, 115, 232, 230] : [80, 80, 100, 120];
+          if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+            return v === 1 ? [231, 76, 60, 230]
+                 : v === 2 ? [46, 204, 113, 230]
+                 : [80, 80, 100, 120];
+          }
+          const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
+          let norm;
+          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+              colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
+            norm = Math.max(0, Math.min(1, v / 100));
+          } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+            norm = Math.max(0, Math.min(1, v / (currentFlowCeiling(isMultimodalBike) || 1)));
+          } else if (colorMetric === 'capacity') {
+            norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
+          } else {
+            norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+          }
+          switch (colorMetric) {
+            case 'speed':     return speedRgba(norm);
+            case 'capacity':  return capacityRgba(norm);
+            case 'occupancy': return greenRedRgba(norm);
+            case 'coverage':  return greenRedRgba(norm);
+            default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
+          }
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
+        },
+      });
+    }
+
+    // ── Verschilplot-tooltip render ───────────────────────────────────────────
+    const _diffTipRender = (info) => {
+      const p = info?.object?.properties;
+      if (!p) { _segTip.style.display = 'none'; return; }
+      const linkId  = p.linkId;
+      const diff    = diffByLinkId.get(linkId);
+      const newVal  = curValByLinkId.has(linkId) ? curValByLinkId.get(linkId) : null;
+      const oldVal  = (diff != null && newVal != null) ? newVal - diff : null;
+      const loc     = T('numberLocale');
+      const unit    = metricUnit(diffMetric);
+      const diffColor = diff == null || Math.abs(diff) < 1e-9
+        ? '#aaa'
+        : diff > 0 ? '#e85555' : '#3dc45a';
+      const diffStr = diff != null
+        ? (diff > 0 ? '+' : '') + fmtMetricVal(diff, diffMetric)
+        : '–';
+      _segTip.innerHTML = `
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', linkId)}
+        </div>
+        <div><span style="color:#6a757c">Oud: </span><b>${fmtMetricVal(oldVal, diffMetric)}</b></div>
+        <div><span style="color:#6a757c">Nieuw: </span><b>${fmtMetricVal(newVal, diffMetric)}</b></div>
+        <div><span style="color:#6a757c">Verschil: </span><b style="color:${diffColor}">${diffStr}</b></div>
+        <div style="margin-top:4px;font-size:10px;color:#666">${p.speed} km/h · ${p.lanes} rijstr. · ${p.length?.toFixed(0)} m</div>
+      `;
+      const rect = map.getCanvas().getBoundingClientRect();
+      const x = rect.left + info.x;
+      const y = rect.top  + info.y;
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    // ── Verschilplot-laag: toont toe-/afname per wegvak t.o.v. bronscenario ──────
+    function makeDiffLayer() {
+      if (!diffPlotActive || !diffByLinkId.size) {
+        return new GeoJsonLayer({ id: 'diff-plot', data: [] });
+      }
+      const isBike = MODE === 'BIKE';
+      const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer
+
+      // Schaal de breedte t.o.v. het grootste voorkomende |verschil|, zodat de
+      // gewijzigde wegvakken altijd goed zichtbaar zijn — ook voor metrieken waar
+      // het verschil klein is t.o.v. de absolute waarde (bijv. geluid in dB).
+      const ref = diffMaxAbs;
+
+      return new GeoJsonLayer({
+        id: 'diff-plot',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        visible: true,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null || diff === 0) return 1.5;
+          const lanes  = f.properties.lanes || 1;
+          // Logaritmische schaal op |diff| t.o.v. het maximale verschil
+          const t = Math.log1p(Math.abs(diff)) / Math.log1p(ref);
+          return Math.max(1.5, t * lanes * maxW);
+        },
+        getLineColor: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null || diff === 0) return [140, 140, 140, 60];
+          return diff > 0
+            ? [220, 30, 30, 220]   // toename → rood
+            : [30, 180, 60, 220];  // afname  → groen
+        },
+        pickable: true,
+        onHover: info => {
+          if (info.object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _diffTipRender(info);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+              }, 600);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getLineWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+        },
+      });
+    }
+
+    // ── Gestapelde verschilplot: grijze kern (ongewijzigd deel) + gekleurde rand ──
+    // Twee lagen: onder een gekleurde laag met breedte = max(oud,nieuw), erbovenop
+    // een grijze laag met breedte = min(oud,nieuw). De gekleurde rand die overblijft
+    // stelt |verschil| voor (rood = toename, groen = afname).
+    function makeDiffStackLayer() {
+      if (!diffStackActive || !diffByLinkId.size || !DIFF_ADDITIVE.has(diffMetric)) {
+        return [];
+      }
+      const isBike = MODE === 'BIKE';
+      const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer/makeDiffLayer
+      const ref    = diffMaxOrigFlow;     // schaalreferentie (max bron-metriekwaarde)
+
+      // Lineaire breedteschaal: de breedte is recht evenredig met de metriekwaarde,
+      // zodat de verhouding grijze kern (ongewijzigd) t.o.v. gekleurde rand (verschil)
+      // klopt. Een logaritmische schaal zou die verhouding verstoren.
+      const widthOf = (f, val) => {
+        if (!(val > 0)) return 0;
+        const lanes = f.properties.lanes || 1;
+        const t = val / ref;
+        return t * lanes * maxW;
+      };
+
+      const data = MODE !== 'MIXED'
+        ? geojson.features
+        : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      const commonHover = info => {
+        if (info.object) {
+          _segTipLastInfo = info;
+          if (_segTipVisible) {
+            _diffTipRender(info);
+          } else if (!_segTipTimer) {
+            _segTipTimer = setTimeout(() => {
+              _segTipTimer = null;
+              _segTipVisible = true;
+              if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+            }, 600);
+          }
+        } else {
+          clearTimeout(_segTipTimer); _segTipTimer = null;
+          _segTipVisible = false;
+          _segTip.style.display = 'none';
+        }
+      };
+
+      // Verschuif een polylijn loodrecht met `dist` meter naar één vaste zijde.
+      // Werkt in een lokale equirectangular benadering (meters ↔ graden per vertex).
+      const offsetPath = (coords, dist) => {
+        const R_LAT = 111320;
+        const n = coords.length;
+        const out = new Array(n);
+        // Per-segment loodrechte normalen (rechterzijde van de rijrichting)
+        const segNx = new Array(n - 1), segNy = new Array(n - 1);
+        for (let i = 0; i < n - 1; i++) {
+          const [lng1, lat1] = coords[i];
+          const [lng2, lat2] = coords[i + 1];
+          const latMid = (lat1 + lat2) * 0.5 * Math.PI / 180;
+          const dx = (lng2 - lng1) * R_LAT * Math.cos(latMid);
+          const dy = (lat2 - lat1) * R_LAT;
+          const len = Math.hypot(dx, dy) || 1;
+          // Normaal (rechterzijde): (dy, -dx) genormaliseerd
+          segNx[i] = dy / len;
+          segNy[i] = -dx / len;
+        }
+        for (let i = 0; i < n; i++) {
+          // Gemiddelde normaal van aangrenzende segmenten (vloeiende hoeken)
+          let nx = 0, ny = 0;
+          if (i > 0)     { nx += segNx[i - 1]; ny += segNy[i - 1]; }
+          if (i < n - 1) { nx += segNx[i];     ny += segNy[i];     }
+          const nl = Math.hypot(nx, ny) || 1;
+          nx /= nl; ny /= nl;
+          const [lng, lat] = coords[i];
+          const latRad = lat * Math.PI / 180;
+          const oLng = (nx * dist) / (R_LAT * Math.cos(latRad));
+          const oLat = (ny * dist) / R_LAT;
+          out[i] = [lng + oLng, lat + oLat];
+        }
+        return out;
+      };
+
+      // Bouw offset-paden voor de gekleurde band: volledig aan de buitenzijde van
+      // de grijze kern (de binnenrand raakt de buitenrand van de grijze kern).
+      const colorPaths = [];
+      for (const f of data) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = f.properties.linkId;
+        const diff   = diffByLinkId.get(linkId);
+        if (diff == null || diff === 0) continue;
+        const newVal = curValByLinkId.get(linkId);
+        if (newVal == null) continue;
+        const oldVal = newVal - diff;
+        const greyW = widthOf(f, Math.min(oldVal, newVal));
+        const colW  = widthOf(f, Math.abs(diff));
+        if (!(colW > 0)) continue;
+        // Middellijn van de band ligt op greyW/2 + colW/2 uit de wegas.
+        const off = greyW / 2 + colW / 2;
+        colorPaths.push({
+          path: offsetPath(f.geometry.coordinates, off),
+          color: diff > 0 ? [220, 30, 30, 230] : [30, 180, 60, 230],
+          width: colW,
+          properties: f.properties,
+        });
+      }
+
+      // Onderlaag: gekleurde band (toe-/afname), volledig aan de buitenzijde
+      const colorLayer = new PathLayer({
+        id: 'diff-stack-color',
+        data: colorPaths,
+        widthUnits: 'meters',
+        widthMinPixels: 1.5,
+        capRounded: false,
+        jointRounded: true,
+        getPath:  d => d.path,
+        getColor: d => d.color,
+        getWidth: d => d.width,
+        pickable: true,
+        onHover: commonHover,
+        updateTriggers: {
+          getColor: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getPath:  [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+        },
+      });
+
+      // Bovenlaag: grijze kern met breedte = min(oud, nieuw) = het wegvak zelf
+      const coreLayer = new GeoJsonLayer({
+        id: 'diff-stack-core',
+        data,
+        visible: true,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1,
+        getLineWidth: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null) return 1.5;
+          const newVal = curValByLinkId.get(linkId);
+          if (newVal == null) return 1.5;
+          const oldVal = newVal - diff;
+          return widthOf(f, Math.min(oldVal, newVal));
+        },
+        getLineColor: [140, 140, 140, 255],  // ondoorzichtig grijs = ongewijzigd deel
+        pickable: true,
+        onHover: commonHover,
+        updateTriggers: {
+          getLineWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+        },
+      });
+
+      return [colorLayer, coreLayer];
+    }
+
+    // ── Smiley-verschilplot: blije/boze smiley per wegvak ────────────────────
+    // Bouw éénmalig een icon-atlas (canvas) met twee sprites: een groene blije
+    // smiley (verbetering) en een rode boze smiley (verslechtering).
+    let _smileyIconAtlas = null;
+    const _SMILEY_ICON_MAP = {
+      happy: { x: 0,   y: 0, width: 128, height: 128, mask: false },
+      angry: { x: 128, y: 0, width: 128, height: 128, mask: false },
+    };
+    function _getSmileyIconAtlas() {
+      if (_smileyIconAtlas) return _smileyIconAtlas;
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 128;
+      const ctx = cv.getContext('2d');
+
+      const drawFace = (cx, kind) => {
+        const cy = 64, r = 56;
+        const isHappy = kind === 'happy';
+        // Gezicht
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = isHappy ? '#2e9e4f' : '#d64545';
+        ctx.fill();
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = isHappy ? '#1e6e37' : '#9e2f2f';
+        ctx.stroke();
+
+        // Ogen
+        ctx.fillStyle = '#ffffff';
+        const eyeY = cy - 14, eyeDX = 20, eyeR = 8;
+        ctx.beginPath(); ctx.arc(cx - eyeDX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + eyeDX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+
+        // Boze wenkbrauwen (alleen bij angry)
+        if (!isHappy) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(cx - eyeDX - 12, eyeY - 16); ctx.lineTo(cx - eyeDX + 10, eyeY - 6);
+          ctx.moveTo(cx + eyeDX + 12, eyeY - 16); ctx.lineTo(cx + eyeDX - 10, eyeY - 6);
+          ctx.stroke();
+        }
+
+        // Mond: blij = opwaartse boog, boos = neerwaartse boog
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        if (isHappy) {
+          ctx.arc(cx, cy + 6, 24, 0.15 * Math.PI, 0.85 * Math.PI, false);
+        } else {
+          ctx.arc(cx, cy + 34, 24, 1.15 * Math.PI, 1.85 * Math.PI, false);
+        }
+        ctx.stroke();
+      };
+
+      drawFace(64, 'happy');
+      drawFace(192, 'angry');
+      _smileyIconAtlas = cv;
+      return _smileyIconAtlas;
+    }
+
+    function makeSmileyLayer() {
+      if (!diffSmileyActive || !diffByLinkId.size) {
+        return new IconLayer({ id: 'diff-smiley', data: [] });
+      }
+      const higherBetter = DIFF_HIGHER_IS_BETTER.has(diffMetric);
+      const useAbs = diffSmileyMode === 'abs';
+      const tau = diffSmileyThreshold;      // relatieve drempel (0..1)
+      const absTau = diffSmileyAbsThreshold; // absolute drempel (metriek-eenheden)
+      const EPS = 1e-9;
+
+      const data = MODE !== 'MIXED'
+        ? geojson.features
+        : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      // Bouw punten (wegvak-middelpunt) met een 'happy'/'angry' klasse.
+      const pts = [];
+      for (const f of data) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = f.properties.linkId;
+        const diff   = diffByLinkId.get(linkId);
+        if (diff == null || diff === 0) continue;
+        const newVal = curValByLinkId.get(linkId);
+        if (newVal == null) continue;
+        const baseline = newVal - diff;
+        // Marginaal? → niets tonen (relatieve of absolute drempel)
+        if (useAbs) {
+          if (Math.abs(diff) < absTau) continue;
+        } else {
+          const rel = diff / Math.max(Math.abs(baseline), EPS);
+          if (Math.abs(rel) < tau) continue;
+        }
+        // Is de wijziging een verbetering?
+        const improved = higherBetter ? (diff > 0) : (diff < 0);
+        // Middelpunt van de polylijn (middelste vertex)
+        const coords = f.geometry.coordinates;
+        const mid = coords[Math.floor(coords.length / 2)];
+        pts.push({ position: mid, icon: improved ? 'happy' : 'angry', properties: f.properties });
+      }
+
+      return new IconLayer({
+        id: 'diff-smiley',
+        data: pts,
+        iconAtlas: _getSmileyIconAtlas(),
+        iconMapping: _SMILEY_ICON_MAP,
+        getIcon: d => d.icon,
+        getPosition: d => d.position,
+        sizeUnits: 'pixels',
+        getSize: 22,
+        billboard: true,
+        pickable: true,
+        onHover: info => {
+          if (info.object) {
+            _segTipLastInfo = { ...info, object: { properties: info.object.properties } };
+            if (_segTipVisible) {
+              _diffTipRender(_segTipLastInfo);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+              }, 600);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getIcon:     [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+          getPosition: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+        },
+      });
+    }
+
+    function makeLinkEditLayer() {      return new GeoJsonLayer({
+        id: 'link-edit',
+        data: geojson,
+        visible: linkEditActive || linkFlowEditActive,
+        pickable: linkEditActive || linkFlowEditActive,
+        stroked: true,
+        filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 14,
+        getLineWidth: 14,
+        getLineColor: f => {
+          const linkId = String(f.properties?.linkId ?? '');
+          const changedCap  = pendingChanges.some(c => c._isLink     && String(c.linkId) === linkId);
+          const changedFlow = pendingChanges.some(c => c._isLinkFlow && String(c.linkId) === linkId);
+          if (changedFlow) return [80, 200, 120, 220];
+          if (changedCap)  return [255, 200, 60, 220];
+          return [255, 180, 80, 140];
+        },
+        updateTriggers: { getLineColor: [pendingChanges.length] },
+        onHover: info => {
+          if (nodeEditActive && nodeSelectMode === 'polygon') return;
+          if (linkEditActive && linkSelectMode === 'polygon') return;
+          // Houd hoveredLinkId bij zodat map.on('click') de flow-dialoog kan openen
+          if (linkFlowEditActive) hoveredLinkId = info.object?.properties?.linkId ?? null;
+          map.getCanvas().style.cursor = ((linkEditActive || linkFlowEditActive) && info.object) ? 'pointer' : '';
+        },
+      });
+    }
+
+    // Achtergrond-netwerk bij 'Zone productie/attractie': zodra een zone is
+    // geselecteerd verdwijnt de normale (gekleurde) netwerklaag (zie
+    // makeNetworkLayer, visible: ... && !selectedZoneId), zodat alleen de
+    // routes van/naar die zone overblijven. Toon dan het volledige netwerk
+    // als dunne, lichtgrijze context-laag eronder.
+    function makeZoneNetworkBackdropLayer() {
+      if (zoneCentroidMode === 'off' || !selectedZoneId)
+        return new GeoJsonLayer({ id: 'zone-network-backdrop', data: [] });
+
+      return new GeoJsonLayer({
+        id: 'zone-network-backdrop',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        pickable: false,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 1,
+        getLineWidth: 1,
+        getLineColor: [170, 170, 170, 90],
+      });
+    }
+
+    // Goudappel-groen (#49a748) — gebruikt om STUDY-zones te markeren.
+    const ZONE_STUDY_COLOR = [73, 167, 72];
+
+    // Standaard-fill voor STUDY-zones: altijd zichtbaar (ongeacht selectie), met een
+    // transparante versie van ZONE_STUDY_COLOR, zodat het studiegebied in één oogopslag
+    // herkenbaar is. BOUNDARY- en NODE-klassen hebben toch geen bruikbare polygoon.
+    function makeZoneStudyFillLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      const feats = zoneFeaturesRaw.filter(f =>
+        f.properties?.zoneClass === 'STUDY' &&
+        (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'));
+      if (!feats.length) return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      return new GeoJsonLayer({
+        id:           'zone-study-fill',
+        data:         feats,
+        pickable:     false,
+        stroked:      false,
+        filled:       true,
+        getFillColor: [...ZONE_STUDY_COLOR, 40],
+      });
+    }
+
+    // Toon zone-grenzen als gestippelde lijn (PathLayer) wanneer modus niet 'off' is.
+    // Altijd zwart, onafhankelijk van productie/attractie-modus.
+    // BOUNDARY- en NODE-klassen worden overgeslagen (te groot of geen polygoon).
+    function makeZoneBoundaryLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new PathLayer({ id: 'zone-boundaries', data: [] });
+
+      const color      = [0, 0, 0, 160];
+      const studyColor = [...ZONE_STUDY_COLOR, 220];   // Goudappel-groen — STUDY-zones
+
+      // Extraheer buitenranden van Polygon/MultiPolygon zones
+      const paths = [];
+      for (const f of zoneFeaturesRaw) {
+        const cl = f.properties?.zoneClass;
+        if (cl === 'BOUNDARY' || cl === 'NODE') continue;
+        const isStudy = cl === 'STUDY';
+        const geom = f.geometry;
+        if (!geom) continue;
+        if (geom.type === 'Polygon' && geom.coordinates?.[0]?.length >= 2) {
+          paths.push({ path: geom.coordinates[0], isStudy });
+        } else if (geom.type === 'MultiPolygon') {
+          for (const poly of geom.coordinates)
+            if (poly?.[0]?.length >= 2) paths.push({ path: poly[0], isStudy });
+        }
+      }
+      if (!paths.length) return new PathLayer({ id: 'zone-boundaries', data: [] });
+
+      // Gebruik PathStyleExtension voor gestippeld effect indien beschikbaar
+      const dashProps = deck.PathStyleExtension
+        ? { getDashArray: [6, 5], dashJustified: true,
+            extensions: [new deck.PathStyleExtension({ dash: true })] }
+        : {};
+
+      return new PathLayer({
+        id:             'zone-boundaries',
+        data:           paths,
+        pickable:       false,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 3,
+        getPath:        d => d.path,
+        getColor:       d => d.isStudy ? studyColor : color,
+        getWidth:       d => d.isStudy ? 2.5 : 1.5,
+        ...dashProps,
+        updateTriggers: { getColor: [], getWidth: [] },
+      });
+    }
+
+    // Lichte fill voor de geometrie van de geselecteerde zone (geen grens-/
+    // knoop-zone, die hebben toch geen bruikbare polygoon). Kleur volgt de
+    // actieve 'Zone productie/attractie'-modus: oranje = productie, blauw = attractie.
+    function makeZoneSelectedFillLayer() {
+      if (!selectedZoneId || zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new GeoJsonLayer({ id: 'zone-selected-fill', data: [] });
+
+      const feat = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const cl   = feat?.properties?.zoneClass;
+      if (!feat || cl === 'BOUNDARY' || cl === 'NODE' ||
+          (feat.geometry?.type !== 'Polygon' && feat.geometry?.type !== 'MultiPolygon'))
+        return new GeoJsonLayer({ id: 'zone-selected-fill', data: [] });
+
+      const isProduction = zoneCentroidMode === 'production';
+      const fillColor = isProduction ? [255, 140, 0, 60] : [30, 120, 255, 60];
+
+      return new GeoJsonLayer({
+        id:           'zone-selected-fill',
+        data:         [feat],
+        pickable:     false,
+        stroked:      false,
+        filled:       true,
+        getFillColor: fillColor,
+        updateTriggers: { getFillColor: [zoneCentroidMode, selectedZoneId] },
+      });
+    }
+
+    function makeZoneCentroidLayer() {
+      // Zones verbergen als: mode=off EN geen zone/link geselecteerd, OF geen data
+      const showForLinkSel  = selectedLinkId !== null && zoneFeaturesRaw.length > 0 && (() => {
+        const numKey = Number(selectedLinkId);
+        const feat = geojson.features.find(f => f.properties?.linkId === numKey || f.properties?.linkId === selectedLinkId);
+        return (feat?.properties?.capacity ?? -1) !== 0;
+      })();
+      const showForOdEdit   = odEditActive && odEditStep === 'to' && odEditFromZone;
+      if ((zoneCentroidMode === 'off' && !selectedZoneId && !showForLinkSel && !showForOdEdit) || !zoneFeaturesRaw.length) {
+        return new ScatterplotLayer({ id: 'zone-centroids', data: [] });
+      }
+
+      // Radius-schaling: bolgrootte relatief aan productie/attractie (of flow).
+      // sqrt-schaling zodat het OPPERVLAK ~ waarde (perceptueel eerlijke vergelijking).
+      // Minimum-radius zodat kleine zones zichtbaar blijven.
+      const ZONE_RADIUS_MIN = 6;    // px
+      const ZONE_RADIUS_MAX = 26;   // px
+      const normRadius = norm =>
+        ZONE_RADIUS_MIN + (ZONE_RADIUS_MAX - ZONE_RADIUS_MIN) *
+          Math.sqrt(Math.max(0, Math.min(1, norm)));
+
+      // In OD-edit stap 'to': toon bestemmingszones die routes hebben vanuit de herkomst
+      if (showForOdEdit) {
+        const fromId = String(odEditFromZone.zoneId);
+        // Bereken trips per bestemming
+        const tripsByTo = new Map();
+        for (const r of routeList) {
+          if (String(r.fromZoneId) !== fromId) continue;
+          const toId = String(r.toZoneId);
+          tripsByTo.set(toId, (tripsByTo.get(toId) ?? 0) + (r.originProduction ?? 0) * (r.weight ?? 0));
+        }
+        const maxTrips = Math.max(...tripsByTo.values(), 1);
+        const normAlpha = norm => Math.round(50 + 190 * Math.sqrt(Math.max(0, Math.min(1, norm))));
+
+        const pts = [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties || {};
+          const zId = String(p.zoneId ?? '');
+          const trips = tripsByTo.get(zId) ?? 0;
+          if (trips <= 0) continue;
+
+          let lon = p.centroidLon ?? null;
+          let lat = p.centroidLat ?? null;
+          if (lon == null && f.geometry?.type === 'Point') {
+            [lon, lat] = f.geometry.coordinates;
+          } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+            const ring = f.geometry.coordinates[0];
+            lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+            lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+          }
+          if (lon == null || lat == null) continue;
+
+          pts.push({
+            lon, lat, zoneId: p.zoneId ?? null,
+            zoneName:  p.zoneName || String(p.zoneId ?? ''),
+            zoneClass: p.zoneClass || '',
+            production: p.production ?? 0,
+            attraction: p.attraction ?? 0,
+            flow: trips,
+            isSelected: false,
+            sizeNorm: trips / maxTrips,
+            alpha: normAlpha(trips / maxTrips),
+          });
+        }
+
+        return new ScatterplotLayer({
+          id: 'zone-centroids', data: pts, pickable: true,
+          stroked: true, filled: true,
+          radiusUnits: 'pixels', lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
+          getPosition:    d => [d.lon, d.lat],
+          getRadius:      d => normRadius(d.sizeNorm),
+          getFillColor:   d => [30, 120, 255, d.alpha],
+          getLineColor:   d => [30,  80, 200, Math.min(d.alpha + 40, 255)],
+          getLineWidth:   1.5,
+          onHover: ({ object }) => {
+            const newId = object?.zoneId ?? null;
+            const changed = newId !== hoveredZoneId;
+            hoveredZoneId = newId;
+            map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
+            if (changed) updatePurposeChart();
+          },
+          updateTriggers: { getFillColor: [odEditFromZone?.zoneId, daypart, flowDaypart],
+                            getLineColor: [odEditFromZone?.zoneId, daypart, flowDaypart],
+                            getRadius:    [odEditFromZone?.zoneId, daypart, flowDaypart] },
+        });
+      }
+
+      // Effectieve modus: bij link-selectie met mode=off valt terug op 'production'
+      const effectiveMode = zoneCentroidMode === 'off' ? 'production' : zoneCentroidMode;
+      const isProduction  = effectiveMode === 'production';
+
+      // Globale max voor alpha-normalisatie (onafhankelijk van selectie)
+      const allVals = zoneFeaturesRaw.map(f => {
+        const p = f.properties || {};
+        return isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+      });
+      const globalMax = Math.max(...allVals, 1);
+
+      // Selectie-afhankelijke tegenpool-data
+      let flowByZone = null;
+      let maxCounterpartFlow = 1;
+      if (selectedZoneId) {
+        ({ flowByZone } = computeZoneRouteData());
+        maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
+      } else if (showForLinkSel) {
+        let { flowByFromZone, flowByToZone } = computeLinkRouteData();
+        if (!flowByFromZone.size && !flowByToZone.size) {
+          ({ flowByFromZone, flowByToZone } = computeEstimatedLinkRouteData(selectedLinkId));
+        }
+        flowByZone = isProduction ? flowByFromZone : flowByToZone;
+        maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
+      }
+
+      // Alpha-helper: sqrt-schaling norm [0,1] → [50, 240]
+      // klein (val≈0) → alpha≈50 (~80% transparant), groot (val≈max) → alpha=240 (bijna opaque)
+      const normAlpha = norm =>
+        Math.round(50 + 190 * Math.sqrt(Math.max(0, Math.min(1, norm))));
+
+      // Bouw puntenlijst
+      const pts = [];
+      for (const f of zoneFeaturesRaw) {
+        const p = f.properties || {};
+
+        // Centroïd: centroidLon/Lat → Point-geometrie → Polygon (gemiddelde buitenring)
+        let lon = p.centroidLon ?? null;
+        let lat = p.centroidLat ?? null;
+        if (lon == null && f.geometry?.type === 'Point') {
+          [lon, lat] = f.geometry.coordinates;
+        } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+          const ring = f.geometry.coordinates[0];
+          lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+          lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+        }
+        if (lon == null || lat == null) continue;
+
+        const isSelected = p.zoneId === selectedZoneId;
+        let alpha, flow = 0, sizeNorm = 0;
+        const ownVal = isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+
+        if (isSelected) {
+          alpha = 220;                                          // geselecteerde zone: vaste hoge alpha
+          sizeNorm = globalMax > 0 ? ownVal / globalMax : 0;    // grootte blijft magnitude tonen
+        } else if (flowByZone) {
+          if (!flowByZone.has(p.zoneId)) continue;             // geen enkele route naar/van deze zone: overslaan
+          flow = flowByZone.get(p.zoneId) ?? 0;
+          sizeNorm = flow / maxCounterpartFlow;
+          alpha = flow > 0 ? normAlpha(sizeNorm) : 40;         // flow 0: dun/dim bolletje i.p.v. onzichtbaar
+        } else {
+          if (ownVal <= 0) continue;
+          sizeNorm = ownVal / globalMax;
+          alpha = normAlpha(sizeNorm);
+        }
+
+        pts.push({
+          lon, lat, alpha, sizeNorm, zoneId: p.zoneId ?? null, isSelected,
+          zoneName:   p.zoneName || String(p.zoneId ?? ''),
+          zoneClass:  p.zoneClass || '',
+          production: p.production ?? 0,
+          attraction: p.attraction ?? 0,
+          flow,
+        });
+      }
+
+      return new ScatterplotLayer({
+        id:             'zone-centroids',
+        data:           pts,
+        pickable:       true,
+        stroked:        true,
+        filled:         true,
+        radiusUnits:    'pixels',
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 1,
+        getPosition:    d => [d.lon, d.lat],
+        getRadius:      d => normRadius(d.sizeNorm),
+        getFillColor:   d => d.isSelected
+          ? (isProduction ? [255, 140,  0, 220] : [30, 120, 255, 220])
+          : (isProduction ? [255, 140,  0, d.alpha] : [30, 120, 255, d.alpha]),
+        getLineColor:   d => d.isSelected
+          ? (isProduction ? [255, 200,  80, 255] : [ 80, 200, 255, 255])
+          : (isProduction ? [255, 140,   0, Math.min(d.alpha + 40, 255)]
+                          : [ 30, 120, 255, Math.min(d.alpha + 40, 255)]),
+        getLineWidth:   d => d.isSelected ? 2.5 : 1.5,
+        onHover: ({ object }) => {
+          const newId = object?.zoneId ?? null;
+          const changed = newId !== hoveredZoneId;
+          hoveredZoneId = newId;
+          map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
+          // Bij hover over een zone-bol de bestemmings-motieven tonen (of terug
+          // naar de link-chart als de cursor de bol verlaat).
+          if (changed) updatePurposeChart();
+        },
+        updateTriggers: {
+          getFillColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+          getLineColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+          getLineWidth: [selectedZoneId, selectedLinkId],
+          getRadius:    [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+        },
+      });
+    }
+
+
+    function makeZoneRoutesLayer() {
+      // ── OD-edit: toon routes van het geselecteerde OD-paar ────────────────
+      if (odEditActive && window._odEditRouteData?.length) {
+        const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+        const pathData = [];
+        for (const route of window._odEditRouteData) {
+          const coords = _linkIdsToCoords(route.linkIds);
+          if (coords.length >= 2) {
+            pathData.push({ coords, flow: (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0) });
+          }
+        }
+        if (pathData.length) {
+          const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+          return new PathLayer({
+            id:             'zone-routes',
+            data:           pathData,
+            pickable:       false,
+            widthUnits:     'pixels',
+            widthMinPixels: 1.5,
+            widthMaxPixels: 10,
+            getPath:        d => d.coords,
+            getWidth:       d => Math.max(1.5, (d.flow / maxFlow) * 10),
+            getColor:       [100, 200, 255, 220],
+            updateTriggers: { getPath: [odEditFromZone?.zoneId, odEditToZone?.zoneId, daypart, flowDaypart] },
+          });
+        }
+        return new PathLayer({ id: 'zone-routes', data: [] });
+      }
+
+      // ── Selected Link: toon alle routes die door het geselecteerde wegvak lopen ──
+      // (alleen als die modus ook echt actief is — anders kan een oude
+      // selectedLinkId blijven "doorschemeren" en de zone-weergave overschaduwen)
+      if (selectedLinkActive && selectedLinkId) {
+        // Links met capaciteit 0 kunnen nooit in routes zitten → geen routes tonen
+        const _numKey0 = Number(selectedLinkId);
+        const _feat0 = geojson.features.find(f => f.properties?.linkId === _numKey0 || f.properties?.linkId === selectedLinkId);
+        if ((_feat0?.properties?.capacity ?? -1) === 0) return new PathLayer({ id: 'zone-routes', data: [] });
+        let { pathData, flowByFromZone, flowByToZone } = computeLinkRouteData();
+        const numKey = Number(selectedLinkId);
+        if (!pathData.length && _estimatedRouteCache.has(numKey)) {
+          // Gebruik gecachete Dijkstra-schatting (zelfde stijl als echte routes)
+          ({ pathData, flowByFromZone, flowByToZone } = _estimatedRouteCache.get(numKey));
+        }
+        if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
+        const maxFlow      = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+        const isProduction = zoneCentroidMode !== 'attraction';
+        const defaultColor = isProduction ? [255, 120, 0, 180] : [0, 210, 255, 180];
+        return new PathLayer({
+          id:             'zone-routes',
+          data:           pathData,
+          pickable:       false,
+          widthUnits:     'pixels',
+          widthMinPixels: 1,
+          widthMaxPixels: 8,
+          getPath:        d => d.coords,
+          getWidth:       d => Math.max(1, (d.flow / maxFlow) * 8),
+          getColor:       d => d.color ?? defaultColor,
+        updateTriggers: {
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+      });
+    }
+
+      // ── Selected Zone: toon routes van/naar de geselecteerde zone ─────────────
+      if (!selectedZoneId || zoneCentroidMode === 'off') {
+        return new PathLayer({ id: 'zone-routes', data: [] });
+      }
+
+      const { pathData, linkIdsByZone, linkFlowByZone } = computeZoneRouteData();
+      if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
+
+      const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+      const isProduction = zoneCentroidMode === 'production';
+      const baseColor = isProduction ? [255, 120, 0] : [0, 220, 255];
+
+      // Flow-verdeling per wegvak is sterk scheef (de meeste wegvakken dragen
+      // maar een fractie van wat het drukste voedingswegvak bij de zone draagt).
+      // Eén kanaal (breedte) alleen geeft dan weinig contrast, omdat de meeste
+      // wegvakken tegen de minimumbreedte aanlopen. Daarom ook de dekking laten
+      // meeschalen (sqrt zodat lage waarden nog zichtbaar blijven i.p.v. bijna
+      // transparant) — samen geven breedte + dekking een veel duidelijker
+      // verloop van dichtbij (dik/vol) naar verderop (dun/vaag).
+      const norm = d => Math.max(0, Math.min(1, d.flow / maxFlow));
+
+      // Bij een vastgeklikte OD-pijl (highlightedOdZoneId): alleen de wegvakken
+      // van dát OD-paar in volle kleur, de rest gedimd.
+      const highlightLinkIds = highlightedOdZoneId !== null
+        ? (linkIdsByZone.get(highlightedOdZoneId) ?? new Set())
+        : null;
+      const isDimmedLink = d => highlightLinkIds !== null && !highlightLinkIds.has(d.linkId);
+
+      // Bij een vastgeklikte OD-pijl: normaliseer de breedte/dekking van de
+      // gehighlighte wegvakken op de max flow van dát OD-paar zelf i.p.v. de
+      // zone-brede maxFlow, zodat een laag-volume alternatieve route (Yen's
+      // k-shortest-paths) niet wordt weggedrukt door de dominante zone-flow.
+      const pairLinkFlow = highlightedOdZoneId !== null
+        ? (linkFlowByZone.get(highlightedOdZoneId) ?? new Map())
+        : null;
+      let pairMaxFlow = 1e-9;
+      if (pairLinkFlow) for (const f of pairLinkFlow.values()) pairMaxFlow = Math.max(pairMaxFlow, f);
+      const normPair = d => Math.max(0, Math.min(1, (pairLinkFlow?.get(d.linkId) ?? 0) / pairMaxFlow));
+
+      return new PathLayer({
+        id:             'zone-routes',
+        data:           pathData,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 14,
+        getPath:        d => d.coords,
+        getWidth:       d => {
+          if (highlightLinkIds !== null && !isDimmedLink(d)) {
+            return Math.max(1, normPair(d) * 14);
+          }
+          const w = Math.max(1, norm(d) * 14);
+          return isDimmedLink(d) ? Math.max(0.5, w * 0.3) : w;
+        },
+        getColor:       d => {
+          if (highlightLinkIds !== null && !isDimmedLink(d)) {
+            const aPair = Math.round(50 + 190 * Math.sqrt(normPair(d)));
+            return [...baseColor, aPair];
+          }
+          const a = Math.round(50 + 190 * Math.sqrt(norm(d)));
+          return isDimmedLink(d) ? [...baseColor, Math.round(a * 0.15)] : [...baseColor, a];
+        },
+        updateTriggers: {
+          getColor: [zoneCentroidMode, selectedZoneId, daypart, flowDaypart, highlightedOdZoneId],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart, highlightedOdZoneId],
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
+        },
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _zoneRouteTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _zoneRouteTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+      });
+    }
+
+    /** Bereken routes + flows voor de geselecteerde zone.
+     *  Gedeeld door makeZoneRoutesLayer en makeZoneCentroidLayer.
+     *
+     *  pathData bevat één entry per fysiek wegvak (niet per route): de flow
+     *  van alle routes van/naar de zone die dat wegvak gebruiken wordt
+     *  gesommeerd, zodat gedeelde wegvakken (waar meerdere routes overlappen)
+     *  hun werkelijke totale belasting tonen i.p.v. de flow van één route. */
+    function computeZoneRouteData() {
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+      const relevant = routeList.filter(r =>
+        zoneCentroidMode === 'production' ? r.fromZoneId === selectedZoneId : r.toZoneId === selectedZoneId
+      );
+
+      const flowByZone  = new Map();  // counterpartZoneId → totale flow [veh/hr]
+      const dailyFlowByZone = new Map(); // counterpartZoneId → totale flow [veh/dag], dagdeel-onafhankelijk
+      const flowByLink  = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
+      const routeCountByZone = new Map(); // counterpartZoneId → aantal route-objecten (diagnose)
+      const linkIdsByZone = new Map(); // counterpartZoneId → Set van linkIds van routes naar/van die zone (voor OD-pijl-isolatie)
+      const linkFlowByZone = new Map(); // counterpartZoneId → Map<linkId, flow>, per-paar flowsom per wegvak (voor OD-paar-eigen normalisatie bij highlight)
+
+      for (const route of relevant) {
+        const flow        = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        const counterpart = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
+        flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
+        dailyFlowByZone.set(counterpart, (dailyFlowByZone.get(counterpart) ?? 0) + (route.originProduction ?? 0) * (route.weight ?? 0));
+        routeCountByZone.set(counterpart, (routeCountByZone.get(counterpart) ?? 0) + 1);
+
+        if (!linkIdsByZone.has(counterpart)) linkIdsByZone.set(counterpart, new Set());
+        const cpLinkIds = linkIdsByZone.get(counterpart);
+
+        if (!linkFlowByZone.has(counterpart)) linkFlowByZone.set(counterpart, new Map());
+        const cpLinkFlow = linkFlowByZone.get(counterpart);
+
+        for (const linkId of route.linkIds ?? []) {
+          flowByLink.set(linkId, (flowByLink.get(linkId) ?? 0) + flow);
+          cpLinkIds.add(linkId);
+          cpLinkFlow.set(linkId, (cpLinkFlow.get(linkId) ?? 0) + flow);
+        }
+      }
+
+      const pathData = [];
+      for (const [linkId, flow] of flowByLink) {
+        const coords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+        if (coords && coords.length >= 2) pathData.push({ coords, flow, linkId });
+      }
+
+      // Welke tegenpool-zones hebben daadwerkelijk minstens één wegvak met
+      // geometrie in pathData? (diagnose voor "pijl zonder zichtbare route")
+      const linkIdsWithGeom = new Set(pathData.map(pd => pd.linkId));
+      const zonesWithPath = new Set();
+      for (const route of relevant) {
+        const hasGeom = (route.linkIds ?? []).some(id => linkIdsWithGeom.has(id));
+        if (hasGeom) zonesWithPath.add(zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId);
+      }
+
+      return { pathData, flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath, linkIdsByZone, linkFlowByZone };
+    }
+
+    /** Centroïd (lon/lat) van een zone opzoeken op zoneId, met dezelfde fallback-
+     *  volgorde (centroidLon/Lat → Point-geometrie → Polygon-gemiddelde) als
+     *  elders in de zone-weergave. Retourneert null als geen centroïd te bepalen is. */
+    function _zoneCentroidLonLat(zoneId) {
+      const f = zoneFeaturesRaw.find(ft => ft.properties?.zoneId === zoneId);
+      if (!f) return null;
+      const p = f.properties || {};
+      let lon = p.centroidLon ?? null;
+      let lat = p.centroidLat ?? null;
+      if (lon == null && f.geometry?.type === 'Point') {
+        [lon, lat] = f.geometry.coordinates;
+      } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+        const ring = f.geometry.coordinates[0];
+        lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+        lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+      }
+      if (lon == null || lat == null) return null;
+      return [lon, lat];
+    }
+
+    /** Bouw een pijlkop (driehoek, 3 punten) op [lon, lat], wijzend in de richting
+     *  (dLon, dLat). lengthM/widthM zijn bij benadering in meters; analoog aan
+     *  _taBuildDirectionArrow maar met instelbare afmeting. */
+    function _buildArrowHead(lon, lat, dLon, dLat, lengthM, widthM) {
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      const vx = dLon * mLng, vy = dLat * mLat;
+      const vlen = Math.hypot(vx, vy) || 1;
+      const ux = vx / vlen, uy = vy / vlen;
+      const px = -uy, py = ux;
+      const tip  = [lon + (ux * lengthM / 2) / mLng, lat + (uy * lengthM / 2) / mLat];
+      const back = [lon - (ux * lengthM / 2) / mLng, lat - (uy * lengthM / 2) / mLat];
+      const left  = [back[0] + (px * widthM / 2) / mLng, back[1] + (py * widthM / 2) / mLat];
+      const right = [back[0] - (px * widthM / 2) / mLng, back[1] - (py * widthM / 2) / mLat];
+      return [tip, left, right];
+    }
+
+    /** Rechte "verbindingspijlen" tussen de geselecteerde zone en elke tegenpool-
+     *  zone (herkomst of bestemming, afhankelijk van productie/attractie-modus).
+     *  Breedte/dekking schalen met de totale flow (productie × som(tripFractie))
+     *  voor dat OD-paar, met een zichtbare minimumbreedte ook bij flow 0.
+     *
+     *  In tegenstelling tot makeZoneRoutesLayer (die over het wegennetwerk loopt
+     *  en dus afhankelijk is van succesvolle padreconstructie per wegvak) volgt
+     *  deze laag geen netwerkgeometrie, maar verbindt simpelweg de centroïden.
+     *  Zo blijft de OD-relatie zichtbaar ook als er geen (volledig) pad kon
+     *  worden gereconstrueerd. */
+    // Felle, van de route-paden (oranje/cyaan) en de voedingslinks (groen)
+    // onderscheidbare kleur voor de schematische OD-pijlen.
+    const ZONE_OD_ARROW_COLOR = [255, 214, 0];
+
+    function makeZoneOdArrowLayers() {
+      const empty = () => [
+        new PathLayer({ id: 'zone-od-arrow-shafts', data: [] }),
+        new PolygonLayer({ id: 'zone-od-arrow-heads', data: [] }),
+      ];
+      if (!selectedZoneId || zoneCentroidMode === 'off' || !zoneFeaturesRaw.length) return empty();
+
+      const { flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath } = computeZoneRouteData();
+      const originCoord = _zoneCentroidLonLat(selectedZoneId);
+      if (!originCoord || !flowByZone.size) return empty();
+
+      const isProduction = zoneCentroidMode === 'production';
+      const maxFlow = Math.max(...flowByZone.values(), 1e-9);
+
+      const shafts = [];
+      const heads  = [];
+      for (const [counterpartId, flow] of flowByZone) {
+        if (counterpartId === selectedZoneId) continue;
+        const destCoord = _zoneCentroidLonLat(counterpartId);
+        if (!destCoord) continue;
+
+        // Productie: pijl van geselecteerde zone náár bestemming.
+        // Attractie: pijl van herkomst náár geselecteerde zone.
+        const from = isProduction ? originCoord : destCoord;
+        const to   = isProduction ? destCoord   : originCoord;
+        const flowNorm  = Math.max(0, Math.min(1, flow / maxFlow));
+        const hasPath   = zonesWithPath.has(counterpartId);
+        const routeCount = routeCountByZone.get(counterpartId) ?? 0;
+        const dailyFlow = dailyFlowByZone.get(counterpartId) ?? 0;
+        // Is er een vastgeklikte OD-pijl (highlightedOdZoneId) en is dit 'm niet?
+        // Dan dimmen we deze pijl, zodat de geselecteerde pijl/route opvalt.
+        const isDimmed = highlightedOdZoneId !== null && counterpartId !== highlightedOdZoneId;
+
+        shafts.push({ coords: [from, to], flow, dailyFlow, flowNorm, counterpartId, hasPath, routeCount, isDimmed });
+
+        // Pijlkop op 60% van de lijn, wijzend in de richting from → to.
+        const tLon = from[0] + (to[0] - from[0]) * 0.6;
+        const tLat = from[1] + (to[1] - from[1]) * 0.6;
+        heads.push({
+          polygon: _buildArrowHead(tLon, tLat, to[0] - from[0], to[1] - from[1], 40, 22),
+          flowNorm, counterpartId, flow, dailyFlow, hasPath, routeCount, isDimmed,
+        });
+      }
+
+      const shaftLayer = new PathLayer({
+        id:             'zone-od-arrow-shafts',
+        data:           shafts,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 12,
+        getPath:        d => d.coords,
+        getWidth:       d => {
+          const w = Math.max(2, Math.sqrt(d.flowNorm) * 10);
+          return d.isDimmed ? Math.max(1, w * 0.4) : w;
+        },
+        getColor:       d => {
+          const a = Math.round(150 + 105 * Math.sqrt(d.flowNorm));
+          return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
+        },
+        updateTriggers: {
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart, highlightedOdZoneId],
+          getColor: [highlightedOdZoneId],
+        },
+        onHover: info => {
+          hoveredOdArrowZoneId = info?.object?.counterpartId ?? null;
+          map.getCanvas().style.cursor = hoveredOdArrowZoneId ? 'pointer' : '';
+          _zoneOdArrowTipRender(info, map2);
+        },
+      });
+
+      const headLayer = new PolygonLayer({
+        id:             'zone-od-arrow-heads',
+        data:           heads,
+        pickable:       true,
+        stroked:        false,
+        filled:         true,
+        getPolygon:     d => d.polygon,
+        getFillColor:   d => {
+          const a = Math.round(190 + 65 * Math.sqrt(d.flowNorm));
+          return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
+        },
+        updateTriggers: { getPolygon: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart], getFillColor: [highlightedOdZoneId] },
+        onHover: info => {
+          hoveredOdArrowZoneId = info?.object?.counterpartId ?? null;
+          map.getCanvas().style.cursor = hoveredOdArrowZoneId ? 'pointer' : '';
+          _zoneOdArrowTipRender(info, map2);
+        },
+      });
+
+      return [shaftLayer, headLayer];
+    }
+
+    /** Tooltip voor het hoveren over een OD-pijl (makeZoneOdArrowLayers): toont
+     *  de tegenpool-zone, de flow en — als diagnose voor "pijl zonder route" —
+     *  of er daadwerkelijk minstens één wegvak met geometrie achter deze
+     *  verbinding zit. */
+    const _zoneOdArrowTipRender = (info, sourceMap) => {
+      const d = info?.object;
+      if (!d) { _segTip.style.display = 'none'; return; }
+      const isProduction = zoneCentroidMode === 'production';
+      const selFeat   = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const cpFeat    = zoneFeaturesRaw.find(f => f.properties?.zoneId === d.counterpartId);
+      const selName   = selFeat?.properties?.zoneName || selFeat?.properties?.name || String(selectedZoneId);
+      const cpName    = cpFeat?.properties?.zoneName  || cpFeat?.properties?.name  || String(d.counterpartId);
+      const fromName  = isProduction ? selName : cpName;
+      const toName    = isProduction ? cpName  : selName;
+      const pathNote  = d.hasPath
+        ? `<span style="color:var(--ga-rood)">Ja (${d.routeCount} route${d.routeCount === 1 ? '' : 's'})</span>`
+        : `<span style="color:var(--ga-fout)">Nee — geen wegvak-geometrie gevonden</span>`;
+      _segTip.innerHTML = `
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">OD-verbinding</div>
+        <div><span style="color:#6a757c">Herkomst: </span><b>${fromName}</b></div>
+        <div><span style="color:#6a757c">Bestemming: </span><b>${toName}</b></div>
+        <div><span style="color:#6a757c">Flow (dagdeel): </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('odEditTripsLabel')}: </span><b>${d.dailyFlow.toLocaleString(T('numberLocale'), {maximumFractionDigits:1})} ${T('tooltipZoneProdUnit')}</b></div>
+        <div><span style="color:#6a757c">Route op het wegennet: </span>${pathNote}</div>
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    /** Diagnostische laag: toont de voedingslinks van ALLE zones in het groen —
+     *  authoritative connector-geometrie uit het FEEDLINK-bestand (feedLinkByZone),
+     *  niet afgeleid uit route.linkIds. Per zone de richting die bij de actieve
+     *  modus hoort (productie: zone → netwerk, attractie: netwerk → zone). De
+     *  voedingslink van de geselecteerde zone wordt dikker/feller uitgelicht. */
+    function makeZoneFeedLinksLayer() {
+      if (zoneCentroidMode === 'off' || !feedLinkByZone.size) return new PathLayer({ id: 'zone-feed-links', data: [] });
+
+      const feedLinkData = [];
+      for (const [zoneId, entry] of feedLinkByZone) {
+        const coords = entry[zoneCentroidMode];
+        if (coords?.length >= 2) feedLinkData.push({ coords, zoneId, isSelected: zoneId === selectedZoneId });
+      }
+      if (!feedLinkData.length) return new PathLayer({ id: 'zone-feed-links', data: [] });
+
+      return new PathLayer({
+        id:             'zone-feed-links',
+        data:           feedLinkData,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 1.5,
+        widthMaxPixels: 4,
+        getPath:        d => d.coords,
+        getWidth:       d => d.isSelected ? 4 : 1.5,
+        getColor:       d => d.isSelected ? [60, 255, 110, 255] : [40, 200, 90, 160],
+        updateTriggers: {
+          getWidth: [selectedZoneId],
+          getColor: [selectedZoneId],
+          getPath:  [zoneCentroidMode],
+        },
+        onHover: info => {
+          const d = info?.object;
+          if (!d) { _segTip.style.display = 'none'; return; }
+          const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === d.zoneId);
+          const zName = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(d.zoneId);
+          _segTip.innerHTML = `
+            <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">Voedingslink</div>
+            <div><span style="color:#6a757c">Zone: </span><b>${zName}</b></div>
+            <div><span style="color:#6a757c">Richting: </span><b>${zoneCentroidMode === 'production' ? 'productie (zone → netwerk)' : 'attractie (netwerk → zone)'}</b></div>
+          `;
+          const rect = map.getCanvas().getBoundingClientRect();
+          const ev = info.srcEvent;
+          const x = ev ? ev.clientX : (rect.left + info.x);
+          const y = ev ? ev.clientY : (rect.top + info.y);
+          _segTip.style.display = '';
+          const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+          _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+          _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+        },
+      });
+    }
+
+    /** Tooltip voor het hoveren over een wegvak in de geselecteerde-zone-laag:
+     *  toont de flow vanuit/naar de geselecteerde zone op dit wegvak en het
+     *  aandeel daarvan in de totale (gemeten) flow van het wegvak. */
+    const _zoneRouteTipRender = (info, sourceMap) => {
+      const d = info?.object;
+      if (!d) { _segTip.style.display = 'none'; return; }
+      const isProduction = zoneCentroidMode === 'production';
+      const zFeat  = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const zName  = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(selectedZoneId);
+      const totalFlow = linkFlowMap.get(d.linkId) ?? linkFlowMap.get(Number(d.linkId)) ?? 0;
+      const share = totalFlow > 0 ? Math.min(100, (d.flow / totalFlow) * 100) : null;
+      _segTip.innerHTML = `
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', d.linkId)}
+        </div>
+        <div><span style="color:#6a757c">${isProduction ? 'Herkomstzone' : 'Bestemmingszone'}: </span><b>${zName}</b></div>
+        <div><span style="color:#6a757c">Flow ${isProduction ? 'vanuit' : 'naar'} zone: </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">Totale flow (dagdeel): </span><b>${totalFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">Aandeel van totaal: </span><b>${share != null ? share.toFixed(0) + '%' : '–'}</b></div>
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+
+    /** Bouw linkRouteMap: linkId → route[] na het vullen van routeList. */
+    function buildLinkRouteMap() {
+      _trace('buildLinkRouteMap');
+      linkRouteMap.clear();
+      for (const route of routeList) {
+        for (const id of route.linkIds) {
+          if (!linkRouteMap.has(id)) linkRouteMap.set(id, []);
+          linkRouteMap.get(id).push(route);
+        }
+      }
+    }
+
+    /**
+     * IPF-kalibratie van route-producties tegen de gemeten link-flows (optie 2b).
+     *
+     * Doel: voor elk gemeten, richting-specifiek niet-voedingswegvak L moet de som van
+     * de effectieve uurproducties van alle routes die door L lopen ≈ de gemeten
+     * uurintensiteit van het actieve dagdeel (linkFlowMap[L] = dpFlowOf) benaderen.
+     * Zo komt de animatie-teller (in simulatietijd) overeen met de segment-popup.
+     *
+     * Effectieve uurproductie per route:
+     *   p_r = originProduction × DP_FRACTION[daypart] × weight × calib
+     * Alleen route.calib wordt bijgesteld; originProduction/weight blijven ongemoeid.
+     *
+     * Iteratief (Iterative Proportional Fitting): per stap krijgt elke route de
+     * geometrisch gemiddelde correctie F_L/M_L over zijn gemeten inner-links.
+     * Voedingslinks (eerste + laatste linkId) worden uitgesloten.
+     */
+    function calibrateRouteProductions() {
+      _trace('calibrateRouteProductions');
+      const DBG = /[?&]debug\b/.test(location.search);
+      if (!routeList.length) return;
+
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+
+      // Init calib
+      for (const route of routeList) {
+        if (typeof route.calib !== 'number' || !isFinite(route.calib)) route.calib = 1;
+      }
+
+      // Inner-link → routes map (voedingslinks uitgesloten via slice(1,-1))
+      const innerLinkRoutes = new Map(); // linkId → route[]
+      for (const route of routeList) {
+        const inner = route.linkIds.slice(1, -1);
+        for (const id of inner) {
+          if (!innerLinkRoutes.has(id)) innerLinkRoutes.set(id, []);
+          innerLinkRoutes.get(id).push(route);
+        }
+      }
+
+      // Doelwaarden F_L per gemeten inner-link (>0). linkFlowMap is richting-specifiek.
+      const targetF = new Map(); // linkId → F_L
+      for (const id of innerLinkRoutes.keys()) {
+        const f = linkFlowMap.get(id) ?? 0;
+        if (f > 0) targetF.set(id, f);
+      }
+      if (!targetF.size) return; // niets te kalibreren
+
+      // Cache: per route zijn gemeten inner-links (met F_L>0)
+      const routeMeasuredLinks = new Map(); // route → linkId[]
+      for (const route of routeList) {
+        const ids = [];
+        for (const id of route.linkIds.slice(1, -1)) {
+          if (targetF.has(id)) ids.push(id);
+        }
+        if (ids.length) routeMeasuredLinks.set(route, ids);
+      }
+
+      const baseProd = route => (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+
+      // Snapshot M_L vóór kalibratie (voor validatie)
+      const mBefore = new Map();
+      if (DBG) {
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let m = 0;
+          for (const r of routes) m += baseProd(r) * (r.calib ?? 1);
+          mBefore.set(id, m);
+        }
+      }
+
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      const K = 10;
+      for (let it = 0; it < K; it++) {
+        // Bereken huidige M_L
+        const M = new Map();
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let m = 0;
+          for (const r of routes) m += baseProd(r) * (r.calib ?? 1);
+          M.set(id, m);
+        }
+        // Per route: geomean(F_L/M_L) over gemeten inner-links, clamp per stap
+        for (const [route, ids] of routeMeasuredLinks) {
+          let logSum = 0, n = 0;
+          for (const id of ids) {
+            const m = M.get(id) ?? 0;
+            const f = targetF.get(id) ?? 0;
+            if (m > 0 && f > 0) { logSum += Math.log(f / m); n++; }
+          }
+          if (n === 0) continue;
+          const mr = clamp(Math.exp(logSum / n), 0.2, 5);
+          route.calib = clamp((route.calib ?? 1) * mr, 0.05, 20);
+        }
+      }
+
+      if (DBG) {
+        const rows = [];
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let mAfter = 0;
+          for (const r of routes) mAfter += baseProd(r) * (r.calib ?? 1);
+          const mB = mBefore.get(id) ?? 0;
+          rows.push({
+            linkId: id,
+            F_L: Math.round(targetF.get(id)),
+            M_L_voor: Math.round(mB),
+            M_L_na: Math.round(mAfter),
+            factor: mB > 0 ? +(mAfter / mB).toFixed(2) : null,
+          });
+        }
+        console.log(`[calibrateRouteProductions] daypart=${daypart}, flowDaypart=${flowDaypart}, links=${targetF.size}, routes=${routeMeasuredLinks.size}`);
+        console.table(rows);
+      }
+    }
+
+    /** Aggregeer herkomst/bestemmings-flows voor het geselecteerde wegvak.
+     *  Geeft { flowByFromZone, flowByToZone, pathData } terug. */
+    function computeLinkRouteData() {
+      const dpFrac   = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+      // Verdedigende lookup: probeer zowel het originele type als Number()-conversie
+      const numKey   = Number(selectedLinkId);
+      const relevant = linkRouteMap.get(numKey)
+                    ?? linkRouteMap.get(selectedLinkId)
+                    ?? [];
+      const flowByFromZone = new Map();
+      const flowByToZone   = new Map();
+      const pathData       = [];
+      const purposeFlow    = new Map();
+      for (const route of relevant) {
+        const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        flowByFromZone.set(route.fromZoneId, (flowByFromZone.get(route.fromZoneId) ?? 0) + flow);
+        flowByToZone.set(route.toZoneId,   (flowByToZone.get(route.toZoneId)   ?? 0) + flow);
+        // Aggregeer motiefverdeling: flow × motifRatio per motief
+        if (route.motifRatio) {
+          for (const [m, ratio] of Object.entries(route.motifRatio)) {
+            purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + flow * ratio);
+          }
+        }
+        // Splits route op de geselecteerde link: upstream = oranje, downstream = cyaan
+        // Sla eerste link (voedingslink herkomst) en laatste link (voedingslink bestemming) over
+        const idx = route.linkIds.findIndex(id => id === numKey || id === selectedLinkId);
+        const upIds   = idx > 1              ? route.linkIds.slice(1, idx)                        : [];
+        const downIds = idx < route.linkIds.length - 2 ? route.linkIds.slice(idx + 1, -1) : [];
+        const upCoords   = upIds.length   ? _linkIdsToCoords(upIds)   : [];
+        const downCoords = downIds.length ? _linkIdsToCoords(downIds) : [];
+        if (upCoords.length   >= 2) pathData.push({ coords: upCoords,   flow, color: [255, 120, 0,   200] });
+        if (downCoords.length >= 2) pathData.push({ coords: downCoords, flow, color: [0,   210, 255, 200] });
+      }
+      return { flowByFromZone, flowByToZone, pathData, purposeFlow };
+    }
+
+    // ── Kleurenpalet per motief ──────────────────────────────────────────────
+    const MOTIF_COLORS = {
+      house:         '#4e9af1',
+      work:          '#f4b942',
+      shopping:      '#e05c5c',
+      recreational:  '#5cb85c',
+      school:        '#a29bfe',
+      education:     '#a29bfe',
+      hospital:      '#fd79a8',
+      parking:       '#636e72',
+      other:         '#b2bec3',
+      unclassified:  '#78909c',
+      unknown:       '#546e7a',
+    };
+    // Fallback-reeks voor onbekende sleutels
+    const _MOTIF_FALLBACK = ['#00b894','#00cec9','#fdcb6e','#e17055','#6c5ce7','#fab1a0'];
+    let   _motifFallbackIdx = 0;
+    const _motifColorCache  = {};
+    function _motifColor(key) {
+      if (MOTIF_COLORS[key]) return MOTIF_COLORS[key];
+      if (!_motifColorCache[key]) {
+        _motifColorCache[key] = _MOTIF_FALLBACK[_motifFallbackIdx++ % _MOTIF_FALLBACK.length];
+      }
+      return _motifColorCache[key];
+    }
+
+    /** Rendert het taartdiagram + legenda in #purposeChartPanel.
+     *  Verbergt het paneel als er geen motifRatio-data beschikbaar is. */
+    /**
+     * Berekent de motiefverdeling op basis van attractiezones.
+     * Voor elke zone in flowByToZone: zoek alle routes in routeList met die
+     * toZoneId, verdeel de zone-flow naar motief via route.motifRatio × route.weight.
+     * Geeft een Map<motifKey, flow> terug, of null als er niets te berekenen valt.
+     */
+    function _purposeFlowFromAttractionZones(flowByToZone) {
+      if (!flowByToZone || !flowByToZone.size) return null;
+
+      // Bouw lookup toZoneId → routes (eenmalig over flowByToZone-zones)
+      const zoneIds = new Set(flowByToZone.keys());
+      const routesByZone = new Map();
+      for (const route of routeList) {
+        if (!zoneIds.has(route.toZoneId)) continue;
+        if (!route.motifRatio) continue;
+        const arr = routesByZone.get(route.toZoneId) ?? [];
+        arr.push(route);
+        routesByZone.set(route.toZoneId, arr);
+      }
+
+      const purposeFlow = new Map();
+
+      for (const [zoneId, zoneFlow] of flowByToZone) {
+        const routes = routesByZone.get(zoneId);
+        if (!routes || !routes.length) continue;
+
+        // Normaliseer over het totale gewicht van routes naar deze zone
+        const totalWeight = routes.reduce((s, r) => s + (r.weight ?? 0), 0);
+        if (totalWeight <= 0) continue;
+
+        for (const route of routes) {
+          const share = (route.weight ?? 0) / totalWeight;
+          for (const [m, ratio] of Object.entries(route.motifRatio)) {
+            if (m === 'house') continue;
+            purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + zoneFlow * share * ratio);
+          }
+        }
+      }
+
+      return purposeFlow.size > 0 ? purposeFlow : null;
+    }
+
+    /**
+     * Bestemmings-motieven van een zone, rechtstreeks afgeleid uit de socio-
+     * economische ZONE-kolommen (altijd aanwezig, i.t.t. de gebouw-breakdown):
+     *   wonen        → huishoudens (of inwoners)
+     *   werk         → arbeidsplaatsen (gedetailleerd indien beschikbaar)
+     *   onderwijs    → leerlingplaatsen_*
+     *   winkelen/rec → detail-arbeidsplaatsen indien aanwezig
+     * Geeft Map<motifKey, waarde> terug, of null.
+     */
+    function _purposeFlowFromZone(zoneId) {
+      const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === zoneId);
+      const zp = zFeat?.properties;
+      if (!zp) return null;
+      const n = v => { const x = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(x) && x > 0 ? x : 0; };
+
+      const eduSeats = n(zp.leerlingplaatsen_basisonderwijs)
+                     + n(zp.leerlingplaatsen_middelbaaronderwijs)
+                     + n(zp.leerlingplaatsen_middelbaarberoepsonderwijs)
+                     + n(zp.leerlingplaatsen_hogeronderwijs);
+      const house = n(zp.huishoudens) || n(zp.inwoners);
+
+      // Gedetailleerde baan-uitsplitsing (alleen aanwezig in rijkere datasets)
+      const shopping = n(zp.arbeidsplaatsen_overige_winkelfunctie)
+                     + n(zp.arbeidsplaatsen_overige_voedselwinkelfunctie)
+                     + n(zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie);
+      const recreational = n(zp.arbeidsplaatsen_sportfunctie) + n(zp.arbeidsplaatsen_bijeenkomstfunctie);
+      const kantoor  = n(zp.arbeidsplaatsen_kantoorfunctie);
+      const industrie = n(zp.arbeidsplaatsen_industriefunctie);
+      const eduJobs  = n(zp.arbeidsplaatsen_onderwijsfunctie);
+      const overige  = n(zp.arbeidsplaatsen_overige_gebruiksfunctie);
+      const detailedJobs = shopping + recreational + kantoor + industrie + eduJobs + overige;
+
+      const m = new Map();
+      if (house > 0)     m.set('house', house);
+      if (eduSeats > 0)  m.set('education', eduSeats);
+
+      if (detailedJobs > 0) {
+        if (kantoor + industrie > 0) m.set('work', kantoor + industrie);
+        if (shopping > 0)            m.set('shopping', shopping);
+        if (recreational > 0)        m.set('recreational', recreational);
+        if (overige > 0)             m.set('other', overige);
+        if (!eduSeats && eduJobs > 0) m.set('education', eduJobs);
+      } else {
+        // Alleen totalen beschikbaar: alle arbeidsplaatsen → werk
+        const jobs = n(zp.arbeidsplaatsen);
+        if (jobs > 0) m.set('work', jobs);
+      }
+      return m.size > 0 ? m : null;
+    }
+
+    function updatePurposeChart() {
+      const panel   = document.getElementById('purposeChartPanel');
+      const svg     = document.getElementById('purposeChartSvg');
+      const legend  = document.getElementById('purposeChartLegend');
+      const estTag  = document.getElementById('purposeChartEstTag');
+      const noData  = document.getElementById('purposeChartNoData');
+      const body    = document.getElementById('purposeChartBody');
+      const subtitle= document.getElementById('purposeChartSubtitle');
+
+      // ── Bron A: hover over een zone-bol → bestemmings-motieven van die zone ──
+      // Heeft voorrang boven de link-chart zolang de cursor op een bol staat.
+      const _zonesVisible = zoneCentroidMode !== 'off' || selectedLinkId != null || selectedZoneId != null;
+      if (hoveredZoneId != null && _zonesVisible) {
+        const zpf = _purposeFlowFromZone(hoveredZoneId);
+        if (zpf) {
+          const entries = [...zpf.entries()]
+            .filter(([, v]) => v > 0)
+            .sort(([, a], [, b]) => b - a);
+          const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === hoveredZoneId);
+          const zName = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(hoveredZoneId);
+          if (subtitle) { subtitle.textContent = '· ' + zName; subtitle.style.display = 'inline'; }
+          _renderPurposeChart(entries, true);   // building-schatting → estimated-badge
+          return;
+        }
+      }
+      if (subtitle) { subtitle.style.display = 'none'; subtitle.textContent = ''; }
+
+      if (!selectedLinkId) {
+        panel.style.display = 'none';
+        return;
+      }
+
+      // ── Stap 1: haal flowByToZone op ─────────────────────────────────────
+      // Links met echte routes: gebruik linkRouteMap-data
+      // Links zonder routes:    gebruik Dijkstra-schatting
+      const numLinkId  = Number(selectedLinkId);
+      const hasRoutes  = (linkRouteMap.get(numLinkId) ?? linkRouteMap.get(selectedLinkId) ?? []).length > 0;
+
+      // Links met capaciteit 0 kunnen nooit in routes zitten → paneel verbergen
+      const _selFeatPC = geojson.features.find(f => f.properties?.linkId === numLinkId || f.properties?.linkId === selectedLinkId);
+      if ((_selFeatPC?.properties?.capacity ?? -1) === 0 && !hasRoutes) {
+        panel.style.display = 'none';
+        return;
+      }
+
+      // ── Stap 1: primaire bron = flowsPerMotive op de link zelf ────────────
+      // Dit is de werkelijke motiefverdeling van het wegvak. De route-motifRatio
+      // is in de huidige data nietszeggend ({"unclassified": 1.0}); daarom is de
+      // link-eigen verdeling leidend, óók als de link op een route ligt.
+      let entries = [];
+      let estimated = false;
+
+      const linkFeat = _selFeatPC ?? geojson.features.find(
+        f => f.properties?.linkId === numLinkId || f.properties?.linkId === selectedLinkId
+      );
+      const fpm = linkFeat?.properties?.flowsPerMotive;
+      if (fpm) {
+        const raw = typeof fpm === 'string' ? JSON.parse(fpm) : fpm;
+        entries = Object.entries(raw)
+          .filter(([k, v]) => k !== 'house' && v > 0)
+          .sort(([, a], [, b]) => b - a);
+      }
+
+      // ── Stap 2 (fallback): schat de verdeling via attractiezones als de link
+      //    zelf geen bruikbare flowsPerMotive heeft ──────────────────────────
+      if (!entries.length) {
+        let flowByToZone;
+        if (hasRoutes) {
+          ({ flowByToZone } = computeLinkRouteData());
+        } else {
+          const est = _estimatedRouteCache.get(numLinkId) ?? _estimatedRouteCache.get(selectedLinkId);
+          flowByToZone = est ? est.flowByToZone : null;
+          estimated = true;
+        }
+        const pf = _purposeFlowFromAttractionZones(flowByToZone);
+        if (pf) {
+          entries = [...pf.entries()]
+            .filter(([, v]) => v > 0)
+            .sort(([, a], [, b]) => b - a);
+        }
+      }
+
+      // ── Laatste fallback: toon "100% onbekend" ────────────────────────────
+      if (!entries.length) {
+        entries = [['unknown', 1]];
+        estimated = false;
+      }
+
+      _renderPurposeChart(entries, estimated);
+    }
+
+    /** Gedeelde weergave van taart + legenda in #purposeChartPanel. */
+    function _renderPurposeChart(entries, estimated) {
+      const panel   = document.getElementById('purposeChartPanel');
+      const svg     = document.getElementById('purposeChartSvg');
+      const legend  = document.getElementById('purposeChartLegend');
+      const estTag  = document.getElementById('purposeChartEstTag');
+      const noData  = document.getElementById('purposeChartNoData');
+      const body    = document.getElementById('purposeChartBody');
+
+      if (!entries || !entries.length) {
+        entries = [['unknown', 1]];
+        estimated = false;
+      }
+
+      estTag.style.display  = estimated ? 'inline' : 'none';
+      noData.style.display  = 'none';
+      body.style.display    = 'flex';
+
+      const total = entries.reduce((s, [, v]) => s + v, 0);
+
+      // ── SVG taart ────────────────────────────────────────────────────────
+      const cx = 65, cy = 65, r = 58;
+      let svgHtml = '';
+      let angle   = -Math.PI / 2;   // begin bovenaan
+
+      for (const [key, val] of entries) {
+        const slice  = (val / total) * 2 * Math.PI;
+        const endAng = angle + slice;
+        const x1 = cx + r * Math.cos(angle);
+        const y1 = cy + r * Math.sin(angle);
+        const x2 = cx + r * Math.cos(endAng);
+        const y2 = cy + r * Math.sin(endAng);
+        const large = slice > Math.PI ? 1 : 0;
+        const color = _motifColor(key);
+
+        if (Math.abs(slice - 2 * Math.PI) < 1e-6) {
+          svgHtml += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`;
+        } else {
+          svgHtml += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z"
+            fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`;
+        }
+        angle = endAng;
+      }
+      svg.innerHTML = svgHtml;
+
+      // ── Legenda ───────────────────────────────────────────────────────────
+      legend.innerHTML = entries.map(([key, val]) => {
+        const pct   = ((val / total) * 100).toFixed(1);
+        const _lk   = T(`motifLabel_${key}`);
+        const label = _lk === `motifLabel_${key}` ? key : _lk;   // val terug op de ruwe key i.p.v. de i18n-sleutel
+        const color = _motifColor(key);
+        return `<div class="pcl-item">
+          <span class="pcl-dot" style="background:${color}"></span>
+          <span class="pcl-label">${label}</span>
+          <span class="pcl-pct">${pct}%</span>
+        </div>`;
+      }).join('');
+
+      panel.style.display = 'block';
+    }
+
+    /** Twee GeoJsonLayers die het geselecteerde wegvak markeren als glowing red. */
+    function makeSelectedLinkHighlightLayers() {
+      if (!selectedLinkId) return [
+        new GeoJsonLayer({ id: 'selected-link-glow', data: [] }),
+        new GeoJsonLayer({ id: 'selected-link-core', data: [] }),
+      ];
+      const feat = geojson.features.find(
+        f => f.properties?.linkId === selectedLinkId
+          || f.properties?.linkId === Number(selectedLinkId)
+      );
+      const data = feat ? [feat] : [];
+      return [
+        // Buitenste gloed: breed, semi-transparant rood
+        new GeoJsonLayer({
+          id: 'selected-link-glow',
+          data,
+          stroked: false, filled: false,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 22,
+          getLineWidth: 22,
+          getLineColor: [255, 0, 0, 160],
+          updateTriggers: { getLineColor: [selectedLinkId] },
+        }),
+        // Binnenste kern: smal, vol wit-rood
+        new GeoJsonLayer({
+          id: 'selected-link-core',
+          data,
+          stroked: false, filled: false,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 6,
+          getLineWidth: 6,
+          getLineColor: [255, 220, 220, 255],
+          updateTriggers: { getLineColor: [selectedLinkId] },
+        }),
+      ];
+    }
+
+    function makeWhatifRcHighlightLayer() {
+      const features = [];
+      for (const [lid] of whatifRcLinks) {
+        const coords = linkGeomMap.get(Number(lid)) ?? linkGeomMap.get(lid);
+        if (coords?.length >= 2) {
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: coords },
+            properties: { linkId: lid },
+          });
+        }
+      }
+      return new GeoJsonLayer({
+        id: 'whatif-rc-highlight',
+        data: features.length ? { type: 'FeatureCollection', features } : { type: 'FeatureCollection', features: [] },
+        stroked: false, filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 5,
+        getLineWidth: 5,
+        getLineColor: [255, 80, 80, 230],
+        updateTriggers: { getLineColor: [whatifRcLinks.size] },
+      });
+    }
+
+    // ── Voertuigteller: hulpfuncties ─────────────────────────────────────────
+
+    /**
+     * Berekent de geometrie van de tellerslijn loodrecht op een wegvak.
+     * Geeft { midLon, midLat, bearing, line: [[lon,lat],[lon,lat]] }
+     */
+    function _computeCounterGeom(coords) {
+      const totalLen = segmentLength(coords);
+      const [midLon, midLat, bearing] = interpolatePosition(coords, 0.5, totalLen);
+      const halfLen    = 20; // m — halve breedte van de tellerslijn
+      const perpBr     = (bearing + 90) % 360;
+      const cosLat     = Math.cos(midLat * Math.PI / 180);
+      const offLon = b => (halfLen / 111320) / cosLat * Math.sin(b * Math.PI / 180);
+      const offLat = b => (halfLen / 110540) * Math.cos(b * Math.PI / 180);
+      return {
+        midLon, midLat, bearing,
+        line: [
+          [midLon + offLon(perpBr),           midLat + offLat(perpBr)],
+          [midLon + offLon((perpBr + 180) % 360), midLat + offLat((perpBr + 180) % 360)],
+        ],
+      };
+    }
+
+    /**
+     * Geeft true als lijnstuk [a,b] het lijnstuk [c,d] snijdt (2D, lon/lat als vlak).
+     */
+    function _segmentsIntersect(a, b, c, d) {
+      function cross(o, u, v) {
+        return (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
+      }
+      const d1 = cross(c, d, a), d2 = cross(c, d, b);
+      const d3 = cross(a, b, c), d4 = cross(a, b, d);
+      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+      function onSeg(p, q, r) {
+        return Math.min(p[0], q[0]) <= r[0] && r[0] <= Math.max(p[0], q[0]) &&
+               Math.min(p[1], q[1]) <= r[1] && r[1] <= Math.max(p[1], q[1]);
+      }
+      if (d1 === 0 && onSeg(c, d, a)) return true;
+      if (d2 === 0 && onSeg(c, d, b)) return true;
+      if (d3 === 0 && onSeg(a, b, c)) return true;
+      if (d4 === 0 && onSeg(a, b, d)) return true;
+      return false;
+    }
+
+    /** Plaatst een nieuwe teller op het gegeven wegvak (linkId). */
+    function _placeCounter(linkId) {
+      const numId  = Number(linkId);
+      const coords = linkGeomMap.get(numId) ?? linkGeomMap.get(linkId);
+      if (!coords) return;
+      const geom = _computeCounterGeom(coords);
+      _counterList.push({
+        id:        ++_counterIdSeq,
+        linkId:    isNaN(numId) ? linkId : numId,
+        line:      geom.line,
+        bearing:   geom.bearing,
+        midLon:    geom.midLon,
+        midLat:    geom.midLat,
+        counts: {
+          forward:  { total: 0, CAR: 0, BIKE: 0, OTHER: 0 },
+          backward: { total: 0, CAR: 0, BIKE: 0, OTHER: 0 },
+        },
+        simElapsed: 0,
+      });
+      _updateCounterPanel();
+    }
+
+    /** Verwijdert de teller met het gegeven id. */
+    function _removeCounter(id) {
+      _counterList = _counterList.filter(c => c.id !== id);
+      _updateCounterPanel();
+    }
+
+    /** Herrendert het teller-paneel op basis van _counterList. */
+    function _updateCounterPanel() {
+      const body  = document.getElementById('cpBody');
+      const hint  = document.getElementById('cpHint');
+      if (!body) return;
+
+      // Hint: zichtbaar als er geen tellers zijn EN de modus actief is
+      if (hint) hint.style.display = (_counterList.length === 0) ? '' : 'none';
+
+      const modeStr = counts => {
+        const parts = [];
+        if (counts.CAR)   parts.push(`auto:${counts.CAR}`);
+        if (counts.BIKE)  parts.push(`fiets:${counts.BIKE}`);
+        if (counts.OTHER) parts.push(`overig:${counts.OTHER}`);
+        return parts.length ? parts.join(' · ') : '';
+      };
+
+      const elapsed = ct => {
+        const s = Math.max(0, ct.simElapsed ?? 0);
+        return s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+      };
+
+      // Verwacht aantal passages gegeven de gemeten uurintensiteit en verstreken simtijd:
+      //   verwacht = flow[vtg/u] × simElapsed[s] / 3600
+      // Forward = eigen richting-specifieke link, backward = tegenrichting (-linkId).
+      const expected = (ct, dir) => {
+        const numId = Number(ct.linkId);
+        const key   = dir === 'forward' ? numId : -numId;
+        const flow  = linkFlowMap.get(key) ?? linkFlowMap.get(String(key)) ?? 0;
+        const s     = Math.max(0, ct.simElapsed ?? 0);
+        return flow * s / 3600;
+      };
+
+      // Verwijder rijen voor tellers die niet meer bestaan
+      body.querySelectorAll('.cp-counter').forEach(el => {
+        if (!_counterList.find(c => c.id === +el.dataset.id)) el.remove();
+      });
+
+      for (const ct of _counterList) {
+        const existing = body.querySelector(`.cp-counter[data-id="${ct.id}"]`);
+        const fwd = ct.counts.forward, bwd = ct.counts.backward;
+        const fModes = modeStr(fwd), bModes = modeStr(bwd);
+        const expF = expected(ct, 'forward'), expB = expected(ct, 'backward');
+        const html = `
+          <div class="cp-counter-head">
+            <span class="cp-link-label">wegvak ${ct.linkId}</span>
+          </div>
+          <div class="cp-counter-rows">
+            <div class="cp-row">
+              <span class="cp-dir">→</span>
+              <span class="cp-total">${fwd.total}</span>
+              <span class="cp-expected" title="verwacht o.b.v. gemeten uurintensiteit × verstreken simtijd">/ ~${Math.round(expF)}</span>
+              <span class="cp-modes">${fModes}</span>
+            </div>
+            <div class="cp-row">
+              <span class="cp-dir">←</span>
+              <span class="cp-total">${bwd.total}</span>
+              <span class="cp-expected" title="verwacht o.b.v. gemeten uurintensiteit × verstreken simtijd">/ ~${Math.round(expB)}</span>
+              <span class="cp-modes">${bModes}</span>
+            </div>
+            <div class="cp-elapsed">${elapsed(ct)} verstreken (sim) · geteld / verwacht</div>
+          </div>`;
+        if (existing) {
+          existing.innerHTML = html;
+        } else {
+          const el = document.createElement('div');
+          el.className = 'cp-counter';
+          el.dataset.id = ct.id;
+          el.innerHTML  = html;
+          body.appendChild(el);
+        }
+      }
+    }
+
+    /**
+     * Deck.gl PathLayer met alle geplaatste tellers + eventueel een preview-lijn.
+     * Geplaatste tellers: cyaan (#00ff78). Preview: geel (#ffdc00).
+     */
+    function makeCounterLayer() {
+      const lines = _counterList.map(ct => ({ path: ct.line, preview: false }));
+
+      // Preview-lijn: toon loodrecht op het wegvak waarover de cursor zweeft
+      if (_counterPlaceMode && hoveredLinkId !== null) {
+        const numId  = Number(hoveredLinkId);
+        const coords = linkGeomMap.get(numId) ?? linkGeomMap.get(hoveredLinkId);
+        if (coords) {
+          const geom = _computeCounterGeom(coords);
+          lines.push({ path: geom.line, preview: true });
+        }
+      }
+
+      return new PathLayer({
+        id:             'counters',
+        data:           lines,
+        getPath:        d => d.path,
+        getColor:       d => d.preview ? [255, 220, 0, 200] : [0, 255, 120, 230],
+        getWidth:       3,
+        widthUnits:     'pixels',
+        widthMinPixels: 2,
+        pickable:       false,
+      });
+    }
+
+    function makeCarLayers(data) {
+      const vtypes = MODE === 'BIKE'  ? BIKE_VEHICLE_TYPES :
+                     MODE === 'MIXED' ? [...VEHICLE_TYPES, ...BIKE_VEHICLE_TYPES] :
+                                        VEHICLE_TYPES;
+      const layers = [];
+
+      // Zoom-gebaseerde LOD-drempels voor fietsen
+      const zoom           = map.getZoom();
+      const bikeFirstIdx   = VEHICLE_TYPES.length;   // in MIXED: index van het fietstype
+      const showBikeDetail = zoom >= 13;   // wielen + stuur/zadel zichtbaar
+      const showBikeRider  = zoom >= 15;   // fietser (torso + hoofd) zichtbaar
+
+      for (let ti = 0; ti < vtypes.length; ti++) {
+        const vt       = vtypes[ti];
+        const typeData = data.filter(d => d.typeIdx === ti);
+        if (!typeData.length) continue;
+
+        // Is dit het fietstype?
+        const isBikeType = (MODE === 'BIKE') || (MODE === 'MIXED' && ti >= bikeFirstIdx);
+
+        const baseVisible = colorMetric !== 'compare' && !splitViewActive;
+        const shared = {
+          data:           typeData,
+          visible:        baseVisible,
+          getPosition:    d => d.position,
+          getOrientation: d => d.orientation,
+          sizeScale: 1,
+          pickable:  false,
+        };
+        layers.push(
+          new SimpleMeshLayer({
+            ...shared,
+            id:       `cars-body-${ti}`,
+            mesh:     vt.body,
+            getColor: d => d.color,
+            material: { ambient: 0.55, diffuse: 0.85, shininess: 60, specularColor: [80, 80, 80] },
+          }),
+          new SimpleMeshLayer({
+            ...shared,
+            // Voor fietsen: fietser (clothingColor) zichtbaar bij zoom ≥ 15
+            // Voor auto's: ruiten altijd zichtbaar
+            id:       `cars-windows-${ti}`,
+            visible:  baseVisible && (!isBikeType || showBikeRider),
+            mesh:     vt.windows,
+            getColor: isBikeType ? (d => d.clothingColor ?? [100, 100, 100, 255]) : [12, 28, 72, 210],
+            material: isBikeType
+              ? { ambient: 0.5, diffuse: 0.8, shininess: 20, specularColor: [60, 60, 60] }
+              : { ambient: 0.3, diffuse: 0.5, shininess: 120, specularColor: [160, 200, 255] },
+          }),
+          new SimpleMeshLayer({
+            ...shared,
+            // Wielen: altijd voor auto's, bij zoom ≥ 13 voor fietsen
+            id:       `cars-wheels-${ti}`,
+            visible:  baseVisible && (!isBikeType || showBikeDetail),
+            mesh:     vt.wheels,
+            getColor: [22, 22, 24, 255],
+            material: { ambient: 0.4, diffuse: 0.6, shininess: 20, specularColor: [30, 30, 30] },
+          }),
+          new SimpleMeshLayer({
+            ...shared,
+            // Stuur/zadel: altijd voor auto's, bij zoom ≥ 13 voor fietsen
+            id:       `cars-bumpers-${ti}`,
+            visible:  baseVisible && (!isBikeType || showBikeDetail),
+            mesh:     vt.bumpers,
+            getColor: vt.trimColor ?? [28, 28, 28, 255],
+            material: { ambient: 0.35, diffuse: 0.5, shininess: 15, specularColor: [20, 20, 20] },
+          }),
+        );
+        // Koplampen / achterlichten (Montréal-personenauto's): volle ambient,
+        // geen diffuus — lichten op ongeacht zonnestand.
+        const lampMaterial = { ambient: 1.0, diffuse: 0.0, shininess: 0, specularColor: [0, 0, 0] };
+        if (vt.headlights) {
+          layers.push(new SimpleMeshLayer({
+            ...shared, id: `cars-headlights-${ti}`, mesh: vt.headlights,
+            getColor: [255, 241, 193, 255], material: lampMaterial,
+          }));
+        }
+        if (vt.taillights) {
+          layers.push(new SimpleMeshLayer({
+            ...shared, id: `cars-taillights-${ti}`, mesh: vt.taillights,
+            getColor: [200, 45, 35, 255], material: lampMaterial,
+          }));
+        }
+        if (vt.rider) {
+          layers.push(new SimpleMeshLayer({
+            ...shared,
+            // Fietser: broek, schoenen, hoofd — samen met het shirt bij zoom ≥ 15
+            id:       `cars-rider-${ti}`,
+            visible:  baseVisible && showBikeRider,
+            mesh:     vt.rider,
+            getColor: [44, 48, 58, 255],
+            material: { ambient: 0.45, diffuse: 0.7, shininess: 15, specularColor: [30, 30, 30] },
+          }));
+        }
+      }
+      return layers;
+    }
+
+     function makeTooltip({ object, layer }) {
+       if (!object) return null;
+
+       // ── Zone-centroid tooltip ────────────────────────────────────────────
+       if (layer?.id === 'zone-centroids') {
+         const d = object;
+         const loc = T('numberLocale');
+         const isProduction = zoneCentroidMode === 'production';
+         const accentColor  = isProduction ? '#ff9a30' : '#4bcfff';
+         const classLabel   = ({
+           STUDY:     T('tooltipZoneClassStudy'),
+           INFLUENCE: T('tooltipZoneClassInfluence'),
+           BOUNDARY:  T('tooltipZoneClassBoundary'),
+           CBS:       T('tooltipZoneClassCbs'),
+         })[d.zoneClass] ?? d.zoneClass;
+         const dpLabels = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+         const flowRow = d.flow > 0
+           ? `<div><span style="color:#6a757c">${T('tooltipZoneRoute')} (${dpLabels[flowDaypart]}): </span>
+                <b>${d.flow.toFixed(0)}\u202f${T('tooltipZoneRouteUnit')}</b></div>`
+           : '';
+
+         // Vloeroppervlak-breakdown uit gebouwen-data (alleen als geladen)
+         const floorTypes = [
+           ['residential', 'tooltipZoneFloorResidential'],
+           ['office',       'tooltipZoneFloorOffice'],
+           ['industrial',   'tooltipZoneFloorIndustrial'],
+           ['commercial',   'tooltipZoneFloorCommercial'],
+           ['education',    'tooltipZoneFloorEducation'],
+           ['recreation',   'tooltipZoneFloorRecreation'],
+           ['transport',    'tooltipZoneFloorTransport'],
+           ['other',        'tooltipZoneFloorOther'],
+         ];
+         const bd = zoneAreaBreakdown.get(d.zoneId);
+         const floorRows = bd
+           ? floorTypes
+               .map(([type, key]) => {
+                 const m2 = Math.round(bd[type] || 0);
+                 if (!m2) return '';
+                 return `<div style="display:flex;justify-content:space-between;gap:16px">
+                   <span style="color:#6a757c">${T(key)}</span>
+                   <b>${m2.toLocaleString(loc)}\u202f${T('tooltipZoneFloorUnit')}</b></div>`;
+               })
+               .join('')
+           : '';
+         const floorSection = floorRows
+           ? `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+                <div style="color:#7a8494;font-size:11px;margin-bottom:3px">${T('tooltipZoneFloorTitle')}</div>
+                ${floorRows}
+              </div>`
+           : '';
+         return {
+           html: `
+             <div style="font:13px var(--ga-font),sans-serif;color:#232931;line-height:1.8">
+               <div style="color:${accentColor};font-weight:600;margin-bottom:6px">
+                 ${d.zoneName}
+               </div>
+               <div><span style="color:#6a757c">${T('tooltipZoneClass')}: </span>
+                 <b>${classLabel}</b></div>
+               <div><span style="color:#6a757c">${T('tooltipZoneProd')}: </span>
+                 <b>${(d.production).toLocaleString(loc, { maximumFractionDigits: 0 })}\u202f${T('tooltipZoneProdUnit')}</b></div>
+                <div><span style="color:#6a757c">${T('tooltipZoneAttr')}: </span>
+                  <b>${(d.attraction).toLocaleString(loc, { maximumFractionDigits: 0 })}\u202f${T('tooltipZoneAttrUnit')}</b></div>
+                ${flowRow}
+                ${floorSection}
+             </div>`,
+           style: {
+             background: 'rgba(13,17,23,0.95)', borderRadius: '10px',
+             padding: '12px 16px', border: '1px solid rgba(126,200,227,0.25)',
+             boxShadow: '0 4px 20px rgba(0,0,0,0.5)', pointerEvents: 'none',
+           },
+         };
+       }
+
+       // ── Netwerk-segment tooltip — afgehandeld via DOM-element met 1 s vertraging
+       return null;
+     }
+
+    // ── 6. Initialisatie ────────────────────────────────────────────────────
+    _trace('init: 6. Initialisatie');
+
+    _traceTime('init: buildCarList+spacing', () => { cars = enforceInitialSpacing(buildCarList(threshold)); });
+    _traceTime(`init: computeCarData (${cars.length} auto's)`, () => computeCarData());
+
+    let pendingChanges        = [];       // [{ nodeId, zoneId, production, attraction, label }]
+    let _changesPanelReadOnly = false;   // true = geopend via ☰-knop (alleen-lezen)
+    let _historicalChanges    = [];      // Properties-objecten van /collections/changes/items
+
+    // Maatregelset-paneel (extern JS-bestand) toegang geven tot deze closure-
+    // variabelen, zodat gegenereerde wijzigingen als scenario kunnen worden ingeladen.
+    window.pendingChanges = pendingChanges;
+    window._setChangesPanelReadOnly = _setChangesPanelReadOnly;
+    window.renderChangesList = renderChangesList;
+
+    const overlay = new MapboxOverlay({
+      interleaved: true,
+      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneStudyFillLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers(), ...makeCarLayers([...carData])],
+      getTooltip: makeTooltip,
+      getCursor: ({ isDragging, isHovering }) => {
+        if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
+         if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
+         if (linkAddActive) return 'crosshair';
+         if ((linkEditActive || linkFlowEditActive || selectedLinkActive) && isHovering) return 'pointer';
+         return '';
+      },
+      onClick: (info, event) => {
+        // Polygon-modus: hoekpunt toevoegen als een deck.gl-object geraakt werd.
+        // Voor lege kaartgebieden fired deck.gl onClick niet (interleaved mode),
+        // of retourneert het false – map.on('click') neemt dat over.
+        if (nodeEditActive && nodeSelectMode === 'polygon') {
+          if (info.picked) {
+            if (document.getElementById('polygonDialog').style.display !== 'block') {
+              const coord = info.coordinate ?? [0, 0];
+              polygonVertices.push([coord[0], coord[1]]);
+              updatePolygonDraw();
+              if (polygonVertices.length >= 1)
+                document.getElementById('polygonClearBtn').style.display  = 'block';
+              if (polygonVertices.length >= 3)
+                document.getElementById('polygonFinishBtn').style.display = 'block';
+            }
+            return true; // stop propagation → voorkom dubbel-fire via map.on('click')
+          }
+          return false; // niets gepickt → laat map.on('click') het afhandelen
+        }
+        // Zone-centroid klik: afgehandeld via map.on('click') + hoveredZoneId (zie verderop)
+
+        if (!linkEditActive || linkSelectMode !== 'click') return;
+        if (!info.object)    return;
+        if (info.layer?.id !== 'link-edit') return;
+        const pixel = info.pixel ?? [0, 0];
+        openLinkDialog(info.object, { x: pixel[0], y: pixel[1] });
+        return true;
+      },
+    });
+    map.addControl(overlay);
+    _trace('init: deck.gl overlay toegevoegd');
+    map.once('idle', () => _trace('kaart: eerste idle'));
+
+    // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
+    // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
+    map.on('click', (e) => {
+      // OD-pijl isolatie: klik op een pijl isoleert dat OD-paar (dimt de rest);
+      // nogmaals op dezelfde pijl, of ergens anders klikken, zet het weer terug.
+      if (hoveredOdArrowZoneId) {
+        highlightedOdZoneId = (highlightedOdZoneId === hoveredOdArrowZoneId) ? null : hoveredOdArrowZoneId;
+        updateOverlay(true);
+        return;
+      } else if (highlightedOdZoneId !== null) {
+        highlightedOdZoneId = null;
+        updateOverlay(true);
+        // Geen return: een eventuele andere klik-actie (zone selecteren, etc.) mag doorgaan.
+      }
+      // Nieuw wegvak intekenen: voeg vertex toe
+      if (linkAddActive) {
+        const coord = [e.lngLat.lng, e.lngLat.lat];
+        linkAddVertices.push(coord);
+        _linkAddMouseCoord = coord;
+        updateLinkAddPreview();
+        // Toon "Afronden"-popup zodra we >= 2 vertices hebben
+        if (linkAddVertices.length >= 2)
+          document.getElementById('linkAddFinishPopup').style.display = 'block';
+        return;
+      }
+      // Teller plaatsen: hogere prioriteit dan link-selectie
+      if (_counterPlaceMode && hoveredLinkId !== null) {
+        _placeCounter(hoveredLinkId);
+        updateOverlay(true);
+        return;
+      }
+      // Flow per wegvak wijzigen via hoveredLinkId (deck.gl onClick onbetrouwbaar)
+      if (linkFlowEditActive && hoveredLinkId !== null) {
+        const numKey = Number(hoveredLinkId);
+        const feat = geojson.features.find(f =>
+          f.properties?.linkId === numKey || f.properties?.linkId === hoveredLinkId);
+        if (feat) {
+          const point = e.point ?? { x: 0, y: 0 };
+          openLinkFlowDialog(feat, { x: point.x, y: point.y });
+        }
+        return;
+      }
+      // Veiligheidsmodus: open KPI-paneel voor het aangeklikte wegvak
+      if (colorMetric === 'safety' && hoveredLinkId !== null) {
+        const wsProps = wegenscanByLinkId.get(String(hoveredLinkId));
+        if (wsProps) openWegenscanPanel(wsProps);
+        return;
+      }
+      // Link-selectie via selectedLinkActive + hoveredLinkId
+      if (selectedLinkActive && hoveredLinkId !== null) {
+        const prevId = selectedLinkId;
+        selectedLinkId = (selectedLinkId === hoveredLinkId) ? null : hoveredLinkId;
+        // Cache opschonen als een ander link geselecteerd wordt
+        if (prevId !== null && prevId !== selectedLinkId) _estimatedRouteCache.delete(prevId);
+        if (selectedLinkId !== null) {
+          const numKey = Number(selectedLinkId);
+          const routes = linkRouteMap.get(numKey) ?? linkRouteMap.get(selectedLinkId) ?? [];
+          console.log('[SLA] geselecteerd linkId:', selectedLinkId, typeof selectedLinkId,
+            '| linkRouteMap.size:', linkRouteMap.size,
+            '| routes voor dit link:', routes.length,
+            '| routeList.length:', routeList.length,
+            '| zoneFeaturesRaw.length:', zoneFeaturesRaw.length);
+          // Links met capaciteit 0 kunnen nooit in routes zitten → geen OD-schatting
+          const _selFeat = geojson.features.find(f => f.properties?.linkId === numKey || f.properties?.linkId === selectedLinkId);
+          const _selCap0 = (_selFeat?.properties?.capacity ?? -1) === 0;
+          // Geen routes in de data → schat async via Dijkstra (20 nearest + extern)
+          if (routes.length === 0 && !_estimatedRouteCache.has(numKey) && !_selCap0) {
+            const calcOverlay    = document.getElementById('calcOverlay');
+            const calcOverlayMsg = document.getElementById('calcOverlayMsg');
+            calcOverlay.style.display = 'flex';
+            calcOverlayMsg.textContent = T('estimatingRoutes');
+            const capturedId = numKey;
+            setTimeout(() => {
+              try {
+                const result = computeEstimatedLinkRouteData(capturedId);
+                _estimatedRouteCache.set(capturedId, result);
+              } finally {
+                calcOverlay.style.display = 'none';
+                updateOverlay(true);
+                updatePurposeChart();
+              }
+            }, 0);
+            return; // updateOverlay/updatePurposeChart volgen na de berekening
+          }
+        }
+        updateOverlay(true);
+        updatePurposeChart();
+        return;
+      }
+      // What-if wegafsluiting link-selectie
+      if (whatifRcActive && hoveredLinkId !== null) {
+        const lid = String(hoveredLinkId);
+        if (whatifRcLinks.has(lid)) {
+          whatifRcLinks.delete(lid);
+        } else {
+          whatifRcLinks.set(lid, T('whatifRcLinkLabel', lid));
+        }
+        renderWhatifRcList();
+        updateOverlay(true);
+        return;
+      }
+      if (zoneCentroidMode === 'off' || !hoveredZoneId) return;
+
+      // OD-edit zone-selectie (hogere prioriteit dan gewone zone-selectie)
+      if (odEditActive) {
+        const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === hoveredZoneId);
+        const label = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(hoveredZoneId);
+        if (odEditStep === 'from') {
+          odEditFromZone = { zoneId: hoveredZoneId, label };
+          odEditStep     = 'to';
+        } else {
+          odEditToZone = { zoneId: hoveredZoneId, label };
+          odEditStep   = 'done';
+        }
+        _odEditUpdateStepDisplay();
+        return;
+      }
+
+      selectedZoneId = (selectedZoneId === hoveredZoneId) ? null : hoveredZoneId;
+      updateOverlay(true);
+    });
+
+    // ── Afgesloten wegvakken symboollaag ───────────────────────────────────────
+    const CLOSED_SOURCE = 'closed-links-src';
+    const CLOSED_LAYER  = 'closed-links-layer';
+    const CLOSED_ICON   = 'no-entry';
+    // Middenpunten van afgesloten/snelheids-wegvakken voor de deck.gl-bordjeslaag
+    // (zie makeEditSignLayer). `var`: updateOverlay kan al vóór deze regel lopen.
+    var _closedSignPts = [];
+    var _speedSignPts  = [];
+    var _editSignIcons = {};
+
+    // ── Snelheidsbordje symboollaag ────────────────────────────────────────────
+    const SPEED_SOURCE = 'speed-signs-src';
+    const SPEED_LAYER  = 'speed-signs-layer';
+
+    // Initialiseer afsluiting-symbolen zodra de kaart-stijl gereed is (ook zonder edit-modus)
+    if (map.isStyleLoaded()) {
+      initClosedLinksLayer();
+    } else {
+      const _onMapReady = () => { map.off('idle', _onMapReady); initClosedLinksLayer(); };
+      map.on('idle', _onMapReady);
+    }
+
+      function updateOverlay(withCars = true) {
+         // Tijdens het bewerken van knopen/wegvakken betekent dat altijd "geen
+         // auto's in beeld", ongeacht wat de aanroeper meegeeft — anders duikt de
+         // bevroren auto-positie weer op zodra een ongerelateerde update (camera,
+         // assets, …) hier met de standaardwaarde `true` doorheen loopt. Het
+         // afspeel-vinkje van de simulatie (`paused`) stuurt alleen de klok; auto's
+         // blijven altijd rijden en hangen uitsluitend aan carsSuspended.
+         const showCars = withCars && !carsSuspended;
+         const _uoT0 = performance.now();
+         overlay.setProps({ layers: [
+           ...makeSunkenLayers(),
+           ...makePathRibbonLayers(),
+           makeSpeedBumpLayer(),
+          makeNetworkLayer(),
+          makeZoneNetworkBackdropLayer(),
+          makeDiffLayer(),
+          ...makeDiffStackLayer(),
+          makeSmileyLayer(),
+          makeLinkEditLayer(),
+          ...makeSelectedLinkHighlightLayers(),
+          makeWhatifRcHighlightLayer(),
+          makeZoneStudyFillLayer(),
+          makeZoneSelectedFillLayer(),
+          makeZoneBoundaryLayer(),
+          makeZoneCentroidLayer(),
+          makeZoneRoutesLayer(),
+          makeZoneFeedLinksLayer(),
+          ...makeZoneOdArrowLayers(),
+          makeCounterLayer(),
+          ...makeCarLayers(showCars ? [...carData] : []),
+          ...makeTrafficAssetLayers(),
+          ...makeHeightAssetLayers(),
+          ...makeFurnitureLayers(),
+          ...makeVegetationTreeLayers(),
+          ...makeBag3dLayers(),
+          makeEditSignLayer(),
+        ]});
+        const _uoDur = performance.now() - _uoT0;
+        if (_uoDur > 150) _trace(`⚠ updateOverlay ${_uoDur.toFixed(0)}ms`);
+        // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
+        if (splitViewActive && overlay2) {
+          overlay2.setProps({ layers: [makeNetworkLayer2()].filter(Boolean) });
+        }
+      }
+
+
+    // ── 7. Animatielus ──────────────────────────────────────────────────────
+    _trace('init: 7. Animatielus');
+    let lastT  = null;
+    let paused = false;          // klok staat stil; auto's blijven gewoon rijden; datum/condities blijven instelbaar
+    let carsSuspended = false;   // alleen tijdens knoop-/wegvak-bewerken: auto's echt verborgen/verwijderd
+
+    /** Synchroniseer de afspeel-checkbox in de Simulatie-paneelkop met de pauzestatus.
+     *  `paused` (het afspeel-vinkje) zet alleen de klok stil — de auto's rijden door; datum, tijd,
+     *  temperatuur, weer en motief blijven daarbij gewoon instelbaar. Alleen tijdens
+     *  knoop-/wegvak-bewerken (`carsSuspended`) zijn ze geblokkeerd, om verstoring van
+     *  die bewerkmodus te voorkomen. */
+    function _setSimPausedUI(isPaused) {
+      const cb = document.getElementById('simPlayCheckbox');
+      if (cb) cb.checked = !isPaused;
+      document.getElementById('fspDate').disabled = carsSuspended;
+      document.getElementById('fspPurpose').disabled = carsSuspended;
+      document.querySelectorAll('#simTempBtns .sim-opt-btn, #simWeatherBtns .sim-opt-btn')
+        .forEach(btn => { btn.disabled = carsSuspended; });
+    }
+
+    // ── Kruispunt rechts-voor-links parameters ────────────────────────────
+    const YIELD_ZONE      = 25;   // meter: afstand tot kruispunt waarbinnen rechts-voorrang geldt
+    const DEADLOCK_WAIT_S =  3.0; // seconden: maximale wachttijd voor patstelling-doorbraak
+
+    // ── Periodieke hervalidatie van stilstaande auto's ────────────────────
+    let lastRevalidateT = 0;      // real-time (performance.now()/1000) van laatste hervalidatie
+    const REVALIDATE_INTERVAL = 2.0; // elke 2 seconden
+
+    let _animFrames = 0;
+    function animate() {
+      const _aT0 = performance.now();
+      if (_animFrames++ === 0) _trace('animatie: eerste frame');
+      const now = performance.now() / 1000;
+      if (!carsSuspended && lastT !== null) {
+        const dt  = Math.min(now - lastT, 0.05) * timeScale;
+        const t   = now;   // huidige tijd in seconden (performance.now()/1000)
+
+        // ── Toestandsovergangen ──────────────────────────────────────────
+        for (const car of cars) {
+          if (car.state === 'parked' && t >= car.departAt) {
+            if (car.noRespawn) {
+              // Productie- / warmup-auto: na parkeren verdwijnen (geen herstart)
+              car.state = 'done';
+            } else {
+              // Herhalende auto: vertrek vanuit parkeerstand
+              car.state = 'moving';
+              car.speed = 0;
+            }
+          } else if (car.state === 'spawning' && t >= car.departAt) {
+            // Snelwegauto / boundary: verschijn aan het begin van de route
+            car.offset = 0;
+            car.state  = 'moving';
+            car.speed  = 0;
+          } else if (car.state === 'moving' && car.offset >= 1.0) {
+            // Vervolgroute (route-chaining)?
+            if (car.pendingPath) {
+              car.path       = car.pendingPath;
+              car.pendingPath = null;
+              car.offset     = 0;
+              car.speed      = 0;
+            } else if (car.noRespawn) {
+              // Productie- / warmup-auto: bij aankomst bestemming verdwijnen
+              car.state = 'done';
+              attractionAccum++;
+            } else if (car.canPark) {
+              // Herhalende stadsweg-auto: parkeer aan het einde en wacht voor volgende rit
+              car.offset   = 0.99;
+              car.speed    = 0;
+              car.state    = 'parked';
+              car.departAt = t + Math.max(PARK_MIN_S, normalRandom(PARK_MEAN_S, PARK_STD_S)) / timeScale;
+            } else {
+              // Herhalende snelweg / boundary / segment-modus: opnieuw spawnen aan het begin.
+              car.offset = 0;
+              car.speed  = 0;
+              car.state  = 'spawning';
+              if (car.spawnDelay != null) {
+                // Segment-modus: vaste cycletijd garandeert dat doorvoer = flow klopt.
+                car.departAt = t + car.spawnDelay / timeScale;
+              } else {
+                // Route-modus: exponentieel verdeelde tussenkomstijden (Poisson-aankomstproces).
+                const meanS    = (car.spawnRate > 0) ? (3600 / car.spawnRate) : 20;
+                const delaySec = -Math.log(Math.random() || 1e-9) * meanS;
+                car.departAt   = t + Math.max(0.5, delaySec) / timeScale;
+              }
+            }
+          }
+        }
+
+        // ── Snelheid instellen (alleen rijdende auto's) ──────────────────
+        for (const car of cars) {
+          if (car.state === 'moving') {
+            car.speed = computeLinkTargetSpeed(car);
+          }
+        }
+
+        // ── Kruispunt: wachtrijen per rijstrook + rechts-voor-links ─────
+        {
+          const realNow        = performance.now() / 1000;
+          const STOP_CLEARANCE = 2;                   // m vóór knooppunt (stoplijn)
+          const SLOT_SIZE      = CAR_LENGTH + CF_MIN_GAP; // m per wachtrij-slot
+
+          // nodeApproach: nodeId → Map(path → [{car, distToNode, bearing, bnd, linkIdx}])
+          // Alle rijdende auto's die binnen YIELD_ZONE van hun volgende knooppunt zijn.
+          const nodeApproach = new Map();
+          for (const car of cars) {
+            if (car.state !== 'moving') continue;
+            const path = car.path;
+            if (!path.nodeIds || !path.boundaries || path.boundaries.length < 2) continue;
+
+            const distM = car.offset * path.length;
+            const bnd   = path.boundaries;
+            let lo2 = 0, hi2 = bnd.length - 2;
+            while (lo2 < hi2) {
+              const mid = (lo2 + hi2 + 1) >> 1;
+              if (bnd[mid] <= distM) lo2 = mid; else hi2 = mid - 1;
+            }
+            const linkIdx    = Math.min(lo2, path.links.length - 1);
+            const nodeId     = path.nodeIds[linkIdx];
+            const distToNode = bnd[linkIdx + 1] - distM;
+            if (nodeId == null || distToNode > YIELD_ZONE) continue;
+
+            // Gebruik de vooraf berekende aanrijrichting van dit wegvak —
+            // gebaseerd op het op-één-na-laatste segment, vóór de kunstmatige
+            // knik naar het knooppuntmiddelpunt (vermijdt diamantvorm-artefact).
+            const bearing = path.approachBearings
+              ? path.approachBearings[linkIdx]
+              : interpolatePosition(path.coords, car.offset, path.length)[2];
+
+            if (!nodeApproach.has(nodeId)) nodeApproach.set(nodeId, new Map());
+            const laneMap = nodeApproach.get(nodeId);
+            if (!laneMap.has(path)) laneMap.set(path, []);
+            laneMap.get(path).push({ car, distToNode, bearing, bnd, linkIdx });
+          }
+
+          // Verwerk elk kruispunt
+          for (const [nodeId, laneMap] of nodeApproach) {
+            // Sorteer elke rijstrook: index 0 = voorste auto (dichtst bij knooppunt)
+            for (const queue of laneMap.values()) {
+              queue.sort((a, b) => a.distToNode - b.distToNode);
+            }
+
+            // Front-auto per rijstrook (voor rechts-voor-links check)
+            const frontEntries = [...laneMap.values()].map(q => q[0]);
+
+            if (frontEntries.length < 2) {
+              // Slechts één rijstrook nadert: geen voorrang-conflict
+              for (const queue of laneMap.values()) {
+                for (const { car } of queue) {
+                  car.waitingAtNode = null;
+                  car.waitStartT    = null;
+                  car.stopTarget    = null;
+                }
+              }
+              continue;
+            }
+
+            // Rechts-voor-links: bepaal per front-auto of die moet wachten
+            const mustYieldMap = new Map(); // frontCar → bool
+            for (const { car, bearing } of frontEntries) {
+              if (car.yieldOverrideUntil && realNow < car.yieldOverrideUntil) {
+                mustYieldMap.set(car, false);
+                car.waitingAtNode = null;
+                continue;
+              }
+              const mustYield = frontEntries.some(other => {
+                if (other.car === car) return false;
+                // relAngle ∈ [30°,150°] → andere auto rijdt duidelijk van rechts in
+                const relAngle = (other.bearing - bearing + 540) % 360;
+                return relAngle >= 30 && relAngle <= 150;
+              });
+              mustYieldMap.set(car, mustYield);
+            }
+
+            // Wachtrij-beheer per rijstrook
+            for (const [path, queue] of laneMap) {
+              const frontCar   = queue[0].car;
+              const mustYield  = mustYieldMap.get(frontCar) ?? false;
+              const { bnd, linkIdx } = queue[0];
+              const nodeDistM  = bnd[linkIdx + 1]; // pad-afstand t/m het knooppunt
+
+              if (mustYield) {
+                // ── Wachtrij actief ──────────────────────────────────────
+                if (frontCar.waitingAtNode !== nodeId) {
+                  frontCar.waitingAtNode = nodeId;
+                  frontCar.waitStartT    = realNow;
+                }
+
+                for (let i = 0; i < queue.length; i++) {
+                  const { car } = queue[i];
+
+                  // Bereken exacte stoppositie voor deze wachtrij-sleuf
+                  const stopDistFromNode = STOP_CLEARANCE + i * SLOT_SIZE;
+                  const stopOffset = Math.max(0,
+                    (nodeDistM - stopDistFromNode) / path.length);
+                  car.stopTarget = stopOffset;
+
+                  // Rem lineair naar stoppositie (remzone = 10 m)
+                  const distToStop = (stopOffset - car.offset) * path.length;
+                  if (distToStop <= 0) {
+                    car.speed = 0;
+                  } else {
+                    const vRef = path.links[linkIdx].speedMs * 0.9;
+                    car.speed  = Math.min(car.speed,
+                      vRef * Math.min(1, distToStop / 10));
+                  }
+
+                  // Volgers ook in wachtstatus boeken
+                  if (i > 0 && car.waitingAtNode !== nodeId) {
+                    car.waitingAtNode = nodeId;
+                    car.waitStartT    = realNow;
+                  }
+                }
+
+              } else {
+                // ── Vrije doorgang: wis wachtrij-status voor hele rijstrook ─
+                for (const { car } of queue) {
+                  car.waitingAtNode = null;
+                  car.waitStartT    = null;
+                  car.stopTarget    = null;
+                }
+              }
+            }
+
+            // Patstelling: alle front-auto's wachten te lang → forceer de oudste
+            const allWaiting = frontEntries.every(({ car }) =>
+              mustYieldMap.get(car) === true &&
+              car.waitingAtNode === nodeId &&
+              car.waitStartT != null &&
+              (realNow - car.waitStartT) >= DEADLOCK_WAIT_S
+            );
+            if (allWaiting) {
+              const oldest = frontEntries.reduce((a, b) =>
+                (a.car.waitStartT ?? Infinity) < (b.car.waitStartT ?? Infinity) ? a : b
+              );
+              oldest.car.waitingAtNode      = null;
+              oldest.car.waitStartT         = null;
+              oldest.car.stopTarget         = null;
+              oldest.car.yieldOverrideUntil = realNow + 8;
+              oldest.car.speed = computeLinkTargetSpeed(oldest.car);
+            }
+          }
+
+          // Auto's waarvan het knooppunt niet meer in nodeApproach zit: status wissen
+          for (const car of cars) {
+            if (car.waitingAtNode != null && !nodeApproach.has(car.waitingAtNode)) {
+              car.waitingAtNode = null;
+              car.waitStartT    = null;
+              car.stopTarget    = null;
+            }
+          }
+
+          // Voorste auto's die langer dan 8 seconden wachten verdwijnen; wachtrij schuift op
+          const carsToRemove = new Set();
+          for (const [, laneMap] of nodeApproach) {
+            for (const queue of laneMap.values()) {
+              const { car } = queue[0];
+              if (
+                car.waitingAtNode != null &&
+                car.waitStartT    != null &&
+                (realNow - car.waitStartT) >= 8
+              ) {
+                carsToRemove.add(car);
+              }
+            }
+          }
+          if (carsToRemove.size > 0) {
+            for (let i = cars.length - 1; i >= 0; i--) {
+              if (carsToRemove.has(cars[i])) cars.splice(i, 1);
+            }
+          }
+        }
+
+        // ── Posities bijwerken (alleen rijdende auto's) ──────────────────
+        for (const car of cars) {
+          if (car.state !== 'moving') continue;
+          const next = car.offset + (car.speed * dt) / car.path.length;
+          car.offset = isFinite(next) ? Math.min(next, 1.0) : car.offset;
+        }
+
+        // ── Minimale volgafstand afdwingen (alleen rijdende auto's) ──────
+        const groups = buildPathGroups(true);   // true = alleen 'moving'
+        for (const [path, group] of groups) {
+          const n = group.length;
+          if (n < 2) continue;
+          const minOff = (CF_MIN_GAP + CAR_LENGTH) / path.length;
+          for (let i = 0; i < n; i++) {
+            const car    = group[i];
+            const leader = group[(i + 1) % n];
+            if (i < n - 1) {
+              let leaderOff = leader.offset;
+              if (leaderOff < car.offset) leaderOff += 1.0;
+              const gap = leaderOff - car.offset;
+              if (gap < minOff) {
+                car.offset = Math.max(0, leaderOff - minOff);
+                car.speed  = Math.min(car.speed, leader.speed);
+              }
+            }
+          }
+        }
+
+        // ── Periodieke hervalidatie: stilstaande auto's die vrij zijn mogen rijden ─
+        if (now - lastRevalidateT >= REVALIDATE_INTERVAL) {
+          lastRevalidateT = now;
+
+          // Bouw per pad een gesorteerde lijst van rijdende auto's
+          const revalGroups = buildPathGroups(true);
+
+          for (const car of cars) {
+            if (car.state !== 'moving' || car.speed > 0) continue;
+
+            // Controleer of er een auto direct voor staat (gap-blokkering)
+            const group = revalGroups.get(car.path);
+            let blockedByLeader = false;
+            if (group && group.length > 1) {
+              const minOff = (CF_MIN_GAP + CAR_LENGTH) / car.path.length;
+              const idx    = group.indexOf(car);
+              if (idx >= 0 && idx < group.length - 1) {
+                const leader    = group[idx + 1];
+                let leaderOff   = leader.offset;
+                if (leaderOff < car.offset) leaderOff += 1.0;
+                blockedByLeader = (leaderOff - car.offset) < minOff * 1.5;
+              }
+            }
+
+            // Niet geblokkeerd door voorganger: wis wachtstatus en herstel snelheid
+            if (!blockedByLeader) {
+              car.waitingAtNode      = null;
+              car.waitStartT         = null;
+              car.yieldOverrideUntil = null;
+              car.stopTarget         = null;
+              car.speed = computeLinkTargetSpeed(car);
+            }
+          }
+        }
+
+        // ── Ruim 'done' auto's op (achteruit lopen om splice-indices te bewaren) ──
+        for (let ci = cars.length - 1; ci >= 0; ci--) {
+          if (cars[ci].state === 'done') cars.splice(ci, 1);
+        }
+
+        // ── Productie: 1× per reële seconde auto's spawnen aan OD-beginpunten ──
+        // Voor elk OD-paar: verwacht aankomsten = (totalFlow/3600) × timeScale × dt_reëel
+        // Probabilistische afronding zodat de gemiddelde doorvoer exact klopt.
+        if (odGroups.size > 0) {
+          if (lastProductionT === 0) {
+            lastProductionT = now;   // initialiseer op het eerste frame
+          } else if (now - lastProductionT >= 1.0) {
+            const dtReal = Math.min(now - lastProductionT, 2.0);  // max 2s om burst te beperken
+            lastProductionT = now;
+            let cycleSpawns = 0;
+            for (const od of odGroups.values()) {
+              if (cars.length >= MAX_VEHICLES) break;
+              const expected = (od.totalFlow / 3600) * timeScale * dtReal;
+              const count = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);
+              for (let ci = 0; ci < count && cars.length < MAX_VEHICLES; ci++) {
+                spawnProductionCar(pickWeightedRoute(od.paths));
+                cycleSpawns++;
+              }
+            }
+            lastProductionSpawns = cycleSpawns;
+            lastAttractionCount  = attractionAccum;
+            attractionAccum      = 0;
+          }
+        }
+
+        computeCarData();
+
+        // ── Voertuigtellers: passage-detectie ────────────────────────────────
+        if (_counterList.length > 0) {
+          for (const ct of _counterList) ct.simElapsed = (ct.simElapsed ?? 0) + dt;
+          for (let i = 0; i < cars.length; i++) {
+            const c  = cars[i];
+            if (c.state !== 'moving') { _counterPrevPos.delete(c); continue; }
+            const cd = carData[i];
+            if (!cd || cd.position[2] === -9999) { _counterPrevPos.delete(c); continue; }
+            const curPos  = [cd.position[0], cd.position[1]];
+            const prevData = _counterPrevPos.get(c);
+            if (prevData && prevData.path === c.path) {
+              const prevPos = prevData.pos;
+              for (const ct of _counterList) {
+                if (_segmentsIntersect(prevPos, curPos, ct.line[0], ct.line[1])) {
+                  // Richting: dot-product van bewegingsvector met link-richting
+                  const dx    = curPos[0] - prevPos[0];
+                  const dy    = curPos[1] - prevPos[1];
+                  const brRad = ct.bearing * Math.PI / 180;
+                  const dir   = (dx * Math.sin(brRad) + dy * Math.cos(brRad)) >= 0
+                    ? 'forward' : 'backward';
+                  const vm     = c.vehicleMode ?? MODE;
+                  const bucket = vm === 'CAR' ? 'CAR' : vm === 'BIKE' ? 'BIKE' : 'OTHER';
+                  ct.counts[dir].total++;
+                  ct.counts[dir][bucket]++;
+                }
+              }
+            }
+            _counterPrevPos.set(c, { pos: curPos, path: c.path });
+          }
+          _updateCounterPanel();
+        }
+
+        updateOverlay(true);
+      }
+      if (carsSuspended) lastT = null; else lastT = now;
+      const _aDur = performance.now() - _aT0;
+      if (_aDur > 150) _trace(`⚠ animatie-frame ${_aDur.toFixed(0)}ms (auto's=${cars.length}, frame #${_animFrames})`);
+      requestAnimationFrame(animate);
+    }
+
+    /** Herbouw auto-lijst (bij zoom-wijziging of drempel-aanpassing) */
+    function rebuildCars() {
+      const _t0 = performance.now();
+      lastProductionT = 0;   // reset productie-timer zodat er geen burst optreedt na rebuild
+      cars = enforceInitialSpacing(buildCarList(threshold));
+      const _t1 = performance.now();
+      computeCarData();
+      _trace(`rebuildCars: ${cars.length} auto's, buildCarList+spacing ${(_t1 - _t0).toFixed(0)}ms, computeCarData ${(performance.now() - _t1).toFixed(0)}ms`);
+    }
+
+    /** Lichte update van de OD-productiesnelheden na een flow-schaal-wijziging (nieuw heel
+     *  uur, dagdeel, datum, weer, temperatuur of motief): de routes en hun onderlinge
+     *  verdeling liggen vast, alleen het aantal auto's dat per tijdseenheid van een
+     *  herkomst vertrekt verandert. Auto's die al onderweg zijn blijven gewoon doorrijden;
+     *  de bestaande spawn-cyclus (zie 'Productie' in animate()) laat de wegbezetting
+     *  vloeiend naar het nieuwe niveau toe-/afgroeien i.p.v. de hele populatie in één klap
+     *  te vervangen — dat gaf bij elke klokstap een merkbare hapering.
+     *  Valt terug op een volledige rebuildCars() buiten route-modus, of zolang er nog geen
+     *  odGroups zijn opgebouwd (eerste keer). */
+    function refreshProductionRates() {
+      if (!routeMode || odGroups.size === 0) { rebuildCars(); return; }
+      for (const g of odGroups.values()) {
+        let total = 0;
+        for (const rp of g.paths) {
+          const productionDp = (rp.route.originProduction ?? 0) * (DP_FRACTION[flowDaypart] ?? (1 / 14.4));
+          total += productionDp * rp.route.weight * (rp.route.calib ?? 1);
+        }
+        g.totalFlow = total;
+      }
+    }
+
+    // ── Stapgrootte-afhankelijke update: productie bijwerken vs. auto's herplaatsen ──
+    const PRODUCTION_ONLY_MAX_STEP_H = 0.25; // 15 minuten: grotere stappen vereisen herplaatsing
+    let _lastPlacedSimHour = undefined;      // tijdstip waarvoor de auto's voor het laatst
+    let _lastPlacedDateStr = undefined;      // (her)geplaatst zijn; undefined = nog nooit
+
+    /** Kleinste afstand tussen twee klokstanden (0–24) op een cirkelvormige 24-uurs
+     *  wijzerplaat, in uren (bv. 23:50 en 00:10 liggen 20 minuten uit elkaar, niet 23u40). */
+    function _circularHourDiff(a, b) {
+      const d = Math.abs(a - b) % 24;
+      return Math.min(d, 24 - d);
+    }
+
+    /** Tijdsverschil in uren tussen twee (datum, klokuur)-combinaties. Zonder datum (geen
+     *  specifieke datum gekozen) vergelijkt dit alleen het klokuur, cirkelvormig; is er wél
+     *  een datum, dan telt een midnight-overgang niet als een sprong van bijna een etmaal. */
+    function _timeStepHours(dateA, hourA, dateB, hourB) {
+      if (dateA == null || dateB == null) {
+        return dateA !== dateB ? Infinity : _circularHourDiff(hourA, hourB);
+      }
+      const msPerHour = 3_600_000;
+      const tA = new Date(dateA + 'T00:00:00').getTime() + hourA * msPerHour;
+      const tB = new Date(dateB + 'T00:00:00').getTime() + hourB * msPerHour;
+      return Math.abs(tA - tB) / msPerHour;
+    }
+
+    /** Werk de auto-productie bij na een flow-schaal-wijziging (nieuw uur, dagdeel, datum,
+     *  weer, temperatuur of motief). Is de stap t.o.v. de laatst geplaatste tijd klein
+     *  (≤15 min, zie PRODUCTION_ONLY_MAX_STEP_H), dan volstaat het bijwerken van de
+     *  productiesnelheden (refreshProductionRates): routes en hun onderlinge verdeling
+     *  liggen vast, alleen het aantal vertrekkende auto's verandert, en auto's die al
+     *  onderweg zijn kunnen gewoon doorrijden. Bij een grotere stap (bv. de "half uur"/
+     *  "heel uur"-knoppen, ver slepen aan de wijzer, of een andere datum) klopt de
+     *  bestaande autopopulatie niet meer met het nieuwe tijdstip en worden de auto's
+     *  wél opnieuw geplaatst (rebuildCars). */
+    function applyProductionStep() {
+      const dateVal = document.getElementById('fspDate').value || null;
+      const bigStep = _lastPlacedDateStr === undefined
+        || _timeStepHours(dateVal, simHour, _lastPlacedDateStr, _lastPlacedSimHour) > PRODUCTION_ONLY_MAX_STEP_H;
+      _lastPlacedDateStr = dateVal;
+      _lastPlacedSimHour = simHour;
+      if (bigStep) rebuildCars(); else refreshProductionRates();
+    }
+
+    // Onderdruk 'Image X could not be loaded'-waarschuwingen van OpenFreeMap's sprite-sheet
+    // Onderdruk 'Image X could not be loaded'-waarschuwingen van de sprite-sheet
+    // door ontbrekende afbeeldingen te vervangen door een transparante 1×1 placeholder.
+    map.on('styleimagemissing', (e) => {
+      if (map.hasImage(e.id)) return;
+      const empty = { width: 1, height: 1, data: new Uint8Array(4) };
+      map.addImage(e.id, empty);
+    });
+
+    function _onMapStyleLoad() {
+      if (typeof _tPost === 'number') {
+        console.log('[perf] routes-loaded → map style load / loader hide:',
+                    (performance.now() - _tPost).toFixed(0), 'ms');
+      }
+      hideLaadscherm();
+      _startFollowMode();
+
+      // Liberty 2D/3D-gebouwlagen altijd verbergen, meteen bij het laden van de
+      // stijl — niet pas zodra _tryAddBuildings() de pandendata heeft verwerkt.
+      // Anders flitsen de standaard 3D-gebouwen van de basiskaart kort op terwijl
+      // de pandendata nog wordt opgehaald/verrijkt. Onze eigen 'buildings-*'-lagen
+      // (zie _tryAddBuildings) vervangen ze zodra 'Pand weergave' ≠ 'uit' staat;
+      // tot die tijd blijft alles leeg.
+      try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+
+      if (_MAQUETTE) {
+        map.getStyle().layers
+          .filter(l => l.id.toLowerCase().includes('building'))
+          .forEach(l => {
+            try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
+          });
+        map.getStyle().layers
+          .filter(l => l.type === 'symbol' && l.layout?.['text-field'])
+          .forEach(l => {
+            try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
+          });
+      }
+      if (!_mapReady) {
+        animate();
+        _mapReady = true;
+      }
+      _tryAddBuildings();
+      // Verkeersobjecten (borden/lichten): bij (re)styling zijn bronnen/iconen weg → reset
+      // caches zodat de laag opnieuw wordt opgebouwd voor het huidige kaartbeeld.
+      _lastAssetBbox     = null;
+      _trafficSignsReady = false;
+      loadTrafficAssetsInView();
+      _lastVegBbox       = null;
+      loadVegetationInView();
+
+      // Wegnummer-schildjes (N346 e.d.) worden standaard erg vaak langs de weg
+      // herhaald. Vergroot symbol-spacing op de shield-symboollagen zodat ze
+      // veel minder vaak verschijnen.
+      try {
+        for (const l of map.getStyle().layers) {
+          if (l.type !== 'symbol') continue;
+          if (!/shield/i.test(l.id)) continue;
+          map.setLayoutProperty(l.id, 'symbol-spacing', 1200);
+        }
+      } catch (_) {}
+
+      // ── Satelliet-ondergrond ────────────────────────────────────────────────
+      // Verzamel Liberty fill/background layer IDs die we in satellietmodus verbergen.
+      // Lijnlagen (roads) en symboollagen (labels) blijven als overlay zichtbaar.
+      // Let op: _tryAddBuildings() hierboven heeft onze eigen 'buildings-*'-lagen
+      // (buildings-fill/buildings-3d/buildings-selected) al toegevoegd aan de
+      // stijl — die moeten hier expliciet uitgesloten worden, anders trekt de
+      // generieke Liberty-toggle (_applyBasemapStyle) ze mee
+      // en verschijnt het grondvlak ook als 'Gebouw productie/attractie' = uit.
+      _libertyFillLayerIds = map.getStyle().layers
+        .filter(l => !l.id.startsWith('buildings'))
+        .filter(l => l.type === 'background' || l.type === 'fill' || l.type === 'raster')
+        .map(l => l.id);
+      // Alle Liberty layer IDs — verborgen in geen-kaart-modus (alleen zwart vlak).
+      _libertyAllLayerIds = map.getStyle().layers
+        .filter(l => !l.id.startsWith('buildings'))
+        .map(l => l.id);
+
+      // Voeg ESRI World Imagery raster-source toe als ondergrond
+      if (!map.getSource('esri-satellite')) {
+        map.addSource('esri-satellite', {
+          type:        'raster',
+          tiles:       ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize:    256,
+          maxzoom:     19,
+          attribution: '© Esri, i-cubed, USDA, USGS, AEX, GeoEye',
+        });
+      }
+      if (!map.getLayer('satellite-bg')) {
+        // Invoegen vóór de eerste Liberty-laag zodat alles er bovenop ligt
+        const firstLayerId = map.getStyle().layers[0]?.id;
+        map.addLayer({
+          id:     'satellite-bg',
+          type:   'raster',
+          source: 'esri-satellite',
+          layout: { visibility: 'none' },
+          paint:  { 'raster-opacity': 1 },
+        }, firstLayerId);
+      }
+
+      // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite', 'none' of 'white' had gekozen)
+      // Altijd toepassen: ook 'map' (Montréal) moet lagen toevoegen/omschakelen.
+      _applyBasemapStyle(basemapStyle);
+    }
+
+    map.on('load', _onMapStyleLoad);
+    // Als de 'load'-event al gevuurd is vóór registratie, direct uitvoeren.
+    // Gebruik _mapLoadFired i.p.v. map.isStyleLoaded(): addSource/addLayer (door
+    // initClosedLinksLayer hierboven) zetten isStyleLoaded() tijdelijk op false.
+    if (_mapLoadFired) _onMapStyleLoad();
+
+    // Zoom-event: auto-dichtheid wordt niet herberekend bij panning/zoomen
+    // zodat de verkeersafwikkeling niet wordt gereset.
+    // map.on('zoomend', ...) bewust weggelaten.
+
+    // ── 7b. Node-edit modus ─────────────────────────────────────────────────
+
+    let scenarioCounter  = 1;
+    let activeNodeFeature = null;  // feature dat de dialoog opende
+    let compareVisible   = false;
+    let compareData      = null;   // GeoJSON FeatureCollection van COMPARE-laag
+
+    // Helpers
+    const NODE_SOURCE = 'edit-nodes-src';
+    const NODE_LAYER  = 'edit-nodes-layer';
+    const LINK_SOURCE = 'edit-links-src';
+    const LINK_LAYER  = 'edit-links-layer';
+    const CMP_SOURCE  = 'compare-src';
+    const CMP_LAYER_INC = 'compare-inc';
+    const CMP_LAYER_RED = 'compare-red';
+    const CMP_LAYER_MAT = 'compare-mat';
+
+    // ── Polygon tekenlaag ──────────────────────────────────────────────────
+    const POLY_SOURCE     = 'poly-draw-src';
+    const POLY_FILL_LAYER = 'poly-draw-fill';
+    const POLY_LINE_LAYER = 'poly-draw-line';
+
+    const HL_SOURCE     = 'highlight-src';
+    const HL_LINE_LAYER = 'highlight-line';
+    const HL_POINT_LAYER= 'highlight-point';
+    const HL_ARROW_LAYER= 'highlight-arrow';
+    const HL_ARROW_ICON = 'hl-arrow';
+
+    // Nieuw-wegvak teken-lagen
+    const LINK_ADD_SOURCE    = 'link-add-src';
+    const LINK_ADD_LINE      = 'link-add-line';
+    const LINK_ADD_RUBBER    = 'link-add-rubber';
+    const LINK_ADD_DOTS      = 'link-add-dots';
+
+    let highlightedChangeIndex = null;
+
+    function addNodeLayer() {
+      initPolygonDrawLayers();
+      // 1. BOUNDARY + NODE zones (met productie/attractie-info)
+      const zonePts = zoneFeaturesRaw
+        .filter(f => {
+          const cl = f.properties?.zoneClass;
+          return cl === 'BOUNDARY' || cl === 'NODE';
+        })
+        .map(f => {
+          const p = f.properties;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) return null;
+          return {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: {
+              zoneId:     p.zoneId,
+              zoneClass:  p.zoneClass,
+              zoneName:   p.zoneName || p.zoneId,
+              production: p.production ?? null,
+              attraction: p.attraction ?? null,
+              isZone:     true,
+            }
+          };
+        })
+        .filter(Boolean);
+
+      // 2. Alle netwerk-knopen (begin/eindpunten van links) uit nodeCoords
+      const zoneNodeIds = new Set(zonePts.map(f => f.properties.zoneId));
+      const networkPts = [];
+      for (const [nodeId, coord] of nodeCoords) {
+        // Sla over als er al een zone-bolletje op hetzelfde nodeId staat
+        if (zoneNodeIds.has(String(nodeId))) continue;
+        networkPts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coord },
+          properties: {
+            zoneId:     String(nodeId),
+            zoneClass:  'NETWORK_NODE',
+            zoneName:   `node ${nodeId}`,
+            production: null,
+            attraction: null,
+            isZone:     false,
+          }
+        });
+      }
+
+      const pts = [...zonePts, ...networkPts];
+
+      if (!map.getSource(NODE_SOURCE)) {
+        map.addSource(NODE_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: pts } });
+        map.addLayer({
+          id: NODE_LAYER,
+          type: 'circle',
+          source: NODE_SOURCE,
+          paint: {
+            'circle-radius': [
+              'case', ['get', 'isZone'], 8, 5
+            ],
+            'circle-color': [
+              'case',
+              ['==', ['get', 'zoneClass'], 'BOUNDARY'], '#ffb450',
+              ['==', ['get', 'zoneClass'], 'NODE'],     '#7ec8e3',
+              '#a0aec0'   // NETWORK_NODE
+            ],
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#0d1117',
+            'circle-opacity': ['case', ['get', 'isZone'], 0.9, 0.6],
+          }
+        });
+
+        map.on('click', NODE_LAYER, e => {
+          if (!nodeEditActive || nodeSelectMode !== 'click') return;
+          const f = e.features[0];
+          openNodeDialog(f, e.point);
+          e.originalEvent.stopPropagation();
+        });
+        map.on('mouseenter', NODE_LAYER, () => {
+          if (nodeEditActive && nodeSelectMode === 'click') map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', NODE_LAYER, () => {
+          map.getCanvas().style.cursor =
+            (nodeEditActive && nodeSelectMode === 'polygon') ? 'crosshair' : '';
+        });
+      } else {
+        map.getSource(NODE_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+      }
+      map.setLayoutProperty(NODE_LAYER, 'visibility', 'visible');
+    }
+
+    function removeNodeLayer() {
+      if (map.getLayer(NODE_LAYER))
+        map.setLayoutProperty(NODE_LAYER, 'visibility', 'none');
+    }
+
+    // ── Link-edit laag ──────────────────────────────────────────────────────
+
+     function addLinkLayer()    { initPolygonDrawLayers(); updateOverlay(false); }
+    function removeLinkLayer() { updateOverlay(false); }
+
+    // ── Polygon tekenlogica ────────────────────────────────────────────────
+
+    /** Ray-casting point-in-polygon. verts = [[lon,lat],...] */
+    function pointInPolygon([px, py], verts) {
+      let inside = false;
+      for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+        const [xi, yi] = verts[i], [xj, yj] = verts[j];
+        if ((yi > py) !== (yj > py) &&
+            px < ((xj - xi) * (py - yi) / (yj - yi) + xi))
+          inside = !inside;
+      }
+      return inside;
+    }
+
+     /** Initialiseer MapLibre-lagen voor polygon tekenen (idempotent). */
+     function initPolygonDrawLayers() {
+       if (map.getSource(POLY_SOURCE)) return;
+       map.addSource(POLY_SOURCE, {
+         type: 'geojson',
+         data: { type: 'FeatureCollection', features: [] },
+       });
+       map.addLayer({
+         id: POLY_FILL_LAYER, type: 'fill', source: POLY_SOURCE,
+         filter: ['==', '$type', 'Polygon'],
+         paint: { 'fill-color': '#ffb450', 'fill-opacity': 0.12 },
+       });
+       map.addLayer({
+         id: POLY_LINE_LAYER, type: 'line', source: POLY_SOURCE,
+         paint: { 'line-color': '#ffb450', 'line-width': 2, 'line-dasharray': [5, 3] },
+       });
+        initHighlightLayers();
+         initClosedLinksLayer();
+         initSpeedSignLayer();
+       }
+
+      /** Teken een rechtswijzende rode pijlpunt als ImageData (voor OD-paar-highlight). */
+      function createArrowIcon(size = 48) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#e83333';
+        ctx.beginPath();
+        ctx.moveTo(size * 0.05, size * 0.12);
+        ctx.lineTo(size * 0.95, size * 0.5);
+        ctx.lineTo(size * 0.05, size * 0.88);
+        ctx.closePath();
+        ctx.fill();
+        return ctx.getImageData(0, 0, size, size);
+      }
+
+      /** Initialiseer MapLibre-lagen voor wijziging-highlight (idempotent). */
+      function initHighlightLayers() {
+        if (map.getSource(HL_SOURCE)) return;
+        if (!map.hasImage(HL_ARROW_ICON)) map.addImage(HL_ARROW_ICON, createArrowIcon(48), { pixelRatio: 2 });
+        map.addSource(HL_SOURCE, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        // Lijn-highlight (voor wegvakken en OD-paren): rode glow via gestapelde lijnen
+        map.addLayer({
+          id: HL_LINE_LAYER + '-glow', type: 'line', source: HL_SOURCE,
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': 'rgba(210, 30, 30, 0.45)',
+            'line-width': 18,
+            'line-blur': 6,
+          },
+        });
+        map.addLayer({
+          id: HL_LINE_LAYER, type: 'line', source: HL_SOURCE,
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': '#e83333',
+            'line-width': 5,
+            'line-opacity': 0.95,
+          },
+        });
+        // Richtingspijl op de highlight-lijn van een OD-paar (herkomst → bestemming)
+        map.addLayer({
+          id: HL_ARROW_LAYER, type: 'symbol', source: HL_SOURCE,
+          filter: ['all', ['==', '$type', 'LineString'], ['==', ['get', '_isOd'], true]],
+          layout: {
+            'icon-image': HL_ARROW_ICON,
+            'icon-size': 0.7,
+            'symbol-placement': 'line-center',
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+        });
+        // Punt-highlight (voor knopen): rode glow via gestapelde cirkels
+        map.addLayer({
+          id: HL_POINT_LAYER, type: 'circle', source: HL_SOURCE,
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': 18,
+            'circle-color': 'rgba(210, 30, 30, 0.18)',
+            'circle-blur': 0.7,
+            'circle-stroke-width': 3,
+            'circle-stroke-color': '#dc1e1e',
+            'circle-stroke-opacity': 0.95,
+          },
+        });
+      }
+
+    // ── Nieuw-wegvak teken-functies ───────────────────────────────────────────
+
+    /** Initialiseer MapLibre-lagen voor het intekenen van een nieuw wegvak (idempotent). */
+    function initLinkAddLayers() {
+      if (map.getSource(LINK_ADD_SOURCE)) return;
+      map.addSource(LINK_ADD_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      // Bevestigde lijn (groen)
+      map.addLayer({
+        id: LINK_ADD_LINE, type: 'line', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'line'],
+        paint: { 'line-color': '#6de0a0', 'line-width': 3, 'line-dasharray': [1, 0] },
+      });
+      // Rubberbanding (stippel, iets transparanter)
+      map.addLayer({
+        id: LINK_ADD_RUBBER, type: 'line', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'rubber'],
+        paint: { 'line-color': '#6de0a0', 'line-width': 2, 'line-dasharray': [4, 3], 'line-opacity': 0.6 },
+      });
+      // Vertices (punten)
+      map.addLayer({
+        id: LINK_ADD_DOTS, type: 'circle', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'dot'],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#6de0a0',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+    }
+
+    /** Verwijder teken-lagen en -source. */
+    function removeLinkAddLayers() {
+      [LINK_ADD_DOTS, LINK_ADD_RUBBER, LINK_ADD_LINE].forEach(id => {
+        if (map.getLayer(id)) map.removeLayer(id);
+      });
+      if (map.getSource(LINK_ADD_SOURCE)) map.removeSource(LINK_ADD_SOURCE);
+    }
+
+    /** Herrender de teken-preview op basis van linkAddVertices + _linkAddMouseCoord. */
+    function updateLinkAddPreview() {
+      if (!map.getSource(LINK_ADD_SOURCE)) return;
+      const features = [];
+      const verts = linkAddVertices;
+
+      // Bevestigde lijn
+      if (verts.length >= 2) {
+        features.push({ type: 'Feature', properties: { kind: 'line' },
+          geometry: { type: 'LineString', coordinates: verts } });
+      }
+      // Rubberbanding
+      if (verts.length >= 1 && _linkAddMouseCoord) {
+        features.push({ type: 'Feature', properties: { kind: 'rubber' },
+          geometry: { type: 'LineString', coordinates: [verts[verts.length - 1], _linkAddMouseCoord] } });
+      }
+      // Vertices als punten
+      verts.forEach(c => {
+        features.push({ type: 'Feature', properties: { kind: 'dot' },
+          geometry: { type: 'Point', coordinates: c } });
+      });
+
+      map.getSource(LINK_ADD_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Reset teken-state en clear de preview. */
+    function clearLinkAddDraw() {
+      linkAddVertices   = [];
+      _linkAddMouseCoord = null;
+      if (map.getSource(LINK_ADD_SOURCE))
+        map.getSource(LINK_ADD_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+    }
+
+    /** Haversine-afstand in meters tussen twee [lon,lat]-punten. */
+    function haversineM([lon1, lat1], [lon2, lat2]) {
+      const R = 6371000;
+      const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Totale lengte van linkAddVertices in meters. */
+    function linkAddLengthM() {
+      let len = 0;
+      for (let i = 1; i < linkAddVertices.length; i++)
+        len += haversineM(linkAddVertices[i-1], linkAddVertices[i]);
+      return Math.round(len);
+    }
+
+    /** Sluit de getekende lijn af en open het attribuut-dialoog. */
+    function finishLinkAddDraw() {
+      if (linkAddVertices.length < 2) return;
+      const lenM = linkAddLengthM();
+      document.getElementById('linkAddLengthDisplay').textContent =
+        T('linkAddLengthLabel', lenM.toLocaleString(T('numberLocale')));
+      // Defaults
+      document.getElementById('linkAddCapVal').value    = '900';
+      document.getElementById('linkAddSpeedVal').value  = '50';
+      document.getElementById('linkAddLanesVal').value  = '1';
+      document.getElementById('linkAddDialog').style.display = 'block';
+      // Verberg afrond-popup
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    }
+
+    /**
+     * MapLibre mousemove-handler voor rubberbanding.
+     * Wordt aan- en afgemeld bij activeren/deactiveren van linkAddActive.
+     */
+    function _onLinkAddMouseMove(e) {
+      if (!linkAddActive || linkAddVertices.length === 0) return;
+      _linkAddMouseCoord = [e.lngLat.lng, e.lngLat.lat];
+      updateLinkAddPreview();
+    }
+
+    /**
+     * MapLibre dblclick-handler: rondt de lijn af zonder extra punt.
+     */
+    function _onLinkAddDblClick(e) {
+      if (!linkAddActive) return;
+      e.preventDefault();
+      if (linkAddVertices.length >= 2) finishLinkAddDraw();
+    }
+
+    /**
+     * Maak een "verboden in te rijden"-bord als HTMLCanvasElement (64×64, pixelRatio 2→ 32 logisch px).
+     * Rood gevuld cirkel · wit kader-ring · witte horizontale balk.
+     */
+    function createNoEntryIcon(size = 64) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const cx = size / 2, r = size / 2 - 2;
+      // Rode achtergrond
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#cc1111'; ctx.fill();
+      // Witte rand-ring
+      ctx.beginPath(); ctx.arc(cx, cx, r - 3, 0, Math.PI * 2);
+      ctx.strokeStyle = 'white'; ctx.lineWidth = 4; ctx.stroke();
+      // Witte horizontale balk
+      const bw = r * 1.1, bh = r * 0.44;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx - bw / 2, cx - bh / 2, bw, bh, bh / 3);
+      else { ctx.rect(cx - bw / 2, cx - bh / 2, bw, bh); }
+      ctx.fillStyle = 'white'; ctx.fill();
+      // MapLibre verwacht ImageData (geen HTMLCanvasElement)
+      return ctx.getImageData(0, 0, size, size);
+    }
+
+    /**
+     * Maak een snelheidsbordje als ImageData (64×64) inclusief het getal.
+     * Tekent alles op canvas zodat er geen externe glyph-server nodig is.
+     */
+    function createSpeedSignIcon(speed, size = 64) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const cx = size / 2, r = size / 2 - 2;
+      // Witte achtergrond
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'white'; ctx.fill();
+      // Dikke rode buitenring
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.strokeStyle = '#cc1111'; ctx.lineWidth = 5; ctx.stroke();
+      // Dunne rode binnenring
+      ctx.beginPath(); ctx.arc(cx, cx, r - 7, 0, Math.PI * 2);
+      ctx.strokeStyle = '#cc1111'; ctx.lineWidth = 2; ctx.stroke();
+      // Snelheidsgetal
+      ctx.fillStyle = '#111111';
+      ctx.font = `bold ${Math.round(size * 0.30)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(speed), cx, cx);
+      return ctx.getImageData(0, 0, size, size);
+    }
+
+    /** Initialiseer MapLibre-lagen voor afgesloten wegvakken (idempotent). */
+    function initClosedLinksLayer() {
+      if (map.getSource(CLOSED_SOURCE)) return;
+      if (!map.hasImage(CLOSED_ICON))
+        map.addImage(CLOSED_ICON, createNoEntryIcon(64), { pixelRatio: 2 });
+      map.addSource(CLOSED_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: CLOSED_LAYER, type: 'symbol', source: CLOSED_SOURCE,
+        layout: {
+          'icon-image': CLOSED_ICON,
+          'icon-size': 1.0,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+      updateClosedLinksLayer();
+    }
+
+    /**
+     * Herbereken welke wegvakken capaciteit = 0 hebben (origineel of via pendingChanges)
+     * en zet het middenpunt ervan in CLOSED_SOURCE zodat het bord zichtbaar wordt.
+     */
+    function updateClosedLinksLayer() {
+      const capOverride = new Map();
+      for (const ch of pendingChanges) {
+        if (ch._isLink) capOverride.set(String(ch.linkId), ch.capacity);
+      }
+      const pts = [];
+      for (const f of geojson.features) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = String(f.properties?.linkId ?? f.properties?.id ?? '');
+        const cap = capOverride.has(linkId)
+          ? capOverride.get(linkId)
+          : (f.properties?.capacity ?? 1);
+        if (cap !== 0) continue;
+        const coords = f.geometry.coordinates;
+        pts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords[Math.floor(coords.length / 2)] },
+          properties: {},
+        });
+      }
+      _closedSignPts = pts;
+      if (map.getSource(CLOSED_SOURCE))
+        map.getSource(CLOSED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+    }
+
+    /** Initialiseer MapLibre-lagen voor snelheidsbordjes (idempotent). */
+    function initSpeedSignLayer() {
+      if (map.getSource(SPEED_SOURCE)) return;
+      map.addSource(SPEED_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: SPEED_LAYER, type: 'symbol', source: SPEED_SOURCE,
+        layout: {
+          'icon-image': ['concat', 'speed-sign-', ['to-string', ['get', 'speed']]],
+          'icon-size': 1.0,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+      updateSpeedSignLayer();
+    }
+
+    /**
+     * Herbereken welke wegvakken een snelheidsreductie hebben (pendingChanges met speed != null
+     * en capacity !== 0) en zet het middenpunt ervan in SPEED_SOURCE.
+     */
+    function updateSpeedSignLayer() {
+      const overrides = new Map();
+      for (const ch of pendingChanges) {
+        if (ch._isLink) overrides.set(String(ch.linkId), ch);
+      }
+      const pts = [];
+      for (const f of geojson.features) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = String(f.properties?.linkId ?? f.properties?.id ?? '');
+        const ch = overrides.get(linkId);
+        if (!ch) continue;
+        if (ch.speed == null) continue;
+        if (ch.capacity === 0) continue;  // afgesloten: verbodsbord heeft voorrang
+        // Registreer icoon on-demand per unieke snelheidswaarde
+        const iconId = `speed-sign-${ch.speed}`;
+        if (map.getSource(SPEED_SOURCE) && !map.hasImage(iconId))
+          map.addImage(iconId, createSpeedSignIcon(ch.speed, 64), { pixelRatio: 2 });
+        const coords = f.geometry.coordinates;
+        pts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords[Math.floor(coords.length / 2)] },
+          properties: { speed: ch.speed },
+        });
+      }
+      _speedSignPts = pts;
+      if (map.getSource(SPEED_SOURCE))
+        map.getSource(SPEED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+    }
+
+    // De MapLibre-symboollagen hierboven liggen in interleaved-modus altijd ónder
+    // de deck.gl-lagen (deck 8.9 schuift lagen zonder beforeId bij elke update naar
+    // de top), en worden in de DT dus bedekt door de wegen-in-meters. Daarom
+    // tekenen we dezelfde bordjes ook als deck.gl-IconLayer, als laatste laag.
+    function _editSignIcon(key, makeImageData) {
+      _editSignIcons = _editSignIcons || {};
+      if (!_editSignIcons[key]) {
+        const img = makeImageData();
+        const cv  = document.createElement('canvas');
+        cv.width = img.width; cv.height = img.height;
+        cv.getContext('2d').putImageData(img, 0, 0);
+        _editSignIcons[key] = { url: cv.toDataURL(), width: img.width, height: img.height,
+                                anchorX: img.width / 2, anchorY: img.height / 2, mask: false };
+      }
+      return _editSignIcons[key];
+    }
+    function makeEditSignLayer() {
+      const data = [...(_closedSignPts || []), ...(_speedSignPts || [])];
+      if (!data.length) return null;
+      return new IconLayer({
+        id:          'edit-signs-deck',
+        data,
+        billboard:   true,
+        sizeUnits:   'pixels',
+        getPosition: f => f.geometry.coordinates,
+        getIcon:     f => f.properties.speed != null
+                       ? _editSignIcon(`speed-${f.properties.speed}`, () => createSpeedSignIcon(f.properties.speed, 64))
+                       : _editSignIcon('closed', () => createNoEntryIcon(64)),
+        getSize:     32,
+        parameters:  { depthTest: false },
+      });
+    }
+    function updatePolygonDraw() {
+      if (!map.getSource(POLY_SOURCE)) {
+        console.log('[poly] updatePolygonDraw: POLY_SOURCE bestaat nog niet');
+        return;
+      }
+      const v = polygonVertices;
+      if (!v.length) {
+        map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+      const features = [];
+      if (v.length >= 3)
+        features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...v, v[0]]] } });
+      if (v.length >= 2)
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: v } });
+      map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Wis polygon-vertices en teken-laag; verberg hulpknoppen. */
+    function clearPolygonDraw() {
+      polygonVertices = [];
+      polygonNodesInside = [];
+      updatePolygonDraw();
+      document.getElementById('polygonFinishBtn').style.display = 'none';
+      document.getElementById('polygonClearBtn').style.display  = 'none';
+    }
+
+    /**
+     * Sluit de getekende polygon af: zoek knopen binnen de polygon en
+     * open het aanpassingsdialoog.
+     */
+    function finishPolygon() {
+      if (polygonVertices.length < 3) return;
+
+      // 1. Zone-knopen (BOUNDARY + NODE) uit zoneFeaturesRaw
+      const zonePts = zoneFeaturesRaw
+        .filter(f => { const cl = f.properties?.zoneClass; return cl === 'BOUNDARY' || cl === 'NODE'; })
+        .map(f => {
+          const p = f.properties;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) return null;
+          return { zoneId: String(p.zoneId), zoneClass: p.zoneClass,
+                   zoneName: p.zoneName || String(p.zoneId), lon, lat };
+        })
+        .filter(Boolean);
+
+      // 2. Netwerk-knopen (grijze bolletjes) uit nodeCoords — zelfde logica als addNodeLayer
+      const zoneNodeIds = new Set(zonePts.map(pt => pt.zoneId));
+      const networkPts = [];
+      for (const [nodeId, coord] of nodeCoords) {
+        if (zoneNodeIds.has(String(nodeId))) continue;
+        networkPts.push({ zoneId: String(nodeId), zoneClass: 'NETWORK_NODE',
+                          zoneName: `node ${nodeId}`, lon: coord[0], lat: coord[1] });
+      }
+
+      const pts = [...zonePts, ...networkPts];
+      polygonNodesInside = pts.filter(pt => pointInPolygon([pt.lon, pt.lat], polygonVertices));
+
+      if (!polygonNodesInside.length) {
+        alert(T('polygonNoNodes'));
+        return;
+      }
+      openPolygonDialog();
+    }
+
+    /** Bereken de per-knoop-waarde (string) gegeven een totaalwaarde en n knopen. */
+    function calcPerNode(rawVal, n) {
+      if (!rawVal || n === 0) return null;
+      const s = rawVal.trim();
+      const isDelta = s.startsWith('+') || s.startsWith('-');
+      const num = parseFloat(s);
+      if (isNaN(num) || !isFinite(num)) return null;
+      const perNode = Math.round(num / n);
+      if (isDelta) return perNode >= 0 ? `+${perNode}` : String(perNode);
+      return String(perNode);
+    }
+
+    function openPolygonDialog() {
+      const n = polygonNodesInside.length;
+      document.getElementById('polygonNodeInfo').textContent = T('polygonNodeInfoLabel', n);
+      document.getElementById('polyProdVal').value = '';
+      document.getElementById('polyAttrVal').value = '';
+      document.getElementById('polygonPerNodeProd').textContent = '';
+      document.getElementById('polygonPerNodeAttr').textContent = '';
+      document.getElementById('polygonDialog').style.display    = 'block';
+      document.getElementById('nodeSelectPopup').style.display  = 'none';
+    }
+
+     function closePolygonDialog() {
+       document.getElementById('polygonDialog').style.display = 'none';
+       clearPolygonDraw();
+       if (nodeEditActive)
+         document.getElementById('nodeSelectPopup').style.display = 'block';
+     }
+
+    // ── Link polygon tekenlogica ───────────────────────────────────────────
+
+    /** Teken de huidige link polygon-vertices op de kaart (hergebruikt POLY_SOURCE). */
+    function updateLinkPolygonDraw() {
+      if (!map.getSource(POLY_SOURCE)) return;
+      const v = linkPolygonVertices;
+      if (!v.length) {
+        map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+      const features = [];
+      if (v.length >= 3)
+        features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...v, v[0]]] } });
+      if (v.length >= 2)
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: v } });
+      map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Wis link polygon-vertices en teken-laag; verberg hulpknoppen. */
+    function clearLinkPolygonDraw() {
+      linkPolygonVertices  = [];
+      linkPolygonLinksInside = [];
+      updateLinkPolygonDraw();
+      document.getElementById('linkPolygonFinishBtn').style.display = 'none';
+      document.getElementById('linkPolygonClearBtn').style.display  = 'none';
+    }
+
+     /**
+      * Controleer of ALLE coördinaten van een link binnen de polygon liggen.
+      */
+     function linkFullyInPolygon(coords, poly) {
+       if (!coords || !coords.length) return false;
+       return coords.every(c => pointInPolygon(c, poly));
+     }
+
+     /**
+      * Sluit de getekende polygon af: zoek wegvakken die volledig
+      * binnen de polygon liggen en open het aanpassingsdialoog.
+      */
+     function finishLinkPolygon() {
+       if (linkPolygonVertices.length < 3) return;
+
+       linkPolygonLinksInside = geojson.features.filter(f => {
+         if (f.geometry?.type !== 'LineString') return false;
+         return linkFullyInPolygon(f.geometry.coordinates, linkPolygonVertices);
+       });
+
+      if (!linkPolygonLinksInside.length) {
+        alert(T('linkPolygonNoLinks'));
+        return;
+      }
+      openLinkPolygonDialog();
+    }
+
+    function openLinkPolygonDialog() {
+      const n = linkPolygonLinksInside.length;
+      document.getElementById('linkPolygonLinkInfo').textContent = T('linkPolygonLinkInfoLabel', n);
+      document.getElementById('linkPolyCapVal').value            = '';
+      document.getElementById('linkPolygonPerLinkCap').textContent = '';
+      document.querySelectorAll('.link-poly-speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkPolyCloseBtn').classList.remove('active');
+      document.getElementById('linkPolygonDialog').style.display  = 'block';
+      document.getElementById('linkSelectPopup').style.display    = 'none';
+    }
+
+    function closeLinkPolygonDialog() {
+      document.getElementById('linkPolygonDialog').style.display = 'none';
+      clearLinkPolygonDraw();
+      if (linkEditActive)
+        document.getElementById('linkSelectPopup').style.display = 'block';
+    }
+
+    /** Werk de gemiddelde capaciteit-preview bij terwijl de gebruiker typt. */
+    function updateLinkPolyCapDisplay() {
+      const raw = document.getElementById('linkPolyCapVal').value.trim();
+      const n   = linkPolygonLinksInside.length;
+      const hint = document.getElementById('linkPolygonPerLinkCap');
+      if (!raw || !n) { hint.textContent = ''; return; }
+      const isPct = raw.endsWith('%');
+      if (isPct) {
+        const factor = parseFloat(raw) / 100;
+        if (isNaN(factor) || !isFinite(factor)) { hint.textContent = ''; return; }
+        const avg = linkPolygonLinksInside.reduce((s, f) =>
+          s + (f.properties?.capacity ?? 0), 0) / n;
+        const avgAfter = Math.round(avg * factor);
+        hint.textContent = T('linkPolygonPerLinkLabel', avgAfter.toLocaleString(T('numberLocale')));
+      } else {
+        const cap = parseInt(raw);
+        if (isNaN(cap) || cap < 0) { hint.textContent = ''; return; }
+        hint.textContent = T('linkPolygonPerLinkLabel', cap.toLocaleString(T('numberLocale')));
+      }
+    }
+
+    /** Werk de "per knoop"-preview bij terwijl de gebruiker typt. */
+    function updatePolyPerNodeDisplay() {
+      const n  = polygonNodesInside.length;
+      const pp = calcPerNode(document.getElementById('polyProdVal').value, n);
+      const pa = calcPerNode(document.getElementById('polyAttrVal').value, n);
+      document.getElementById('polygonPerNodeProd').textContent = pp ? T('polygonPerNodeLabel', pp) : '';
+      document.getElementById('polygonPerNodeAttr').textContent = pa ? T('polygonPerNodeLabel', pa) : '';
+    }
+
+    // ── Node-dialoog ────────────────────────────────────────────────────────
+
+    function openNodeDialog(feature, mapPoint) {
+      activeNodeFeature = feature;
+      const p = feature.properties;
+      document.getElementById('nodeDialogTitle').textContent =
+        `${p.zoneClass}: ${p.zoneName || p.zoneId}`;
+
+      // Vul huidige waarden in (of leeg)
+      const existing = pendingChanges.find(c => c.zoneId === p.zoneId);
+      document.getElementById('nodeProdVal').value = existing?.production ?? '';
+      document.getElementById('nodeAttrVal').value = existing?.attraction ?? '';
+
+      // Positioneer dialoog naast het klik-punt
+      const dlg = document.getElementById('nodeDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 280 > window.innerWidth)  x = mapPoint.x + rect.left - 280;
+      if (y + 220 > window.innerHeight) y = window.innerHeight - 240;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeNodeDialog() {
+      document.getElementById('nodeDialog').style.display = 'none';
+      activeNodeFeature = null;
+    }
+
+    // ── Link-dialoog ─────────────────────────────────────────────────────────
+
+    let activeLinkFeature = null;
+    let activeLinkSpeed   = null;
+
+    function openLinkDialog(feature, mapPoint) {
+      activeLinkFeature = feature;
+      activeLinkSpeed   = null;
+      const p = feature.properties;
+      const linkId = p.linkId ?? p.id ?? '';
+      document.getElementById('linkDialogTitle').textContent =
+        p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId);
+
+      const existing   = pendingChanges.find(c => c.linkId != null && String(c.linkId) === String(linkId));
+      const currentCap = p.capacity ?? 0;
+      const step       = Math.max(50, Math.round(currentCap / 20 / 50) * 50) || 50;
+
+      const inp = document.getElementById('linkCapVal');
+      inp.min   = 0;
+      inp.max   = '';
+      inp.step  = step;
+      inp.value = existing?.capacity ?? currentCap;
+
+      document.querySelector('#linkDialog .field-hint').textContent = T('linkDialogCapUnit');
+
+      // Markeer actieve snelheidsknop op basis van bestaande wijziging of huidige snelheid
+      const currentCapForDialog = existing?.capacity ?? currentCap;
+      const isClosed  = currentCapForDialog === 0;
+      const activeSpeed = isClosed ? null : (existing?.speed ?? p.speed ?? null);
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        btn.classList.toggle('active',
+          !isClosed && activeSpeed != null && parseInt(btn.dataset.speed) === activeSpeed);
+      });
+      document.getElementById('linkCloseBtn').classList.toggle('active', isClosed);
+
+      const dlg  = document.getElementById('linkDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 260 > window.innerWidth)  x = mapPoint.x + rect.left - 260;
+      if (y + 260 > window.innerHeight) y = window.innerHeight - 280;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeLinkDialog() {
+      document.getElementById('linkDialog').style.display = 'none';
+      activeLinkFeature = null;
+    }
+
+    // ── Link flow-dialoog ────────────────────────────────────────────────────
+
+    let activeLinkFlowFeature = null;
+
+    function openLinkFlowDialog(feature, mapPoint) {
+      activeLinkFlowFeature = feature;
+      const p = feature.properties;
+      const linkId = p.linkId ?? p.id ?? '';
+      document.getElementById('linkFlowDialogTitle').textContent =
+        p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId);
+
+      const currentFlow = Math.round(p.flow24hrs ?? p.flow ?? 0);
+      document.getElementById('linkFlowCurrentDisplay').textContent =
+        T('linkFlowCurrentLabel', currentFlow.toLocaleString(T('numberLocale')));
+
+      const existing = pendingChanges.find(c => c._isLinkFlow && String(c.linkId) === String(linkId));
+      const inp = document.getElementById('linkFlowVal');
+      inp.value = existing?.flow ?? '';
+      inp.placeholder = T('linkFlowDialogPh');
+
+      const dlg = document.getElementById('linkFlowDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 240 > window.innerWidth)  x = mapPoint.x + rect.left - 240;
+      if (y + 200 > window.innerHeight) y = window.innerHeight - 220;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeLinkFlowDialog() {
+      document.getElementById('linkFlowDialog').style.display = 'none';
+      activeLinkFlowFeature = null;
+    }
+
+    function stepValue(inputId, delta) {
+      const inp = document.getElementById(inputId);
+      const raw = inp.value.trim();
+      if (!raw) { inp.value = (delta > 0 ? '+' : '') + delta; return; }
+      // Parse huidig getal (met optioneel teken)
+      const num = parseFloat(raw);
+      if (isNaN(num)) return;
+      const newVal = num + delta;
+      inp.value = (newVal >= 0 && raw.startsWith('+')) ? '+' + newVal
+                : String(newVal);
+    }
+
+    // Snelheid → capaciteit (vtg/u per rijstrook, middenwaarde per klasse)
+    const SPEED_TO_CAP = { 15: 300, 30: 500, 40: 700, 50: 900, 60: 1100, 70: 1300, 100: 1900, 120: 2100 };
+
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.onclick = () => {
+        const spd = parseInt(btn.dataset.speed);
+        const cap = SPEED_TO_CAP[spd] ?? 900;
+        activeLinkSpeed = spd;
+        const inp = document.getElementById('linkCapVal');
+        inp.value = cap;
+        inp.step  = 100;
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('linkCloseBtn').classList.remove('active');
+      };
+    });
+
+    document.getElementById('linkCloseBtn').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      inp.value = 0;
+      inp.step  = 50;
+      activeLinkSpeed = null;
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkCloseBtn').classList.add('active');
+    };
+
+    document.getElementById('nodeProdMinus').onclick = () => stepValue('nodeProdVal', -100);
+    document.getElementById('nodeProdPlus' ).onclick = () => stepValue('nodeProdVal', +100);
+    document.getElementById('nodeAttrMinus').onclick = () => stepValue('nodeAttrVal', -100);
+    document.getElementById('nodeAttrPlus' ).onclick = () => stepValue('nodeAttrVal', +100);
+
+    document.getElementById('linkCapMinus').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      const step = parseInt(inp.step) || 50;
+      inp.value = Math.max(0, (parseInt(inp.value) || 0) - step);
+    };
+    document.getElementById('linkCapPlus').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      const step = parseInt(inp.step) || 50;
+      inp.value = Math.max(0, (parseInt(inp.value) || 0) + step);
+    };
+
+    document.getElementById('linkFlowMinus').onclick = () => stepValue('linkFlowVal', -500);
+    document.getElementById('linkFlowPlus' ).onclick = () => stepValue('linkFlowVal', +500);
+
+    // ± knoppen nieuw-wegvak dialoog
+    document.getElementById('linkAddCapMinus').onclick  = () => { const i = document.getElementById('linkAddCapVal');   i.value = Math.max(0, (parseFloat(i.value)||0) - 100); };
+    document.getElementById('linkAddCapPlus' ).onclick  = () => { const i = document.getElementById('linkAddCapVal');   i.value = (parseFloat(i.value)||0) + 100; };
+    document.getElementById('linkAddSpeedMinus').onclick = () => { const i = document.getElementById('linkAddSpeedVal'); i.value = Math.max(1, (parseFloat(i.value)||0) - 10); };
+    document.getElementById('linkAddSpeedPlus' ).onclick = () => { const i = document.getElementById('linkAddSpeedVal'); i.value = (parseFloat(i.value)||0) + 10; };
+    document.getElementById('linkAddLanesMinus').onclick = () => { const i = document.getElementById('linkAddLanesVal'); i.value = Math.max(1, (parseInt(i.value)||1) - 1); };
+    document.getElementById('linkAddLanesPlus' ).onclick = () => { const i = document.getElementById('linkAddLanesVal'); i.value = (parseInt(i.value)||1) + 1; };
+
+    document.getElementById('linkFlowDialogCancel').onclick = closeLinkFlowDialog;
+
+    document.getElementById('linkFlowDialogOk').onclick = () => {
+      if (!activeLinkFlowFeature) return;
+      const p = activeLinkFlowFeature.properties;
+      const linkId = String(p.linkId ?? p.id ?? '');
+      const raw = document.getElementById('linkFlowVal').value.trim();
+      if (!raw) { closeLinkFlowDialog(); return; }
+      // Valideer: +getal, -getal of absoluut getal
+      if (!/^[+-]?\d+$/.test(raw)) return;
+      pendingChanges = pendingChanges.filter(c => !(c._isLinkFlow && String(c.linkId) === linkId));
+      pendingChanges.push({
+        linkId,
+        flow: raw,
+        _label:       p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+        _isLinkFlow:  true,
+      });
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+      closeLinkFlowDialog();
+    };
+
+    document.getElementById('linkDialogCancel').onclick = closeLinkDialog;
+
+    document.getElementById('linkDialogOk').onclick = () => {
+      if (!activeLinkFeature) return;
+      const p   = activeLinkFeature.properties;
+      const linkId = String(p.linkId ?? p.id ?? '');
+      const inp = document.getElementById('linkCapVal');
+      const raw = inp.value.trim();
+      const cap = parseInt(raw);
+      if (!raw || isNaN(cap) || cap < 0) { closeLinkDialog(); return; }
+
+      pendingChanges = pendingChanges.filter(c => c.linkId == null || String(c.linkId) !== linkId);
+      const entry = {
+        linkId,
+        capacity: cap,
+        _label:   p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+        _isLink:  true,
+      };
+      if (activeLinkSpeed != null) entry.speed = activeLinkSpeed;
+      pendingChanges.push(entry);
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+      closeLinkDialog();
+    };
+
+    document.getElementById('nodeDialogCancel').onclick = closeNodeDialog;
+
+    document.getElementById('nodeDialogOk').onclick = () => {
+      if (!activeNodeFeature) return;
+      const p    = activeNodeFeature.properties;
+      const prod = document.getElementById('nodeProdVal').value.trim();
+      const attr = document.getElementById('nodeAttrVal').value.trim();
+      if (!prod && !attr) { closeNodeDialog(); return; }
+
+      // Verwijder eventuele bestaande wijziging voor dit id
+      const featureId = p.zoneId;
+      pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== featureId);
+
+      const isNetworkNode = p.zoneClass === 'NETWORK_NODE';
+      const change = isNetworkNode ? { nodeId: p.zoneId } : { zoneId: p.zoneId };
+      if (prod) change.production = prod;
+      if (attr) change.attraction = attr;
+      change._label     = p.zoneName || p.zoneId;
+      change._zoneClass = p.zoneClass;
+      pendingChanges.push(change);
+
+       _setChangesPanelReadOnly(false);
+       renderChangesList();
+      closeNodeDialog();
+    };
+
+    // ── Wijzigingenlijst ────────────────────────────────────────────────────
+
+     // ── Highlight vanuit wijzigingslijst ────────────────────────────────────
+
+      /** Zoek het centroid-coördinaat van een zone/knoop (zoneFeaturesRaw eerst, dan nodeCoords). */
+      function _zoneCentroidCoord(zoneId) {
+        let coord = null;
+        const zf = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(zoneId));
+        if (zf) {
+          const p = zf.properties;
+          const lon = p.centroidLon ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[1] : null);
+          if (lon != null) coord = [lon, lat];
+        }
+        if (!coord) coord = nodeCoords.get(Number(zoneId)) ?? nodeCoords.get(zoneId);
+        return coord;
+      }
+
+      function clearHighlight() {
+        highlightedChangeIndex = null;
+        if (map.getSource(HL_SOURCE))
+          map.getSource(HL_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        document.querySelectorAll('.change-item.highlighted')
+          .forEach(el => el.classList.remove('highlighted'));
+      }
+
+     /**
+      * Licht de kaartfeature op die hoort bij pendingChanges[idx].
+      * Tweede klik op hetzelfde item: highlight uitzetten.
+      */
+      function highlightChange(idx) {
+        if (highlightedChangeIndex === idx) { clearHighlight(); return; }
+        clearHighlight();
+        initHighlightLayers();  // lazy init
+        const c = pendingChanges[idx];
+        if (!c) return;
+
+        let geometry = null;
+        let center   = null;
+
+         if (c._isLink || c._isLinkFlow) {
+           // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
+           const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
+           if (coords && coords.length >= 2) {
+             geometry = { type: 'LineString', coordinates: coords };
+             // Vlieg naar het middenpunt van de lijn
+             const mid = Math.floor(coords.length / 2);
+             center = coords[mid];
+           }
+         } else if (c._isLinkAdd) {
+          // Getekende lijn
+          const coords = c.geometry?.coordinates;
+          if (coords && coords.length >= 2) {
+            geometry = { type: 'LineString', coordinates: coords };
+            center = coords[Math.floor(coords.length / 2)];
+          }
+        } else if (c._isOd) {
+          // OD-paar: pijl van herkomst- naar bestemmingscentroid
+          const fromCoord = _zoneCentroidCoord(c.fromZoneId);
+          const toCoord   = _zoneCentroidCoord(c.toZoneId);
+          if (fromCoord && toCoord) {
+            geometry = { type: 'LineString', coordinates: [fromCoord, toCoord] };
+            center   = [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2];
+          }
+        } else {
+         // Knoop: zoek eerst in zoneFeaturesRaw, dan in nodeCoords
+         const coord = _zoneCentroidCoord(c.zoneId ?? c.nodeId);
+         if (coord) {
+           geometry = { type: 'Point', coordinates: coord };
+           center   = coord;
+         }
+       }
+
+        if (!geometry) return;
+
+        map.getSource(HL_SOURCE).setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry, properties: { _isOd: !!c._isOd } }],
+        });
+
+         if (center)
+           map.easeTo({ center, speed: 1.2, essential: true });
+
+         highlightedChangeIndex = idx;
+       }
+
+      /**
+       * Highlight voor een historisch wijzigingsitem (al toegepast).
+       * Gebruikt dezelfde geometrie-opzoeking als highlightChange maar werkt
+       * direct met het wijzigings-object en het DOM-element (geen pendingChanges-index).
+       * Tweede klik op hetzelfde item: highlight uitzetten.
+       */
+      function _highlightHistChange(h, el) {
+        initHighlightLayers();          // lazy init: HL source/layers aanmaken als ze er nog niet zijn
+        const wasHighlighted = el.classList.contains('highlighted');
+        clearHighlight();
+        if (wasHighlighted) return;
+
+        let geometry = null;
+        let center   = null;
+
+        const isOdHist = h.fromZoneId != null && h.toZoneId != null;
+
+        if (isOdHist) {
+          // OD-paar: pijl van herkomst- naar bestemmingscentroid
+          const fromCoord = _zoneCentroidCoord(h.fromZoneId);
+          const toCoord   = _zoneCentroidCoord(h.toZoneId);
+          if (fromCoord && toCoord) {
+            geometry = { type: 'LineString', coordinates: [fromCoord, toCoord] };
+            center   = [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2];
+          }
+        } else if (h.linkId != null) {
+          const coords = linkGeomMap.get(h.linkId) ?? linkGeomMap.get(Number(h.linkId));
+          if (coords && coords.length >= 2) {
+            geometry = { type: 'LineString', coordinates: coords };
+            center   = coords[Math.floor(coords.length / 2)];
+          }
+        } else {
+          const coord = _zoneCentroidCoord(h.zoneId ?? h.nodeId);
+          if (coord) {
+            geometry = { type: 'Point', coordinates: coord };
+            center   = coord;
+          }
+        }
+
+        if (!geometry || !map.getSource(HL_SOURCE)) return;
+        map.getSource(HL_SOURCE).setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry, properties: { _isOd: isOdHist } }],
+        });
+        if (center) map.easeTo({ center, speed: 1.2, essential: true });
+        el.classList.add('highlighted');
+      }
+
+     // Zet het paneel in alleen-lezen modus (☰-knop) of normale modus.
+     // Bij on=true: fetch wijzigingsketen van server, toon paneel.
+     // Bij on=false: verberg historische items, herstel normale zichtbaarheidslogica.
+     async function _setChangesPanelReadOnly(on) {
+       _changesPanelReadOnly = on;
+       const panel = document.getElementById('changesPanel');
+       const btn   = document.getElementById('viewChangesBtn');
+       panel.classList.toggle('changesPanel--readonly', on);
+       if (btn) btn.classList.toggle('active', on);
+       if (on) {
+         panel.style.display = 'block';
+         try {
+           const res  = await fetch(`/collections/changes/items?areaId=${AREA_ID}`);
+           const data = await res.json();
+           _historicalChanges = data.features?.map(f => f.properties) ?? [];
+         } catch { _historicalChanges = []; }
+         renderChangesList();
+       } else {
+         _historicalChanges = [];
+         renderChangesList();
+       }
+     }
+
+     function renderChangesList() {
+      const panel = document.getElementById('changesPanel');
+      const list  = document.getElementById('changesList');
+      const count = document.getElementById('changesCount');
+
+      const wasHidden = panel.style.display === 'none' || panel.style.display === '';
+      panel.style.display = (pendingChanges.length || _changesPanelReadOnly) ? 'block' : 'none';
+
+      // Badge op ☰-knop bijwerken
+      const badge = document.getElementById('viewChangesBadge');
+      if (badge) badge.textContent = pendingChanges.length || '';
+
+      // Vul default scenario-naam in als het veld leeg is (of paneel net zichtbaar wordt)
+      const nameInput = document.getElementById('scenarioNameInput');
+      if (pendingChanges.length && (wasHidden || !nameInput.value.trim())) {
+        nameInput.value = `${networkName} (${scenarioCounter})`;
+      }
+      // Sync debug-vinkje met globale toestand
+      document.getElementById('adjustDebug').checked = !!window._debugMode;
+      count.textContent   = pendingChanges.length;
+      list.innerHTML = '';
+
+      // ── Sectiekop boven openstaande wijzigingen (alleen als er ook historische zijn) ──
+      if (_changesPanelReadOnly && pendingChanges.length && _historicalChanges.length) {
+        const sep = document.createElement('div');
+        sep.className   = 'change-section-header';
+        sep.textContent = T('changesPendingSection');
+        list.appendChild(sep);
+      }
+
+      pendingChanges.forEach((c, i) => {
+        const fmt = v => {
+          if (v == null) return null;
+          const s = String(v).trim();
+          if (s.startsWith('+') || s.startsWith('-')) return `Δ${s}`;
+          return `=${s}`;
+        };
+        const parts = [];
+        if (c._isLink) {
+          if (c.capacity === 0) {
+            parts.push(T('changeClosedLabel'));
+          } else {
+            parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+            if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
+          }
+        } else if (c._isLinkAdd) {
+          parts.push(T('changeNewLinkLabel', c.capacity, c.speed, c.lanes));
+        } else if (c._isLinkFlow) {
+          const raw = String(c.flow ?? '');
+          const display = raw.startsWith('+') || raw.startsWith('-') ? `Δ${raw}` : `=${raw}`;
+          parts.push(T('changeFlowLabel', display));
+        } else if (c._isOd) {
+          const loc  = T('numberLocale');
+          const prod = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(c.fromZoneId))?.properties?.production ?? 0;
+          const trips = (prod * c.tripFraction).toLocaleString(loc, { maximumFractionDigits: 1 });
+          parts.push(T('changeOdTripsLabel', trips));
+        } else {
+          if (c.production != null) parts.push(T('changeProdLabel', fmt(c.production)));
+          if (c.attraction != null) parts.push(T('changeAttrLabel', fmt(c.attraction)));
+        }
+
+        const item = document.createElement('div');
+        item.className = 'change-item' + (highlightedChangeIndex === i ? ' highlighted' : '');
+        item.innerHTML = `
+          <div class="change-item-label">
+            ${c._label || c.zoneId}
+            <span>${parts.join(' · ')}</span>
+          </div>
+          <button class="change-item-del" title="${T('changeItemDel')}">×</button>`;
+        item.querySelector('.change-item-del').onclick = e => {
+          e.stopPropagation();
+          if (highlightedChangeIndex === i) clearHighlight();
+          else if (highlightedChangeIndex > i) highlightedChangeIndex--;
+          pendingChanges.splice(i, 1);
+          renderChangesList();
+        };
+        item.onclick = () => highlightChange(i);
+        list.appendChild(item);
+      });
+
+      // ── Historische wijzigingen (van server, alleen in read-only modus) ───────
+      if (_changesPanelReadOnly) {
+        if (!pendingChanges.length && !_historicalChanges.length) {
+          // Lege staat
+          const empty = document.createElement('div');
+          empty.style.cssText = 'color:#5a6272;padding:10px 16px;font-size:12px';
+          empty.textContent   = T('noChanges');
+          list.appendChild(empty);
+        } else {
+          // Gegroepeerd per scenario (server stuurt oudste-eerst)
+          let lastAreaId = null;
+          for (const h of _historicalChanges) {
+            if (h.areaId !== lastAreaId) {
+              const sep = document.createElement('div');
+              sep.className   = 'change-section-header';
+              sep.textContent = h.scenarioName || h.areaId;
+              list.appendChild(sep);
+              lastAreaId = h.areaId;
+            }
+            const fmt = v => v == null ? null : (String(v).match(/^[+-]/) ? `Δ${v}` : `=${v}`);
+            const isOdHist = h.fromZoneId != null && h.toZoneId != null;
+            const parts = [];
+            if (isOdHist) {
+              const prod = h.originProduction ?? 0;
+              const frac = h.tripFraction    ?? 0;
+              const trips = (prod * frac).toLocaleString(T('numberLocale'), { maximumFractionDigits: 1 });
+              parts.push(T('changeOdTripsLabel', trips));
+            } else if (h.linkId != null) {
+              if (h.flow != null) {
+                const raw = String(h.flow);
+                const display = raw.startsWith('+') || raw.startsWith('-') ? `Δ${raw}` : `=${raw}`;
+                parts.push(T('changeFlowLabel', display));
+              } else if (h.capacity === 0) {
+                parts.push(T('changeClosedLabel'));
+              } else {
+                parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+              }
+            } else {
+              if (h.production != null) parts.push(T('changeProdLabel', fmt(h.production)));
+              if (h.attraction != null) parts.push(T('changeAttrLabel', fmt(h.attraction)));
+            }
+            const label = isOdHist                ? `OD ${h.fromZoneId} → ${h.toZoneId}`
+                        : h.linkId != null        ? T('changesHistLinkLabel', h.linkId)
+                        : h.nodeId != null        ? T('changesHistNodeLabel', h.nodeId)
+                        :                           T('changesHistZoneLabel', h.zoneId);
+            const item = document.createElement('div');
+            item.className = 'change-item change-item-hist';
+            item.innerHTML = `<div class="change-item-label">${label}<span>${parts.join(' · ')}</span></div>`;
+            item.onclick   = () => _highlightHistChange(h, item);
+            list.appendChild(item);
+          }
+        }
+      }
+
+      updateClosedLinksLayer();
+      updateSpeedSignLayer();
+      updateOverlay(true);   // deck.gl-bordjeslaag (makeEditSignLayer) bijwerken
+    }
+
+    // ── Doorvoeren (adjust) ──────────────────────────────────────────────────
+
+    document.getElementById('applyChangesBtn').addEventListener('click', async () => {
+      if (!pendingChanges.length) return;
+      const btn    = document.getElementById('applyChangesBtn');
+      const status = document.getElementById('applyStatus');
+      btn.disabled = true;
+      status.style.display = 'block';
+      status.textContent   = T('applyStart');
+
+      // Verberg edit-schermpjes direct bij starten doorvoeren
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+      if (linkAddActive)  document.getElementById('linkAddBtn').click();
+
+      // Toon wacht-overlay over het netwerk
+      const overlay    = document.getElementById('calcOverlay');
+      const overlayMsg = document.getElementById('calcOverlayMsg');
+      overlay.style.display = 'flex';
+      overlayMsg.textContent = T('applyStart');
+
+      // Bouw changes-array op modus —
+      // MIXED: per modus één API-aanroep op basis van de link-modus in segments.
+      // Overige: één aanroep voor de gehele MODE.
+      const serializeChange = c => {
+        if (c._isLink) {
+          return c.speed != null ? { linkId: c.linkId, speed: c.speed }
+                                 : { linkId: c.linkId, capacity: c.capacity };
+        }
+        if (c._isLinkAdd) {
+          return { geometry: c.geometry, capacity: c.capacity, speed: c.speed, lanes: c.lanes };
+        }
+        if (c._isLinkFlow) {
+          return { linkId: c.linkId, flow: c.flow };
+        }
+        if (c._isOd) {
+          const obj = { fromZoneId: c.fromZoneId, toZoneId: c.toZoneId,
+                        tripFraction: c.tripFraction,
+                        originProduction: c.originProduction };
+          if (c.motifRatio) obj.motifRatio = c.motifRatio;
+          return obj;
+        }
+        const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
+        if (c.production != null) obj.production = c.production;
+        if (c.attraction != null) obj.attraction = c.attraction;
+        return obj;
+      };
+
+      const scenarioName = document.getElementById('scenarioNameInput').value.trim()
+                        || `${networkName} (${scenarioCounter})`;
+
+      // Bouw job-wachtrij: één invoer per getroffen modus
+      let jobQueue;
+      if (MODE === 'MIXED') {
+        // Bouw linkId → modus-map vanuit de netwerksegmenten
+        const linkModeMap = {};
+        for (const seg of segments) {
+          const lid = String(seg.props.linkId ?? seg.props.id ?? '');
+          if (lid) linkModeMap[lid] = (seg.props.mode || 'CAR').toUpperCase();
+        }
+        const constituentModes = [...new Set(Object.values(linkModeMap))];
+        // Verdeel wijzigingen per modus; zone/knoop-wijzigingen gelden voor alle modi
+        const changesByMode = {};
+        for (const c of pendingChanges) {
+          const affected = c._isLink
+            ? [linkModeMap[String(c.linkId)] ?? 'CAR']
+            : constituentModes;
+          for (const m of affected) {
+            (changesByMode[m] = changesByMode[m] ?? []).push(c);
+          }
+        }
+        jobQueue = Object.entries(changesByMode)
+          .map(([m, mChanges]) => ({ mode: m, changes: mChanges.map(serializeChange) }));
+      } else {
+        jobQueue = [{ mode: MODE, changes: pendingChanges.map(serializeChange) }];
+      }
+
+      // Hulpfunctie: poll een job tot gereed; geeft job_id terug bij succes
+      const pollJobPromise = job_id => new Promise((resolve, reject) => {
+        const POLL_DELAYS = [10000, 5000, 3000, 2000];
+        let pollStep = 0;
+        const schedulePoll = () => setTimeout(doPoll,
+          pollStep < POLL_DELAYS.length ? POLL_DELAYS[pollStep++] : 1000);
+        const doPoll = async () => {
+          try {
+            const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
+            if (sj.status === 'running' || sj.status === 'accepted') {
+              status.textContent = overlayMsg.textContent = T('applyRunning');
+              schedulePoll();
+            } else if (sj.status === 'successful') {
+              resolve(job_id);
+            } else {
+              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
+              reject(new Error(errLines.length
+                ? errLines.join('\n')
+                : T('applyError', sj.returncode)));
+            }
+          } catch (e) { reject(e); }
+        };
+        schedulePoll();
+      });
+
+      status.style.display = 'block';
+      try {
+        let lastResults = null;
+        for (let qi = 0; qi < jobQueue.length; qi++) {
+          const { mode: jobMode, changes: jobChanges } = jobQueue[qi];
+          const effectiveSource = qi === 0 ? AREA_ID : lastResults.new_area_id;
+          const res = await fetch('/processes/adjust/execution', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inputs: {
+              area_id: effectiveSource,
+              mode: jobMode,
+              changes: jobChanges,
+              scenario_name: scenarioName,
+              debug: document.getElementById('adjustDebug').checked,
+            }}),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const { jobID: job_id } = await res.json();
+          status.textContent = overlayMsg.textContent = T('applyRunning');
+          await pollJobPromise(job_id);
+          lastResults = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+        }
+        btn.disabled = false;
+        overlay.style.display = 'none';
+        scenarioCounter++;
+        clearHighlight();
+        _setChangesPanelReadOnly(false);
+        pendingChanges = [];
+        document.getElementById('scenarioNameInput').value = '';
+        renderChangesList();
+        await loadAdjustedResult(lastResults.new_area_id, lastResults.compare_url);
+      } catch (err) {
+        status.style.color = '#ff6b6b';
+        status.textContent = overlayMsg.textContent = err?.message || T('applyFetchError', String(err));
+        btn.disabled = false;
+        overlay.style.display = 'none';
+      }
+    });
+
+    async function loadAdjustedResult(newAreaId, compareUrl) {
+      // Nieuw scenario binnenkomen: 3D-weergaveopties altijd terug op UIT,
+      // ongeacht wat er in het vorige scenario/sessie aanstond.
+      _resetSceneryDisplayDefaults();
+
+      // Herlaad netwerk, routes en zones in-place zonder de kaartpositie te wijzigen.
+      const mkUrl = (type) => {
+        const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+        const coll = collMap[type] || type.toLowerCase();
+        return `/collections/${coll}/items?areaId=${encodeURIComponent(newAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      };
+
+      // ── Netwerk ──────────────────────────────────────────────────────────
+      const newGeojson  = await fetch(mkUrl('NETWORK')).then(r => r.json());
+      const newFeatures = newGeojson.features.filter(
+        f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+      );
+      _networkFeatures = newFeatures; // highlight-lookup bijwerken
+
+      // Vervang segmenten in-place
+      const newFlows   = newFeatures.map(f => f.properties.flow);
+      const newMinFlow = Math.min(...newFlows);
+      const newRange   = (Math.max(...newFlows) - newMinFlow) || 1;
+      segments.length = 0;
+      newFeatures.forEach(f => segments.push({
+        coords:  f.geometry.coordinates,
+        length:  linkLengthM(f),
+        speedMs: f.properties.speed / 3.6,
+        flow:    f.properties.flow,
+        norm:    (f.properties.flow - newMinFlow) / newRange,
+        props:   f.properties,
+      }));
+
+      // Herbouw graph
+      linkGeomMap.clear(); linkSpeedMap.clear(); linkCapacityMap.clear(); linkLenAttrMap.clear();
+      nodeCoords.clear();  nodeLinkMap.clear();  adj.clear();  adjReverse.clear();
+      _netIndexVersion++;   // grid-index voor nearest-link/-node opnieuw opbouwen
+      for (const f of newGeojson.features) {
+        const p = f.properties, c = f.geometry.coordinates;
+        if (!p.fromNode || !p.toNode || !c?.length) continue;
+        linkGeomMap.set(p.linkId,      c);
+        linkSpeedMap.set(p.linkId,     p.speed > 0 ? p.speed / 3.6 : 10);
+        linkCapacityMap.set(p.linkId,  p.capacity ?? 1800);
+        if (p.length > 0) linkLenAttrMap.set(p.linkId, p.length);
+        nodeCoords.set(p.fromNode, c[0]);
+        nodeCoords.set(p.toNode,   c[c.length - 1]);
+        nodeLinkMap.set(p.linkId,  { fromNode: p.fromNode, toNode: p.toNode });
+        if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
+        adj.get(p.fromNode).push({
+          toNode:   p.toNode,
+          linkId:   p.linkId,
+          length:   p.length || 1,
+          coords:   c,
+          speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+          linkMode: p.mode ? p.mode.toUpperCase() : null,
+        });
+        if (!adjReverse.has(p.toNode)) adjReverse.set(p.toNode, []);
+        adjReverse.get(p.toNode).push({
+          toNode:   p.fromNode,
+          linkId:   p.linkId,
+          length:   p.length || 1,
+          coords:   c,
+          speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+          linkMode: p.mode ? p.mode.toUpperCase() : null,
+        });
+      }
+      // Vervang geojson.features met een nieuwe array zodat deck.gl de referentiewijziging detecteert
+      geojson.features = newGeojson.features;
+
+      // Haaientanden (B6) opnieuw afleiden voor het nieuwe scenario/netwerk.
+      _taRebuildGiveWayMarks();
+
+      rebuildLinkFlowMap();
+      dijkstraCache.clear();
+
+      // Titel updaten
+      const newName = newGeojson.properties?.name || newAreaId;
+      window._networkName = newName;
+      document.getElementById('networkTitle').textContent = T('networkTitle', newName);
+      // document.title = T('pageTitle', newName);
+
+      // ── Zones ────────────────────────────────────────────────────────────
+      try {
+        const zr = await fetch(mkUrl('ZONE'));
+        if (zr.ok) {
+          zoneFeaturesRaw = (await zr.json()).features || [];
+          zoneMap.clear();
+          for (const f of zoneFeaturesRaw) {
+            const p = f.properties;
+            if (p.zoneId) zoneMap.set(p.zoneId, {
+              from:     p.fromNodeProportions || {},
+              to:       p.toNodeProportions   || {},
+              boundary: p.zoneClass === 'BOUNDARY',
+            });
+          }
+        }
+      } catch (e) { console.warn('Zones herlaad mislukt:', e); }
+
+      // ── Routes ───────────────────────────────────────────────────────────
+      try {
+        routeList.length = 0;
+        if (MODE === 'MIXED') {
+          const mkModeUrl = m => mkUrl('ROUTES').replace(/mode=[^&]+/, `mode=${m}`);
+          const [carFc, bikeFc] = await Promise.all([
+            fetch(mkModeUrl('CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch(mkModeUrl('BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
+          ]);
+          _parseAndAddRoutes(carFc,  'CAR');
+          _parseAndAddRoutes(bikeFc, 'BIKE');
+        } else {
+          const rr = await fetch(mkUrl('ROUTES'));
+          if (rr.ok) _parseAndAddRoutes(await rr.json(), MODE);
+        }
+        totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
+        routeMode = routeList.length > 0;
+        buildLinkRouteMap();
+        calibrateRouteProductions();  // herkalibreren tegen vers geladen netwerk/routes
+        if (routeMode) {
+          document.getElementById('odEditBtn').style.display   = '';
+        }
+      } catch (e) { console.warn('Routes herlaad mislukt:', e); }
+
+      // ── Node-laag bijwerken als die actief is ─────────────────────────────
+      if (nodeEditActive) addNodeLayer();
+
+      // ── COMPARE ──────────────────────────────────────────────────────────
+      if (compareUrl) {
+        try {
+          const cr = await fetch(compareUrl);
+          if (cr.ok) {
+            compareData = await cr.json();
+            if (map.getSource(CMP_SOURCE)) {
+              map.getSource(CMP_SOURCE).setData(compareData);
+            } else {
+              addCompareLayer();
+            }
+            syncCompareOption(true);
+          }
+        } catch (e) { console.warn('COMPARE herlaad mislukt:', e); }
+      }
+
+      // ── Overlay en autos bijwerken ────────────────────────────────────────
+      // Stop bewerkingsmodus als die nog actief was
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+      deactivateWhatifRc();
+
+      // Simulatie altijd gepauzeerd starten bij het laden van een (nieuw) scenario,
+      // ongeacht de afspeelstand in het vorige scenario/sessie.
+      paused = true;
+      _setSimPausedUI(true);
+
+      updateLegend();
+      updateClosedLinksLayer();
+      updateSpeedSignLayer();
+      rebuildCars();
+      updateOverlay(true);
+
+      // AREA_ID bijwerken zodat vervolgacties (doorvoeren, adjust) het nieuwe gebied gebruiken
+      // Sla huidig gebied op als bronscenario voor ScenarioVergelijker vóór de update
+      splitViewSrcAreaId = AREA_ID;
+      if (splitViewActive) deactivateSplitView();
+      if (diffPlotActive) deactivateDiffPlot();
+      if (diffStackActive) deactivateDiffStack();
+      if (diffSmileyActive) deactivateDiffSmiley();
+      document.getElementById('splitViewBtn').style.display = '';
+      document.getElementById('diffPlotBtn').style.display  = '';
+      document.getElementById('diffStackBtn').style.display = '';
+      document.getElementById('diffSmileyBtn').style.display = '';
+      updateDiffButtonsState();
+      AREA_ID = newAreaId;
+      window.AREA_ID = AREA_ID;
+      _historicalChanges = [];   // invalideer bij scenario-advance
+
+      // URL bijwerken met pushState zodat de browser-history gevuld wordt
+      // en de gebruiker met Backspace (of de Terug-knop) terug kan navigeren.
+      const url = new URL(window.location.href);
+      url.searchParams.set('areaId', newAreaId);
+      window.history.pushState({ areaId: newAreaId }, '', url.toString());
+    }
+    // Stel de late-bound referentie in zodat de meekijkmodus deze functie kan aanroepen.
+    _followLoadFn = loadAdjustedResult;
+
+    // ── Browser-history: popstate (Terug-knop / Backspace) ──────────────────
+    window.addEventListener('popstate', async (evt) => {
+      const prevId = evt.state?.areaId || new URLSearchParams(window.location.search).get('areaId');
+      if (prevId && prevId !== AREA_ID) {
+        AREA_ID = prevId;
+        window.AREA_ID = AREA_ID;
+        _historicalChanges = [];
+        await loadAdjustedResult(prevId, null);
+      }
+    });
+
+    // Backspace → history.back(), maar niet als focus in een tekstveld zit
+    window.addEventListener('keydown', (evt) => {
+      if (evt.key !== 'Backspace') return;
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
+      evt.preventDefault();
+      history.back();
+    });
+
+    // ── COMPARE laag ────────────────────────────────────────────────────────
+
+    const compareUrlParam = new URLSearchParams(window.location.search).get('compareUrl');
+    if (compareUrlParam) {
+      fetch(decodeURIComponent(compareUrlParam))
+        .then(r => r.json())
+        .then(fc => {
+          compareData = fc;
+          syncCompareOption(true);
+          map.once('idle', () => addCompareLayer());
+        })
+        .catch(e => console.warn('COMPARE laden mislukt:', e));
+    } else {
+      // Controleer via /collections/areas/items of er al een COMPARE-bestand is voor dit gebied
+      fetch('/collections/areas/items').then(r => r.json()).then(data => data.features.map(f => f.properties)).then(areas => {
+        const area = areas.find(a => a.areaId === AREA_ID && a.mode === MODE);
+        if (area?.hasCompare) syncCompareOption(true);
+        if (area?.srcAreaId) {
+          splitViewSrcAreaId = area.srcAreaId;
+          document.getElementById('splitViewBtn').style.display = '';
+          document.getElementById('diffPlotBtn').style.display  = '';
+          document.getElementById('diffStackBtn').style.display = '';
+          document.getElementById('diffSmileyBtn').style.display = '';
+          updateDiffButtonsState();
+        }
+      }).catch(() => {});
+    }
+
+    function addCompareLayer() {
+      if (!compareData || map.getSource(CMP_SOURCE)) return;
+      map.addSource(CMP_SOURCE, { type: 'geojson', data: compareData });
+
+      map.addLayer({
+        id: CMP_LAYER_MAT, type: 'fill', source: CMP_SOURCE,
+        filter: ['==', ['get', 'matchType'], 'matched'],
+        paint: { 'fill-color': '#8a8a9a', 'fill-opacity': 0.55 },
+      });
+      map.addLayer({
+        id: CMP_LAYER_INC, type: 'fill', source: CMP_SOURCE,
+        filter: ['in', ['get', 'matchType'], ['literal', ['increase', 'added']]],
+        paint: { 'fill-color': '#64dc96', 'fill-opacity': 0.88 },
+      });
+      map.addLayer({
+        id: CMP_LAYER_RED, type: 'fill', source: CMP_SOURCE,
+        filter: ['in', ['get', 'matchType'], ['literal', ['reduction', 'removed']]],
+        paint: { 'fill-color': '#ff6b6b', 'fill-opacity': 0.88 },
+      });
+
+      [CMP_LAYER_MAT, CMP_LAYER_INC, CMP_LAYER_RED].forEach(id =>
+        map.setLayoutProperty(id, 'visibility', compareVisible ? 'visible' : 'none')
+      );
+    }
+
+    function setCompareVisibility(on) {
+      [CMP_LAYER_MAT, CMP_LAYER_INC, CMP_LAYER_RED].forEach(id => {
+        if (map.getLayer(id))
+          map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+      });
+    }
+
+    // ── Vergelijking-optie in dropdown in/uitschakelen ──────────────────────
+    function syncCompareOption(hasCompare) {
+      const opt = document.getElementById('compareOption');
+      opt.style.display = hasCompare ? '' : 'none';
+      // splitViewBtn tonen als er een bronscenario bekend is
+      document.getElementById('splitViewBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffPlotBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffStackBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffSmileyBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      updateDiffButtonsState();
+      // Als de huidige selectie 'compare' is maar er geen data meer is, reset
+      if (!hasCompare && colorMetric === 'compare') {
+        colorMetric = 'flow';
+        document.getElementById('colorMetric').value = 'flow';
+        compareVisible = false;
+        setCompareVisibility(false);
+        updateLegend();
+        updateOverlay(true);
+      }
+    }
+
+    // ── ScenarioVergelijker ──────────────────────────────────────────────────
+
+    const _mapContainer = document.getElementById('mapContainer');
+    const _mapSplitter  = document.getElementById('map-splitter');
+
+    async function activateSplitView() {
+      if (splitViewActive || !splitViewSrcAreaId) return;
+
+      const mkUrl2 = type => {
+        const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+        const coll = collMap[type] || type.toLowerCase();
+        return `/collections/${coll}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      };
+
+      try {
+        // ── Laad origineel netwerk ──────────────────────────────────────────
+        const origGeoJson  = await fetch(mkUrl2('NETWORK')).then(r => r.json());
+        const origFeatures = origGeoJson.features.filter(
+          f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+        );
+        const origFlows   = origFeatures.map(f => f.properties.flow);
+        const origMinFlow = Math.min(...origFlows);
+        const origRange   = (Math.max(...origFlows) - origMinFlow) || 1;
+        origSegments.length = 0;
+        origFeatures.forEach(f => origSegments.push({
+          coords:  f.geometry.coordinates,
+          length:  linkLengthM(f),
+          speedMs: f.properties.speed / 3.6,
+          flow:    f.properties.flow,
+          norm:    (f.properties.flow - origMinFlow) / origRange,
+          props:   f.properties,
+        }));
+        origGeojsonFeatures = origGeoJson.features;
+
+        // ── Activeer split-layout ──────────────────────────────────────────
+        splitViewActive = true;
+        _mapContainer.classList.add('split-mode');
+        map.getContainer().style.flexBasis = '';  // reset naar 50/50
+        map.resize();
+
+        // ── Maak rechterkaart aan ──────────────────────────────────────────
+        const cam = map.getCenter();
+        map2 = new maplibregl.Map({
+          container: 'map-orig',
+          style:     'https://tiles.openfreemap.org/styles/liberty',
+          center:    [cam.lng, cam.lat],
+          zoom:      map.getZoom(),
+          pitch:     map.getPitch(),
+          bearing:   map.getBearing(),
+          antialias: true,
+          maxPitch:  85,
+          attributionControl: { customAttribution: OSM_ATTRIBUTION },
+        });
+
+        map2.once('load', () => {
+          overlay2 = new MapboxOverlay({
+            interleaved: true,
+            layers: [makeNetworkLayer2()].filter(Boolean),
+            getTooltip: () => null,
+          });
+          map2.addControl(overlay2);
+
+          // Gebouwen uitschakelen op de rechterkaart (Liberty-lagen)
+          try { if (map2.getLayer('building-3d')) map2.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+          try { if (map2.getLayer('building'))    map2.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+          // Zon/sky en achtergrond gelijkstellen aan linkerkaart
+          updateSunLight();
+          if (basemapStyle) _applyBasemapStyle(basemapStyle);
+        });
+
+        // ── Camera-sync ────────────────────────────────────────────────────
+        map.on('move', _syncMap1ToMap2);
+        map2.on('move', _syncMap2ToMap1);
+
+        // ── Bewerkingen uitschakelen ───────────────────────────────────────
+        // Stop actieve bewerkingsmodi eerst
+        if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+        if (linkEditActive) document.getElementById('linkEditBtn').click();
+        // Disable knoppen zodat ze niet opnieuw gestart kunnen worden
+        ['nodeEditBtn', 'linkEditBtn', 'applyChangesBtn'].forEach(id => {
+          document.getElementById(id).disabled = true;
+        });
+
+        // ── Cars verbergen (splitViewActive = true → visible: false) ───────
+        updateOverlay(true);
+
+        // ── Gebouwen uitschakelen op beide kaarten ─────────────────────────
+        const _bdSel = document.getElementById('buildingDisplay');
+        if (_bdSel && _bdSel.value !== 'uit') {
+          _bdSel.value = 'uit';
+          _bdSel.dispatchEvent(new Event('change'));
+        }
+
+        // Knop als actief markeren
+        document.getElementById('splitViewBtn').classList.add('active');
+
+      } catch (e) {
+        console.warn('ScenarioVergelijker activeren mislukt:', e);
+        splitViewActive = false;
+        _mapContainer.classList.remove('split-mode');
+        map.resize();
+      }
+    }
+
+    function deactivateSplitView() {
+      if (!splitViewActive) return;
+
+      // Overlay-modus opruimen
+      if (overlayMode) {
+        overlayMode = false;
+        document.getElementById('map-orig').style.clipPath = '';
+        _mapSplitter.style.left = '';
+        _mapContainer.classList.remove('overlay-mode');
+      }
+
+      // Camera-sync listeners verwijderen
+      map.off('move', _syncMap1ToMap2);
+      if (map2) map2.off('move', _syncMap2ToMap1);
+
+      // map2 afbreken
+      if (overlay2) { try { overlay2.finalize(); } catch (_) {} overlay2 = null; }
+      if (map2) { map2.remove(); map2 = null; }
+
+      // Originele data leegmaken
+      origSegments.length  = 0;
+      origGeojsonFeatures  = [];
+
+      // Layout terugzetten
+      map.getContainer().style.flexBasis = '';
+      _mapContainer.classList.remove('split-mode');
+      splitViewActive = false;
+      map.resize();
+
+      // Cars terug
+      updateOverlay(true);
+
+      // Bewerkingen weer beschikbaar stellen
+      ['nodeEditBtn', 'linkEditBtn', 'applyChangesBtn'].forEach(id => {
+        document.getElementById(id).disabled = false;
+      });
+
+      document.getElementById('splitViewBtn').classList.remove('active');
+    }
+
+    // ── Verschilplot — activeren/deactiveren ────────────────────────────────────
+
+    // Gedeelde berekening: vult diffByLinkId (berekend − bron), curValByLinkId
+    // (huidige metriekwaarde) en diffMaxOrigFlow, voor de actieve colorMetric.
+    // Geeft false terug als de metriek niet ondersteund wordt.
+    async function computeDiffData() {
+      if (!splitViewSrcAreaId) return false;
+      const metric = colorMetric;
+      if (!DIFF_SUPPORTED.has(metric)) return false;
+      diffMetric = metric;
+
+      // Zorg dat de afgeleide laag (geluid/emissie) voor het huidige gebied geladen is
+      const derivedKind = DERIVED_METRIC_KIND[metric];
+      if (derivedKind) {
+        try { await ensureDerivedLayer(derivedKind); } catch (e) { /* laat leeg */ }
+      }
+
+      // Haal bron-NETWORK op
+      const netUrl = `/collections/network/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      const origGeoJson  = await fetch(netUrl).then(r => r.json());
+      const origFeatures = origGeoJson.features.filter(
+        f => f.geometry?.type === 'LineString' && f.properties?.linkId != null
+      );
+
+      // Haal bron-versie van de afgeleide laag op (geluid/emissie) indien nodig
+      let srcNoiseMap = null, srcEmisMap = null;
+      if (derivedKind) {
+        try {
+          const dUrl = `/collections/${derivedKind}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+          const dFc  = await fetch(dUrl).then(r => r.ok ? r.json() : { features: [] });
+          const m = new Map();
+          for (const f of (dFc.features || [])) {
+            const p = f.properties || {};
+            if (p.linkId != null) m.set(p.linkId, p);
+          }
+          if (derivedKind === 'noise') srcNoiseMap = m; else srcEmisMap = m;
+        } catch (e) { /* bron-data ontbreekt → links zonder bronwaarde worden overgeslagen */ }
+      }
+
+      // Bouw map linkId → bron-metriekwaarde
+      const origValByLinkId = new Map();
+      let maxOrigVal = 0;
+      for (const f of origFeatures) {
+        const v = evalMetric(f.properties, metric, srcNoiseMap, srcEmisMap);
+        if (v == null || !isFinite(v)) continue;
+        origValByLinkId.set(f.properties.linkId, v);
+        if (v > maxOrigVal) maxOrigVal = v;
+      }
+      diffMaxOrigFlow = maxOrigVal || 1;
+
+      // Bereken verschil per linkId: berekend − bron (alleen als beide geldig)
+      diffByLinkId.clear();
+      curValByLinkId.clear();
+      let maxAbs = 0;
+      for (const seg of segments) {
+        const linkId  = seg.props.linkId;
+        const curVal  = evalMetric(seg.props, metric, noiseByLinkId, emisByLinkId);
+        if (curVal == null || !isFinite(curVal)) continue;
+        curValByLinkId.set(linkId, curVal);
+        const origVal = origValByLinkId.get(linkId);
+        if (origVal == null) continue;   // geen bronwaarde → geen betrouwbaar verschil
+        const d = curVal - origVal;
+        diffByLinkId.set(linkId, d);
+        if (Math.abs(d) > maxAbs) maxAbs = Math.abs(d);
+      }
+      diffMaxAbs = maxAbs || 1;
+      diffVersion++;   // forceer hertekening van de deck.gl-lagen
+      return true;
+    }
+
+    // Korte, vanzelf verdwijnende melding (voor verschilplot-beperkingen e.d.)
+    let _diffToastTimer = null;
+    function _diffToast(msg) {
+      let el = document.getElementById('_diffToast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = '_diffToast';
+        el.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);' +
+          'background:rgba(20,24,34,0.94);color:#e8ecf4;padding:8px 14px;border-radius:6px;' +
+          'font-size:12px;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.4);' +
+          'border:1px solid rgba(126,200,227,0.4);transition:opacity 0.3s;';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg;
+      el.style.opacity = '1';
+      clearTimeout(_diffToastTimer);
+      _diffToastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2600);
+    }
+
+    // Werk de knop-status (enabled/disabled + title) bij op basis van de actieve
+    // metriek en de aanwezigheid van een bronscenario.
+    function updateDiffButtonsState() {
+      const hasSrc     = !!splitViewSrcAreaId;
+      const supported  = DIFF_SUPPORTED.has(colorMetric);
+      const additive   = DIFF_ADDITIVE.has(colorMetric);
+      const plotBtn    = document.getElementById('diffPlotBtn');
+      const stackBtn   = document.getElementById('diffStackBtn');
+      const smileyBtn  = document.getElementById('diffSmileyBtn');
+      if (!plotBtn || !stackBtn) return;
+
+      const plotOk  = hasSrc && supported;
+      const stackOk = hasSrc && supported && additive;
+      plotBtn.disabled  = !plotOk;
+      stackBtn.disabled = !stackOk;
+      plotBtn.style.opacity  = plotOk  ? '' : '0.4';
+      stackBtn.style.opacity = stackOk ? '' : '0.4';
+      if (smileyBtn) {
+        smileyBtn.disabled = !plotOk;
+        smileyBtn.style.opacity = plotOk ? '' : '0.4';
+        smileyBtn.title = supported
+          ? 'Verschilplot met smileys (Δ ' + metricShortLabel(colorMetric) + ')'
+          : 'Verschilplot niet beschikbaar voor deze kaartlaag';
+      }
+      plotBtn.title  = supported
+        ? 'Verschilplot (Δ ' + metricShortLabel(colorMetric) + ')'
+        : 'Verschilplot niet beschikbaar voor deze kaartlaag';
+      stackBtn.title = !supported
+        ? 'Verschilplot niet beschikbaar voor deze kaartlaag'
+        : additive
+          ? 'Verschilplot met ongewijzigd deel (Δ ' + metricShortLabel(colorMetric) + ')'
+          : 'Gestapelde plot alleen voor optelbare grootheden (niet voor deze kaartlaag)';
+    }
+
+    /** Eenheid voor een metriek (voor tooltips/titels van de verschilplot). */
+    function metricUnit(metric) {
+      switch (metric) {
+        case 'occupancy': case 'occupancy_scaled':
+        case 'coverage':  case 'coverage_scaled': return '%';
+        case 'speed':        return 'km/h';
+        case 'noise_lden':
+        case 'noise_lnight': return 'dB(A)';
+        case 'emis_co2':
+        case 'emis_nox':
+        case 'emis_pm10':    return 'kg/km';
+        default:             return T('legendUnit');   // flow/capacity → vtg/u
+      }
+    }
+    function metricShortLabel(metric) { return metricUnit(metric); }
+    /** Label-key voor de actieve Snelheid-sub-laag (binaire / future metrics). */
+    function metricShortLabelKey(metric) {
+      const map = {
+        speed_crossings: 'legendSpeedCrossings', speed_cycle_crossings: 'legendSpeedCycleCrossings',
+        speed_intersections: 'legendSpeedIntersections', speed_yield: 'legendSpeedYield', speed_refuge: 'legendSpeedRefuge',
+        speed_from_right: 'legendSpeedFromRight', speed_left_turn: 'legendSpeedLeftTurn',
+        speed_oncoming: 'legendSpeedOncoming', speed_penalty_total: 'legendSpeedPenaltyTotal',
+        priority_roads: 'legendPriorityRoads',
+      };
+      return map[metric] || null;
+    }
+
+    /** Formatteer een metriekwaarde met passende afronding + eenheid. */
+    function fmtMetricVal(v, metric) {
+      if (v == null || !isFinite(v)) return '–';
+      const loc = T('numberLocale');
+      const u = metricUnit(metric);
+      const dec = (metric === 'noise_lden' || metric === 'noise_lnight') ? 1
+                : (metric && metric.startsWith('emis_')) ? 3
+                : (metric === 'occupancy' || metric === 'occupancy_scaled' ||
+                   metric === 'coverage'  || metric === 'coverage_scaled' ||
+                   metric === 'speed') ? 0 : 0;
+      const num = (dec > 0) ? Number(v.toFixed(dec)).toLocaleString(loc)
+                            : Math.round(v).toLocaleString(loc);
+      return num + ' ' + u;
+    }
+
+    /** Zorg dat actieve verschilplots verenigbaar zijn met de huidige metriek;
+     *  deactiveer + meld indien niet. Werk daarna de knop-status bij. */
+    function _ensureDiffCompatible() {
+      const okPlot  = DIFF_SUPPORTED.has(colorMetric);
+      const okStack = okPlot && DIFF_ADDITIVE.has(colorMetric);
+      if (diffPlotActive && !okPlot) {
+        deactivateDiffPlot();
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      if (diffStackActive && !okStack) {
+        deactivateDiffStack();
+        _diffToast(okPlot
+          ? 'De gestapelde plot werkt alleen voor optelbare grootheden.'
+          : 'Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      if (diffSmileyActive && !okPlot) {
+        deactivateDiffSmiley();
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      updateDiffButtonsState();
+    }
+
+    async function activateDiffPlot() {
+      if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      // Zorg dat split-view / gestapelde plot niet tegelijk actief zijn
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffStack();
+
+      try {
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
+
+        diffPlotActive = true;
+        document.getElementById('diffPlotBtn').classList.add('active');
+        document.getElementById('legendDiff').style.display = '';
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Verschilplot activeren mislukt:', e);
+        diffPlotActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffPlot() {
+      if (!diffPlotActive) return;
+      diffPlotActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffPlotBtn').classList.remove('active');
+      document.getElementById('legendDiff').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
+    // ── Gestapelde verschilplot (grijze kern + gekleurde rand) ──────────────────
+    async function activateDiffStack() {
+      if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      if (!DIFF_ADDITIVE.has(colorMetric)) {
+        _diffToast('De gestapelde plot werkt alleen voor optelbare grootheden (bijv. intensiteit, emissies).');
+        return;
+      }
+      // Onderling exclusief met split-view en de gewone verschilplot
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffPlot();
+
+      try {
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
+
+        diffStackActive = true;
+        document.getElementById('diffStackBtn').classList.add('active');
+        document.getElementById('legendDiffStack').style.display = '';
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Gestapelde verschilplot activeren mislukt:', e);
+        diffStackActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffStack() {
+      if (!diffStackActive) return;
+      diffStackActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffStackBtn').classList.remove('active');
+      document.getElementById('legendDiffStack').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
+    // ── Smiley-verschilplot (blije/boze smiley per wegvak) ──────────────────────
+    async function activateDiffSmiley() {
+      if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      // Onderling exclusief met split-view en de andere verschilplots
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffPlot();
+      deactivateDiffStack();
+
+      try {
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
+
+        diffSmileyActive = true;
+        document.getElementById('diffSmileyBtn').classList.add('active');
+        document.getElementById('legendDiffSmiley').style.display = '';
+        _configureSmileyAbsSlider();
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Smiley-verschilplot activeren mislukt:', e);
+        diffSmileyActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffSmiley() {
+      if (!diffSmileyActive) return;
+      diffSmileyActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffSmileyBtn').classList.remove('active');
+      document.getElementById('legendDiffSmiley').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
+    function _syncMap1ToMap2() {
+      if (_mapSyncing || !map2) return;
+      _mapSyncing = true;
+      map2.jumpTo({ center: map.getCenter(), zoom: map.getZoom(),
+                    bearing: map.getBearing(), pitch: map.getPitch() });
+      _mapSyncing = false;
+    }
+
+    function _syncMap2ToMap1() {
+      if (_mapSyncing || !map2) return;
+      _mapSyncing = true;
+      map.jumpTo({ center: map2.getCenter(), zoom: map2.getZoom(),
+                   bearing: map2.getBearing(), pitch: map2.getPitch() });
+      _mapSyncing = false;
+    }
+
+    document.getElementById('splitViewBtn').addEventListener('click', () => {
+      if (splitViewActive) deactivateSplitView();
+      else { deactivateDiffPlot(); deactivateDiffStack(); deactivateDiffSmiley(); activateSplitView(); }
+    });
+
+    document.getElementById('diffPlotBtn').addEventListener('click', () => {
+      if (diffPlotActive) deactivateDiffPlot();
+      else activateDiffPlot();
+    });
+
+    document.getElementById('diffStackBtn').addEventListener('click', () => {
+      if (diffStackActive) deactivateDiffStack();
+      else activateDiffStack();
+    });
+
+    document.getElementById('diffSmileyBtn').addEventListener('click', () => {
+      if (diffSmileyActive) deactivateDiffSmiley();
+      else activateDiffSmiley();
+    });
+
+    // Drempel-slider(s): relatieve grens (%) of absolute grens (metriek-eenheden).
+    /** Stel het bereik/stap van de absolute slider in op basis van het grootste
+     *  voorkomende |verschil| (diffMaxAbs) en behoud de huidige waarde indien mogelijk. */
+    function _configureSmileyAbsSlider() {
+      const slider = document.getElementById('diffSmileyAbsSlider');
+      const label  = document.getElementById('diffSmileyAbsLabel');
+      if (!slider) return;
+      const maxAbs = diffMaxAbs > 0 ? diffMaxAbs : 1;
+      // Stap ~1/200 van het bereik, met een redelijke afronding
+      const rawStep = maxAbs / 200;
+      const mag  = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+      const step = Math.max(mag, 1e-6);
+      slider.max  = maxAbs;
+      slider.step = step;
+      // Clamp huidige absolute drempel binnen het nieuwe bereik
+      if (diffSmileyAbsThreshold > maxAbs) diffSmileyAbsThreshold = 0;
+      slider.value = diffSmileyAbsThreshold;
+      if (label) label.textContent = fmtMetricVal(diffSmileyAbsThreshold, diffMetric);
+    }
+
+    (() => {
+      const relSlider = document.getElementById('diffSmileyThresholdSlider');
+      const relLabel  = document.getElementById('diffSmileyThresholdLabel');
+      const absSlider = document.getElementById('diffSmileyAbsSlider');
+      const absLabel  = document.getElementById('diffSmileyAbsLabel');
+      const relRow    = document.getElementById('diffSmileyRelRow');
+      const absRow    = document.getElementById('diffSmileyAbsRow');
+
+      if (relSlider) relSlider.addEventListener('input', () => {
+        const pct = Number(relSlider.value);
+        diffSmileyThreshold = pct / 100;
+        if (relLabel) relLabel.textContent = pct + '%';
+        if (diffSmileyActive && diffSmileyMode === 'rel') updateOverlay(false);
+      });
+
+      if (absSlider) absSlider.addEventListener('input', () => {
+        diffSmileyAbsThreshold = Number(absSlider.value);
+        if (absLabel) absLabel.textContent = fmtMetricVal(diffSmileyAbsThreshold, diffMetric);
+        if (diffSmileyActive && diffSmileyMode === 'abs') updateOverlay(false);
+      });
+
+      document.querySelectorAll('input[name="diffSmileyMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          diffSmileyMode = radio.value;
+          if (relRow) relRow.style.display = (diffSmileyMode === 'rel') ? 'flex' : 'none';
+          if (absRow) absRow.style.display = (diffSmileyMode === 'abs') ? 'flex' : 'none';
+          if (diffSmileyMode === 'abs') _configureSmileyAbsSlider();
+          if (diffSmileyActive) updateOverlay(false);
+        });
+      });
+    })();
+
+    // ── Selected Link Analysis — knop ─────────────────────────────────────────
+    document.getElementById('purposeChartClose').addEventListener('click', () => {
+      document.getElementById('purposeChartPanel').style.display = 'none';
+    });
+
+    document.getElementById('selectedLinkBtn').addEventListener('click', () => {
+      deactivateWhatifRc();
+      selectedLinkActive = !selectedLinkActive;
+      selectedLinkId     = null;
+      hoveredLinkId      = null;
+      document.getElementById('selectedLinkBtn').classList.toggle('active', selectedLinkActive);
+      updateOverlay(true);
+      updatePurposeChart();   // verbergt het paneel omdat selectedLinkId nu null is
+    });
+
+    // ── What-if wegafsluiting — hulpfunctie & knop ───────────────────────────
+
+    function deactivateWhatifRc() {
+      if (!whatifRcActive) return;
+      whatifRcActive = false;
+      document.getElementById('whatifRcBtn').classList.remove('active');
+      document.getElementById('whatifRcPanel').style.display = 'none';
+      map.getCanvas().style.cursor = '';
+    }
+
+    function renderWhatifRcList() {
+      const list  = document.getElementById('whatifRcList');
+      const count = document.getElementById('whatifRcCount');
+      count.textContent = whatifRcLinks.size;
+      if (!whatifRcLinks.size) {
+        list.innerHTML = `<div class="whatif-rc-empty">${T('whatifRcNoLinks')}</div>`;
+        return;
+      }
+      list.innerHTML = '';
+      for (const [lid, label] of whatifRcLinks) {
+        const item = document.createElement('div');
+        item.className = 'whatif-rc-item';
+        const lbl = document.createElement('div');
+        lbl.className = 'whatif-rc-item-label';
+        lbl.textContent = label;
+        const del = document.createElement('button');
+        del.className = 'whatif-rc-item-del';
+        del.textContent = '\u00d7';
+        del.title = T('changeItemDel');
+        del.addEventListener('click', () => {
+          whatifRcLinks.delete(lid);
+          renderWhatifRcList();
+          updateOverlay(true);
+        });
+        item.appendChild(lbl);
+        item.appendChild(del);
+        list.appendChild(item);
+      }
+    }
+
+    async function runWhatifRoadClosure() {
+      const status = document.getElementById('whatifRcStatus');
+      if (!whatifRcLinks.size) {
+        status.style.display = 'block';
+        status.style.color   = '#ff6b6b';
+        status.textContent   = T('whatifRcNoLinks');
+        return;
+      }
+      const btn = document.getElementById('whatifRcRunBtn');
+      btn.disabled = true;
+      status.style.display = 'block';
+      status.style.color   = '#7ec8e3';
+      status.textContent   = T('whatifRcStart');
+
+      const direction    = document.getElementById('whatifRcDirSelect').value;
+      const scenarioName = document.getElementById('whatifRcNameInput').value.trim()
+                        || `${window._networkName} (what-if ${scenarioCounter})`;
+      const linkIds = [...whatifRcLinks.keys()].map(Number);
+
+      try {
+        const res = await fetch('/processes/whatif-road-closure/execution', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inputs: { area_id: AREA_ID, mode: MODE, selected_links: linkIds, direction, scenario_name: scenarioName } }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          status.style.color = '#ff6b6b';
+          status.textContent = txt;
+          btn.disabled = false;
+          return;
+        }
+        const { jobID: job_id } = await res.json();
+        status.textContent = T('whatifRcRunning');
+        const poll = setInterval(async () => {
+          try {
+            const sr = await fetch(`/jobs/${job_id}`);
+            const sj = await sr.json();
+            if (sj.status === 'running' || sj.status === 'accepted') {
+              status.textContent = T('whatifRcRunning');
+            } else if (sj.status === 'successful') {
+              status.textContent = T('whatifRcDone');
+            } else {
+              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
+              status.style.color = '#ff6b6b';
+              status.textContent = errLines.length ? errLines.join('\n') : T('whatifRcError', sj.returncode);
+            }
+            if (sj.status === 'successful' || sj.status === 'failed') {
+              clearInterval(poll);
+              btn.disabled = false;
+              if (sj.status === 'successful') {
+                scenarioCounter++;
+                whatifRcLinks.clear();
+                renderWhatifRcList();
+                document.getElementById('whatifRcNameInput').value = '';
+                const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+                await loadAdjustedResult(results.new_area_id, null);
+              }
+            }
+          } catch (e) { /* poll-fout: volgende poging */ }
+        }, 1500);
+      } catch (err) {
+        status.style.color = '#ff6b6b';
+        status.textContent = T('whatifRcFetchError', err.message);
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('whatifRcBtn').addEventListener('click', () => {
+      // Deactiveer conflicterende modi
+      if (nodeEditActive)   document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)   document.getElementById('linkEditBtn').click();
+      if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
+      whatifRcActive = !whatifRcActive;
+      document.getElementById('whatifRcBtn').classList.toggle('active', whatifRcActive);
+      const panel = document.getElementById('whatifRcPanel');
+      if (whatifRcActive) {
+        panel.style.display = 'block';
+        renderWhatifRcList();
+      } else {
+        panel.style.display = 'none';
+      }
+      updateOverlay(true);
+    });
+
+    document.getElementById('whatifRcRunBtn').addEventListener('click', runWhatifRoadClosure);
+    document.getElementById('whatifRcClearBtn').addEventListener('click', () => {
+      whatifRcLinks.clear();
+      renderWhatifRcList();
+      updateOverlay(true);
+    });
+
+    // ── OD-paar aanpassen — knop en paneel ───────────────────────────────────
+    document.getElementById('odEditBtn').addEventListener('click', () => {
+      if (nodeEditActive)     document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)     document.getElementById('linkEditBtn').click();
+      if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
+      deactivateWhatifRc();
+
+      if (odEditActive) {
+        deactivateOdEdit();
+      } else {
+        odEditActive   = true;
+        odEditStep     = 'from';
+        odEditFromZone = null;
+        odEditToZone   = null;
+        window._odEditRouteData = null;
+        document.getElementById('odEditBtn').classList.add('active');
+        // Zones aanzetten als ze uit staan
+        if (zoneCentroidMode === 'off') {
+          document.getElementById('zoneCentroidSelect').value = 'production';
+          document.getElementById('zoneCentroidSelect').dispatchEvent(new Event('change'));
+        }
+        _odEditShowPanel();
+        updateOverlay(true);
+      }
+    });
+
+    document.getElementById('odEditClose').addEventListener('click', deactivateOdEdit);
+
+    document.getElementById('odEditSaveBtn').addEventListener('click', _odEditSave);
+
+    document.getElementById('odEditFields').addEventListener('input', e => {
+      if (e.target.classList.contains('ode-motif-pct')) _odEditCheckMotifSum();
+    });
+
+    // Herstart zone-keuze: klik op herkomst/bestemming-stap-vak
+    document.getElementById('odEditFromVal').closest('.ode-step').addEventListener('click', () => {
+      if (!odEditActive) return;
+      odEditFromZone = null;
+      odEditToZone   = null;
+      odEditStep     = 'from';
+      window._odEditRouteData = null;
+      _odEditUpdateStepDisplay();
+      updateOverlay(true);
+    });
+    document.getElementById('odEditToVal').closest('.ode-step').addEventListener('click', () => {
+      if (!odEditActive || !odEditFromZone) return;
+      odEditToZone  = null;
+      odEditStep    = 'to';
+      window._odEditRouteData = null;
+      _odEditUpdateStepDisplay();
+      updateOverlay(true);
+    });
+
+    // ── Splitter-drag ────────────────────────────────────────────────────────
+
+    function enterOverlayMode(x) {
+      overlayMode = true;
+      overlayX    = x;
+
+      // Flex-basis inline-stijlen resetten (worden overruled door overlay-mode CSS)
+      map.getContainer().style.flexBasis  = '';
+      if (map2) map2.getContainer().style.flexBasis = '';
+
+      // Layout overschakelen: beide kaarten gestapeld, full-screen
+      _mapContainer.classList.add('overlay-mode');
+
+      // Splitter als absolute lijn positioneren
+      _mapSplitter.style.left = x + 'px';
+
+      // map-orig (bronscenario, z-index 2) clippen: alles rechts van x zichtbaar
+      document.getElementById('map-orig').style.clipPath = `inset(0 0 0 ${x}px)`;
+
+      // Kaarten herformaten naar volledige breedte, camera uitlijnen
+      requestAnimationFrame(() => {
+        map.resize();
+        if (map2) {
+          map2.resize();
+          _mapSyncing = true;
+          map2.jumpTo({ center: map.getCenter(), zoom: map.getZoom(),
+                        bearing: map.getBearing(), pitch: map.getPitch() });
+          _mapSyncing = false;
+        }
+      });
+    }
+
+    _mapSplitter.addEventListener('mousedown', e => {
+      if (!splitViewActive) return;
+      _splitterDragging  = true;
+      _splitterStartX    = e.clientX;
+      if (!overlayMode) _splitterLeftBasis = map.getContainer().offsetWidth;
+      _mapSplitter.classList.add('dragging');
+      document.body.style.cursor     = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!_splitterDragging) return;
+
+      if (overlayMode) {
+        // Swipe-modus: verschuif de clip-lijn over de gestapelde kaarten
+        const rect = _mapContainer.getBoundingClientRect();
+        const x = Math.max(0, Math.min(_mapContainer.offsetWidth - _mapSplitter.offsetWidth,
+                    e.clientX - rect.left));
+        _mapSplitter.style.left = x + 'px';
+        document.getElementById('map-orig').style.clipPath = `inset(0 0 0 ${x}px)`;
+        overlayX = x;
+      } else {
+        // Split-modus: verander de breedte van de twee panelen
+        const splitterW = _mapSplitter.offsetWidth;
+        const total     = _mapContainer.offsetWidth - splitterW;
+        const newLeft   = Math.max(200, Math.min(total - 200,
+                            _splitterLeftBasis + (e.clientX - _splitterStartX)));
+        map.getContainer().style.flexBasis  = newLeft + 'px';
+        if (map2) map2.getContainer().style.flexBasis = (total - newLeft) + 'px';
+        map.resize();
+        if (map2) map2.resize();
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!_splitterDragging) return;
+      _splitterDragging = false;
+      _mapSplitter.classList.remove('dragging');
+      document.body.style.cursor     = '';
+      document.body.style.userSelect = '';
+
+      // Eerste drag in split-modus → overschakelen naar overlay/swipe-modus
+      if (splitViewActive && !overlayMode) {
+        enterOverlayMode(map.getContainer().offsetWidth);
+      }
+    });
+
+    // ── Node-edit knop ──────────────────────────────────────────────────────
+
+    document.getElementById('nodeEditBtn').addEventListener('click', () => {
+      // Zet link-edit en what-if uit als die actief waren
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+      deactivateWhatifRc();
+      nodeEditActive = !nodeEditActive;
+      document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
+      document.getElementById('nodeEditBtn').innerHTML = nodeEditActive ? '✕'
+        : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><polygon points="12,3 21,8.5 21,15.5 12,21 3,15.5 3,8.5"/></svg>';
+
+      if (nodeEditActive) {
+        // Stop animatie en verwijder voertuigen uit beeld
+        paused = true;
+        carsSuspended = true;
+        cars   = [];
+        carData = [];
+        updateOverlay(false);
+        _setSimPausedUI(true);
+        map.once('idle', addNodeLayer);
+        // Toon selectiemodus popup; reset naar klik-modus
+        nodeSelectMode = 'click';
+        document.querySelector('input[name="nodeSelectMode"][value="click"]').checked = true;
+        document.getElementById('polygonHint').style.display       = 'none';
+        document.getElementById('polygonFinishBtn').style.display  = 'none';
+        document.getElementById('polygonClearBtn').style.display   = 'none';
+        document.getElementById('nodeSelectPopup').style.display   = 'block';
+      } else {
+        removeNodeLayer();
+        closeNodeDialog();
+        // Verberg popup en reset polygon
+        document.getElementById('nodeSelectPopup').style.display  = 'none';
+        document.getElementById('polygonDialog').style.display    = 'none';
+        clearPolygonDraw();
+        nodeSelectMode = 'click';
+        map.getCanvas().style.cursor = '';
+        // Hervat animatie
+        paused = false;
+        carsSuspended = false;
+        _setSimPausedUI(false);
+        rebuildCars();
+      }
+    });
+
+    // ── Link-edit knop ──────────────────────────────────────────────────────
+
+    document.getElementById('linkEditBtn').addEventListener('click', () => {
+      // Zet node-edit, flow-edit, link-add en what-if uit als die actief waren
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive) document.getElementById('linkAddBtn').click();
+      deactivateWhatifRc();
+      linkEditActive = !linkEditActive;
+      document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
+      document.getElementById('linkEditBtn').innerHTML =
+        linkEditActive ? '✕' : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="28" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h48l33 10h23"/><path d="M8 48h48l33-10h23"/><path d="M8 32h104" stroke-dasharray="5 5" stroke-width="1.5" opacity=".75"/></svg>';
+
+      if (linkEditActive) {
+        paused = true;
+        carsSuspended = true;
+        cars   = [];
+        carData = [];
+        updateOverlay(false);
+        _setSimPausedUI(true);
+        map.once('idle', addLinkLayer);
+        // Toon selectiemodus popup; reset naar klik-modus
+        linkSelectMode = 'click';
+        document.querySelector('input[name="linkSelectMode"][value="click"]').checked = true;
+        document.getElementById('linkPolygonHint').style.display       = 'none';
+        document.getElementById('linkPolygonFinishBtn').style.display  = 'none';
+        document.getElementById('linkPolygonClearBtn').style.display   = 'none';
+        document.getElementById('linkSelectPopup').style.display       = 'block';
+      } else {
+        removeLinkLayer();
+        closeLinkDialog();
+        // Verberg popup en reset polygon
+        document.getElementById('linkSelectPopup').style.display   = 'none';
+        document.getElementById('linkPolygonDialog').style.display = 'none';
+        clearLinkPolygonDraw();
+        linkSelectMode = 'click';
+        map.getCanvas().style.cursor = '';
+        paused = false;
+        carsSuspended = false;
+        _setSimPausedUI(false);
+        updateOverlay(false);
+        rebuildCars();
+      }
+    });
+
+    // ── Link flow-edit knop ─────────────────────────────────────────────────
+
+    document.getElementById('linkFlowEditBtn').addEventListener('click', () => {
+      if (nodeEditActive)  document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)  document.getElementById('linkEditBtn').click();
+      if (linkAddActive)   document.getElementById('linkAddBtn').click();
+      deactivateWhatifRc();
+      linkFlowEditActive = !linkFlowEditActive;
+      document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
+      document.getElementById('linkFlowEditBtn').innerHTML =
+        linkFlowEditActive ? '✕'
+          : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 28h34M15 36h34"/><path d="M32 8v12M26 14h12M26 50h12"/></svg>';
+
+      if (linkFlowEditActive) {
+        paused = true;
+        carsSuspended = true;
+        cars   = [];
+        carData = [];
+        updateOverlay(false);
+        _setSimPausedUI(true);
+        map.once('idle', addLinkLayer);
+      } else {
+        removeLinkLayer();
+        closeLinkFlowDialog();
+        map.getCanvas().style.cursor = '';
+        paused = false;
+        carsSuspended = false;
+        _setSimPausedUI(false);
+        updateOverlay(false);
+        rebuildCars();
+      }
+    });
+
+    // ── Nieuw wegvak toevoegen (linkAddBtn) ─────────────────────────────────
+
+    document.getElementById('linkAddBtn').addEventListener('click', () => {
+      if (nodeEditActive)    document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)    document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      deactivateWhatifRc();
+      linkAddActive = !linkAddActive;
+      document.getElementById('linkAddBtn').classList.toggle('active', linkAddActive);
+      document.getElementById('linkAddBtn').innerHTML = linkAddActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>';
+
+      if (linkAddActive) {
+        paused = true; carsSuspended = true; cars = []; carData = [];
+        updateOverlay(false);
+        _setSimPausedUI(true);
+        map.once('idle', () => {
+          initLinkAddLayers();
+          clearLinkAddDraw();
+        });
+        map.on('mousemove', _onLinkAddMouseMove);
+        map.on('dblclick',  _onLinkAddDblClick);
+        document.getElementById('linkAddFinishPopup').style.display = 'none';
+        document.getElementById('linkAddHintEl').style.display = 'block';
+      } else {
+        map.off('mousemove', _onLinkAddMouseMove);
+        map.off('dblclick',  _onLinkAddDblClick);
+        clearLinkAddDraw();
+        removeLinkAddLayers();
+        document.getElementById('linkAddFinishPopup').style.display = 'none';
+        document.getElementById('linkAddHintEl').style.display      = 'none';
+        document.getElementById('linkAddDialog').style.display      = 'none';
+        paused = false;
+        carsSuspended = false;
+        _setSimPausedUI(false);
+        updateOverlay(false);
+        rebuildCars();
+      }
+    });
+
+    document.getElementById('linkAddFinishBtn').addEventListener('click', () => {
+      finishLinkAddDraw();
+    });
+    document.getElementById('linkAddClearBtn').addEventListener('click', () => {
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+    document.getElementById('linkAddDialogCancel').addEventListener('click', () => {
+      document.getElementById('linkAddDialog').style.display = 'none';
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+    document.getElementById('linkAddDialogOk').addEventListener('click', () => {
+      const cap   = parseFloat(document.getElementById('linkAddCapVal').value);
+      const speed = parseFloat(document.getElementById('linkAddSpeedVal').value);
+      const lanes = parseInt(document.getElementById('linkAddLanesVal').value) || 1;
+      if (isNaN(cap) || isNaN(speed) || linkAddVertices.length < 2) return;
+      const coords = [...linkAddVertices];
+      const lenM   = linkAddLengthM();
+      pendingChanges.push({
+        geometry: { type: 'LineString', coordinates: coords },
+        capacity: cap,
+        speed,
+        lanes,
+        _label:      T('linkAddChangeLabel', lenM.toLocaleString(T('numberLocale'))),
+        _isLinkAdd:  true,
+      });
+      renderChangesList();
+      document.getElementById('linkAddDialog').style.display = 'none';
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+
+    // ── Polygon-selectiemodus handlers ──────────────────────────────────────
+
+    // Radiobutton: wissel tussen klik- en polygon-modus
+    document.querySelectorAll('input[name="nodeSelectMode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        nodeSelectMode = radio.value;
+        const isPoly = nodeSelectMode === 'polygon';
+        document.getElementById('polygonHint').style.display = isPoly ? 'block' : 'none';
+        if (!isPoly) clearPolygonDraw();
+        map.getCanvas().style.cursor = isPoly ? 'crosshair' : '';
+      });
+    });
+
+    // Cursor handhaving in polygon-modus (voorkomt overschrijving door deck.gl)
+    map.on('mousemove', () => {
+      if (nodeEditActive && nodeSelectMode === 'polygon')
+        map.getCanvas().style.cursor = 'crosshair';
+      if (linkEditActive && linkSelectMode === 'polygon')
+        map.getCanvas().style.cursor = 'crosshair';
+    });
+
+    // Polygon-klik: capture-fase listener op document.
+    // Fired vóór MapLibre én deck.gl, dus nooit te onderscheppen.
+    // e.target-check zorgt dat alleen kaart-klikken (niet UI-knoppen) hoekpunten toevoegen.
+    document.addEventListener('click', e => {
+      console.log('[poly] click capture — nodeEditActive:', nodeEditActive,
+        '| nodeSelectMode:', nodeSelectMode, '| target:', e.target?.tagName, e.target?.id || '');
+      if (!nodeEditActive || nodeSelectMode !== 'polygon') return;
+      const dlg = document.getElementById('polygonDialog');
+      if (dlg.style.display === 'block') { console.log('[poly] geblokkeerd: dialoog open'); return; }
+      if (e.target !== map.getCanvas()) { console.log('[poly] geblokkeerd: target is niet de kaart-canvas'); return; }
+      const rect = map.getContainer().getBoundingClientRect();
+      const lngLat = map.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      polygonVertices.push([lngLat.lng, lngLat.lat]);
+      console.log('[poly] hoekpunt toegevoegd:', lngLat, '| totaal:', polygonVertices.length);
+      updatePolygonDraw();
+      if (polygonVertices.length >= 1)
+        document.getElementById('polygonClearBtn').style.display  = 'block';
+      if (polygonVertices.length >= 3)
+        document.getElementById('polygonFinishBtn').style.display = 'block';
+      e.stopImmediatePropagation(); // voorkom dubbel-fire via MapLibre/deck.gl
+    }, true); // capture=true → fired als eerste
+
+    document.getElementById('polygonFinishBtn').addEventListener('click', finishPolygon);
+    document.getElementById('polygonClearBtn').addEventListener('click', clearPolygonDraw);
+
+    // Polygon-dialoog: +/- knoppen
+    document.getElementById('polyProdMinus').addEventListener('click', () => stepValue('polyProdVal', -100));
+    document.getElementById('polyProdPlus' ).addEventListener('click', () => stepValue('polyProdVal', +100));
+    document.getElementById('polyAttrMinus').addEventListener('click', () => stepValue('polyAttrVal', -100));
+    document.getElementById('polyAttrPlus' ).addEventListener('click', () => stepValue('polyAttrVal', +100));
+
+    // Live per-knoop preview
+    document.getElementById('polyProdVal').addEventListener('input', updatePolyPerNodeDisplay);
+    document.getElementById('polyAttrVal').addEventListener('input', updatePolyPerNodeDisplay);
+
+     document.getElementById('polygonDialogCancel').addEventListener('click', closePolygonDialog);
+
+     document.getElementById('polygonDialogOk').addEventListener('click', () => {
+       const n = polygonNodesInside.length;
+       if (!n) { closePolygonDialog(); return; }
+
+       const prodRaw = document.getElementById('polyProdVal').value.trim();
+       const attrRaw = document.getElementById('polyAttrVal').value.trim();
+       if (!prodRaw && !attrRaw) { closePolygonDialog(); return; }
+
+       const perProd = calcPerNode(prodRaw, n);
+       const perAttr = calcPerNode(attrRaw, n);
+       if (!perProd && !perAttr) { closePolygonDialog(); return; }
+
+        for (const node of polygonNodesInside) {
+          // Verwijder eventueel bestaande wijziging voor dit id
+          pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== node.zoneId);
+          const isNetworkNode = node.zoneClass === 'NETWORK_NODE';
+          const change = isNetworkNode ? { nodeId: node.zoneId } : { zoneId: node.zoneId };
+          if (perProd) change.production = perProd;
+          if (perAttr) change.attraction = perAttr;
+          change._label     = node.zoneName;
+          change._zoneClass = node.zoneClass;
+           pendingChanges.push(change);
+        }
+       _setChangesPanelReadOnly(false);
+       renderChangesList();
+       closePolygonDialog();
+     });
+
+    // ── Link polygon-selectiemodus handlers ─────────────────────────────────
+
+    // Radiobutton: wissel tussen klik- en polygon-modus
+    document.querySelectorAll('input[name="linkSelectMode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        linkSelectMode = radio.value;
+        const isPoly = linkSelectMode === 'polygon';
+        document.getElementById('linkPolygonHint').style.display = isPoly ? 'block' : 'none';
+        if (!isPoly) clearLinkPolygonDraw();
+        map.getCanvas().style.cursor = isPoly ? 'crosshair' : '';
+      });
+    });
+
+    // Link polygon-klik: capture-fase listener op document.
+    document.addEventListener('click', e => {
+      if (!linkEditActive || linkSelectMode !== 'polygon') return;
+      const dlg = document.getElementById('linkPolygonDialog');
+      if (dlg.style.display === 'block') return;
+      if (e.target !== map.getCanvas()) return;
+      const rect = map.getContainer().getBoundingClientRect();
+      const lngLat = map.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      linkPolygonVertices.push([lngLat.lng, lngLat.lat]);
+      updateLinkPolygonDraw();
+      if (linkPolygonVertices.length >= 1)
+        document.getElementById('linkPolygonClearBtn').style.display  = 'block';
+      if (linkPolygonVertices.length >= 3)
+        document.getElementById('linkPolygonFinishBtn').style.display = 'block';
+      e.stopImmediatePropagation();
+    }, true);
+
+    document.getElementById('linkPolygonFinishBtn').addEventListener('click', finishLinkPolygon);
+    document.getElementById('linkPolygonClearBtn').addEventListener('click', clearLinkPolygonDraw);
+
+    // Link polygon-dialoog: +/- knoppen
+    document.getElementById('linkPolyCapMinus').addEventListener('click', () => {
+      const inp = document.getElementById('linkPolyCapVal');
+      const val = inp.value.trim();
+      if (val.endsWith('%')) {
+        const pct = parseFloat(val);
+        if (!isNaN(pct)) inp.value = Math.max(0, Math.round(pct - 10)) + '%';
+      } else {
+        inp.value = Math.max(0, (parseInt(val) || 0) - 100);
+      }
+      updateLinkPolyCapDisplay();
+    });
+    document.getElementById('linkPolyCapPlus').addEventListener('click', () => {
+      const inp = document.getElementById('linkPolyCapVal');
+      const val = inp.value.trim();
+      if (val.endsWith('%')) {
+        const pct = parseFloat(val);
+        if (!isNaN(pct)) inp.value = Math.min(200, Math.round(pct + 10)) + '%';
+      } else {
+        inp.value = (parseInt(val) || 0) + 100;
+      }
+      updateLinkPolyCapDisplay();
+    });
+
+    document.getElementById('linkPolyCapVal').addEventListener('input', updateLinkPolyCapDisplay);
+
+    // Snelheid-knoppen in het polygon-dialoog
+    document.querySelectorAll('.link-poly-speed-btn').forEach(btn => {
+      btn.onclick = () => {
+        const spd = parseInt(btn.dataset.speed);
+        const cap = SPEED_TO_CAP[spd] ?? 900;
+        document.getElementById('linkPolyCapVal').value = cap;
+        document.querySelectorAll('.link-poly-speed-btn').forEach(b =>
+          b.classList.toggle('active', b === btn));
+        document.getElementById('linkPolyCloseBtn').classList.remove('active');
+        updateLinkPolyCapDisplay();
+      };
+    });
+
+    document.getElementById('linkPolyCloseBtn').onclick = () => {
+      document.getElementById('linkPolyCapVal').value = 0;
+      document.querySelectorAll('.link-poly-speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkPolyCloseBtn').classList.add('active');
+      updateLinkPolyCapDisplay();
+    };
+
+    document.getElementById('linkPolygonDialogCancel').addEventListener('click', closeLinkPolygonDialog);
+
+     document.getElementById('linkPolygonDialogOk').addEventListener('click', () => {
+       const n = linkPolygonLinksInside.length;
+       if (!n) { closeLinkPolygonDialog(); return; }
+
+       const raw = document.getElementById('linkPolyCapVal').value.trim();
+       if (!raw) { closeLinkPolygonDialog(); return; }
+
+       const isPct = raw.endsWith('%');
+       let factor = null, absVal = null;
+       if (isPct) {
+         factor = parseFloat(raw) / 100;
+         if (isNaN(factor) || factor < 0) { closeLinkPolygonDialog(); return; }
+       } else {
+         absVal = parseInt(raw);
+         if (isNaN(absVal) || absVal < 0) { closeLinkPolygonDialog(); return; }
+       }
+
+       const activeSpeedBtn = document.querySelector('.link-poly-speed-btn.active');
+       const polySpeed = activeSpeedBtn ? parseInt(activeSpeedBtn.dataset.speed) : null;
+
+       for (const feature of linkPolygonLinksInside) {
+         const p = feature.properties;
+         const linkId = String(p.linkId ?? p.id ?? '');
+         const currentCap = p.capacity ?? 0;
+         const newCap = isPct ? Math.round(currentCap * factor) : absVal;
+         pendingChanges = pendingChanges.filter(c => c.linkId == null || String(c.linkId) !== linkId);
+         const entry = {
+           linkId,
+           capacity: newCap,
+           _label:  p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+           _isLink: true,
+         };
+         if (polySpeed != null) entry.speed = polySpeed;
+         pendingChanges.push(entry);
+        }
+       _setChangesPanelReadOnly(false);
+       renderChangesList();
+       closeLinkPolygonDialog();
+     });
+
+    // ── 8. UI-handlers ──────────────────────────────────────────────────────
+
+    document.getElementById('colorMetric').addEventListener('change', async e => {
+      colorMetric = e.target.value;
+
+      // Deactiveer verschilplots die niet verenigbaar zijn met de nieuwe metriek
+      // (dekt ook de vroege returns hieronder voor safety/spectrum/compare).
+      _ensureDiffCompatible();
+
+      // ── Veiligheidsmodus ──────────────────────────────────────────────
+      if (colorMetric === 'safety') {
+        closeWegenscanPanel();
+        if (!wegenscanData) {
+          // Probeer te laden; als niet aanwezig: toon banner
+          try {
+            await loadWegenscanData();
+            setWegenscanBanner(false);
+          } catch (_) {
+            setWegenscanBanner(true, 'Nog geen veiligheidsdata voor dit gebied.');
+          }
+        }
+        updateLegend();
+        updateOverlay(true);
+        return;
+      }
+
+      // Wegenscan banner verbergen als andere metric gekozen wordt
+      setWegenscanBanner(false);
+      closeWegenscanPanel();
+
+      // ── Afgeleide lagen (geluid / emissie) ────────────────────────────────
+      // Haal de losse laag op en join op linkId vóór het (her)tekenen.
+      const derivedKind = DERIVED_METRIC_KIND[colorMetric];
+      if (derivedKind) {
+        try {
+          await ensureDerivedLayer(derivedKind);
+        } catch (err) {
+          console.warn(err);
+          colorMetric = 'flow';
+          document.getElementById('colorMetric').value = 'flow';
+          updateLegend();
+          updateOverlay(true);
+          return;
+        }
+      }
+
+      if (colorMetric === 'compare') {
+        // Laad COMPARE-bestand als nog niet aanwezig
+        if (!compareData) {
+          const url = `/collections/comparison/items?areaId=${AREA_ID}&mode=${MODE}`;
+          try {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(r.statusText);
+            compareData = await r.json();
+          } catch (err) {
+            console.warn('COMPARE laden mislukt:', err);
+            colorMetric = 'flow';
+            document.getElementById('colorMetric').value = 'flow';
+            updateLegend();
+            updateOverlay(true);
+            return;
+          }
+        }
+        compareVisible = true;
+        if (map.getSource(CMP_SOURCE)) {
+          map.getSource(CMP_SOURCE).setData(compareData);
+        } else {
+          addCompareLayer();
+        }
+        setCompareVisibility(true);
+      } else {
+        compareVisible = false;
+        setCompareVisibility(false);
+      }
+
+      // Spectrum: zet MapLibre-laag aan of bij
+      if (colorMetric === 'spectrum') {
+        updateSpectrumLayer();
+        updateLegend();
+        updateOverlay(true);
+        return;
+      }
+      // Spectrum was actief maar is nu uitgeschakeld: verwijder laag
+      _removeSpectrumLayer();
+
+      // Kruispunten-laag activeert een globale speedBump-fetch zodat drempels
+      // direct en volledig zichtbaar zijn, zonder te hoeven inzoomen.
+      if (colorMetric === 'speed_intersections') {
+        _loadSpeedBumpsForArea().then(() => {
+          rebuildSpeedLayers();
+          updateOverlay(true);
+        });
+      }
+
+      updateLegend();
+      updateDiffButtonsState();
+
+      // Als een verschilplot nog actief is, herbereken deze voor de nieuwe metriek.
+      if (diffPlotActive || diffStackActive || diffSmileyActive) {
+        await computeDiffData();
+        if (diffSmileyActive) _configureSmileyAbsSlider();
+        updateOverlay(false);
+      } else {
+        updateOverlay(true);
+      }
+    });
+
+    // (De tijdschaal-slider is vervangen door de analoge simulatieklok; zie verderop.)
+
+    // ── Wegenscan-knophandlers ────────────────────────────────────────────────
+
+    document.getElementById('wegenscanRunBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('wegenscanRunBtn');
+      btn.disabled = true;
+      document.getElementById('wegenscanProgress').style.display = '';
+      document.getElementById('wegenscanProgress').textContent = 'Job aanmaken…';
+      try {
+        const r = await fetch('/processes/wegenscan/execution', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inputs: { area_id: AREA_ID, mode: MODE } }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const job = await r.json();
+        await pollWegenscanJob(job.jobID);
+      } catch (err) {
+        document.getElementById('wegenscanProgress').textContent = 'Fout: ' + err.message;
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('wegenscanPanelClose').addEventListener('click', () => {
+      closeWegenscanPanel();
+    });
+
+    // Maak openWegenscanPanel globaal beschikbaar (voor inline onclick in tooltip)
+    window.openWegenscanPanel = openWegenscanPanel;
+    window.wegenscanByLinkId  = wegenscanByLinkId;
+
+    document.getElementById('adjustDebug').addEventListener('change', e => {
+      window._debugMode = e.target.checked;
+      document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+      document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+      document.getElementById('newDebug') && (document.getElementById('newDebug').checked = window._debugMode);
+      if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+    });
+
+    document.getElementById('simPlayCheckbox').addEventListener('change', async e => {
+      // Spinner blijft staan vanaf het omzetten van het vinkje tot alle lagen
+      // (flow-scaler, auto's, overlay) volledig zijn bijgewerkt — vandaar de
+      // extra busy-markering hier, los van de interne markeringen van
+      // scheduleSimApply/applyFlowScaler die pas later in de keten starten.
+      // Eerst laten schilderen, pas dán het (zware, synchrone) werk starten —
+      // anders verschijnt de spinner pas ná die blokkerende rebuilds.
+      _setSimClockBusy(true);
+      await _yieldToPaint();
+      try {
+        paused = !e.target.checked;
+        _setSimPausedUI(paused);
+        let pending = Promise.resolve();
+        if (e.target.checked) {
+          // Eén vinkje moet volstaan: bij afspelen meteen alle in dit netwerk
+          // aanwezige modi aanzetten, i.p.v. ook nog apart een modus-knopje
+          // (🚗/🚲/🚶) te moeten aanklikken om auto's te zien.
+          document.querySelectorAll('.modeBtn').forEach(btn => {
+            if (btn.style.display === 'none') return;
+            btn.classList.add('active');
+            visibleModes.add(btn.dataset.mode);
+          });
+          rebuildCars();
+          updateLegend();
+          pending = scheduleSimApply();
+        }
+        updateOverlay(true);
+        await pending;
+      } finally {
+        _setSimClockBusy(false);
+      }
+    });
+
+    document.getElementById('viewChangesBtn').addEventListener('click', () => {
+      _setChangesPanelReadOnly(!_changesPanelReadOnly);
+    });
+
+     /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …). */
+     function applyDaypartSideEffects(dp) {
+       daypart = dp;
+       flowDaypart = dp;
+       updateLegend();
+       rebuildLinkFlowMap();
+       calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
+       // Kleine stap (≤15 min t.o.v. laatst geplaatste tijd): alleen de productiesnelheid
+       // per herkomst bijwerken. Grote stap, of segment-modus: auto's echt herplaatsen.
+       // Zie applyProductionStep().
+       applyProductionStep();
+       updateOverlay(true);
+       updateDebugPanel();
+       // Gebouwkleur (grondvlak én 3D-extrusie) synchroniseren met het geselecteerde dagdeel.
+       // De color_${daypart}-eigenschap is door _applyBuildingDisplay al op grijs
+       // gezet voor alle dagdelen wanneer 'Gebouw productie/attractie' = uit staat,
+       // dus hier hoeft niet apart op de motief-status gecontroleerd te worden.
+       const _bdDisplay = document.getElementById('buildingDisplay')?.value;
+       if (map.getLayer('buildings-fill')) {
+         map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
+       }
+       if (map.getLayer('buildings-3d')) {
+         map.setPaintProperty('buildings-3d', 'fill-extrusion-color', ['get', `color_${daypart}`]);
+         if (_bdDisplay === 'geschaald_productie' || _bdDisplay === 'geschaald_attractie' || _bdDisplay === 'geschaald_totaal') {
+           _applyScaledBuildingHeight(_bdDisplay);
+         }
+       }
+       updateSunLight();
+       // Spectrum: update laag bij dagdeel-wissel
+       if (colorMetric === 'spectrum') {
+         updateSpectrumLayer();
+       }
+     }
+
+    // ── Modi aan/uit (auto/fiets/voetganger-lagen) ──────────────────────────
+    // Ook buiten MIXED-modus: het vinkje bepaalt of auto's daadwerkelijk
+    // geplaatst worden. De netwerklaag zelf blijft altijd zichtbaar (die
+    // filtert niet op visibleModes buiten MIXED-modus, zie de GeoJsonLayer's
+    // "MODE !== 'MIXED' ? geojson.features : …filter(...)"); alleen
+    // buildCarList/spawnProductionCar respecteren visibleModes in elke modus.
+    {
+      // Bepaal welke modi daadwerkelijk in het netwerk aanwezig zijn.
+      const networkModes = new Set(
+        segments.map(s => (s.props.mode ?? 'CAR').toUpperCase())
+      );
+      // Toon alleen de knopjes waarvan de modus in het netwerk zit;
+      // verberg de rest en verwijder ze ook uit visibleModes.
+      // Standaard staan alle modi UIT bij het binnenkomen van het scenario
+      // (ook al zijn ze in het netwerk aanwezig) — de gebruiker zet ze zelf aan.
+      document.querySelectorAll('.modeBtn').forEach(btn => {
+        const m = btn.dataset.mode;
+        btn.classList.remove('active');
+        visibleModes.delete(m);
+        btn.style.display = networkModes.has(m) ? '' : 'none';
+      });
+      rebuildCars();
+      updateOverlay(true);
+      updateLegend();
+      document.getElementById('modeBtns').style.display = 'flex';
+      document.getElementById('modeBtns').addEventListener('click', e => {
+        const btn = e.target.closest('.modeBtn');
+        if (!btn) return;
+        const m = btn.dataset.mode;
+        if (visibleModes.has(m)) {
+          visibleModes.delete(m);
+          btn.classList.remove('active');
+        } else {
+          visibleModes.add(m);
+          btn.classList.add('active');
+        }
+        rebuildCars();
+        updateOverlay(true);
+        updateLegend();
+      });
+    }
+
+      document.getElementById('fillBtns').addEventListener('click', e => {
+        const btn = e.target.closest('.fillBtn');
+        if (!btn) return;
+        initFillMethod = btn.dataset.fill;
+        localStorage.setItem('initFillMethod', initFillMethod);
+        document.querySelectorAll('.fillBtn').forEach(b => b.classList.toggle('active', b === btn));
+        rebuildCars();
+      });
+      // Initiële actieve staat op basis van localStorage
+      document.querySelectorAll('.fillBtn').forEach(b =>
+        b.classList.toggle('active', b.dataset.fill === initFillMethod)
+      );
+
+      // ── Instellingen-paneel (gear-knop) ──────────────────────────────────────
+      (function () {
+        const settingsBtn   = document.getElementById('settingsBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+
+        function openSettings() {
+          // Synchroniseer paneel met huidige toestand
+          const radio = settingsPanel.querySelector(`input[name="spFill"][value="${initFillMethod}"]`);
+          if (radio) radio.checked = true;
+          document.getElementById('spDebug').checked = !!window._debugMode;
+          const curLang = document.getElementById('langSelect').value;
+          const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
+          if (langRadio) langRadio.checked = true;
+          const basemapRadio = settingsPanel.querySelector(`input[name="spBasemap"][value="${basemapStyle}"]`);
+          if (basemapRadio) basemapRadio.checked = true;
+          // Spectrum UUID-velden vanuit localStorage invullen
+          ['OS','AS','RD'].forEach(dp => {
+            const lEl = document.getElementById(`spSpectrumLayer${dp}`);
+            const mEl = document.getElementById(`spSpectrumMapping${dp}`);
+            if (lEl) lEl.value = localStorage.getItem(`spSpectrumLayer${dp}`)   || '';
+            if (mEl) mEl.value = localStorage.getItem(`spSpectrumMapping${dp}`) || '';
+          });
+          // Positioneer paneel onder de gear-knop (links-uitgelijnd, binnen viewport)
+          const r = settingsBtn.getBoundingClientRect();
+          settingsPanel.style.top  = (r.bottom + 4) + 'px';
+          settingsPanel.style.left = Math.min(r.left, window.innerWidth - 332) + 'px';
+          settingsPanel.classList.add('sp-visible');
+          settingsBtn.classList.add('active');
+        }
+
+        function closeSettings() {
+          // Lees nieuwe vulmethode en pas toe als gewijzigd
+          const newFill = settingsPanel.querySelector('input[name="spFill"]:checked')?.value || initFillMethod;
+          if (newFill !== initFillMethod) {
+            initFillMethod = newFill;
+            localStorage.setItem('initFillMethod', initFillMethod);
+            document.querySelectorAll('.fillBtn').forEach(b =>
+              b.classList.toggle('active', b.dataset.fill === initFillMethod));
+            rebuildCars();
+          }
+          // Lees nieuwe debug-instelling en pas toe als gewijzigd
+          const newDebug = document.getElementById('spDebug').checked;
+          if (newDebug !== !!window._debugMode) {
+            window._debugMode = newDebug;
+            document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+            document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+            const adj = document.getElementById('adjustDebug');
+            if (adj) adj.checked = window._debugMode;
+            if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+          }
+          // Verkeersobjecten-zichtbaarheid wordt nu per categorie geregeld
+          // vanuit het 'Verkeersobjecten weergave'-blok in het linker
+          // menu-paneel (zie initLeftMenuPanel / _setTrafficAssetCategory).
+          // Lees nieuwe taal en pas toe als gewijzigd
+          const newLang = settingsPanel.querySelector('input[name="spLang"]:checked')?.value;
+          if (newLang && newLang !== document.getElementById('langSelect').value) {
+            applyLang(newLang);
+          }
+          // Lees nieuwe ondergrond-instelling en pas toe als gewijzigd
+          const newBasemap = settingsPanel.querySelector('input[name="spBasemap"]:checked')?.value;
+          if (newBasemap && newBasemap !== basemapStyle) {
+            _applyBasemapStyle(newBasemap);
+          }
+          // Sla Spectrum UUID-configuratie op in localStorage
+          let spectrumCfgChanged = false;
+          ['OS','AS','RD'].forEach(dp => {
+            const lVal = (document.getElementById(`spSpectrumLayer${dp}`)?.value   || '').trim();
+            const mVal = (document.getElementById(`spSpectrumMapping${dp}`)?.value || '').trim();
+            if (lVal !== (localStorage.getItem(`spSpectrumLayer${dp}`)   || '')) spectrumCfgChanged = true;
+            if (mVal !== (localStorage.getItem(`spSpectrumMapping${dp}`) || '')) spectrumCfgChanged = true;
+            localStorage.setItem(`spSpectrumLayer${dp}`,   lVal);
+            localStorage.setItem(`spSpectrumMapping${dp}`, mVal);
+          });
+          if (spectrumCfgChanged && colorMetric === 'spectrum') {
+            _removeSpectrumLayer();
+            updateSpectrumLayer();
+          }
+          settingsPanel.classList.remove('sp-visible');
+          settingsBtn.classList.remove('active');
+        }
+
+        settingsBtn.addEventListener('click', () => {
+          if (settingsPanel.classList.contains('sp-visible')) closeSettings();
+          else openSettings();
+        });
+        document.getElementById('spApply').addEventListener('click', closeSettings);
+      })();
+
+     document.getElementById('zoneCentroidSelect').addEventListener('change', e => {
+       zoneCentroidMode = e.target.value;
+       if (zoneCentroidMode === 'off') selectedZoneId = null;
+       highlightedOdZoneId = null;
+       updateOverlay(true);
+     });
+
+     document.getElementById('buildingPurpose').addEventListener('change', _applyBuildingDisplay);
+     document.getElementById('buildingDisplay').addEventListener('change', _applyBuildingDisplay);
+
+    // ── Voertuigteller-paneel ────────────────────────────────────────────────
+
+    const counterBtn   = document.getElementById('counterBtn');
+    const counterPanel = document.getElementById('counterPanel');
+
+    function _openCounterPanel() {
+      const r = counterBtn.getBoundingClientRect();
+      counterPanel.style.top  = (r.bottom + 4) + 'px';
+      counterPanel.style.left = Math.min(r.left, window.innerWidth - 302) + 'px';
+      counterPanel.classList.add('cp-visible');
+      _updateCounterPanel();
+    }
+
+    function _closeCounterPanel() {
+      counterPanel.classList.remove('cp-visible');
+      _counterPlaceMode = false;
+      counterBtn.classList.remove('active');
+      // Alle geplaatste tellers verwijderen bij het sluiten van het paneel
+      for (const ct of [..._counterList]) _removeCounter(ct.id);
+      updateOverlay(true);
+    }
+
+    counterBtn.addEventListener('click', () => {
+      if (counterPanel.classList.contains('cp-visible')) {
+        // Paneel open: knop togglet plaatsings-modus
+        _counterPlaceMode = !_counterPlaceMode;
+        counterBtn.classList.toggle('active', _counterPlaceMode);
+        updateOverlay(true);
+      } else {
+        // Paneel gesloten: open paneel en activeer plaatsings-modus
+        _openCounterPanel();
+        _counterPlaceMode = true;
+        counterBtn.classList.add('active');
+        updateOverlay(true);
+      }
+    });
+
+    document.getElementById('cpClose').addEventListener('click', _closeCounterPanel);
+
+    // ── Analoge simulatieklok ─────────────────────────────────────────────────
+
+    // Standaard datum = vandaag
+    document.getElementById('fspDate').value = new Date().toISOString().split('T')[0];
+
+    let simHour = 8;           // fractionele klokstand (0–24), start op 08:00
+    let _simApplyTimer = null; // debounce-timer voor het toepassen van de flow-scaler
+    const SIM_TICK_MS         = 5000;  // elke 5 seconden een stapje
+    const SIM_HOURS_PER_TICK  = 1 / 12; // 12 stappen × 5s = 1 simulatie-uur per echte minuut (5 sim-minuten per stap)
+
+    /** Bepaal het dagdeel (mrh/erh/rest) dat bij een klokuur hoort. */
+    function daypartForHour(h) {
+      if (h >= 6  && h < 10) return 'mrh';
+      if (h >= 15 && h < 19) return 'erh';
+      return 'rest';
+    }
+
+    /** Werk de wijzerplaat, het digitale label en het uur-inputveld bij. */
+    function updateClockUI(instant) {
+      const hand = document.getElementById('simClockHand');
+      hand.style.transition = instant ? 'none' : '';
+      const angle = (simHour % 12) * 30; // 30° per uur op een 12-uurs wijzerplaat (vloeiend, ook binnen het uur)
+      hand.setAttribute('transform', `rotate(${angle} 50 50)`);
+      const wholeHour = Math.floor(simHour) % 24;
+      const minutes   = Math.floor((simHour % 1) * 60);
+      const ampm = wholeHour < 12 ? 'AM' : 'PM';
+      const h12  = (wholeHour % 12 === 0) ? 12 : (wholeHour % 12);
+      document.getElementById('simClockTimeText').textContent =
+        String(h12).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+      document.getElementById('simClockModeBtn').textContent = ampm;
+      document.getElementById('fspHour').value = wholeHour;
+    }
+
+    /** Verwerk de nevenwerkingen wanneer de klok een nieuw heel uur bereikt. */
+    function _onWholeHourChanged(prevSimHour) {
+      const prevWhole = Math.floor(prevSimHour) % 24;
+      const newWhole  = Math.floor(simHour) % 24;
+      if (newWhole === prevWhole) return false;
+      const dp = daypartForHour(newWhole);
+      if (dp !== daypart) applyDaypartSideEffects(dp);
+      updateSunLight();
+      return true;
+    }
+
+    /** Zet de simulatieklok op een specifiek (heel) uur en pas de scaling direct toe. */
+    function setSimHour(h, { immediate = true } = {}) {
+      const prev = simHour;
+      simHour = (((h % 24) + 24) % 24);
+      updateClockUI(true);
+      _onWholeHourChanged(prev);
+      updateSunLight();
+      return immediate ? scheduleSimApply() : Promise.resolve();
+    }
+
+    // ── Laad-indicator tijdens een dagdeel-/simulatie-overgang ──────────────────
+    // Tellertje i.p.v. boolean: applyFlowScaler-aanroepen kunnen overlappen
+    // (bv. snel doorklikken), dan moet de spinner pas verdwijnen na de laatste.
+    let _simClockBusyCount = 0;
+    // Minimale zichtbare duur voor de kaart-spinner: een (deels) gecachte backend-
+    // aanroep kan binnen enkele milliseconden terugkomen, dan knippert de overlay te
+    // snel om op te merken. Daarom blijft hij, eenmaal getoond, minstens dit lang staan.
+    const SIM_BUSY_OVERLAY_MIN_MS = 350;
+    let _simBusyOverlayShownAt = 0;
+    let _simBusyOverlayHideTimer = null;
+    function _setSimClockBusy(isBusy) {
+      _simClockBusyCount = Math.max(0, _simClockBusyCount + (isBusy ? 1 : -1));
+      const overlay = document.getElementById('simBusyOverlay');
+      if (!overlay) return;
+      if (_simClockBusyCount > 0) {
+        if (_simBusyOverlayHideTimer) { clearTimeout(_simBusyOverlayHideTimer); _simBusyOverlayHideTimer = null; }
+        if (!overlay.classList.contains('visible')) {
+          overlay.classList.add('visible');
+          _simBusyOverlayShownAt = performance.now();
+        }
+      } else {
+        const remaining = SIM_BUSY_OVERLAY_MIN_MS - (performance.now() - _simBusyOverlayShownAt);
+        if (remaining > 0) {
+          _simBusyOverlayHideTimer = setTimeout(() => {
+            overlay.classList.remove('visible');
+            _simBusyOverlayHideTimer = null;
+          }, remaining);
+        } else {
+          overlay.classList.remove('visible');
+        }
+      }
+    }
+
+    /** Geeft de browser een kans om te schilderen (de spinner zichtbaar te maken)
+     *  vóórdat zwaar synchroon werk het hoofdthread blokkeert. Eén rAF is niet
+     *  genoeg (die vuurt vóór het schilderen van dat frame); de tweede rAF
+     *  garandeert dat het schilderen van de eerste al heeft plaatsgevonden. */
+    function _yieldToPaint() {
+      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    /** Debounce: voorkomt overmatig fetch-verkeer bij het slepen van de wijzer.
+     *  De spinner gaat al aan zodra de aanroep gepland wordt (bv. bij het aan-/
+     *  uitzetten van de simulatie), i.p.v. pas na afloop van de debounce-wachttijd. */
+    function scheduleSimApply() {
+      if (_simApplyTimer) { clearTimeout(_simApplyTimer); _setSimClockBusy(false); }
+      _setSimClockBusy(true);
+      return new Promise(resolve => {
+        _simApplyTimer = setTimeout(() => {
+          _setSimClockBusy(false);
+          applyFlowScaler().finally(resolve);
+        }, 300);
+      });
+    }
+
+
+    updateClockUI();
+
+    // GMT Digital Twin: de simulatie start altijd gepauzeerd — de klok staat
+    // stil op het startuur totdat de gebruiker zelf de afspeel-toggle aanzet.
+    // De modi hieronder worden alvast geactiveerd zodat zodra er wél wordt
+    // afgespeeld, meteen alle in dit netwerk aanwezige verkeersmodi zichtbaar zijn.
+    paused = true;
+    _setSimPausedUI(true);
+    document.querySelectorAll('.modeBtn').forEach(btn => {
+      if (btn.style.display === 'none') return;
+      btn.classList.add('active');
+      visibleModes.add(btn.dataset.mode);
+    });
+    rebuildCars();
+    updateLegend();
+    scheduleSimApply();
+    updateOverlay(true);
+
+    // Wijzer verslepen (muis + touch) om het uur handmatig te verzetten.
+    (function initClockDrag() {
+      const svg  = document.getElementById('simClockSvg');
+      let dragging = false;
+
+      function angleToHour(clientX, clientY) {
+        const rect = svg.getBoundingClientRect();
+        const cx = rect.left + rect.width  / 2;
+        const cy = rect.top  + rect.height / 2;
+        const dx = clientX - cx, dy = clientY - cy;
+        let deg = Math.atan2(dx, -dy) * 180 / Math.PI; // 0° = boven (12 uur)
+        if (deg < 0) deg += 360;
+        const h12 = Math.round(deg / 30) % 12;
+        // Behoud AM/PM van het huidige uur (klok toont enkel 12 uur per omwenteling)
+        const isPM = simHour >= 12;
+        return isPM ? (h12 === 0 ? 12 : h12) + 12 : (h12 === 12 ? 0 : h12);
+      }
+
+      function onMove(e) {
+        if (!dragging) return;
+        const pt = e.touches ? e.touches[0] : e;
+        setSimHour(angleToHour(pt.clientX, pt.clientY));
+      }
+      function onUp() {
+        dragging = false;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
+      }
+      document.getElementById('simClock').addEventListener('mousedown', e => {
+        if (carsSuspended || e.target.closest('.dp-wedge')) return;
+        dragging = true;
+        onMove(e);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+      document.getElementById('simClock').addEventListener('touchstart', e => {
+        if (carsSuspended || e.target.closest('.dp-wedge')) return;
+        dragging = true;
+        onMove(e);
+        window.addEventListener('touchmove', onMove, { passive: true });
+        window.addEventListener('touchend', onUp);
+      }, { passive: true });
+    })();
+
+    /** Verzet de klok een vast aantal uren t.o.v. de huidige stand (knopjes rond het
+     *  tijdveld en de AM/PM-knop). Werkt ook terwijl gepauzeerd — alleen het automatisch
+     *  doorlopen van de klok staat dan stil, de tijd blijft instelbaar. Enkel tijdens knoop-/wegvak-
+     *  bewerken (carsSuspended) is dit geblokkeerd. */
+    async function _nudgeSimHour(deltaHours) {
+      if (_simClockBusyCount > 0 || carsSuspended) return; // vorige overgang nog bezig, of aan het bewerken
+      // Zelfde redenering als bij het afspeel-vinkje: de spinner moet al staan
+      // vóór het (mogelijk zware) synchrone werk in setSimHour, niet pas zodra
+      // die zelf scheduleSimApply/applyFlowScaler bereikt.
+      // Eerst laten schilderen, pas dán dat werk starten.
+      _setSimClockBusy(true);
+      await _yieldToPaint();
+      try {
+        await setSimHour(simHour + deltaHours);
+      } finally {
+        _setSimClockBusy(false);
+      }
+    }
+
+    // Klik op het knopje in het tijdsblokje: wisselt AM/PM (12 uur door).
+    document.getElementById('simClockModeBtn').addEventListener('click', () => _nudgeSimHour(12));
+
+    // Knopjes rond het tijdveld: een (half) uur terug/vooruit.
+    document.getElementById('simHourBackFullBtn').addEventListener('click', () => _nudgeSimHour(-1));
+    document.getElementById('simHourBackHalfBtn').addEventListener('click', () => _nudgeSimHour(-0.5));
+    document.getElementById('simHourFwdHalfBtn').addEventListener('click', () => _nudgeSimHour(0.5));
+    document.getElementById('simHourFwdFullBtn').addEventListener('click', () => _nudgeSimHour(1));
+
+    // Datum-, temperatuur-, weer- en reisdoel-wijzigingen passen de simulatie direct toe.
+    document.getElementById('fspDate').addEventListener('change', () => { updateSunLight(); scheduleSimApply(); });
+    document.getElementById('fspPurpose').addEventListener('change', scheduleSimApply);
+
+    function _wireOptButtonGroup(containerIds, hiddenSelectId) {
+      const btns = containerIds.flatMap(id => Array.from(document.querySelectorAll(`#${id} .sim-opt-btn`)));
+      btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          btns.forEach(b => b.classList.toggle('active', b === btn));
+          document.getElementById(hiddenSelectId).value = btn.dataset.val;
+          scheduleSimApply();
+        });
+      });
+    }
+    _wireOptButtonGroup(['simTempBtns'], 'fspTemp');
+    _wireOptButtonGroup(['simWeatherBtns'], 'fspWeather');
+
+    // Simulatielus: elke 10 seconden schuift de wijzer een stukje op (1 simulatie-uur per echte minuut).
+    setInterval(() => {
+      if (paused) return;
+      const prev = simHour;
+      let next = simHour + SIM_HOURS_PER_TICK;
+      if (next >= 24) {
+        next -= 24;
+        const d = new Date((document.getElementById('fspDate').value || new Date().toISOString().split('T')[0]) + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        document.getElementById('fspDate').value = d.toISOString().split('T')[0];
+      }
+      simHour = next;
+      updateClockUI();
+
+      if (_onWholeHourChanged(prev)) scheduleSimApply();
+
+    }, SIM_TICK_MS);
+
+    /** Vraag de backend om geschaalde flows en patch de in-memory segmenten. */
+    async function applyFlowScaler() {
+      const dateVal    = document.getElementById('fspDate').value || null;
+      const hour       = String(document.getElementById('fspHour').value).padStart(2, '0');
+      const dateTime   = dateVal ? `${dateVal}T${hour}:00:00` : null;
+      const tempVal    = document.getElementById('fspTemp').value;
+      const weatherVal = document.getElementById('fspWeather').value;
+      const purposeVal = document.getElementById('fspPurpose').value || null;
+      // Regio uit netwerk-properties — fallback naar 'midden'
+      const regioVal   = geojson.properties?.regio || 'midden';
+
+      _setSimClockBusy(true);
+      try {
+        const _fspParams = new URLSearchParams({
+          areaId:      AREA_ID,
+          mode:        MODE,
+          temperature: tempVal,
+          weather:     weatherVal,
+          regio:       regioVal,
+        });
+        if (dateTime)   _fspParams.set('date', dateTime);
+        if (purposeVal) _fspParams.set('purpose', purposeVal);
+        // Alleen de velden die hieronder gebruikt worden, zonder geometrie: de
+        // volledige GeoJSON (~10MB) in één JSON.parse liet de pagina elk sim-uur
+        // even vaststaan; zo is het ~0,9MB.
+        _fspParams.set('skipGeometry', 'true');
+        _fspParams.set('properties', 'linkId,flow,flow24hrs,flowTemporalUnit');
+        const resp = await fetch(`/collections/flows/items?${_fspParams}`);
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }));
+          throw new Error(err.error || resp.statusText);
+        }
+
+        const scaled = await resp.json();  // GeoJSON FeatureCollection (zonder geometrie)
+
+        // ── Sla originele waarden op (alleen de eerste keer) ────────────────
+        if (!_fspOriginal) {
+          _fspOriginal = new Map();
+          for (const seg of segments) {
+            const p = seg.props;
+            _fspOriginal.set(String(p.linkId), {
+              flow:            p.flow,
+              flow24hrs:       p.flow24hrs,
+              flowsPerDaypart: p.flowsPerDaypart
+                ? { mrh: p.flowsPerDaypart.mrh, erh: p.flowsPerDaypart.erh, rest: p.flowsPerDaypart.rest }
+                : null,
+            });
+          }
+        }
+
+        // ── Bouw een linkId-opzoekkaart van de geschaalde features ──────────
+        const scaledMap = new Map();
+        for (const f of (scaled.features || [])) {
+          if (f.properties?.linkId != null) {
+            scaledMap.set(String(f.properties.linkId), f.properties);
+          }
+        }
+
+        // ── Patch de segmenten ──────────────────────────────────────────────
+        const temporal = (scaled.features?.[0]?.properties?.flowTemporalUnit ?? 24);
+        for (const seg of segments) {
+          const sp = scaledMap.get(String(seg.props.linkId));
+          if (!sp) continue;
+          const scaledFlow = sp.flow ?? 0;
+          seg.props.flow      = scaledFlow;
+          seg.props.flow24hrs = sp.flow24hrs ?? scaledFlow;
+          if (temporal === 1) {
+            // Specifieke datum/tijd → zelfde waarde voor alle dagdelen
+            seg.props.flowsPerDaypart = { mrh: scaledFlow, erh: scaledFlow, rest: scaledFlow };
+          } else {
+            // Geen datum → 24u-totaal; dpFlowOf verdeelt via DP_FRACTION
+            seg.props.flowsPerDaypart = null;
+          }
+        }
+
+        rebuildLinkFlowMap();
+        calibrateRouteProductions();  // herkalibreren tegen de weer/tijd-geschaalde flows
+
+        // Herbereken max-flow na schaling voor legenda en kleurschaal
+        let fspMax = 0;
+        for (const seg of segments) {
+          const v = dpFlowOf(seg.props);
+          if (v > fspMax) fspMax = v;
+        }
+        _fspMaxFlow = fspMax || 1;
+
+        // Versieteller omhoog → deck.gl updateTriggers vuren
+        _fspVersion++;
+
+        // Actief-label voor tooltip
+        _fspActiveLabel = dateTime ? `${dateVal} ${hour}:00` : T('fspTitleValue');
+        updateSunLight();
+
+        applyProductionStep();
+        updateLegend();
+        updateOverlay(true);
+
+      } catch (err) {
+        console.error('[flow-scaler] toepassen mislukt:', err);
+      } finally {
+        _setSimClockBusy(false);
+      }
+    }
+
+  })().catch(err => {
+    console.error('[init] Kritieke fout bij laden:', err);
+    setLoaderMsg(`\u26a0 ${err.message}`);
+    const el = document.getElementById('loaderMsg');
+    if (el) el.style.cssText += ';color:#ff6b6b;white-space:pre-wrap;max-width:480px';
+  });
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function setLoaderMsg(msg) {
+    document.getElementById('loaderMsg').textContent = msg;
+  }
+
+  // Initialiseer het linker menu-paneel zodra de app klaar is
+  initLeftMenuPanel();
+
+  function hideLaadscherm() {
+    const el = document.getElementById('loader');
+    if (!el) return;
+    el.classList.add('fade');
+    setTimeout(() => el.remove(), 700);
+  }
+
+  // ── Globale debug-toggle ────────────────────────────────────────────────────
+  // window._debugMode is de gedeelde schakelaar voor zowel de wizard (prepare-pipeline)
+  // als het hoofd-paneel (simulatiestatistieken). De handler zit buiten de async IIFE
+  // zodat hij ook werkt als er nog geen gebied geladen is.
+  window._debugMode = false;
+  document.getElementById('debugBtn').addEventListener('click', () => {
+    window._debugMode = !window._debugMode;
+    document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+    document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+    // Als de hoofdkaart al geladen is, direct het paneel verversen
+    if (typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+  });
+

@@ -572,7 +572,7 @@
       background: transparent !important;
       color:1px solid var(--ga-lijn)
     }
-    .edit-btn:hover { background: #fff3e6 !important; }
+    .edit-btn:hover { background: var(--ga-rood-licht) !important; }
     .edit-btn.active {
       background: var(--ga-rood) !important;
       border-color: var(--ga-rood)  !important;
