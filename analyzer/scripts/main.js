@@ -1,0 +1,12575 @@
+  'use strict';
+
+  // ── Vertalingen ───────────────────────────────────────────────────────────
+  const TRANSLATIONS = {
+    NL: {
+      // Kopbalk
+      navKaart:'Kaart',
+      // Zijpaneel-sectietitels
+      headerContact:'Contact',
+      blockSimulatie:'Simulatie', blockAanpassingen:'Aanpassingen', blockAnalyse:'Analyse',
+      blockZonePA:'Zone productie/attractie', blockPandPA:'Pand productie/attractie',
+      // Toolbar
+      homeTitle:'Home',
+      dpMrhLabel:'OS', dpMrhTitle:'Ochtendspits',
+      dpErhLabel:'AS', dpErhTitle:'Avondspits',
+      dpRestLabel:'RD', dpRestTitle:'Restdag',
+      settingsTitle:'Instellingen', settingsDebugLabel:'Debug-uitvoer', settingsLangLabel:'Taal', settingsApplyBtn:'Toepassen',
+      settingsBasemapLabel:'Achtergronden', settingsBasemapMap:'Kaart', settingsBasemapSat:'Luchtfoto', settingsBasemapNone:'Zwart', settingsBasemapWhite:'Wit', settingsBasemapMontreal:'Kaart 2',
+      metricTitle:'Kleur-metriek',
+      simClockCycleTitle:'Klik om te wisselen tussen 24 uur / ochtendspits / restdag / avondspits',
+      nodeEditTitle:'Productie/attractie per knoop wijzigen',
+      linkEditTitle:'Capaciteit per wegvak wijzigen',
+      linkFlowEditTitle:'Flow per wegvak wijzigen',
+      addWegvakTitle:'Wegvak toevoegen (nog niet beschikbaar)',
+      addKnoopTitle:'Knoop toevoegen (nog niet beschikbaar)',
+      // Metriek-opties
+      metricFlow:'Intensiteit', metricFlowScaled:'Intensiteit (geschaald)',
+      metricOccupancy:'Bezettingsgraad', metricOccupancyScaled:'Bezettingsgraad (geschaald)',
+      metricIC:'I/C', metricICScaled:'I/C (geschaald)',
+      metricSpeed:'Snelheid', metricCapacity:'Capaciteit', metricPriorityRoads:'Voorrangswegen', metricNone:'Geen', metricCompare:'Vergelijking tonen',
+      metricSafety:'Veiligheid',
+      layersNetwork:'Netwerk', layerNotFor24h:'Niet beschikbaar bij etmaal (24 uur): geen uurcapaciteit', layersTraffic:'Verkeer', layersSafety:'Veiligheid', layersNoise:'Geluid', layersEmission:'Uitstoot', layersDesign:'Inrichting',
+      metricSafetyTotal:'Totaal',
+      scoreGood:'Goed', scoreFair:'Redelijk', scoreModerate:'Matig', scorePoor:'Slecht', scoreNA:'n.v.t.',
+      catSignal:'Verkeerslicht', catRoundabout:'Rotonde', catSpeedBump:'Verkeersdrempel',
+      kpi_r_functional_usage:'Functioneel gebruik', kpi_r_longitudinal_marking:'Kantmarkering',
+      kpi_r_directional_separation:'Rijrichtingscheiding', kpi_r_lane_width:'Rijstrookbreedte',
+      kpi_r_road_surface:'Wegdek', kpi_r_pedestrian_facility:'Voetgangersfaciliteit',
+      kpi_r_bicycle_facility:'Fietsfaciliteit', kpi_r_parking_facility:'Parkeerfaciliteit',
+      kpi_r_bus_stop_facility:'Bushaltefaciliteit', kpi_r_speed_bumps:'Drempels', kpi_r_roadside_damage:'Bermschade',
+      kpi_r_road_width:'Rijbaanbreedte', kpi_r_pedestrian_width:'Breedte voetpad',
+      kpi_r_bicycle_width:'Breedte fietspad', kpi_r_parking_location:'Parkeerlocatie',
+      kpi_r_bus_location:'Buslocatie', kpi_r_pedestrian_crossing:'Voetgangersoversteek',
+      kpi_r_bicycle_crossing:'Fietsoversteek', kpi_r_bike_speed:'Fietssnelheid', kpi_r_bike_usage:'Fietsgebruik',
+      kpi_r_bike_parking:'Fietsparkeren', kpi_r_social_interaction:'Sociale interactie',
+      designGroupRoad:'Wegprofiel', metricSurface:'Verharding', metricWidthClass:'Breedte', metricSidewalks:'Stoepen',
+      legendSurface:'Verharding', legendWidthClass:'Wegbreedte (totaal)', legendSidewalks:'Stoepen',
+      surfAsphalt:'Asfalt', surfPavers:'Klinkers', surfConcrete:'Beton', surfSemiPaved:'Halfverhard', surfUnpaved:'Onverhard',
+      sidewalkBoth:'Beide', sidewalkLeft:'Links', sidewalkRight:'Rechts', sidewalkNone:'Geen', classUnknown:'Onbekend', legendSafety:'Veiligheid (totaal)',
+      safetyGroupRoad:'Wegvak', safetyGroupPedestrian:'Voetganger', safetyGroupBicycle:'Fiets', safetyGroupParkingBus:'Parkeren & bus', safetyGroupOther:'Overig',
+      wsInputs:'Invoer', wsInputsHint:'Waarmee de score berekend is, en waar het vandaan komt.',
+      wsSrcNetwork:'netwerk', wsSrcNwb:'NWB', wsSrcAssets:'BGT/OSM', wsSrcDefault:'aanname', wsSrcNone:'geen bron',
+      wsInCategory:'Wegcategorie', wsInSpeed:'Snelheid (V85)', wsInWidth:'Wegbreedte', wsInSurface:'Wegdek',
+      wsInFlow:'Intensiteit', wsInProfile:'Profiel', wsInBicycle:'Fietsers', wsInPedestrian:'Voetgangers',
+      wsInPedCrossing:'Oversteek voetgangers', wsInParking:'Parkeren', wsInSpeedBumps:'Drempels',
+      wsInMarkings:'Kantmarkering', wsInSeparation:'Rijrichtingscheiding', wsInBus:'Bushalte', wsInSocial:'Sociale interactie',
+      wsCoverage:'Uit data (rest is aanname):', wsOldRun:'Berekend met een oudere versie: bijna alles is aanname.',
+      wsOldRunPanel:'Deze score is met een oudere versie berekend; bronnen zijn niet bekend.', wsRerun:'Opnieuw berekenen',
+      metricNoiseLden:'Geluid (Lden)', metricNoiseLnight:'Geluid (Lnight)',
+      metricCo2:'CO\u2082-uitstoot', metricNox:'NO\u2093-uitstoot', metricPm10:'Fijnstof (PM10)',
+      metricGroupNoise:'Geluid', metricGroupEmis:'Uitstoot',
+      metricGroupSpeedFactors:'Snelheid',
+      metricSpeedCrossings:'Zebrapaden', metricSpeedCycleCrossings:'Fietsoversteek',
+      metricSpeedIntersections:'Kruispunten', metricSpeedYield:'Haaientanden/stopstrepen',
+      metricSpeedRefuge:'Vluchtheuvels (midden op de weg)',
+      metricSpeedFromRight:'Verkeer van rechts', metricSpeedLeftTurn:'Linksaf-hinder',
+      metricSpeedOncoming:'Tegenliggerhinder', metricSpeedElevation:'Hellingen',
+      metricSpeedPenaltyTotal:'Straf-seconden (totaal)',
+      // Laadscherm
+      loaderInit:'GeoJSON laden\u2026', loaderNetwork:'Netwerkdata laden\u2026',
+      loaderZones:'Zones laden\u2026', loaderRoutes:'Routes laden\u2026', loaderMap:'Kaart laden\u2026',
+      // Gebiedskeuze
+      areaTitle:'Netwerk-visualisatie', areaSubtitle:'Kies een gebied om te laden:',
+      areaNotFound:'Geen gebieden gevonden. Stel DATA_DIR in .env in.',
+      areaConnError:'Verbinding met server mislukt.',
+      areaDelTitle: n => `Verwijder ${n}`,
+      areaDelConfirm: (n, m) => `Gebied \u201c${n}\u201d (${m}) definitief verwijderen?\n\nLet op: alle afgeleide sub-scenario's (de hele boom) worden ook verwijderd.`,
+      areaDelError: e => `Verwijderen mislukt: ${e}`,
+      newAreaBtn:'+ Nieuw gebied aanmaken',
+      // Nieuw-gebied scherm
+      newAreaH2:'Nieuw gebied', newAreaName:'Naam', newAreaNamePh:'bijv. Merwehaven',
+      newAreaMode:'Transportmodus', newAreaCar:'Auto (CAR)', newAreaBike:'Fiets (BIKE)',
+      newAreaPed:'Voetganger (PEDESTRIAN)',
+      newAreaBboxHint:'Teken een rechthoek op de kaart om de bbox te bepalen. Klik voor de eerste hoek, klik nogmaals voor de tweede.',
+      newAreaNoBbox:'Geen bbox getekend', newAreaClearBbox:'Wis bbox',
+      newAreaHome:'\u2302', newAreaCancel:'Annuleren', newAreaSubmit:'Aanmaken',
+      newAreaStatusStart:'Pipeline starten\u2026', newAreaStatusConn:'Verbinding mislukt.',
+      newAreaStatusRunning:'Pipeline actief\u2026', newAreaStatusDone:'Klaar! Gebied wordt geopend\u2026',
+      newAreaStatusBack:'Terug naar overzicht', newAreaStatusError: c => `Fout (exitcode ${c}).`,
+      newAreaAlertName:'Voer een naam in.', newAreaAlertBbox:'Teken eerst een bbox op de kaart.',
+      newAreaAlertMode:'Selecteer minstens één transportmodus.',
+      // Link-dialoog
+      linkDialogDefault:'Wegvak', linkDialogName: n => `Wegvak: ${n}`, linkDialogId: id => `Link ${id}`,
+      linkDialogCap:'Capaciteit', linkDialogCapUnit:'vtg/u',
+      linkDialogSpeed:'Snelheid instellen', linkDialogSpeedHint:'past capaciteit aan',
+      // Link flow-dialoog
+      linkFlowDialogLabel:'Intensiteit (24u)', linkFlowDialogUnit:'pae/dag',
+      linkFlowDialogHint:'+500 = delta\u00a0|\u00a03000 = absoluut (\u22650)',
+      linkFlowDialogPh:'+500 of 3000',
+      linkFlowCurrentLabel: v => `Huidige waarde: ${v}\u00a0pae/dag`,
+      changeFlowLabel: v => `flow: ${v} pae/dag`,
+      // Nieuw wegvak
+      linkAddTitle:'Nieuw wegvak intekenen',
+      linkAddHint:'Klik om een punt te plaatsen \u00b7 dubbelklik of Afronden om te voltooien',
+      linkAddFinishBtn:'Lijn afronden',
+      linkAddClearBtn:'Wis lijn',
+      linkAddDialogTitle:'Nieuw wegvak',
+      linkAddLengthLabel: m => `Lengte: ~${m}\u00a0m`,
+      linkAddCapLabel:'Capaciteit',
+      linkAddSpeedLabel:'Snelheid',
+      linkAddLanesLabel:'Rijstroken',
+      linkAddDialogOkBtn:'Toevoegen',
+      linkAddChangeLabel: m => `+ Nieuw wegvak (~${m}\u00a0m)`,
+      changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pae/u \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0rijstr.`,
+      // GMT upload-dialoog
+      gmtUploadDialogTitle:'Upload naar GMT',
+      gmtUploadMaxFlowLabel: v => `Max. intensiteit in netwerk: ${v.toLocaleString('nl-NL')}\u00a0pae/dag`,
+      gmtUploadMaxFlowLoading:'Max. intensiteit ophalen\u2026',
+      gmtUploadFilterLabel:'Max. voor upload (leeg\u00a0=\u00a0alles)',
+      gmtUploadFilterPh:'bijv. 5000',
+      gmtUploadBtn:'Uploaden',
+      // Node-dialoog
+      nodeDialogDefault:'Knoop',
+      nodeDialogProd:'Productie', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut (\u22650)',
+      nodeDialogProdPh:'+300 of 1200',
+      nodeDialogAttr:'Attractie', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut (\u22650)',
+      nodeDialogAttrPh:'+300 of 800',
+      zoneExplodeBtnTitle:'Zone opsplitsen',
+      zoneExplodeDialogDefault:'Zone opsplitsen', zoneExplodeDialogCount:'Aantal delen',
+      zoneExplodeDialogHint:'minimaal 2', zoneExplodeDialogPh:'bijv. 3',
+      // Gedeeld dialoog
+      dialogCancel:'Annuleren', dialogOk:'OK',
+      // Wijzigingenlijst
+      changesTitle:'Wijzigingen', scenarioNamePh:'Scenario-naam', applyBtn:'\u25b6 Doorvoeren',
+      applyStart:'Adjust starten\u2026', applyRunning:'Bezig\u2026', applyDone:'Klaar!',
+      estimatingRoutes: 'Routes schatten via Dijkstra\u2026',
+      applyError: c => `Onbekende fout (returncode: ${c})`, applyFetchError: e => `Fout: ${e}`,
+      changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
+      changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeExplodeLabel: n => `opsplitsen \u00d7${n}`,
+      changeItemDel:'Verwijder',
+      noChanges:'Geen wijzigingen', viewChangesBtnTitle:'Wijzigingen bekijken',
+      changesPendingSection:'Openstaand',
+      changesHistLinkLabel: id => `Wegvak ${id}`, changesHistNodeLabel: id => `Knoop ${id}`,
+      changesHistZoneLabel: id => `Zone ${id}`,
+      // Polygon-selectie
+      nodeSelectTitle:'Selectiemodus',
+      nodeSelectClick:'Klik op een knoop',
+      nodeSelectPolygon:'Polygon tekenen',
+      polygonHint:"Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.",
+      polygonFinishBtn:'\u2713 Polygon afsluiten',
+      polygonClearBtn:'\u2715 Wis polygon',
+      polygonDialogTitle:'Polygon aanpassing',
+      polygonNodeInfoLabel: n => n === 1 ? `${n} knoop geselecteerd` : `${n} knopen geselecteerd`,
+      polygonDialogProd:'Productie (totaal)',
+      polygonDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut',
+      polygonDialogAttr:'Attractie (totaal)',
+      polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absoluut',
+      polygonPerNodeLabel: v => `\u2192 per knoop: ${v}`,
+      polygonNoNodes:'Geen knopen gevonden in de polygon.',
+      // Link polygon-selectie
+      linkSelectTitle:'Selectiemodus',
+      linkSelectClick:'Klik op een wegvak',
+      linkSelectPolygon:'Polygon tekenen',
+      linkPolygonHint:"Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.",
+      linkPolygonFinishBtn:'\u2713 Polygon afsluiten',
+      linkPolygonClearBtn:'\u2715 Wis polygon',
+      linkPolygonDialogTitle:'Polygon capaciteitswijziging',
+      linkPolygonLinkInfoLabel: n => n === 1 ? `${n} wegvak geselecteerd` : `${n} wegvakken geselecteerd`,
+      linkPolygonDialogCap:'Capaciteit',
+      linkPolygonDialogCapHint:'800 = absoluut\u00a0|\u00a080% = factor',
+      linkPolygonDialogCapUnit:'vtg/u',
+      linkPolygonPerLinkLabel: v => `\u2192 gemiddeld na wijziging: ${v}\u00a0vtg/u`,
+      linkPolygonNoLinks:'Geen wegvakken gevonden in de polygon.',
+      linkCloseBtnTitle:'Weg afsluiten (capaciteit = 0)',
+      changeClosedLabel:'afgesloten (cap = 0)',
+      changeOdTripsLabel: t => `OD: ${t} rit/dag`,
+      // OD-paar aanpassen
+      odEditBtnTitle:'OD-paar aanpassen',
+      odEditBtnLabel:'OD-paar aanpassen',
+      odEditTitle:'OD-paar aanpassen',
+      odEditFromLabel:'Herkomst',
+      odEditToLabel:'Bestemming',
+      odEditWaiting:'Klik een zone…',
+      odEditTripsSection:'Verplaatsingen',
+      odEditTripsLabel:'Ritten/dag',
+      odEditMotifSection:'Motiefverdeling (%)',
+      odEditSaveBtn:'+ Toevoegen aan wijzigingen',
+      odEditFoundRoutes: n => `${n} route(s) gevonden`,
+      odEditCurrentTrips:'Huidig:',
+      odEditNoRoutes:'Geen routes gevonden voor dit OD-paar.',
+      // Legenda
+      legendFlow:'Intensiteit', legendOccupancy:'Bezettingsgraad', legendIC:'I/C',
+      legendNoiseLden:'Geluid Lden', legendNoiseLnight:'Geluid Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
+      legendSpeed:'Snelheid', legendCapacity:'Capaciteit', legendCompare:'Vergelijking',
+      legendSpeedCrossings:'Zebrapaden', legendSpeedCycleCrossings:'Fietsoversteek',
+      legendSpeedIntersections:'Kruispunten', legendSpeedYield:'Haaientanden/stopstrepen',
+      legendSpeedRefuge:'Vluchtheuvels',
+      legendPriorityRoads:'Voorrangswegen',
+      legendSpeedFromRight:'Verkeer van rechts', legendSpeedLeftTurn:'Linksaf-hinder',
+      legendSpeedOncoming:'Tegenliggerhinder', legendSpeedElevation:'Hellingen',
+      legendSpeedPenaltyTotal:'Straf-seconden',
+      legendUnit:'vtg/u',
+      carCountFmt: n => `~${n.toLocaleString('nl-NL')} voertuigen op de wegen`,
+      // Flow-scaler panel
+      fspBtnTitle:'Flow-scaler instellen',
+      fspTitle:'Inschatting',
+      fspTitleValue:'Volumes',
+      fspDateLabel:'Datum',
+      fspHourLabel:'Uur',
+      fspTempLabel:'Temperatuur',
+      fspTempHigh:'Hoog', fspTempMedium:'Medium', fspTempLow:'Laag',
+      fspWeatherLabel:'Weer',
+      fspWeatherSunny:'Zonnig', fspWeatherCloudy:'Bewolkt',
+      fspWeatherDry:'Droog', fspWeatherRainy:'Regenachtig',
+      fspPurposeLabel:'Motief',
+      fspPurposeAll:'Alle', fspPurposeWork:'Werk', fspPurposeEducation:'Onderwijs',
+      fspPurposeShopping:'Winkelen', fspPurposeRecreational:'Recreatie', fspPurposeUnknown:'Overig',
+      fspRegioLabel:'Regio (vakantie)',
+      fspRegioMidden:'Midden', fspRegioNoord:'Noord', fspRegioZuid:'Zuid',
+      fspApplyBtn:'Toepassen', fspResetBtn:'Wis',
+      fspLoading:'Laden\u2026', fspDone:'Klaar',
+      fspError: e => `Fout: ${e}`,
+      // Tooltip
+      tooltipSegment: id => `Segment #${id}`,
+      tooltipDaypart:'Dagdeel',
+      tooltipFlow:'Aantal voertuigen', 
+      tooltipFlowUnit:'vtg/u', tooltipFlow24Unit:'vtg',
+      tooltipSpeed:'Snelheid', tooltipLanes:'Rijstroken',
+      tooltipCap:'Capaciteit', tooltipCapUnit:'vtg/u', tooltipOccup:'I/C', tooltipCoverage:'Bezettingsgraad', tooltipLength:'Lengte', tooltipWidth:'Breedte',
+      tooltipSpeedDataUnavailable:'Nog niet beschikbaar in deze brondata', tooltipSpeedFactorPresent:'Ja', tooltipSpeedFactorAbsent:'Nee',
+      tooltipZoneClass:'Zoneklasse',
+      tooltipZoneClassStudy:'Studiegebied', tooltipZoneClassInfluence:'Invloedszone',
+      tooltipZoneClassBoundary:'Grenszone', tooltipZoneClassCbs:'CBS-zone',
+      tooltipZoneProd:'Productie', tooltipZoneProdUnit:'vtg/dag',
+      tooltipZoneAttr:'Attractie',  tooltipZoneAttrUnit:'vtg/dag',
+      tooltipZoneRoute:'Rituitwisseling', tooltipZoneRouteUnit:'vtg/u',
+      tooltipZoneFloorTitle:'Vloeroppervlak per functie',
+      tooltipZoneFloorResidential:'Wonen', tooltipZoneFloorOffice:'Kantoor',
+      tooltipZoneFloorIndustrial:'Industrie', tooltipZoneFloorCommercial:'Winkel/horeca',
+      tooltipZoneFloorEducation:'Onderwijs', tooltipZoneFloorRecreation:'Recreatie',
+      tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Overig',
+      tooltipZoneFloorUnit:'m²',
+      dpLabelMrh:'Ochtendspits', dpLabelErh:'Avondspits', dpLabelRest:'Rest dag', dpLabelEtmaal:'24 uur',
+      // Motiefverdeling (purposeChart)
+      purposeChartTitle:'Motiefverdeling',
+      purposeChartEstimated:'(geschat)', purposeChartNoData:'Onvoldoende data',
+      motifLabel_house:'Thuis', motifLabel_work:'Werk', motifLabel_shopping:'Winkelen',
+      motifLabel_school:'Onderwijs', motifLabel_education:'Onderwijs', motifLabel_recreational:'Recreatie',
+      motifLabel_hospital:'Ziekenhuis', motifLabel_parking:'Parkeren',
+      motifLabel_other:'Overig', motifLabel_unclassified:'Niet geclassificeerd',
+      motifLabel_unknown:'Onbekend',
+      // Netwerktitel
+      networkTitle: n => `${n}`, pageTitle: n => `${n}`,
+      // ScenarioVergelijker
+      splitViewTitle:'ScenarioVergelijker: berekend ↔ bron',
+      badgeLeft:'Berekend scenario', badgeRight:'Bronscenario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Herkomst/bestemming per wegvak',
+      // What-if wegafsluiting
+      whatifRcBtnTitle:'What-if wegafsluiting',
+      whatifRcTitle:'What-if wegafsluiting',
+      whatifRcNamePh:'Scenario-naam',
+      whatifRcRunBtn:'\uD83D\uDEAB Uitvoeren',
+      whatifRcClearBtn:'\u2715 Wis selectie',
+      whatifRcDirectionLabel:'Richting',
+      whatifRcDirBoth:'Beide richtingen',
+      whatifRcDirSame:'Zelfde richting',
+      whatifRcDirOpposite:'Tegenrichting',
+      whatifRcNoLinks:'Geen wegvakken geselecteerd.',
+      whatifRcNoCsv:'NVP-routedata ontbreekt. Bereid het gebied opnieuw voor met nvp_table + nvp_year.',
+      whatifRcStart:'What-if starten\u2026',
+      whatifRcRunning:'Bezig\u2026',
+      whatifRcDone:'Klaar!',
+      whatifRcError: c => `Fout (returncode: ${c})`,
+      whatifRcFetchError: e => `Fout: ${e}`,
+      whatifRcLinkLabel: id => `Wegvak ${id}`,
+      // Gebouwen motief-dropdown
+      buildingPurposeAll:'- gebouwen: alles -', buildingPurposeAllScaled:'- gebouwen: alles (geschaald) -',
+      buildingPurposeWerk:'- gebouwen: werk -', buildingPurposeWerkScaled:'- gebouwen: werk (geschaald) -',
+      buildingPurposeOnderwijs:'- gebouwen: onderwijs -', buildingPurposeOnderwijsScaled:'- gebouwen: onderwijs (geschaald) -',
+      buildingPurposeWinkelen:'- gebouwen: winkelen -', buildingPurposeWinkelenScaled:'- gebouwen: winkelen (geschaald) -',
+      buildingPurposeRecreat:'- gebouwen: recreatie -', buildingPurposeRecreatiScaled:'- gebouwen: recreatie (geschaald) -',
+      buildingPurposeHidden:'- gebouwen: verborgen -',
+      buildingPurposeOff:'- gebouwen: uit -',
+      // Gebouwen tooltip
+      tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
+      tooltipBuildingHeight:'Hoogte', tooltipBuildingCap:'Capaciteit',
+      tooltipBuildingDir:'Richting', tooltipBuildingAttraction:'Attractie',
+      tooltipBuildingProduction:'Productie', tooltipBuildingNeutral:'Neutraal',
+      tooltipBuildingMotief:'Motief',
+      tooltipPurposeAll:'alles', tooltipPurposeWerk:'werk', tooltipPurposeWonen:'wonen',
+      tooltipPurposeOnderwijs:'onderwijs', tooltipPurposeWinkelen:'winkelen', tooltipPurposeRecreat:'recreatie',
+      buildingTypeResidential:'Wonen', buildingTypeOffice:'Kantoor',
+      buildingTypeCommercial:'Winkel / horeca', buildingTypeEducation:'Onderwijs',
+      buildingTypeIndustrial:'Industrie', buildingTypeParking:'Parkeren',
+      buildingTypeTransport:'OV / station', buildingTypeRecreation:'Recreatie',
+      buildingTypeOther:'Overig',
+      // Gebouw P/A-berekening (tooltip-breakdown)
+      calcTitle:'Berekening P/A', calcFloorArea:'Vloeroppervlak', calcZoneBase:'Zone-basis',
+      calcShare:'Aandeel pand', calcInZone:'(zone)', calcInBuilding:'(pand)', calcResidents:'Inwoners zone', calcHouseholds:'Huishoudens zone',
+      calcNorm:'Normalisatie (P95)', calcScore:'Intensiteit', calcNotRelevant:'Niet relevant voor dit motief',
+      capBaseHouseholds:'Huishoudens', capBaseResidents:'Inwoners', capBaseJobsOffice:'Arbeidsplaatsen kantoor',
+      capBaseJobsShop:'Arbeidsplaatsen winkel', capBaseJobsIndustry:'Arbeidsplaatsen industrie',
+      capBaseSeats:'Leerlingplaatsen', capBaseCars:'Auto\u2019s', capBaseJobsRec:'Arbeidsplaatsen recreatie',
+      capBaseJobsOther:'Arbeidsplaatsen overig', capBaseJobs:'Arbeidsplaatsen', capBaseWorkers:'Werkende inwoners', capBaseChildren:'Kinderen (<18\u202fjr)',
+      // Taal-dropdown
+      langSelectTitle:'Taal kiezen',
+      numberLocale:'nl',
+    },
+    EN: {
+      navKaart:'Map',
+      headerContact:'Contact',
+      blockSimulatie:'Simulation', blockAanpassingen:'Modifications', blockAnalyse:'Analysis',
+      blockZonePA:'Zone production/attraction', blockPandPA:'Building production/attraction',
+      homeTitle:'Back to overview',
+      dpMrhLabel:'AM', dpMrhTitle:'Morning peak',
+      dpErhLabel:'PM', dpErhTitle:'Evening peak',
+      dpRestLabel:'OP', dpRestTitle:'Off-peak',
+      settingsTitle:'Settings', settingsDebugLabel:'Debug output', settingsLangLabel:'Language', settingsApplyBtn:'Apply',
+      settingsBasemapLabel:'Background', settingsBasemapMap:'Map', settingsBasemapSat:'Satellite', settingsBasemapNone:'Black', settingsBasemapWhite:'White', settingsBasemapMontreal:'Map 2',
+      metricTitle:'Color metric',
+      simClockCycleTitle:'Click to cycle through 24 hours / morning peak / off-peak / evening peak',
+      nodeEditTitle:'Edit production/attraction per node',
+      linkEditTitle:'Edit capacity per road link',
+      linkFlowEditTitle:'Edit flow per road link',
+      addWegvakTitle:'Add road link (not yet available)',
+      addKnoopTitle:'Add node (not yet available)',
+      metricFlow:'Intensity', metricFlowScaled:'Intensity (scaled)',
+      metricOccupancy:'Occupancy', metricOccupancyScaled:'Occupancy (scaled)',
+      metricIC:'V/C', metricICScaled:'V/C (scaled)',
+      metricSpeed:'Speed', metricCapacity:'Capacity', metricPriorityRoads:'Priority roads', metricNone:'None', metricCompare:'Show comparison',
+      metricSafety:'Safety',
+      layersNetwork:'Network', layerNotFor24h:'Not available for 24 hours: no hourly capacity', layersTraffic:'Traffic', layersSafety:'Safety', layersNoise:'Noise', layersEmission:'Emissions', layersDesign:'Road design',
+      metricSafetyTotal:'Overall',
+      scoreGood:'Good', scoreFair:'Fair', scoreModerate:'Moderate', scorePoor:'Poor', scoreNA:'n/a',
+      catSignal:'Traffic light', catRoundabout:'Roundabout', catSpeedBump:'Speed bump',
+      kpi_r_functional_usage:'Functional use', kpi_r_longitudinal_marking:'Edge marking',
+      kpi_r_directional_separation:'Directional separation', kpi_r_lane_width:'Lane width',
+      kpi_r_road_surface:'Road surface', kpi_r_pedestrian_facility:'Pedestrian facility',
+      kpi_r_bicycle_facility:'Cycling facility', kpi_r_parking_facility:'Parking facility',
+      kpi_r_bus_stop_facility:'Bus stop facility', kpi_r_speed_bumps:'Speed bumps',
+      kpi_r_roadside_damage:'Verge damage', kpi_r_road_width:'Carriageway width',
+      kpi_r_pedestrian_width:'Footpath width', kpi_r_bicycle_width:'Cycle path width',
+      kpi_r_parking_location:'Parking location', kpi_r_bus_location:'Bus location',
+      kpi_r_pedestrian_crossing:'Pedestrian crossing', kpi_r_bicycle_crossing:'Cycle crossing',
+      kpi_r_bike_speed:'Cycling speed', kpi_r_bike_usage:'Cycling use', kpi_r_bike_parking:'Bicycle parking',
+      kpi_r_social_interaction:'Social interaction',
+      designGroupRoad:'Road profile', metricSurface:'Surface', metricWidthClass:'Width', metricSidewalks:'Sidewalks',
+      legendSurface:'Surface', legendWidthClass:'Road width (total)', legendSidewalks:'Sidewalks',
+      surfAsphalt:'Asphalt', surfPavers:'Pavers', surfConcrete:'Concrete', surfSemiPaved:'Semi-paved', surfUnpaved:'Unpaved',
+      sidewalkBoth:'Both', sidewalkLeft:'Left', sidewalkRight:'Right', sidewalkNone:'None', classUnknown:'Unknown', legendSafety:'Safety (overall)',
+      safetyGroupRoad:'Road section', safetyGroupPedestrian:'Pedestrian', safetyGroupBicycle:'Bicycle', safetyGroupParkingBus:'Parking & bus', safetyGroupOther:'Other',
+      wsInputs:'Inputs', wsInputsHint:'What the score was calculated with, and where it comes from.',
+      wsSrcNetwork:'network', wsSrcNwb:'NWB', wsSrcAssets:'BGT/OSM', wsSrcDefault:'assumed', wsSrcNone:'no source',
+      wsInCategory:'Road category', wsInSpeed:'Speed (V85)', wsInWidth:'Road width', wsInSurface:'Surface',
+      wsInFlow:'Traffic volume', wsInProfile:'Profile', wsInBicycle:'Cyclists', wsInPedestrian:'Pedestrians',
+      wsInPedCrossing:'Pedestrian crossing', wsInParking:'Parking', wsInSpeedBumps:'Speed bumps',
+      wsInMarkings:'Edge marking', wsInSeparation:'Direction separation', wsInBus:'Bus stop', wsInSocial:'Social interaction',
+      wsCoverage:'From data (rest assumed):', wsOldRun:'Calculated with an older version: nearly everything is assumed.',
+      wsOldRunPanel:'This score was calculated with an older version; sources are unknown.', wsRerun:'Recalculate',
+      metricNoiseLden:'Noise (Lden)', metricNoiseLnight:'Noise (Lnight)',
+      metricCo2:'CO\u2082 emission', metricNox:'NO\u2093 emission', metricPm10:'Particulates (PM10)',
+      metricGroupNoise:'Noise', metricGroupEmis:'Emissions',
+      metricGroupSpeedFactors:'Speed',
+      metricSpeedCrossings:'Pedestrian crossings', metricSpeedCycleCrossings:'Cycle crossing',
+      metricSpeedSignals:'Traffic signals', metricSpeedYield:'Give-way/stop markings',
+      metricSpeedRefuge:'Traffic islands (mid-road)',
+      metricSpeedFromRight:'Traffic from the right', metricSpeedLeftTurn:'Left-turn hindrance',
+      metricSpeedOncoming:'Oncoming-traffic hindrance', metricSpeedElevation:'Slopes',
+      metricSpeedPenaltyTotal:'Penalty seconds (total)',
+      loaderInit:'Loading GeoJSON\u2026', loaderNetwork:'Loading network data\u2026',
+      loaderZones:'Loading zones\u2026', loaderRoutes:'Loading routes\u2026', loaderMap:'Loading map\u2026',
+      areaTitle:'Traffic network visualisation', areaSubtitle:'Select an area to load:',
+      areaNotFound:'No areas found. Set DATA_DIR in .env.',
+      areaConnError:'Connection to server failed.',
+      areaDelTitle: n => `Delete ${n}`,
+      areaDelConfirm: (n, m) => `Permanently delete area \u201c${n}\u201d (${m})?\n\nNote: all derived sub-scenarios (the entire tree) will also be deleted.`,
+      areaDelError: e => `Deletion failed: ${e}`,
+      newAreaBtn:'+ Create new area',
+      newAreaH2:'New area', newAreaName:'Name', newAreaNamePh:'e.g. Merwehaven',
+      newAreaMode:'Transport mode', newAreaCar:'Car (CAR)', newAreaBike:'Bicycle (BIKE)',
+      newAreaPed:'Pedestrian (PEDESTRIAN)',
+      newAreaBboxHint:'Draw a rectangle on the map to set the bounding box. Click for the first corner, click again for the second.',
+      newAreaNoBbox:'No bounding box drawn', newAreaClearBbox:'Clear bbox',
+      newAreaHome:'\u2302 Overview', newAreaCancel:'Cancel', newAreaSubmit:'Create',
+      newAreaStatusStart:'Starting pipeline\u2026', newAreaStatusConn:'Connection failed.',
+      newAreaStatusRunning:'Pipeline running\u2026', newAreaStatusDone:'Done! Opening area\u2026',
+      newAreaStatusBack:'Back to overview', newAreaStatusError: c => `Error (exit code ${c}).`,
+      newAreaAlertName:'Please enter a name.', newAreaAlertBbox:'Please draw a bounding box on the map first.',
+      newAreaAlertMode:'Select at least one transport mode.',
+      linkDialogDefault:'Road link', linkDialogName: n => `Road link: ${n}`, linkDialogId: id => `Link ${id}`,
+      linkDialogCap:'Capacity', linkDialogCapUnit:'veh/h',
+      linkDialogSpeed:'Set speed', linkDialogSpeedHint:'adjusts capacity',
+      // Link flow dialog
+      linkFlowDialogLabel:'Intensity (24h)', linkFlowDialogUnit:'pcu/day',
+      linkFlowDialogHint:'+500 = delta\u00a0|\u00a03000 = absolute (\u22650)',
+      linkFlowDialogPh:'+500 or 3000',
+      linkFlowCurrentLabel: v => `Current value: ${v}\u00a0pcu/day`,
+      changeFlowLabel: v => `flow: ${v} pcu/day`,
+      // New link
+      linkAddTitle:'Draw new road link',
+      linkAddHint:'Click to place a point \u00b7 double-click or Finish to complete',
+      linkAddFinishBtn:'Finish line',
+      linkAddClearBtn:'Clear line',
+      linkAddDialogTitle:'New road link',
+      linkAddLengthLabel: m => `Length: ~${m}\u00a0m`,
+      linkAddCapLabel:'Capacity',
+      linkAddSpeedLabel:'Speed',
+      linkAddLanesLabel:'Lanes',
+      linkAddDialogOkBtn:'Add',
+      linkAddChangeLabel: m => `+ New road link (~${m}\u00a0m)`,
+      changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pcu/h \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0lane${lanes !== 1 ? 's' : ''}`,
+      // GMT upload dialog
+      gmtUploadDialogTitle:'Upload to GMT',
+      gmtUploadMaxFlowLabel: v => `Max. flow in network: ${v.toLocaleString('en-GB')}\u00a0pcu/day`,
+      gmtUploadMaxFlowLoading:'Fetching max. flow\u2026',
+      gmtUploadFilterLabel:'Max. for upload (empty\u00a0=\u00a0all)',
+      gmtUploadFilterPh:'e.g. 5000',
+      gmtUploadBtn:'Upload',
+      nodeDialogDefault:'Node',
+      nodeDialogProd:'Production', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute (\u22650)',
+      nodeDialogProdPh:'+300 or 1200',
+      nodeDialogAttr:'Attraction', nodeDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute (\u22650)',
+      nodeDialogAttrPh:'+300 or 800',
+      zoneExplodeBtnTitle:'Split zone',
+      zoneExplodeDialogDefault:'Split zone', zoneExplodeDialogCount:'Number of parts',
+      zoneExplodeDialogHint:'minimum 2', zoneExplodeDialogPh:'e.g. 3',
+      dialogCancel:'Cancel', dialogOk:'OK',
+      changesTitle:'Changes', scenarioNamePh:'Scenario name', applyBtn:'\u25b6 Apply',
+      applyStart:'Starting adjust\u2026', applyRunning:'Processing\u2026', applyDone:'Done!',
+      estimatingRoutes: 'Estimating routes via Dijkstra\u2026',
+      applyError: c => `Unknown error (return code: ${c})`, applyFetchError: e => `Error: ${e}`,
+      changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `speed: ${v} km/h`,
+      changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
+      changeExplodeLabel: n => `split \u00d7${n}`,
+      changeItemDel:'Delete',
+      noChanges:'No changes', viewChangesBtnTitle:'View changes',
+      changesPendingSection:'Pending',
+      changesHistLinkLabel: id => `Link ${id}`, changesHistNodeLabel: id => `Node ${id}`,
+      changesHistZoneLabel: id => `Zone ${id}`,
+      // Polygon selection
+      nodeSelectTitle:'Selection mode',
+      nodeSelectClick:'Click on a node',
+      nodeSelectPolygon:'Draw a polygon',
+      polygonHint:"Click to place vertices. Use 'Finish' when the polygon is complete.",
+      polygonFinishBtn:'\u2713 Finish polygon',
+      polygonClearBtn:'\u2715 Clear polygon',
+      polygonDialogTitle:'Polygon adjustment',
+      polygonNodeInfoLabel: n => n === 1 ? `${n} node selected` : `${n} nodes selected`,
+      polygonDialogProd:'Production (total)',
+      polygonDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute',
+      polygonDialogAttr:'Attraction (total)',
+      polygonDialogAttrHint:'+300 = delta\u00a0|\u00a0800 = absolute',
+      polygonPerNodeLabel: v => `\u2192 per node: ${v}`,
+      polygonNoNodes:'No nodes found within the polygon.',
+      // Link polygon selection
+      linkSelectTitle:'Selection mode',
+      linkSelectClick:'Click on a road link',
+      linkSelectPolygon:'Draw a polygon',
+      linkPolygonHint:"Click to place vertices. Use 'Finish' when the polygon is complete.",
+      linkPolygonFinishBtn:'\u2713 Finish polygon',
+      linkPolygonClearBtn:'\u2715 Clear polygon',
+      linkPolygonDialogTitle:'Polygon capacity change',
+      linkPolygonLinkInfoLabel: n => n === 1 ? `${n} link selected` : `${n} links selected`,
+      linkPolygonDialogCap:'Capacity',
+      linkPolygonDialogCapHint:'800 = absolute\u00a0|\u00a080% = factor',
+      linkPolygonDialogCapUnit:'veh/h',
+      linkPolygonPerLinkLabel: v => `\u2192 average after change: ${v}\u00a0veh/h`,
+      linkPolygonNoLinks:'No road links found within the polygon.',
+      linkCloseBtnTitle:'Close road (capacity = 0)',
+      changeClosedLabel:'closed (cap = 0)',
+      changeOdTripsLabel: t => `OD: ${t} trips/day`,
+      // OD-pair adjustment
+      odEditBtnTitle:'Adjust OD pair',
+      odEditBtnLabel:'Adjust OD pair',
+      odEditTitle:'Adjust OD pair',
+      odEditFromLabel:'Origin',
+      odEditToLabel:'Destination',
+      odEditWaiting:'Click a zone…',
+      odEditTripsSection:'Trips',
+      odEditTripsLabel:'Trips/day',
+      odEditMotifSection:'Motive split (%)',
+      odEditSaveBtn:'+ Add to changes',
+      odEditFoundRoutes: n => `${n} route(s) found`,
+      odEditCurrentTrips:'Current:',
+      odEditNoRoutes:'No routes found for this OD pair.',
+      legendFlow:'Intensity', legendOccupancy:'Occupancy', legendIC:'V/C',
+      legendNoiseLden:'Noise Lden', legendNoiseLnight:'Noise Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
+      legendSpeed:'Speed', legendCapacity:'Capacity', legendCompare:'Comparison',
+      legendSpeedCrossings:'Pedestrian crossings', legendSpeedCycleCrossings:'Cycle crossing',
+      legendSpeedIntersections:'Intersections', legendSpeedYield:'Give-way/stop markings',
+      legendSpeedRefuge:'Traffic islands',
+      legendPriorityRoads:'Priority roads',
+      legendSpeedFromRight:'Traffic from the right', legendSpeedLeftTurn:'Left-turn hindrance',
+      legendSpeedOncoming:'Oncoming-traffic hindrance', legendSpeedElevation:'Slope/delay',
+      legendSpeedPenaltyTotal:'Penalty seconds',
+      legendUnit:'veh/h',
+      carCountFmt: n => `~${n.toLocaleString('en-GB')} vehicles on the road`,
+      // Flow-scaler panel
+      fspBtnTitle:'Configure flow scaler',
+      fspTitle:'Flow scaler',
+      fspDateLabel:'Date',
+      fspHourLabel:'Hour',
+      fspTempLabel:'Temperature',
+      fspTempHigh:'High', fspTempMedium:'Medium', fspTempLow:'Low',
+      fspWeatherLabel:'Weather',
+      fspWeatherSunny:'Sunny', fspWeatherCloudy:'Cloudy',
+      fspWeatherDry:'Dry', fspWeatherRainy:'Rainy',
+      fspPurposeLabel:'Trip purpose',
+      fspPurposeAll:'All', fspPurposeWork:'Work', fspPurposeEducation:'Education',
+      fspPurposeShopping:'Shopping', fspPurposeRecreational:'Recreational', fspPurposeUnknown:'Other',
+      fspRegioLabel:'Region (holiday)',
+      fspRegioMidden:'Central', fspRegioNoord:'North', fspRegioZuid:'South',
+      fspApplyBtn:'Apply', fspResetBtn:'Reset',
+      fspLoading:'Loading\u2026', fspDone:'Done',
+      fspError: e => `Error: ${e}`,
+      tooltipSegment: id => `Segment #${id}`,
+      tooltipDaypart:'Period', tooltipFlow:'Flow (period)', tooltipFlowTotal:'Flow (total/24h)',
+      tooltipFlowUnit:'veh/h', tooltipFlow24Unit:'veh',
+      tooltipSpeed:'Speed', tooltipLanes:'Lanes',
+      tooltipCap:'Capacity', tooltipCapUnit:'veh/h', tooltipOccup:'V/C', tooltipCoverage:'Occupancy', tooltipLength:'Length', tooltipWidth:'Width',
+      tooltipSpeedDataUnavailable:'Not yet available in this source data', tooltipSpeedFactorPresent:'Yes', tooltipSpeedFactorAbsent:'No',
+      tooltipZoneClass:'Zone class',
+      tooltipZoneClassStudy:'Study area', tooltipZoneClassInfluence:'Influence zone',
+      tooltipZoneClassBoundary:'Boundary zone', tooltipZoneClassCbs:'CBS zone',
+      tooltipZoneProd:'Production', tooltipZoneProdUnit:'veh/day',
+      tooltipZoneAttr:'Attraction',  tooltipZoneAttrUnit:'veh/day',
+      tooltipZoneRoute:'Trip exchange', tooltipZoneRouteUnit:'veh/h',
+      tooltipZoneFloorTitle:'Floor area by function',
+      tooltipZoneFloorResidential:'Residential', tooltipZoneFloorOffice:'Office',
+      tooltipZoneFloorIndustrial:'Industrial', tooltipZoneFloorCommercial:'Retail/hospitality',
+      tooltipZoneFloorEducation:'Education', tooltipZoneFloorRecreation:'Recreation',
+      tooltipZoneFloorTransport:'Transport', tooltipZoneFloorOther:'Other',
+      tooltipZoneFloorUnit:'m²',
+      dpLabelMrh:'Morning peak', dpLabelErh:'Evening peak', dpLabelRest:'Off-peak', dpLabelEtmaal:'24 hours',
+      // Purpose chart
+      purposeChartTitle:'Trip purposes',
+      purposeChartEstimated:'(estimated)', purposeChartNoData:'Insufficient data',
+      motifLabel_house:'Home', motifLabel_work:'Work', motifLabel_shopping:'Shopping',
+      motifLabel_school:'Education', motifLabel_education:'Education', motifLabel_recreational:'Recreation',
+      motifLabel_hospital:'Hospital', motifLabel_parking:'Parking',
+      motifLabel_other:'Other', motifLabel_unclassified:'Unclassified',
+      motifLabel_unknown:'Unknown',
+      networkTitle: n => `Traffic network ${n}`, pageTitle: n => `Traffic network ${n}`,
+      // Scenario comparator
+      splitViewTitle:'Scenario comparator: calculated ↔ source',
+      badgeLeft:'Calculated scenario', badgeRight:'Source scenario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Origin/destination per road link',
+      // What-if road closure
+      whatifRcBtnTitle:'What-if road closure',
+      whatifRcTitle:'What-if road closure',
+      whatifRcNamePh:'Scenario name',
+      whatifRcRunBtn:'\uD83D\uDEAB Run',
+      whatifRcClearBtn:'\u2715 Clear selection',
+      whatifRcDirectionLabel:'Direction',
+      whatifRcDirBoth:'Both directions',
+      whatifRcDirSame:'Same direction',
+      whatifRcDirOpposite:'Opposite direction',
+      whatifRcNoLinks:'No road links selected.',
+      whatifRcNoCsv:'NVP route data missing. Re-prepare this area with nvp_table + nvp_year.',
+      whatifRcStart:'Starting what-if\u2026',
+      whatifRcRunning:'Processing\u2026',
+      whatifRcDone:'Done!',
+      whatifRcError: c => `Error (return code: ${c})`,
+      whatifRcFetchError: e => `Error: ${e}`,
+      whatifRcLinkLabel: id => `Link ${id}`,
+      // Building purpose dropdown
+      buildingPurposeAll:'- buildings: all -', buildingPurposeAllScaled:'- buildings: all (scaled) -',
+      buildingPurposeWerk:'- buildings: work -', buildingPurposeWerkScaled:'- buildings: work (scaled) -',
+      buildingPurposeOnderwijs:'- buildings: education -', buildingPurposeOnderwijsScaled:'- buildings: education (scaled) -',
+      buildingPurposeWinkelen:'- buildings: shopping -', buildingPurposeWinkelenScaled:'- buildings: shopping (scaled) -',
+      buildingPurposeRecreat:'- buildings: recreation -', buildingPurposeRecreatiScaled:'- buildings: recreation (scaled) -',
+      buildingPurposeHidden:'- buildings: hidden -',
+      buildingPurposeOff:'- buildings: off -',
+      // Building tooltip
+      tooltipBuildingType:'Type', tooltipBuildingZone:'Zone',
+      tooltipBuildingHeight:'Height', tooltipBuildingCap:'Capacity',
+      tooltipBuildingDir:'Direction', tooltipBuildingAttraction:'Attraction',
+      tooltipBuildingProduction:'Production', tooltipBuildingNeutral:'Neutral',
+      tooltipBuildingMotief:'Purpose',
+      tooltipPurposeAll:'all', tooltipPurposeWerk:'work', tooltipPurposeWonen:'residential',
+      tooltipPurposeOnderwijs:'education', tooltipPurposeWinkelen:'shopping', tooltipPurposeRecreat:'recreation',
+      buildingTypeResidential:'Residential', buildingTypeOffice:'Office',
+      buildingTypeCommercial:'Retail / food', buildingTypeEducation:'Education',
+      buildingTypeIndustrial:'Industrial', buildingTypeParking:'Parking',
+      buildingTypeTransport:'Transit / station', buildingTypeRecreation:'Recreation',
+      buildingTypeOther:'Other',
+      // Building P/A calculation (tooltip breakdown)
+      calcTitle:'P/A calculation', calcFloorArea:'Floor area', calcZoneBase:'Zone base',
+      calcShare:'Building share', calcInZone:'(zone)', calcInBuilding:'(building)', calcResidents:'Zone residents', calcHouseholds:'Zone households',
+      calcNorm:'Normalisation (P95)', calcScore:'Intensity', calcNotRelevant:'Not relevant for this purpose',
+      capBaseHouseholds:'Households', capBaseResidents:'Residents', capBaseJobsOffice:'Office jobs',
+      capBaseJobsShop:'Retail jobs', capBaseJobsIndustry:'Industry jobs',
+      capBaseSeats:'Student places', capBaseCars:'Cars', capBaseJobsRec:'Recreation jobs',
+      capBaseJobsOther:'Other jobs', capBaseJobs:'Jobs', capBaseWorkers:'Working residents', capBaseChildren:'Children (<18\u202fyr)',
+      // Language dropdown
+      langSelectTitle:'Select language',
+      numberLocale:'en-GB',
+    },
+    FI: {
+      navKaart:'Kartta',
+      headerContact:'Yhteystiedot',
+      blockSimulatie:'Simulaatio', blockAanpassingen:'Muokkaukset', blockAnalyse:'Analyysi',
+      blockZonePA:'Alueen tuotanto/houkuttelevuus', blockPandPA:'Rakennuksen tuotanto/houkuttelevuus',
+      homeTitle:'Takaisin yleiskatsaukseen',
+      dpMrhLabel:'AR', dpMrhTitle:'Aamuruuhka',
+      dpErhLabel:'IR', dpErhTitle:'Iltaruuhka',
+      dpRestLabel:'MA', dpRestTitle:'Muu aika',
+      settingsTitle:'Asetukset', settingsDebugLabel:'Virheenkorjaus', settingsLangLabel:'Kieli', settingsApplyBtn:'Käytä',
+      settingsBasemapLabel:'Taustakartta', settingsBasemapMap:'Kartta', settingsBasemapSat:'Ilmakuva', settingsBasemapNone:'Musta', settingsBasemapWhite:'Valkoinen', settingsBasemapMontreal:'Kartta 2',
+      metricTitle:'V\xe4rimitta',
+      simClockCycleTitle:'Napauta vaihtaaksesi 24 tuntia / aamuruuhka / muu aika / iltaruuhka',
+      nodeEditTitle:'Muokkaa solmupisteen tuotantoa/houkuttelevuutta',
+      linkEditTitle:'Muokkaa tiejakson kapasiteettia',
+      addWegvakTitle:'Lis\xe4\xe4 tiejakso (ei viel\xe4 saatavilla)',
+      addKnoopTitle:'Lis\xe4\xe4 solmupiste (ei viel\xe4 saatavilla)',
+      metricFlow:'Intensiteetti', metricFlowScaled:'Intensiteetti (skaalattu)',
+      metricOccupancy:'Kuormitusaste', metricOccupancyScaled:'Kuormitusaste (skaalattu)',
+      metricIC:'V/C', metricICScaled:'V/C (skaalattu)',
+      metricSpeed:'Nopeus', metricCapacity:'Kapasiteetti', metricPriorityRoads:'Etuoikeutetut tiet', metricNone:'Ei mitään', metricCompare:'N\xe4yt\xe4 vertailu',
+      metricSafety:'Turvallisuus',
+      layersNetwork:'Verkko', layerNotFor24h:'Ei käytettävissä vuorokaudelle (24 h): ei tuntikapasiteettia', layersTraffic:'Liikenne', layersSafety:'Turvallisuus', layersNoise:'Melu', layersEmission:'Päästöt', layersDesign:'Katusuunnittelu',
+      metricSafetyTotal:'Kokonais',
+      scoreGood:'Hyvä', scoreFair:'Kohtalainen', scoreModerate:'Välttävä', scorePoor:'Huono', scoreNA:'ei koske',
+      catSignal:'Liikennevalo', catRoundabout:'Kiertoliittymä', catSpeedBump:'Hidaste',
+      kpi_r_functional_usage:'Toiminnallinen käyttö', kpi_r_longitudinal_marking:'Reunaviiva',
+      kpi_r_directional_separation:'Ajosuuntien erottelu', kpi_r_lane_width:'Kaistan leveys',
+      kpi_r_road_surface:'Tienpinta', kpi_r_pedestrian_facility:'Jalankulkijoiden järjestelyt',
+      kpi_r_bicycle_facility:'Pyöräilyjärjestelyt', kpi_r_parking_facility:'Pysäköintijärjestelyt',
+      kpi_r_bus_stop_facility:'Bussipysäkki', kpi_r_speed_bumps:'Hidastetöyssyt',
+      kpi_r_roadside_damage:'Pientareen vauriot', kpi_r_road_width:'Ajoradan leveys',
+      kpi_r_pedestrian_width:'Jalkakäytävän leveys', kpi_r_bicycle_width:'Pyörätien leveys',
+      kpi_r_parking_location:'Pysäköinnin sijainti', kpi_r_bus_location:'Bussin sijainti',
+      kpi_r_pedestrian_crossing:'Suojatie', kpi_r_bicycle_crossing:'Pyörätien jatke',
+      kpi_r_bike_speed:'Pyöräilynopeus', kpi_r_bike_usage:'Pyöräilyn määrä', kpi_r_bike_parking:'Pyöräpysäköinti',
+      kpi_r_social_interaction:'Sosiaalinen vuorovaikutus',
+      designGroupRoad:'Tieprofiili', metricSurface:'Päällyste', metricWidthClass:'Leveys', metricSidewalks:'Jalkakäytävät',
+      legendSurface:'Päällyste', legendWidthClass:'Tien leveys (yhteensä)', legendSidewalks:'Jalkakäytävät',
+      surfAsphalt:'Asfaltti', surfPavers:'Kiveys', surfConcrete:'Betoni', surfSemiPaved:'Puolipäällystetty', surfUnpaved:'Päällystämätön',
+      sidewalkBoth:'Molemmat', sidewalkLeft:'Vasen', sidewalkRight:'Oikea', sidewalkNone:'Ei', classUnknown:'Tuntematon', legendSafety:'Turvallisuus (kokonais)',
+      safetyGroupRoad:'Tieosuus', safetyGroupPedestrian:'Jalankulkija', safetyGroupBicycle:'Pyörä', safetyGroupParkingBus:'Pysäköinti & bussi', safetyGroupOther:'Muut',
+      wsInputs:'Syötteet', wsInputsHint:'Millä pisteet laskettiin ja mistä tiedot tulevat.',
+      wsSrcNetwork:'verkko', wsSrcNwb:'NWB', wsSrcAssets:'BGT/OSM', wsSrcDefault:'oletus', wsSrcNone:'ei lähdettä',
+      wsInCategory:'Tieluokka', wsInSpeed:'Nopeus (V85)', wsInWidth:'Tien leveys', wsInSurface:'Päällyste',
+      wsInFlow:'Liikennemäärä', wsInProfile:'Profiili', wsInBicycle:'Pyöräilijät', wsInPedestrian:'Jalankulkijat',
+      wsInPedCrossing:'Suojatie', wsInParking:'Pysäköinti', wsInSpeedBumps:'Hidasteet',
+      wsInMarkings:'Reunamerkintä', wsInSeparation:'Ajosuuntien erottelu', wsInBus:'Bussipysäkki', wsInSocial:'Sosiaalinen vuorovaikutus',
+      wsCoverage:'Datasta (loput oletuksia):', wsOldRun:'Laskettu vanhemmalla versiolla: lähes kaikki on oletusta.',
+      wsOldRunPanel:'Pisteet laskettiin vanhemmalla versiolla; lähteet eivät ole tiedossa.', wsRerun:'Laske uudelleen',
+      metricNoiseLden:'Melu (Lden)', metricNoiseLnight:'Melu (Lnight)',
+      metricCo2:'CO\u2082-p\xe4\xe4st\xf6t', metricNox:'NO\u2093-p\xe4\xe4st\xf6t', metricPm10:'Pienhiukkaset (PM10)',
+      metricGroupNoise:'Melu', metricGroupEmis:'P\xe4\xe4st\xf6t',
+      metricGroupSpeedFactors:'Nopeus',
+      metricSpeedCrossings:'Suojatiet', metricSpeedCycleCrossings:'Py\xf6r\xe4ylitys',
+      metricSpeedIntersections:'Risteykset', metricSpeedYield:'V\xe4istymis-/pys\xe4hdysmerkinn\xe4t',
+      metricSpeedRefuge:'Keskisaarekkeet (kesken tiet\xe4)',
+      metricSpeedFromRight:'Oikealta tuleva liikenne', metricSpeedLeftTurn:'Vasemmalle k\xe4\xe4ntymisen hidaste',
+      metricSpeedOncoming:'Vastasuuntaisen liikenteen hidaste', metricSpeedElevation:'Kaltevuudet',
+      metricSpeedPenaltyTotal:'Viivesekunnit (yhteens\xe4)',
+      loaderInit:'Ladataan GeoJSON\u2026', loaderNetwork:'Ladataan verkkodata\u2026',
+      loaderZones:'Ladataan alueita\u2026', loaderRoutes:'Ladataan reittej\xe4\u2026', loaderMap:'Ladataan karttaa\u2026',
+      areaTitle:'Liikenneverkkovisualisointi', areaSubtitle:'Valitse alue ladattavaksi:',
+      areaNotFound:'Alueita ei l\xf6ydy. Aseta DATA_DIR .env-tiedostoon.',
+      areaConnError:'Yhteys palvelimeen ep\xe4onnistui.',
+      areaDelTitle: n => `Poista ${n}`,
+      areaDelConfirm: (n, m) => `Poistetaanko alue \u201c${n}\u201d (${m}) pysyv\xe4sti?\n\nHuomaa: kaikki johdetut aliskenaariot (koko puu) poistetaan my\xf6s.`,
+      areaDelError: e => `Poisto ep\xe4onnistui: ${e}`,
+      newAreaBtn:'+ Luo uusi alue',
+      newAreaH2:'Uusi alue', newAreaName:'Nimi', newAreaNamePh:'esim. Merwehaven',
+      newAreaMode:'Kulkutapa', newAreaCar:'Auto (CAR)', newAreaBike:'Polkupy\xf6r\xe4 (BIKE)',
+      newAreaPed:'Jalankulkija (PEDESTRIAN)',
+      newAreaBboxHint:'Piirrä suorakulmio kartalle rajausalueen m\xe4\xe4ritt\xe4miseksi. Napsauta ensimm\xe4ist\xe4 kulmaa, napsauta uudelleen toista.',
+      newAreaNoBbox:'Rajausaluetta ei ole piirretty', newAreaClearBbox:'Tyhjenн\xe4 rajaus',
+      newAreaHome:'\u2302 Yleiskatsaus', newAreaCancel:'Peruuta', newAreaSubmit:'Luo',
+      newAreaStatusStart:'K\xe4ynnistet\xe4\xe4n putkilinjaa\u2026', newAreaStatusConn:'Yhteys ep\xe4onnistui.',
+      newAreaStatusRunning:'Putkilinja k\xe4ynniss\xe4\u2026', newAreaStatusDone:'Valmis! Alue avataan\u2026',
+      newAreaStatusBack:'Takaisin yleiskatsaukseen', newAreaStatusError: c => `Virhe (paluuarvo ${c}).`,
+      newAreaAlertName:'Sy\xf6t\xe4 nimi.', newAreaAlertBbox:'Piirrä ensin rajausalue kartalle.',
+      newAreaAlertMode:'Valitse v\xe4hint\xe4\xe4n yksi kulkutapa.',
+      linkDialogDefault:'Tiejakso', linkDialogName: n => `Tiejakso: ${n}`, linkDialogId: id => `Tiejakso ${id}`,
+      linkDialogCap:'Kapasiteetti', linkDialogCapUnit:'ajon/h',
+      linkDialogSpeed:'Aseta nopeus', linkDialogSpeedHint:'s\xe4\xe4t\xe4\xe4 kapasiteettia',
+      nodeDialogDefault:'Solmupiste',
+      nodeDialogProd:'Tuotanto', nodeDialogProdHint:'+300 = muutos\u00a0|\u00a01200 = absoluuttinen (\u22650)',
+      nodeDialogProdPh:'+300 tai 1200',
+      nodeDialogAttr:'Houkuttelevuus', nodeDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen (\u22650)',
+      nodeDialogAttrPh:'+300 tai 800',
+      zoneExplodeBtnTitle:'Jaa vy\xf6hyke',
+      zoneExplodeDialogDefault:'Jaa vy\xf6hyke', zoneExplodeDialogCount:'Osien m\xe4\xe4r\xe4',
+      zoneExplodeDialogHint:'v\xe4hint\xe4\xe4n 2', zoneExplodeDialogPh:'esim. 3',
+      dialogCancel:'Peruuta', dialogOk:'OK',
+      changesTitle:'Muutokset', scenarioNamePh:'Skenaarion nimi', applyBtn:'\u25b6 K\xe4yt\xe4',
+      applyStart:'K\xe4ynnistet\xe4\xe4n s\xe4\xe4t\xf6\xe4\u2026', applyRunning:'K\xe4sitell\xe4\xe4n\u2026', applyDone:'Valmis!',
+      estimatingRoutes: 'Lasketaan reittej\xe4 Dijkstralla\u2026',
+      applyError: c => `Tuntematon virhe (paluuarvo: ${c})`, applyFetchError: e => `Virhe: ${e}`,
+      changeCapLabel: (v, u) => `kap: ${v} ${u}`, changeSpeedLabel: v => `nopeus: ${v} km/h`,
+      changeProdLabel: v => `tuot: ${v}`, changeAttrLabel: v => `houk: ${v}`,
+      changeExplodeLabel: n => `jako \u00d7${n}`,
+      changeItemDel:'Poista',
+      noChanges:'Ei muutoksia', viewChangesBtnTitle:'Näytä muutokset',
+      changesPendingSection:'Odottaa',
+      changesHistLinkLabel: id => `Kaari ${id}`, changesHistNodeLabel: id => `Solmu ${id}`,
+      changesHistZoneLabel: id => `Vyöhyke ${id}`,
+      // Monikulmio-valinta
+      nodeSelectTitle:'Valintamoodi',
+      nodeSelectClick:'Napsauta solmupistett\xe4',
+      nodeSelectPolygon:'Piirrä monikulmio',
+      polygonHint:"Napsauta lisätäksesi kärkipisteitä. Käytä 'Valmis' kun monikulmio on valmis.",
+      polygonFinishBtn:'\u2713 Valmis monikulmio',
+      polygonClearBtn:'\u2715 Tyhjennä',
+      polygonDialogTitle:'Monikulmio s\xe4\xe4t\xf6',
+      polygonNodeInfoLabel: n => `${n} solmupistett\xe4 valittu`,
+      polygonDialogProd:'Tuotanto (yhteens\xe4)',
+      polygonDialogProdHint:'+300 = muutos\u00a0|\u00a01200 = absoluuttinen',
+      polygonDialogAttr:'Houkuttelevuus (yhteens\xe4)',
+      polygonDialogAttrHint:'+300 = muutos\u00a0|\u00a0800 = absoluuttinen',
+      polygonPerNodeLabel: v => `\u2192 per solmupiste: ${v}`,
+      polygonNoNodes:'Solmupisteit\xe4 ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
+      // Linkin monikulmio-valinta
+      linkSelectTitle:'Valintamoodi',
+      linkSelectClick:'Napsauta tiejaksoa',
+      linkSelectPolygon:'Piirrä monikulmio',
+      linkPolygonHint:"Napsauta lis\xe4t\xe4ksesi k\xe4rkipisteit\xe4. K\xe4yt\xe4 'Valmis' kun monikulmio on valmis.",
+      linkPolygonFinishBtn:'\u2713 Valmis monikulmio',
+      linkPolygonClearBtn:'\u2715 Tyhjenн\xe4',
+      linkPolygonDialogTitle:'Monikulmio kapasiteettimuutos',
+      linkPolygonLinkInfoLabel: n => `${n} tiejaksoa valittu`,
+      linkPolygonDialogCap:'Kapasiteetti',
+      linkPolygonDialogCapHint:'800 = absoluuttinen\u00a0|\u00a080% = kerroin',
+      linkPolygonDialogCapUnit:'ajon/h',
+      linkPolygonPerLinkLabel: v => `\u2192 keskiarvo muutoksen j\xe4lkeen: ${v}\u00a0ajon/h`,
+      linkPolygonNoLinks:'Tiejaksoja ei l\xf6ydy monikulmion sis\xe4lt\xe4.',
+      linkCloseBtnTitle:'Sulje tie (kapasiteetti = 0)',
+      changeClosedLabel:'suljettu (kap = 0)',
+      legendFlow:'Intensiteetti', legendOccupancy:'Kuormitusaste', legendIC:'V/C',
+      legendNoiseLden:'Melu Lden', legendNoiseLnight:'Melu Lnight',
+      legendCo2:'CO\u2082', legendNox:'NO\u2093', legendPm10:'PM10',
+      legendSpeed:'Nopeus', legendCapacity:'Kapasiteetti', legendCompare:'Vertailu',
+      legendSpeedCrossings:'Suojatiet', legendSpeedCycleCrossings:'Py\xf6r\xe4ylitys',
+      legendSpeedSignals:'Liikennevalot', legendSpeedYield:'V\xe4istymis-/pys\xe4hdysmerkinn\xe4t',
+      legendPriorityRoads:'Etuoikeutetut tiet',
+      legendSpeedRefuge:'Keskisaarekkeet',
+      legendSpeedFromRight:'Oikealta tuleva liikenne', legendSpeedLeftTurn:'Vasemmalle k\xe4\xe4ntymisen hidaste',
+      legendSpeedOncoming:'Vastasuuntaisen liikenteen hidaste', legendSpeedElevation:'Kaltevuus/viive',
+      legendSpeedPenaltyTotal:'Viivesekunnit',
+      legendUnit:'ajon/h',
+      carCountFmt: n => `~${n.toLocaleString('fi-FI')} ajoneuvoa tiellä`,
+      // Flow-scaler panel
+      fspBtnTitle:'Virtaskaalain asetukset',
+      fspTitle:'Virtaskaalain',
+      fspDateLabel:'Päivämäärä',
+      fspHourLabel:'Tunti',
+      fspTempLabel:'L\u00e4mp\u00f6tila',
+      fspTempHigh:'Korkea', fspTempMedium:'Keskitaso', fspTempLow:'Matala',
+      fspWeatherLabel:'S\u00e4\u00e4',
+      fspWeatherSunny:'Aurinkoinen', fspWeatherCloudy:'Pilvinen',
+      fspWeatherDry:'Kuiva', fspWeatherRainy:'Sateinen',
+      fspPurposeLabel:'Matkan tarkoitus',
+      fspPurposeAll:'Kaikki', fspPurposeWork:'Ty\u00f6', fspPurposeEducation:'Koulutus',
+      fspPurposeShopping:'Ostokset', fspPurposeRecreational:'Vapaa-aika', fspPurposeUnknown:'Muu',
+      fspRegioLabel:'Alue (loma)',
+      fspRegioMidden:'Keski', fspRegioNoord:'Pohjoinen', fspRegioZuid:'Etel\u00e4',
+      fspApplyBtn:'K\u00e4yt\u00e4', fspResetBtn:'Nollaa',
+      fspLoading:'Ladataan\u2026', fspDone:'Valmis',
+      fspError: e => `Virhe: ${e}`,
+      tooltipSegment: id => `Segmentti #${id}`,
+      tooltipDaypart:'Jakso', tooltipFlow:'Virta (jakso)', tooltipFlowTotal:'Virta (yht./24h)',
+      tooltipFlowUnit:'ajon/h', tooltipFlow24Unit:'ajon',
+      tooltipSpeed:'Nopeus', tooltipLanes:'Kaistoja',
+      tooltipCap:'Kapasiteetti', tooltipCapUnit:'ajon/h', tooltipOccup:'V/C', tooltipCoverage:'Kuormitusaste', tooltipLength:'Pituus', tooltipWidth:'Leveys',
+      tooltipSpeedDataUnavailable:'Ei vielä saatavilla tassa aineistossa', tooltipSpeedFactorPresent:'Kyllä', tooltipSpeedFactorAbsent:'Ei',
+      tooltipZoneClass:'Alueluokka',
+      tooltipZoneClassStudy:'Tutkimusalue', tooltipZoneClassInfluence:'Vaikutusalue',
+      tooltipZoneClassBoundary:'Rajav\u00f6hyke', tooltipZoneClassCbs:'CBS-alue',
+      tooltipZoneProd:'Tuotanto', tooltipZoneProdUnit:'ajon/vrk',
+      tooltipZoneAttr:'Houkuttelevuus', tooltipZoneAttrUnit:'ajon/vrk',
+      tooltipZoneRoute:'Matkavirta', tooltipZoneRouteUnit:'ajon/h',
+      dpLabelMrh:'Aamuruuhka', dpLabelErh:'Iltaruuhka', dpLabelRest:'Muu aika', dpLabelEtmaal:'24 tuntia',
+      networkTitle: n => `Liikenneverkko ${n}`, pageTitle: n => `Liikenneverkko ${n}`,
+      // Skenaariovertailija
+      splitViewTitle:'Skenaariovertailija: laskettu ↔ lähde',
+      badgeLeft:'Laskettu skenaario', badgeRight:'Lähdeskenaario',
+      // Selected Link Analysis
+      selectedLinkTitle:'Lähtö/kohde tiejaksokohtaisesti',
+      // What-if tiesulku
+      whatifRcBtnTitle:'What-if tiesulku',
+      whatifRcTitle:'What-if tiesulku',
+      whatifRcNamePh:'Skenaarion nimi',
+      whatifRcRunBtn:'\uD83D\uDEAB Suorita',
+      whatifRcClearBtn:'\u2715 Tyhjenн\xe4 valinta',
+      whatifRcDirectionLabel:'Suunta',
+      whatifRcDirBoth:'Molemmat suunnat',
+      whatifRcDirSame:'Sama suunta',
+      whatifRcDirOpposite:'Vastakkaissuunta',
+      whatifRcNoLinks:'Ei tiejaksoja valittuna.',
+      whatifRcNoCsv:'NVP-reittitiedot puuttuvat. Valmistele alue uudelleen nvp_table + nvp_year.',
+      whatifRcStart:'K\xe4ynnistet\xe4\xe4n what-if\u2026',
+      whatifRcRunning:'K\xe4sitell\xe4\xe4n\u2026',
+      whatifRcDone:'Valmis!',
+      whatifRcError: c => `Virhe (paluuarvo: ${c})`,
+      whatifRcFetchError: e => `Virhe: ${e}`,
+      whatifRcLinkLabel: id => `Tiejakso ${id}`,
+      // Rakennusten matkamotiivi
+      buildingPurposeAll:'- rakennukset: kaikki -', buildingPurposeAllScaled:'- rakennukset: kaikki (skaalattu) -',
+      buildingPurposeWerk:'- rakennukset: työ -', buildingPurposeWerkScaled:'- rakennukset: työ (skaalattu) -',
+      buildingPurposeOnderwijs:'- rakennukset: koulutus -', buildingPurposeOnderwijsScaled:'- rakennukset: koulutus (skaalattu) -',
+      buildingPurposeWinkelen:'- rakennukset: ostokset -', buildingPurposeWinkelenScaled:'- rakennukset: ostokset (skaalattu) -',
+      buildingPurposeRecreat:'- rakennukset: vapaa-aika -', buildingPurposeRecreatiScaled:'- rakennukset: vapaa-aika (skaalattu) -',
+      buildingPurposeHidden:'- rakennukset: piilotettu -',
+      buildingPurposeOff:'- rakennukset: pois -',
+      // Rakennuksen tooltip
+      tooltipBuildingType:'Tyyppi', tooltipBuildingZone:'Vyöhyke',
+      tooltipBuildingHeight:'Korkeus', tooltipBuildingCap:'Kapasiteetti',
+      tooltipBuildingDir:'Suunta', tooltipBuildingAttraction:'Vetovoima',
+      tooltipBuildingProduction:'Tuotanto', tooltipBuildingNeutral:'Neutraali',
+      tooltipBuildingMotief:'Tarkoitus',
+      tooltipPurposeAll:'kaikki', tooltipPurposeWerk:'työ', tooltipPurposeWonen:'asuminen',
+      tooltipPurposeOnderwijs:'koulutus', tooltipPurposeWinkelen:'ostokset', tooltipPurposeRecreat:'vapaa-aika',
+      buildingTypeResidential:'Asuminen', buildingTypeOffice:'Toimisto',
+      buildingTypeCommercial:'Kauppa / ravintola', buildingTypeEducation:'Koulutus',
+      buildingTypeIndustrial:'Teollisuus', buildingTypeParking:'Pysäköinti',
+      buildingTypeTransport:'Joukkoliikenne', buildingTypeRecreation:'Virkistys',
+      buildingTypeOther:'Muu',
+      // Rakennuksen P/A-laskenta (tooltip)
+      calcTitle:'P/A-laskenta', calcFloorArea:'Kerrosala', calcZoneBase:'Vyöhykeperusta',
+      calcShare:'Rakennuksen osuus', calcInZone:'(vyöhyke)', calcInBuilding:'(rakennus)', calcResidents:'Vyöhykkeen asukkaat', calcHouseholds:'Vyöhykkeen taloudet',
+      calcNorm:'Normalisointi (P95)', calcScore:'Intensiteetti', calcNotRelevant:'Ei merkityksellinen tälle tarkoitukselle',
+      capBaseHouseholds:'Taloudet', capBaseResidents:'Asukkaat', capBaseJobsOffice:'Toimistotyöpaikat',
+      capBaseJobsShop:'Kaupan työpaikat', capBaseJobsIndustry:'Teollisuustyöpaikat',
+      capBaseSeats:'Oppilaspaikat', capBaseCars:'Autot', capBaseJobsRec:'Virkistystyöpaikat',
+      capBaseJobsOther:'Muut työpaikat', capBaseJobs:'Työpaikat', capBaseWorkers:'Työssäkäyvät asukkaat', capBaseChildren:'Lapset (<18\u202fv)',
+      // Kielen valinta
+      langSelectTitle:'Valitse kieli',
+      numberLocale:'fi',
+    },
+  };
+
+  let currentLang = localStorage.getItem('ui-lang') || 'NL';
+
+  function T(key, ...args) {
+    const val = (TRANSLATIONS[currentLang] || TRANSLATIONS.NL)[key];
+    if (typeof val === 'function') return val(...args);
+    return val ?? key;
+  }
+
+  function applyLang(lang) {
+    if (!TRANSLATIONS[lang]) return;
+    currentLang = lang;
+    localStorage.setItem('ui-lang', lang);
+
+    // Taal-dropdown synchroniseren
+    const langSel = document.getElementById('langSelect');
+    if (langSel) langSel.value = lang;
+
+    // NL|EN|FI-wissel in de kopbalk synchroniseren
+    document.querySelectorAll('#headerLangGroup [data-lang]').forEach(btn =>
+      btn.setAttribute('aria-pressed', String(btn.dataset.lang === lang)));
+
+    // Versie-/Contact-tekst (tools-meta.js) mee laten vertalen, indien geladen
+    if (typeof gaRenderToolInfo === 'function') gaRenderToolInfo();
+
+    // data-i18n → textContent
+    document.querySelectorAll('[data-i18n]').forEach(el =>
+      el.textContent = T(el.dataset.i18n));
+
+    // data-i18n-title → title
+    document.querySelectorAll('[data-i18n-title]').forEach(el =>
+      el.title = T(el.dataset.i18nTitle));
+
+    // data-i18n-ph → placeholder
+    document.querySelectorAll('[data-i18n-ph]').forEach(el =>
+      el.placeholder = T(el.dataset.i18nPh));
+
+    // data-i18n-label → optgroup label
+    document.querySelectorAll('[data-i18n-label]').forEach(el =>
+      el.label = T(el.dataset.i18nLabel));
+
+    // Legenda-label (afhankelijk van geselecteerde metriek)
+    const metric = document.getElementById('colorMetric')?.value;
+    const legendKeyMap = {
+      flow:'legendFlow', flow_scaled:'legendFlow',
+      occupancy:'legendIC', occupancy_scaled:'legendIC',
+      coverage:'legendOccupancy', coverage_scaled:'legendOccupancy',
+      speed:'legendSpeed', capacity:'legendCapacity', compare:'legendCompare',
+      noise_lden:'legendNoiseLden', noise_lnight:'legendNoiseLnight',
+      emis_co2:'legendCo2', emis_nox:'legendNox', emis_pm10:'legendPm10',
+    };
+    const legEl = document.getElementById('legendLabel');
+    if (legEl && metric) legEl.textContent = T(legendKeyMap[metric] || 'legendFlow');
+
+    // Netwerktitel (dynamische naam bewaard in window._networkName)
+    if (window._networkName) {
+      document.getElementById('networkTitle').textContent = T('networkTitle', window._networkName);
+      // document.title = T('pageTitle', window._networkName);
+    }
+
+    // Laagnaam in de kop van de kaartlaag-panels opnieuw (vertaald) zetten
+    syncLayerPanels();
+  }
+
+  // NL|EN|FI-wissel in de kopbalk: klik past direct de bestaande taal-logica toe
+  document.getElementById('headerLangGroup')?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-lang]');
+    if (btn && btn.getAttribute('aria-pressed') !== 'true') applyLang(btn.dataset.lang);
+  });
+
+  // Pas taal direct toe op statische DOM-elementen
+  applyLang(currentLang);
+
+  // ── Parameters uit URL (bijv. /?areaId=xxx&mode=CAR) ─────────────────────
+  const _params = new URLSearchParams(window.location.search);
+  let AREA_ID = _params.get('areaId');
+  const MODE  = (_params.get('mode') || 'CAR').toUpperCase();
+  window.AREA_ID = AREA_ID;
+  window.MODE    = MODE;
+  const _DEBUG_MARKS = _params.get('debugMarks') === '1';  // hulplijnen voor markeringen/hoeken
+  const LINK_ID_PARAM = _params.get('linkId');
+  const NODE_ID_PARAM = _params.get('nodeId');
+  let _networkFeatures = []; // gevuld zodra netwerk geladen is; gebruikt door maquette highlight
+
+  // Kaart 2 (Montréal-ondergrond): de wegen in de tiles krijgen breedte en
+  // verharding van deze links (MontrealBasemap.setNetwork). Bij MIXED alleen CAR.
+  function _setKaart2Network(features) {
+    const feats = MODE === 'MIXED'
+      ? features.filter(f => (f.properties.mode ?? 'CAR').toUpperCase() === 'CAR')
+      : features;
+    try { window.MontrealBasemap?.setNetwork(feats); }
+    catch (e) { console.warn('Montréal-netwerkwegen:', e); }
+  }
+
+  // Vlag-parameters soepel lezen: ?x=true, ?x=1, ?x=yes en ?x tellen allemaal.
+  // Een typfout als ?maquette=1 schakelde anders stilzwijgend de hele
+  // maquette-stand uit, zonder dat er iets zichtbaar misging.
+  const _flag = name => {
+    const v = _params.get(name);
+    return v !== null && ['', 'true', '1', 'yes', 'ja'].includes(v.toLowerCase());
+  };
+  window._maquetteFlag = _flag;
+  // Debug-stand voor de new-area wizard wordt via de URL gezet (&debug=true),
+  // niet via een vinkje in de wizard zelf.
+  const URL_DEBUG = _flag('debug');
+
+  // GMT Analyzer heeft geen maquette-modus (fysiek schaalmodel): die leeft
+  // alleen nog in GMT Digital Twin. Hardcoded false i.p.v. de URL-vlag te
+  // lezen houdt alle bestaande `if (_MAQUETTE)`-vertakkingen (camera-toggle,
+  // calibratie, highlight-laag) permanent inactief zonder ze stuk voor stuk
+  // te hoeven verwijderen uit deze ene grote closure.
+  const _MAQUETTE = false;
+  if (_MAQUETTE) {
+    document.body.classList.add('maquette-mode');
+    document.addEventListener('mousemove', e => {
+      document.body.style.setProperty('--cur-x', e.clientX + 'px');
+      document.body.style.setProperty('--cur-y', e.clientY + 'px');
+    });
+  }
+
+  // ── follow: herlaad in-place zodra een adjust klaar is (?follow=true) ────
+  // In maquette-stand altijd aan: zonder deze verbinding komt er geen enkel
+  // bericht van de camera binnen (geen oplichtend wegvak, geen detecties,
+  // geen camerastatus) terwijl alles verder normaal lijkt te werken.
+  const _FOLLOW = _flag('follow') || _MAQUETTE;
+  if (_FOLLOW) document.body.classList.add('follow-mode');
+
+  // Referentie naar de echte MapLibre-instantie (toegewezen zodra de kaart is
+  // aangemaakt). Nodig omdat `map` in deze buitenste scope naar het DOM-element
+  // <div id="map"> verwijst i.p.v. de kaart.
+  let _maquetteMap = null;
+
+  // Hook waarmee het map-load blok de opgeslagen calibratie (kaartweergave +
+  // getekend vierkant) kan herstellen. Toegewezen binnen de camera-toggle IIFE.
+  let _maquetteRestore = null;
+
+  // Late-bound referentie naar loadAdjustedResult (gedefinieerd verderop in een andere scope).
+  // Wordt ingevuld zodra loadAdjustedResult beschikbaar is.
+  let _followLoadFn = null;
+
+  /**
+   * Opent een SSE-verbinding naar /events?areaId=<AREA_ID>.
+   * Bij een 'started' event: poll /jobs/{job_id} tot klaar, laad dan resultaat in-place.
+   */
+  let _followEs = null;
+  function _startFollowMode(overrideAreaId) {
+    const listenId = overrideAreaId || AREA_ID;
+    if (!_FOLLOW || !listenId) return;
+    if (_followEs) { _followEs.close(); _followEs = null; }
+
+    console.log(`[follow] luisteren op areaId=${listenId}`);
+    const es = new EventSource(`/events?areaId=${encodeURIComponent(listenId)}`);
+    _followEs = es;
+
+    es.addEventListener('started', async (evt) => {
+      try {
+        const { job_id } = JSON.parse(evt.data);
+        console.log(`[follow] berekening gestart, job=${job_id}`);
+        // Highlight wissen zodra de berekening daadwerkelijk begint
+        try { _maquetteMap?.getSource('maquette-highlight')?.setData({ type: 'FeatureCollection', features: [] }); } catch (_) {}
+        const ind = document.getElementById('followIndicator');
+        if (ind) ind.textContent = 'Berekening loopt\u2026';
+
+        // Poll tot job klaar is (zelfde ritme als eigen adjust)
+        const POLL_DELAYS = [5000, 3000, 2000];
+        let step = 0;
+        await new Promise((resolve, reject) => {
+          const next = () => setTimeout(poll, step < POLL_DELAYS.length ? POLL_DELAYS[step++] : 1000);
+          const poll = async () => {
+            try {
+              const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
+              if (sj.status === 'successful') return resolve();
+              if (sj.status === 'failed')     return reject(new Error((sj.log || []).slice(-3).join('\n')));
+              next();
+            } catch (e) { reject(e); }
+          };
+          next();
+        });
+
+        if (ind) ind.textContent = 'Resultaat laden\u2026';
+        const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+        console.log(`[follow] resultaat ophalen: new_area_id=${results.new_area_id}`);
+
+        if (_followLoadFn) {
+          await _followLoadFn(results.new_area_id, results.compare_url || null);
+        }
+        if (ind) ind.textContent = 'Meekijkmodus \u2014 aanpassingen worden automatisch geladen';
+
+        // Herverbind expliciet op het nieuwe areaId (niet via AREA_ID — andere closure)
+        _startFollowMode(results.new_area_id);
+      } catch (e) {
+        console.warn('[follow] fout:', e);
+        const ind = document.getElementById('followIndicator');
+        if (ind) ind.textContent = 'Meekijkmodus \u2014 aanpassingen worden automatisch geladen';
+      }
+    });
+
+    es.onerror = (e) => {
+      console.warn('[follow] SSE verbindingsfout, herverbinden\u2026', e);
+    };
+
+    // camera_status / maquette_detections / link_preview SSE-events zijn
+    // maquette-specifiek (camera-koppeling) en daarom verwijderd uit GMT
+    // Analyzer; de backend emit ze hier ook niet meer. "started"/job-polling
+    // hierboven is generieke meekijk-functionaliteit en blijft bestaan.
+  }
+
+  // ── Camera toggle (alleen in ?maquette=true, niet in follow-modus) ────────
+  (function () {
+    if (!_MAQUETTE) return;
+
+    const btn   = document.getElementById('cameraToggleBtn');
+    const label = document.getElementById('cameraToggleLabel');
+    if (!btn) return;
+
+    let _cameraOn = false;
+    const _cameraId = parseInt(_params.get('cameraId') ?? '-1', 10);
+
+    // Alleen de pixelmaat is nog nodig: de koppeling tussen camerapixels en de
+    // kaart komt uit het calibratiebestand. getBoundingClientRect en niet
+    // window.innerWidth, zodat de maat ook klopt als de kaart niet het hele
+    // venster vult.
+    function _getViewport() {
+      if (!_maquetteMap) return null;
+      const r = _maquetteMap.getContainer().getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      return { width: Math.round(r.width), height: Math.round(r.height) };
+    }
+
+    async function _startCamera() {
+      const vp = _getViewport();
+      if (!vp) { alert('Kaart nog niet beschikbaar — wacht tot hij geladen is.'); return; }
+      if (!AREA_ID)  { alert('Geen area_id bekend — laad eerst een scenario.'); return; }
+
+      // De virtuele cursor-modus heeft geen calibratie nodig: de browser stuurt
+      // de cursorpositie al in kaartcoördinaten door.
+      if (_cameraId < 0) { _launchCamera(vp); return; }
+
+      // Her-calibratie afdwingen via ?calibrate=true (of het oudere ?recalibrate=true)
+      const _forceRecalib = _flag('calibrate') || _flag('recalibrate');
+
+      label.textContent = 'Controleren…';
+      btn.disabled = true;
+
+      let hasCalib = false;
+      if (!_forceRecalib) {
+        try {
+          const r = await fetch(`/maquette/calibration?area_id=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`);
+          const d = await r.json();
+          hasCalib = !!d.exists;
+          if (hasCalib) _lastCalib = d.calibration || null;
+        } catch (e) {
+          console.warn('[maquette] calibratie-check mislukt:', e);
+        }
+      }
+
+      btn.disabled = false;
+      if (hasCalib) {
+        _applyCalibration(_lastCalib);
+        _launchCamera(vp);
+      } else if (window.MaquetteCalibration) {
+        // Geen calibratie: eerst het camerabeeld over de kaart leggen.
+        label.textContent = 'Uitlijnen…';
+        window.MaquetteCalibration.open();
+      } else {
+        alert('Calibratiemodule niet geladen — kan de camera niet uitlijnen.');
+      }
+    }
+
+    // Door maquette-calibration.js aangeroepen zodra de calibratie is opgeslagen.
+    window._maquetteStartDetection = function () {
+      const vp = _getViewport();
+      if (vp) _launchCamera(vp);
+    };
+
+    // Idem als het uitlijnen is afgebroken: knop weer in de uitgangsstand.
+    window._maquetteCalibrationCancelled = function () {
+      _cameraOn = false;
+      btn.classList.remove('cam-on');
+      btn.disabled = false;
+      label.textContent = 'Camera aan';
+    };
+
+    let _lastCalib = null;   // laatst opgehaalde/toegepaste calibratie
+
+    // Polygon-feature uit een lijst geo-punten (voor het tonen van de
+    // voetafdruk die de camera in beeld heeft).
+    function _ringFeature(points) {
+      const ring = points.map(p => [p[0], p[1]]);
+      ring.push(ring[0]);
+      return {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [ring] },
+        properties: {},
+      };
+    }
+
+    // Herstel kaartweergave en teken het gebied dat de camera ziet.
+    function _applyCalibration(calib) {
+      if (!calib) return;
+      const v = calib.view;
+      if (v && Array.isArray(v.center)) {
+        _maquetteMap.jumpTo({
+          center: v.center,
+          zoom: v.zoom,
+          bearing: v.bearing || 0,
+          pitch: v.pitch || 0,
+        });
+      }
+      if (Array.isArray(calib.geo_points) && calib.geo_points.length === 4) {
+        _setRectData([_ringFeature(calib.geo_points)]);
+        return;
+      }
+      // Legacy-formaat met vier benoemde hoeken.
+      const c = calib.corners;
+      if (c && c.bl && c.br && c.tr && c.tl) {
+        _setRectData([_ringFeature([c.bl, c.br, c.tr, c.tl])]);
+      }
+    }
+
+    // Haal opgeslagen calibratie op en herstel kaart + vierkant (bij page-load).
+    _maquetteRestore = async function () {
+      if (!AREA_ID) return;
+      if (_flag('calibrate') || _flag('recalibrate')) return;
+      try {
+        const r = await fetch(`/maquette/calibration?area_id=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`);
+        const d = await r.json();
+        if (d.exists && d.calibration) {
+          _lastCalib = d.calibration;
+          _applyCalibration(_lastCalib);
+        }
+      } catch (e) {
+        console.warn('[maquette] calibratie-herstel mislukt:', e);
+      }
+    };
+
+    function _setRectData(features) {
+      const src = _maquetteMap.getSource('maquette-calib-rect');
+      if (src) src.setData({ type: 'FeatureCollection', features });
+    }
+
+    // Start de detectie. De koppeling camerapixel → kaart komt uit het
+    // calibratiebestand; hier hoeft alleen de gewenste pixelmaat mee.
+    async function _launchCamera(vp) {
+      label.textContent = 'Bezig…';
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/maquette/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            area_id:   AREA_ID,
+            mode:      MODE,
+            camera_id: _cameraId,
+            viewport:  vp,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || resp.statusText);
+        _cameraOn = true;
+        btn.classList.add('cam-on');
+        label.textContent = 'Camera uit';
+        console.log('[maquette] camera gestart, pid=', data.pid);
+      } catch (e) {
+        console.error('[maquette] start mislukt:', e);
+        _setRectData([]);
+        label.textContent = 'Camera aan';
+        alert('Camera starten mislukt: ' + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function _stopCamera() {
+      label.textContent = 'Bezig…';
+      btn.disabled = true;
+      if (window.MaquetteCalibration && window.MaquetteCalibration.isOpen()) {
+        window.MaquetteCalibration.close();
+      }
+      _setRectData([]);
+      try {
+        await fetch('/maquette/stop', { method: 'POST' });
+      } catch (e) {
+        console.warn('[maquette] stop fout:', e);
+      }
+      _cameraOn = false;
+      btn.classList.remove('cam-on');
+      label.textContent = 'Camera aan';
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', () => {
+      if (_cameraOn) _stopCamera(); else _startCamera();
+    });
+
+    // Herstel knopstatus als SSE meldt dat camera gestopt is
+    document.addEventListener('camera_inactive_event', () => {
+      if (_cameraOn) {
+        _cameraOn = false;
+        btn.classList.remove('cam-on');
+        label.textContent = 'Camera aan';
+      }
+    });
+  })();
+
+
+  // ── bbox-param: begrenzing bij opstarten (?bbox=minLon,minLat,maxLon,maxLat in WGS84) ─
+  const _bboxParam = (() => {
+    const v = _params.get('bbox');
+    if (!v) return null;
+    const parts = v.split(',').map(Number);
+    if (parts.length !== 4 || parts.some(isNaN)) return null;
+    return [[parts[0], parts[1]], [parts[2], parts[3]]]; // [[swLon, swLat], [neLon, neLat]]
+  })();
+
+  // ── polygon-param: pas op een vrij polygoon (?polygon=lon1,lat1,lon2,lat2,...) ─
+  const _polygonParam = (() => {
+    const v = _params.get('polygon');
+    if (!v) return null;
+    const nums = v.split(',').map(Number);
+    if (nums.length < 6 || nums.length % 2 !== 0 || nums.some(isNaN)) return null;
+    const coords = [];
+    for (let i = 0; i < nums.length; i += 2) coords.push([nums[i], nums[i + 1]]);
+    return coords; // [[lon,lat], ...]
+  })();
+
+  // Gecombineerde "fit"-trigger: polygon heeft voorrang op bbox
+  const _fitParam = _polygonParam
+    ? (() => {
+        const lons = _polygonParam.map(c => c[0]);
+        const lats = _polygonParam.map(c => c[1]);
+        return [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]];
+      })()
+    : _bboxParam;
+
+  // ── viewport-grootte (?width=W&height=H) ─────────────────────────────────
+  const _vpWidth  = parseInt(_params.get('width'),  10) || null;
+  const _vpHeight = parseInt(_params.get('height'), 10) || null;
+  if (_vpWidth && _vpHeight) {
+    const mapEl = document.getElementById('map');
+    mapEl.style.width  = _vpWidth  + 'px';
+    mapEl.style.height = _vpHeight + 'px';
+    document.getElementById('mapContainer').style.width  = _vpWidth  + 'px';
+    document.getElementById('mapContainer').style.height = _vpHeight + 'px';
+  }
+
+  // ── Geen areaId: toon keuzescherm (menu-paneel + kaart, zoals bij een gebied) ──
+  if (!AREA_ID) {
+    document.getElementById('loader').style.display = 'none';
+
+    // Linker menu-paneel tonen in "geen gebied gekozen"-stand: toggle en
+    // instellingen-knop zijn hier dode knoppen (hun handlers worden pas
+    // verderop in dit script gekoppeld, wat wordt overgeslagen zonder areaId).
+    const homePanel = document.getElementById('leftMenuPanel');
+    homePanel.classList.add('visible');
+    const homeToggle = document.getElementById('leftMenuPanelToggle');
+    if (homeToggle) homeToggle.style.display = 'none';
+    const homeSettingsBtn = document.getElementById('settingsBtn');
+    if (homeSettingsBtn) homeSettingsBtn.style.display = 'none';
+    const homeLegendStrip = document.getElementById('legendStrip');
+    if (homeLegendStrip) homeLegendStrip.style.display = 'none';
+    document.getElementById('networkTitle').textContent = T('areaTitle');
+
+    const homeBody = document.getElementById('leftMenuBody');
+    homeBody.innerHTML = `
+      <div class="lmp-block">
+        <div style="padding:14px">
+          <p style="color:#6a757c;font-size:13px;margin:0 0 12px">${T('areaSubtitle')}</p>
+          <div id="areaButtons" style="display:flex;flex-direction:column;gap:3px;overflow-y:scroll;"></div>
+          <p id="areaError" style="display:none;color:#e63312;font-size:13px;margin-top:16px;text-align:center"></p>
+        </div>
+      </div>`;
+
+    // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
+    const homeMap = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      center: [5.2913, 52.1326],
+      zoom: 7,
+    });
+    const HOME_BBOX_SOURCE = 'home-bbox-src';
+    const HOME_BBOX_LAYER  = 'home-bbox-layer';
+    function bboxArrToGeoJSON(b) {
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [b[0], b[1]],
+          ]],
+        },
+      };
+    }
+    homeMap.on('load', () => {
+      homeMap.addSource(HOME_BBOX_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      homeMap.addLayer({
+        id: HOME_BBOX_LAYER, type: 'fill', source: HOME_BBOX_SOURCE,
+        paint: { 'fill-color': '#00a5ab', 'fill-opacity': 0.15 },
+      });
+      homeMap.addLayer({
+        id: HOME_BBOX_LAYER + '-outline', type: 'line', source: HOME_BBOX_SOURCE,
+        paint: { 'line-color': '#00a5ab', 'line-width': 2 },
+      });
+    });
+
+    fetch('/collections/areas/items')
+      .then(r => r.json())
+      .then(data => data.features.map(f => f.properties))
+      .then(areas => {
+        const container = document.getElementById('areaButtons');
+        if (!areas.length) {
+          document.getElementById('areaError').textContent = T('areaNotFound');
+          document.getElementById('areaError').style.display = 'block';
+        } else {
+          // ── Boomstructuur opbouwen ──────────────────────────────────────────
+          const byKey     = new Map(areas.map(a => [`${a.areaId}|${a.mode}`, a]));
+          const kidsMap   = new Map();   // key → [child areas]
+          const roots     = [];
+
+          areas.forEach(a => {
+            const parentKey = a.srcAreaId ? `${a.srcAreaId}|${a.mode}` : null;
+            if (parentKey && byKey.has(parentKey)) {
+              if (!kidsMap.has(parentKey)) kidsMap.set(parentKey, []);
+              kidsMap.get(parentKey).push(a);
+            } else {
+              roots.push(a);
+            }
+          });
+
+          // Ingeklapte takken persisteren — standaard alles ingeklapt
+          const _saved    = localStorage.getItem('areaTreeCollapsed');
+          const collapsed = _saved
+            ? new Set(JSON.parse(_saved))
+            : new Set(kidsMap.keys());   // eerste keer: alle takken dicht
+          const saveCollapsed = () =>
+            localStorage.setItem('areaTreeCollapsed', JSON.stringify([...collapsed]));
+
+          // Sluit alle dropdowns bij klik buiten
+          document.addEventListener('click', () => {
+            document.querySelectorAll('.area-dropdown').forEach(d => d.style.display = 'none');
+          });
+
+          // ── Node renderen ───────────────────────────────────────────────────
+          function renderNode(area, depth) {
+            const key     = `${area.areaId}|${area.mode}`;
+            const kids    = kidsMap.get(key) || [];
+            const hasKids = kids.length > 0;
+
+            const nodeEl = document.createElement('div');
+
+            // Rij
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:5px;align-items:center';
+
+            // Toggle-pijltje (neemt altijd dezelfde breedte in zodat knoppen uitlijnen)
+            const arrowBtn = document.createElement('button');
+            arrowBtn.style.cssText = `
+              flex-shrink:0;width:20px;height:20px;padding:0;
+              background:none;border:none;
+              color:${hasKids ? '#6a757c' : 'transparent'};
+              pointer-events:${hasKids ? 'auto' : 'none'};
+              font-size:9px;display:flex;align-items:center;justify-content:center;
+              transition:color .15s;margin-left:${depth * 20}px`;
+            arrowBtn.textContent = collapsed.has(key) ? '▶' : '▼';
+
+            // Scenario-knop
+            const btn = document.createElement('button');
+            btn.textContent = `${area.name}  —  ${area.mode}`;
+            btn.style.cssText = `
+              flex:1;min-width:0;
+              background:#ffffff;color:#232931;
+              border:1px solid #e3e6ea;
+              border-radius:7px;padding:9px 14px;font-size:13px;
+              cursor:pointer;text-align:left;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+              transition:background .15s`;
+            btn.onmouseenter = () => {
+              btn.style.background = 'rgba(0,165,171,0.08)';
+              if (area.bbox && area.bbox.length === 4) {
+                homeMap.getSource(HOME_BBOX_SOURCE)?.setData(bboxArrToGeoJSON(area.bbox));
+                homeMap.fitBounds(
+                  [[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]],
+                  { padding: 60, duration: 500 }
+                );
+              }
+            };
+            btn.onmouseleave = () => btn.style.background = '#ffffff';
+            btn.onclick = () => {
+              window.location.href =
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
+            };
+
+            // ── '...' menu-knop ────────────────────────────────────────────────
+            const menuBtn = document.createElement('button');
+            menuBtn.textContent = '···';
+            menuBtn.title = 'Opties';
+            menuBtn.style.cssText = `
+              flex-shrink:0;background:transparent;color:#6a757c;
+              border:1px solid #e3e6ea;
+              border-radius:7px;padding:9px 12px;font-size:13px;letter-spacing:1px;
+              cursor:pointer;transition:background .15s,color .15s`;
+            menuBtn.onmouseenter = () => {
+              menuBtn.style.background = 'rgba(0,165,171,0.08)';
+              menuBtn.style.color      = '#00a5ab';
+            };
+            menuBtn.onmouseleave = () => {
+              menuBtn.style.background = 'transparent';
+              menuBtn.style.color      = '#6a757c';
+            };
+
+            // Dropdown
+            const dropdown = document.createElement('div');
+            dropdown.style.cssText = `
+              display:none;position:absolute;right:0;top:calc(100% + 4px);
+              background:#ffffff;border:1px solid #e3e6ea;
+              border-radius:8px;min-width:160px;z-index:999;
+              box-shadow:0 4px 16px rgba(35,41,49,0.15);overflow:hidden`;
+
+            const mkItem = (label, icon, disabled, danger) => {
+              const item = document.createElement('button');
+              item.style.cssText = `
+                display:flex;align-items:center;gap:9px;width:100%;
+                background:transparent;border:none;
+                color:${disabled ? '#b7bcc2' : danger ? '#de0058' : '#232931'};
+                padding:10px 14px;font-size:13px;font-family:inherit;
+                text-align:left;cursor:${disabled ? 'default' : 'pointer'};
+                transition:background .12s;`;
+              item.innerHTML = `<span style="opacity:${disabled?0.4:1}">${icon}</span><span>${label}</span>`;
+              if (!disabled) {
+                item.onmouseenter = () => item.style.background = danger
+                  ? 'rgba(222,0,88,0.08)' : 'rgba(0,165,171,0.08)';
+                item.onmouseleave = () => item.style.background = 'transparent';
+              }
+              return item;
+            };
+
+            // Item: Meekijken
+            const followItem = mkItem('Meekijken',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+              false, false);
+            followItem.onclick = () => {
+              dropdown.style.display = 'none';
+              window.location.href =
+                `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}&follow=true`;
+            };
+
+            // "Maquette"-menu-item is verwijderd: GMT Analyzer heeft geen
+            // maquette-modus (zie GMT Digital Twin).
+
+            // Item: Upload GMT
+            const gmtUploaded = !!area.gmtUploaded;
+            const gmtItem = mkItem(
+              gmtUploaded ? 'Upload GMT (al geüpload)' : 'Upload GMT',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>',
+              gmtUploaded, false);
+            if (!gmtUploaded) {
+              gmtItem.onclick = () => {
+                dropdown.style.display = 'none';
+                const dlg     = document.getElementById('gmtUploadDialog');
+                const display = document.getElementById('gmtUploadMaxFlowDisplay');
+                const input   = document.getElementById('gmtUploadMaxFlowInput');
+                const cancelBtn = document.getElementById('gmtUploadDialogCancel');
+                const okBtn     = document.getElementById('gmtUploadDialogOk');
+                input.value = '';
+                display.textContent = T('gmtUploadMaxFlowLoading');
+                dlg.style.display = 'block';
+
+                fetch(`/api/areas/${area.areaId}/max-flow?mode=${area.mode}`)
+                  .then(r => r.json())
+                  .then(d => { display.textContent = T('gmtUploadMaxFlowLabel', d.maxFlow ?? 0); })
+                  .catch(() => { display.textContent = ''; });
+
+                const cleanup = () => {
+                  dlg.style.display = 'none';
+                  cancelBtn.onclick = null;
+                  okBtn.onclick = null;
+                };
+                cancelBtn.onclick = cleanup;
+                okBtn.onclick = async () => {
+                  cleanup();
+                  gmtItem.querySelector('span:last-child').textContent = 'Bezig met uploaden…';
+                  const maxFlowVal = input.value.trim();
+                  const body = { inputs: { areaId: area.areaId, mode: area.mode } };
+                  if (maxFlowVal !== '') body.inputs.maxFlow = parseFloat(maxFlowVal);
+                  try {
+                    const res = await fetch('/processes/upload-to-gmt/execution', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(body),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const { jobID } = await res.json();
+                    let lastLog = 0;
+                    for (;;) {
+                      await new Promise(r => setTimeout(r, 1500));
+                      const jd = await fetch(`/jobs/${jobID}`).then(r => r.json());
+                      if (jd.log?.length > lastLog) { lastLog = jd.log.length; }
+                      if (jd.status === 'successful') {
+                        gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (al geüpload)';
+                        gmtItem.style.color = '#3a4455';
+                        gmtItem.style.cursor = 'default';
+                        gmtItem.onmouseenter = null;
+                        gmtItem.onmouseleave = null;
+                        break;
+                      }
+                      if (jd.status === 'failed') {
+                        gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (mislukt)';
+                        gmtItem.style.color = '#ff6b6b';
+                        break;
+                      }
+                    }
+                  } catch (err) {
+                    gmtItem.querySelector('span:last-child').textContent = 'Upload GMT (fout)';
+                    gmtItem.style.color = '#ff6b6b';
+                  }
+                };
+              };
+            }
+
+            // Item: Verwijderen
+            const delItem = mkItem('Verwijderen',
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>',
+              false, true);
+            delItem.onclick = async () => {
+              dropdown.style.display = 'none';
+              if (!confirm(T('areaDelConfirm', area.name, area.mode))) return;
+              const res = await fetch('/processes/delete-area/execution', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: area.areaId }),
+              });
+              if (res.ok) {
+                nodeEl.remove();
+              } else {
+                const d = await res.json().catch(() => ({}));
+                alert(T('areaDelError', d.error || res.statusText));
+              }
+            };
+
+            dropdown.appendChild(followItem);
+            dropdown.appendChild(gmtItem);
+            dropdown.appendChild(delItem);
+
+            // Wrapper voor positionering dropdown
+            const menuWrap = document.createElement('div');
+            menuWrap.style.cssText = 'position:relative;flex-shrink:0';
+            menuWrap.appendChild(menuBtn);
+            menuWrap.appendChild(dropdown);
+
+            menuBtn.onclick = (e) => {
+              e.stopPropagation();
+              const isOpen = dropdown.style.display === 'block';
+              // Sluit alle andere open menus
+              document.querySelectorAll('.area-dropdown').forEach(d => d.style.display = 'none');
+              dropdown.style.display = isOpen ? 'none' : 'block';
+            };
+            dropdown.classList.add('area-dropdown');
+
+            row.appendChild(arrowBtn);
+            row.appendChild(btn);
+            row.appendChild(menuWrap);
+            nodeEl.appendChild(row);
+
+            // Kinderen-wrapper (gedefinieerd vóór onclick zodat de closure hem kan bereiken)
+            const kidsWrap = document.createElement('div');
+            kidsWrap.style.cssText = `margin-top:3px;display:${collapsed.has(key) ? 'none' : 'block'}`;
+            kids.forEach(child => kidsWrap.appendChild(renderNode(child, depth + 1)));
+            nodeEl.appendChild(kidsWrap);
+
+            // Pijltje-gedrag (na kidsWrap definitie)
+            if (hasKids) {
+              arrowBtn.onclick = () => {
+                const wasCollapsed = collapsed.has(key);
+                if (wasCollapsed) collapsed.delete(key); else collapsed.add(key);
+                saveCollapsed();
+                kidsWrap.style.display  = wasCollapsed ? 'block' : 'none';
+                arrowBtn.textContent    = wasCollapsed ? '▼' : '▶';
+                arrowBtn.style.color    = '#6a757c';
+              };
+              arrowBtn.onmouseenter = () => arrowBtn.style.color = '#00a5ab';
+              arrowBtn.onmouseleave = () => arrowBtn.style.color = '#6a757c';
+            }
+
+            return nodeEl;
+          }
+
+          roots.forEach(root => container.appendChild(renderNode(root, 0)));
+        }
+
+        // "Nieuw"-knop altijd toevoegen
+        const newBtn = document.createElement('button');
+        newBtn.textContent = T('newAreaBtn');
+        newBtn.style.cssText = `
+          background:transparent;color:#00a5ab;
+          border:1px dashed rgba(0,165,171,0.4);
+          border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
+          transition:background .15s;width:100%;margin-top:6px`;
+        newBtn.onmouseenter = () => newBtn.style.background = 'rgba(0,165,171,0.07)';
+        newBtn.onmouseleave = () => newBtn.style.background = 'transparent';
+        newBtn.onclick = () => openNewScreen();
+        container.appendChild(newBtn);
+      })
+      .catch(() => {
+        document.getElementById('areaError').textContent = T('areaConnError');
+        document.getElementById('areaError').style.display = 'block';
+      });
+
+    throw new Error('Geen areaId — keuzescherm getoond');
+  }
+
+  // ── Kaartlaag-panels gelijk trekken met #colorMetric ─────────────────────
+  // Vinkt de juiste radio aan en markeert het panel met de actieve laag
+  // (accentstreep + laagnaam in de kop). Wordt ook vanuit updateLegend()
+  // aangeroepen, zodat programmatische resets (zonder 'change') meekomen.
+  function syncLayerPanels() {
+    const panel = document.getElementById('leftMenuPanel');
+    const select = document.getElementById('colorMetric');
+    if (!panel || !select) return;
+    panel.querySelectorAll('input[name="lmpMetric"]').forEach(radio => {
+      radio.checked = radio.value === select.value;
+    });
+    panel.querySelectorAll('.lmp-layer-block').forEach(block => {
+      const checked = block.querySelector('input[name="lmpMetric"]:checked');
+      block.classList.toggle('has-active', !!checked);
+      const nameEl = block.querySelector('.lmp-active-name');
+      if (nameEl) nameEl.textContent = checked ? checked.closest('label').textContent.trim() : '';
+    });
+    const netName = panel.querySelector('.lmp-network-block > .lmp-block-header .lmp-active-name');
+    if (netName) {
+      const checked = panel.querySelector('.lmp-layer-block input[name="lmpMetric"]:checked');
+      netName.textContent = checked ? checked.closest('label').textContent.trim() : T('metricNone');
+    }
+  }
+
+  // ── Linker menu-paneel in-/uitschakelen ─────────────────────────────────
+  function initLeftMenuPanel() {
+    const panel = document.getElementById('leftMenuPanel');
+    const toggle = document.getElementById('leftMenuPanelToggle');
+    if (!panel) return;
+    if (AREA_ID) {
+      panel.classList.add('visible');
+    } else {
+      if (toggle) toggle.style.display = 'none';
+      return;
+    }
+
+    // Collapse/expand van individuele blokken. De kaartlaag-panels werken als
+    // accordeon: één openen klapt de andere kaartlaag-panels dicht.
+    panel.querySelectorAll('.lmp-block-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        const block = header.closest('.lmp-block');
+        const opening = block.classList.contains('collapsed');
+        if (opening && block.classList.contains('lmp-layer-block')) {
+          panel.querySelectorAll('.lmp-layer-block').forEach(b => {
+            if (b !== block) b.classList.add('collapsed');
+          });
+        }
+        block.classList.toggle('collapsed');
+      });
+    });
+
+    // Kaartlagen: radiobuttons gekoppeld aan de bestaande colorMetric-select.
+    // Via delegatie, zodat later gegenereerde radio's (veiligheids-KPI's) meedoen.
+    const metricSelect = document.getElementById('colorMetric');
+    if (metricSelect) {
+      const setMetric = (value) => {
+        metricSelect.value = value;
+        metricSelect.dispatchEvent(new Event('change'));
+      };
+      panel.addEventListener('click', (e) => {
+        const radio = e.target;
+        if (!(radio instanceof HTMLInputElement) || radio.name !== 'lmpMetric') return;
+        // Nogmaals klikken op de actieve laag zet hem uit ('change' vuurt dan niet,
+        // de select heeft hier nog de oude waarde).
+        if (radio.value === metricSelect.value) setMetric('none');
+      });
+      panel.addEventListener('change', (e) => {
+        const radio = e.target;
+        if (!(radio instanceof HTMLInputElement) || radio.name !== 'lmpMetric' || !radio.checked) return;
+        setMetric(radio.value);
+      });
+      // Zorg dat de radio's meebewegen als de metriek elders wordt aangepast
+      // (bijv. via de select zelf, of automatische fallback naar 'flow').
+      metricSelect.addEventListener('change', syncLayerPanels);
+      syncLayerPanels();
+    }
+
+    // Zone productie/attractie: radiobuttons gekoppeld aan de bestaande zoneCentroidSelect
+    const zoneSelect = document.getElementById('zoneCentroidSelect');
+    const zoneRadios = panel.querySelectorAll('input[name="lmpZoneCentroid"]');
+    if (zoneSelect && zoneRadios.length) {
+      zoneRadios.forEach(radio => {
+        radio.checked = radio.value === zoneSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          zoneSelect.value = radio.value;
+          zoneSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      zoneSelect.addEventListener('change', () => {
+        zoneRadios.forEach(radio => {
+          radio.checked = radio.value === zoneSelect.value;
+        });
+      });
+    }
+
+    // Gebouw productie/attractie: radiobuttons gekoppeld aan de bestaande buildingPurpose-select
+    const buildingPurposeSelect = document.getElementById('buildingPurpose');
+    const buildingPurposeRadios = panel.querySelectorAll('input[name="lmpBuildingPurpose"]');
+    if (buildingPurposeSelect && buildingPurposeRadios.length) {
+      buildingPurposeRadios.forEach(radio => {
+        radio.checked = radio.value === buildingPurposeSelect.value;
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          buildingPurposeSelect.value = radio.value;
+          buildingPurposeSelect.dispatchEvent(new Event('change'));
+        });
+      });
+      buildingPurposeSelect.addEventListener('change', () => {
+        buildingPurposeRadios.forEach(radio => {
+          radio.checked = radio.value === buildingPurposeSelect.value;
+        });
+      });
+    }
+
+    // Slider-tab: paneel in-/uitklappen (naar links wegschuiven)
+    const savedCollapsed = localStorage.getItem('leftMenuPanelCollapsed') === '1';
+    if (toggle) {
+      const applyState = (collapsed) => {
+        panel.classList.toggle('collapsed', collapsed);
+        toggle.classList.toggle('collapsed', collapsed);
+        toggle.title = collapsed ? 'Menu uitklappen' : 'Menu inklappen';
+      };
+      applyState(savedCollapsed);
+      toggle.addEventListener('click', () => {
+        const collapsed = !panel.classList.contains('collapsed');
+        applyState(collapsed);
+        localStorage.setItem('leftMenuPanelCollapsed', collapsed ? '1' : '0');
+      });
+    }
+  }
+
+  // ── Nieuw-scherm ──────────────────────────────────────────────────────────
+  function openNewScreen() {
+    document.getElementById('loader').style.display   = 'none';
+    document.getElementById('newScreen').classList.add('visible');
+
+    // Initialiseer de kaart in het nieuw-scherm (MapLibre, zelfde stijl als hoofdkaart)
+    const newMap = new maplibregl.Map({
+      container: 'newMap',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      center: [4.9, 52.3],
+      zoom: 7,
+    });
+
+    let bbox   = null;   // { minLon, minLat, maxLon, maxLat }
+    let corner = null;   // eerste klik-coördinaat
+    const SOURCE_ID = 'bbox-src';
+    const LAYER_ID  = 'bbox-layer';
+    document.getElementById('newClearBtn').disabled = true; // geen bbox bij openen van de wizard
+
+    function bboxToGeoJSON(b) {
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [b.minLon, b.minLat],
+            [b.maxLon, b.minLat],
+            [b.maxLon, b.maxLat],
+            [b.minLon, b.maxLat],
+            [b.minLon, b.minLat],
+          ]],
+        },
+      };
+    }
+
+    function updateBboxLayer() {
+      document.getElementById('newClearBtn').disabled = !bbox;
+      document.getElementById('bboxDisplay').innerHTML = bbox
+        ? `bbox: <b>${bbox.minLon.toFixed(5)},${bbox.minLat.toFixed(5)}</b> -
+           ${bbox.maxLon.toFixed(5)},${bbox.maxLat.toFixed(5)}</b>`
+        : T('newAreaNoBbox');
+      if (!newMap.getSource(SOURCE_ID)) return;
+      newMap.getSource(SOURCE_ID).setData(
+        bbox ? bboxToGeoJSON(bbox) : { type: 'FeatureCollection', features: [] }
+      );
+      newMap.getCanvas().style.cursor = bbox ? '' : 'crosshair';
+      updateNlOnlyNotes();
+    }
+
+    // Grove NL-bbox, zelfde grenzen als server-side _is_netherlands(); puur
+    // om de "alleen binnen Nederland"-notities te tonen, geen harde check.
+    const NL_BBOX = { minLon: 3.3, minLat: 50.7, maxLon: 7.3, maxLat: 53.6 };
+    function updateNlOnlyNotes() {
+      let withinNl = true;
+      if (bbox) {
+        const cx = (bbox.minLon + bbox.maxLon) / 2;
+        const cy = (bbox.minLat + bbox.maxLat) / 2;
+        withinNl = cx >= NL_BBOX.minLon && cx <= NL_BBOX.maxLon
+                && cy >= NL_BBOX.minLat && cy <= NL_BBOX.maxLat;
+      }
+      document.querySelectorAll('[data-nl-only]').forEach(el => {
+        el.classList.toggle('visible', !withinNl);
+      });
+    }
+
+    newMap.on('load', () => {
+      newMap.addSource(SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      newMap.addLayer({
+        id: LAYER_ID, type: 'fill', source: SOURCE_ID,
+        paint: { 'fill-color': '#7ec8e3', 'fill-opacity': 0.15 },
+      });
+      newMap.addLayer({
+        id: LAYER_ID + '-outline', type: 'line', source: SOURCE_ID,
+        paint: { 'line-color': '#7ec8e3', 'line-width': 2 },
+      });
+      newMap.getCanvas().style.cursor = 'crosshair';
+    });
+
+    // Stelt een naam voor (via server-side reverse geocoding) zodra een bbox
+    // getekend is, maar alleen als het naamveld nog leeg is: niet overschrijven
+    // wat de gebruiker zelf al heeft ingevuld.
+    async function suggestNameIfEmpty(forBbox) {
+      const nameInput = document.getElementById('newName');
+      if (!nameInput || nameInput.value.trim() !== '') return;
+      const lon = (forBbox.minLon + forBbox.maxLon) / 2;
+      const lat = (forBbox.minLat + forBbox.maxLat) / 2;
+      try {
+        const resp = await fetch(`/api/reverse-geocode?lon=${lon}&lat=${lat}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.name && bbox === forBbox && nameInput.value.trim() === '') {
+          nameInput.value = data.name;
+        }
+      } catch (e) {
+        // Naamsuggestie is puur gemak; stil negeren bij netwerkfouten e.d.
+      }
+    }
+
+    newMap.on('click', e => {
+      if (bbox) return; // eerst 'Wis bbox' klikken voor een nieuwe tekening
+      const { lng, lat } = e.lngLat;
+      if (!corner) {
+        corner = [lng, lat];
+      } else {
+        bbox = {
+          minLon: Math.min(corner[0], lng),
+          minLat: Math.min(corner[1], lat),
+          maxLon: Math.max(corner[0], lng),
+          maxLat: Math.max(corner[1], lat),
+        };
+        corner = null;
+        updateBboxLayer();
+        suggestNameIfEmpty(bbox);
+      }
+    });
+
+    // Rubber-band preview tijdens muis bewegen
+    newMap.on('mousemove', e => {
+      if (!corner || !newMap.getSource(SOURCE_ID)) return;
+      const { lng, lat } = e.lngLat;
+      const preview = {
+        minLon: Math.min(corner[0], lng), minLat: Math.min(corner[1], lat),
+        maxLon: Math.max(corner[0], lng), maxLat: Math.max(corner[1], lat),
+      };
+      newMap.getSource(SOURCE_ID).setData(bboxToGeoJSON(preview));
+    });
+
+    document.getElementById('newClearBtn').onclick = () => {
+      bbox = null; corner = null;
+      document.getElementById('newName').value = '';
+      updateBboxLayer();
+    };
+
+    // Subtoggles volgen hun hoofdtoggle (uitgeschakeld + afgevinkt-weergave
+    // genegeerd zodra de hoofdbron uit staat).
+    function wireSubToggle(mainId, subIds) {
+      const mainEl = document.getElementById(mainId);
+      const subEls = subIds.map(id => document.getElementById(id));
+      const sync = () => subEls.forEach(el => { el.disabled = !mainEl.checked; el.checked = mainEl.checked; });
+      mainEl.addEventListener('change', sync);
+      sync();
+    }
+    wireSubToggle('newVegetation', ['newVegetationOsm', 'newVegetationBgt']);
+    wireSubToggle('newParking', ['newParkingOsm', 'newParkingBgt']);
+    wireSubToggle('newOsmAssets', ['newStopBordOsm', 'newMiniRotondeOsm', 'newOversteekOsm']);
+
+    // Zone-methode: toon alleen de opties die bij de gekozen methode horen
+    // (grenszones → study-fallback; geaggregeerde zones → aantallen/radius).
+    function syncZoneMethodPanels() {
+      const aggregated = document.getElementById('newZoneMethod').value === 'aggregated';
+      document.getElementById('newZoneFetchOpts').style.display = aggregated ? 'none' : '';
+      document.getElementById('newZoneAggregatedOpts').style.display = aggregated ? '' : 'none';
+    }
+    document.getElementById('newZoneMethod').addEventListener('change', syncZoneMethodPanels);
+    syncZoneMethodPanels();
+
+    // newCancelBtn is momenteel verwijderd uit de UI (Home-knop in de kop
+    // doet nu dienst als uitgang); defensief geschreven zodat een eventuele
+    // herintroductie van de knop geen aparte JS-wijziging vereist.
+    const newCancelBtnEl = document.getElementById('newCancelBtn');
+    if (newCancelBtnEl) {
+      newCancelBtnEl.onclick = () => {
+        // Geen loader herstellen: het keuzescherm (menu-paneel + kaart) staat
+        // hieronder nog gewoon, #newScreen lag er alleen full-screen overheen.
+        document.getElementById('newScreen').classList.remove('visible');
+        newMap.remove();
+      };
+    }
+
+  document.getElementById('newSubmitBtn').onclick = async () => {
+    const name = document.getElementById('newName').value.trim();
+    if (!name) { alert(T('newAreaAlertName')); return; }
+    if (!bbox)  { alert(T('newAreaAlertBbox')); return; }
+
+    const selectedModes = [...document.querySelectorAll('#newModes input[type=checkbox]:checked')]
+      .map(cb => cb.value);
+    if (!selectedModes.length) { alert(T('newAreaAlertMode')); return; }
+
+    // UI in wacht-modus
+    const progressEl = document.getElementById('newProgress');
+    const statusEl   = document.getElementById('newStatus');
+    const logEl      = document.getElementById('newLog');
+    const fillEl     = document.getElementById('newProgressFill');
+    progressEl.style.display = 'flex';
+    document.getElementById('newSubmitBtn').disabled = true;
+    statusEl.textContent = T('newAreaStatusStart');
+    fillEl.style.width = '5%';
+
+    // Start één job met alle geselecteerde modi tegelijk (modes-array → pipeline doet fusing)
+    const jobStates = [];
+    try {
+      const body = {
+        name, modes: selectedModes,
+        min_lon: bbox.minLon, min_lat: bbox.minLat,
+        max_lon: bbox.maxLon, max_lat: bbox.maxLat,
+        debug: URL_DEBUG,
+        vegetation: !!document.getElementById('newVegetation').checked,
+        vegetationBgt: !!document.getElementById('newVegetationBgt').checked,
+        elevation: !!document.getElementById('newElevation').checked,
+        trafficSignals: !!document.getElementById('newTrafficSignals').checked,
+        trafficSigns: !!document.getElementById('newTrafficSigns').checked,
+        bgtAssets: !!document.getElementById('newBgtAssets').checked,
+        osmAssets: !!document.getElementById('newOsmAssets').checked,
+        parking: !!document.getElementById('newParking').checked,
+        parkingOsm: !!document.getElementById('newParkingOsm').checked,
+        parkingBgt: !!document.getElementById('newParkingBgt').checked,
+        zoneMethod: document.getElementById('newZoneMethod').value,
+        studyFallback: document.getElementById('newStudyFallback').value,
+        zonesStudiegebied: parseInt(document.getElementById('newZonesStudiegebied').value, 10),
+        zonesTotaal: parseInt(document.getElementById('newZonesTotaal').value, 10),
+        zoneSearchRadiusM: parseFloat(document.getElementById('newZoneSearchRadiusM').value),
+      };
+      const res  = await fetch('/processes/prepare/execution', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: body }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.style.color = '#ff6b6b';
+        statusEl.textContent = data.error;
+        document.getElementById('newSubmitBtn').disabled = false;
+        return;
+      }
+      jobStates.push({ jobId: data.jobID, logLen: 0, done: false });
+    } catch (e) {
+      statusEl.style.color = '#ff6b6b';
+      statusEl.textContent = T('newAreaStatusConn');
+      document.getElementById('newSubmitBtn').disabled = false;
+      return;
+    }
+
+    // Peil alle jobs tegelijk met één interval. `tick` zorgt voor zichtbare
+    // voortgang terwijl de (ene, samengevoegde) job nog loopt: zonder dit bleef
+    // de balk de hele duur van de pipeline op de startwaarde (10%) steken, wat
+    // als "vastgelopen" overkwam omdat er maar één job is om op te tellen.
+    let tick = 0;
+    const poll = setInterval(async () => {
+      let anyFailed = false;
+      for (const js of jobStates) {
+        if (js.done) continue;
+        try {
+          const res = await fetch(`/jobs/${js.jobId}`);
+          const job = await res.json();
+          const newLines = job.log.slice(js.logLen);
+          if (newLines.length) {
+            logEl.textContent += newLines.join('\n') + '\n';
+            logEl.scrollTop = logEl.scrollHeight;
+            js.logLen = job.log.length;
+          }
+          if      (job.status === 'successful') { js.done = true; }
+          else if (job.status === 'failed')     { js.done = true; anyFailed = true; }
+        } catch (_) {}
+      }
+      const doneCnt = jobStates.filter(js => js.done).length;
+      const total   = jobStates.length;
+      if (anyFailed) {
+        clearInterval(poll);
+        fillEl.style.background = '#ff1744';
+        statusEl.style.color    = '#ff6b6b';
+        statusEl.textContent    = T('newAreaStatusError', '');
+        document.getElementById('newSubmitBtn').disabled = false;
+      } else if (doneCnt === total) {
+        clearInterval(poll);
+        fillEl.style.width     = '100%';
+        fillEl.style.animation = 'none';
+        statusEl.style.color   = '#00e676';
+        statusEl.textContent   = T('newAreaStatusDone');
+        // Direct doorschakelen naar het net aangemaakte gebied, net als bij
+        // het openen van een bestaand gebied vanuit het overzicht. De echte
+        // areaId (gegenereerde UUID) staat in de jobresultaten, niet in `name`
+        // (de weergavenaam die de gebruiker intypte).
+        const modeLabel = selectedModes.length > 1 ? 'MIXED' : selectedModes[0];
+        let newAreaId = name;
+        try {
+          const resultsRes = await fetch(`/jobs/${jobStates[0].jobId}/results`);
+          const results = await resultsRes.json();
+          if (results.areaId) newAreaId = results.areaId;
+        } catch (_) {}
+        window.location.href =
+          `/?areaId=${encodeURIComponent(newAreaId)}&mode=${encodeURIComponent(modeLabel)}`;
+      } else {
+        tick++;
+        statusEl.textContent = T('newAreaStatusRunning');
+        const timeProgress = Math.min(80, tick * 3);
+        const jobProgress  = 80 * doneCnt / total;
+        fillEl.style.width = `${10 + Math.max(timeProgress, jobProgress)}%`;
+      }
+    }, 1500);
+  };
+}
+
+  function apiUrl(type) {
+    const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', FEEDLINK: 'feedlinks', COMPARE: 'comparison' };
+    const coll = collMap[type] || type.toLowerCase();
+    return `/collections/${coll}/items?areaId=${encodeURIComponent(AREA_ID)}&mode=${encodeURIComponent(MODE)}`;
+  }
+
+  const GEOJSON_FILE  = apiUrl('NETWORK');
+  const ROUTES_FILE   = apiUrl('ROUTES');
+  const CENTER        = [4.42043, 51.91117];
+
+  // ── Geo-hulpfuncties ──────────────────────────────────────────────────────
+
+  function haversineM([lon1, lat1], [lon2, lat2]) {
+    const R = 6371000, rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function segmentLength(coords) {
+    let total = 0;
+    for (let i = 0; i < coords.length - 1; i++)
+      total += haversineM(coords[i], coords[i + 1]);
+    return total;
+  }
+
+  /** Lengte (m) van een netwerklink: het `length`-attribuut uit het netwerkbestand
+   *  als dat aanwezig is, anders berekend uit de geometrie. */
+  function linkLengthM(f) {
+    const L = f.properties?.length;
+    return L > 0 ? L : segmentLength(f.geometry.coordinates);
+  }
+
+  // ── Kleur- & dichtheidsfuncties ───────────────────────────────────────────
+
+    /** norm ∈ [0,1] → RGBA groen → geel → rood.
+     *  Wortel-gamma: geel verschuift naar norm ≈ 0.25 voor meer kleuronderscheid bij lage intensiteiten. */
+    function flowToRgba(norm) {
+      // Vaste kleurblokken conform Google Maps-legenda: groen → geel → oranje → rood → donkerrood
+      if (norm < 0.04) return [150, 150, 150,  60];  // nauwelijks gebruik: grijs
+      if (norm < 0.20) return [ 99, 214, 104, 220];  // vrij:     groen
+      if (norm < 0.40) return [255, 220,   0, 220];  // matig:    geel
+      if (norm < 0.65) return [230,  90,  20, 220];  // druk:     oranje
+      if (norm < 0.85) return [210,  35,  35, 220];  // erg druk: rood
+                       return [130,   0,   0, 220];  // vast:     donkerrood
+    }
+
+  /** Fiets-specifieke kleurschaal (multimodaal MIXED): donkerpaars → magenta → amber.
+   *  Geen rood-tint, geen overlap met de auto-schaal (blauw→groen→geel→rood).
+   *  norm=0 (laag): [80,0,160] diep paars  |  norm=0.5: [220,40,200] magenta  |  norm=1 (hoog): [255,170,0] amber */
+  function bikeFlowToRgba(norm) {
+    let r, g, b;
+    if (norm <= 0.5) {
+      const t = norm * 2;
+      r = Math.round(80  + t * 140);   // 80  → 220
+      g = Math.round(0   + t * 40);    // 0   → 40
+      b = Math.round(160 + t * 40);    // 160 → 200
+    } else {
+      const t = (norm - 0.5) * 2;
+      r = Math.round(220 + t * 35);    // 220 → 255
+      g = Math.round(40  + t * 130);   // 40  → 170
+      b = Math.round(200 - t * 200);   // 200 → 0
+    }
+    return [r, Math.min(255, Math.max(0, g)), Math.min(255, Math.max(0, b)), 210];
+  }
+
+  // Groen→geel→rood (bezettingsgraad): zelfde blokken maar lagere drempels —
+  // 65% bezetting is al erg druk en kleurt rood.
+  function greenRedRgba(norm) {
+    // norm = bezettingsgraad / 100  (0–1)
+    if (norm < 0.04) return [150, 150, 150,  60];  // < 4%:   grijs
+    if (norm < 0.15) return [ 99, 214, 104, 220];  // < 15%:  groen
+    if (norm < 0.30) return [255, 220,   0, 220];  // < 30%:  geel
+    if (norm < 0.50) return [230,  90,  20, 220];  // < 50%:  oranje
+    if (norm < 0.70) return [210,  35,  35, 220];  // < 70%:  rood
+                     return [130,   0,   0, 220];  // ≥ 70%:  donkerrood
+  }
+
+  /**
+   * Absolute (niet-relatieve) grenswaarden voor de geluid- en emissielagen.
+   * Elke laag krijgt een vaste drempel: onder `std` = toegestaan (groen),
+   * tussen `std` en `max` = grijs gebied / afweegzone (geel→oranje), boven
+   * `max` = overschrijding (rood). Zo blijft de inkleuring vergelijkbaar
+   * tussen scenario's, i.p.v. mee te schalen met de dataspreiding.
+   *
+   * Geluid: wettelijke waarden uit de Omgevingswet (Aanvullingsbesluit geluid,
+   *   wegverkeer gemeente-/provinciale weg): standaardwaarde Lden 53 dB,
+   *   grenswaarde Lden 70 dB. Voor Lnight bestaat geen wettelijke wegnorm;
+   *   hier een indicatieve band (WHO-nachtrichtwaarde 45 dB → 59 dB).
+   *   NB: het model levert bronemissie per link, geen gevelimmissie; de
+   *   waarden zijn als indicatieve klassenindeling toegepast.
+   * Emissie: luchtkwaliteitsnormen zijn concentraties (µg/m³), niet massa per
+   *   weglink, dus er is GEEN wettelijke per-weg-limiet. Onderstaande drempels
+   *   zijn indicatief (kg/km/etmaal) en bedoeld om te tunen.
+   */
+  const METRIC_LIMITS = {
+    noise_lden:   { std: 53,  max: 70,  legal: true  },  // Omgevingswet, Lden dB(A)
+    noise_lnight: { std: 45,  max: 59,  legal: false },  // indicatief, Lnight dB(A)
+    emis_co2:     { std: 500, max: 1000, legal: false }, // indicatief, kg/km/etmaal
+    emis_nox:     { std: 1.5, max: 3.0,  legal: false }, // indicatief, kg/km/etmaal
+    emis_pm10:    { std: 0.15, max: 0.30, legal: false },// indicatief, kg/km/etmaal
+    // "Snelheid"-straf-seconden v0 (alleen vaste componenten, zie
+    // docs/plan-snelheid-strafseconden.md) — startwaarden, nog te valideren.
+    speed_penalty_total: { std: 4, max: 12, legal: false },
+  };
+
+  /** Kleur op basis van absolute drempels: groen (toegestaan) → geel/oranje
+   *  (grijs gebied) → rood (overschrijding). */
+  function limitBandRgba(v, std, max) {
+    if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+    if (v < std) {
+      // Toegestaan: lichtgroen → groen naarmate het de standaardwaarde nadert
+      return [99, 214, 104, 220];
+    }
+    if (v < max) {
+      // Grijs gebied: geel → oranje over de afweegzone
+      const t = (v - std) / (max - std);
+      return [230, Math.round(210 - 120 * t), 20, 225];
+    }
+    // Overschrijding: rood → donkerrood bij forse overschrijding
+    const t = Math.max(0, Math.min(1, (v - max) / max));
+    return [Math.round(205 - 75 * t), Math.round(30 - 30 * t), Math.round(30 - 30 * t), 230];
+  }
+
+    // "Snelheid"-sub-lagen (binaire aanwezigheid van een factor op het wegvak).
+    const BINARY_SPEED_METRICS = new Set(['speed_crossings', 'speed_yield', 'speed_refuge']);
+    const CATEGORICAL_SPEED_METRICS = new Set(['speed_intersections']);
+
+  // ── Inrichtingslagen met vaste klassen (verharding, breedte, stoepen) ──────
+  // Bron: NETWORK-properties uit gmt_network_enrichment ≥ 0.6 (surface,
+  // sidewalkLeft/Right) en de WKD-breedtes (roadWidthMinM/MaxM, roadWidthM).
+  const _UNKNOWN_CLASS_RGBA = [170, 170, 180, 140];
+
+  /** Totale wegbreedte (m) zoals Kaart 2, maar alleen uit gemeten waarden; anders null. */
+  function _designWidthM(p) {
+    if (p.roadWidthMinM != null && p.roadWidthMaxM != null) return (p.roadWidthMinM + p.roadWidthMaxM) / 2;
+    if (p.roadWidthM != null) return p.roadWidthM * 2;
+    return null;
+  }
+  const _hasSidewalk = v => v === 'yes' || v === 'separate';
+
+  const DESIGN_CLASS_LAYERS = {
+    surface_class: {
+      labelKey: 'legendSurface',
+      classes: {
+        asfalt:      { labelKey: 'surfAsphalt',    rgba: [60, 64, 72, 230] },
+        klinkers:    { labelKey: 'surfPavers',     rgba: [196, 98, 62, 230] },
+        beton:       { labelKey: 'surfConcrete',   rgba: [120, 160, 190, 230] },
+        halfverhard: { labelKey: 'surfSemiPaved',  rgba: [214, 170, 60, 230] },
+        onverhard:   { labelKey: 'surfUnpaved',    rgba: [125, 85, 45, 230] },
+        onbekend:    { labelKey: 'classUnknown',   rgba: _UNKNOWN_CLASS_RGBA },
+      },
+      classOf: p => window.MontrealBasemap?.surfaceClass?.(p) ?? 'onbekend',
+      rawOf:   p => p.surface ?? null,
+    },
+    width_class: {
+      labelKey: 'legendWidthClass',
+      classes: {
+        w0:       { label: '< 4 m',     rgba: [158, 202, 225, 230] },
+        w1:       { label: '4–5,5 m',   rgba: [107, 174, 214, 230] },
+        w2:       { label: '5,5–7 m',   rgba: [49, 130, 189, 230] },
+        w3:       { label: '7–9 m',     rgba: [8, 81, 156, 230] },
+        w4:       { label: '≥ 9 m',     rgba: [8, 38, 94, 230] },
+        onbekend: { labelKey: 'classUnknown', rgba: _UNKNOWN_CLASS_RGBA },
+      },
+      classOf: p => {
+        const w = _designWidthM(p);
+        if (w == null) return 'onbekend';
+        return w < 4 ? 'w0' : w < 5.5 ? 'w1' : w < 7 ? 'w2' : w < 9 ? 'w3' : 'w4';
+      },
+      rawOf: p => { const w = _designWidthM(p); return w == null ? null : `${w.toFixed(1)} m`; },
+    },
+    sidewalks: {
+      labelKey: 'legendSidewalks',
+      classes: {
+        both:     { labelKey: 'sidewalkBoth',  rgba: [40, 160, 80, 230] },
+        left:     { labelKey: 'sidewalkLeft',  rgba: [240, 150, 30, 230] },
+        right:    { labelKey: 'sidewalkRight', rgba: [140, 90, 200, 230] },
+        none:     { labelKey: 'sidewalkNone',  rgba: [215, 50, 50, 230] },
+        onbekend: { labelKey: 'classUnknown',  rgba: _UNKNOWN_CLASS_RGBA },
+      },
+      classOf: p => {
+        const L = p.sidewalkLeft, R = p.sidewalkRight;
+        if (L == null && R == null) return 'onbekend';
+        const l = _hasSidewalk(L), r = _hasSidewalk(R);
+        return l && r ? 'both' : l ? 'left' : r ? 'right' : 'none';
+      },
+      rawOf: p => (p.sidewalkLeft == null && p.sidewalkRight == null) ? null
+        : `${T('sidewalkLeft')}: ${p.sidewalkLeft ?? '–'}, ${T('sidewalkRight')}: ${p.sidewalkRight ?? '–'}`,
+    },
+  };
+  const _designClassLabel = c => c.labelKey ? T(c.labelKey) : c.label;
+  // Toekomstige Snelheid-sub-lagen die al zichtbaar zijn in het menu, maar grijs
+  // blijven zolang de brondata (gmt-library Deel A / cycle paths) nog ontbreekt.
+  const FUTURE_BINARY_SPEED_METRICS = new Set(['speed_cycle_crossings']);
+  // Snelheid-sub-lagen met een continue (flow-gebaseerde) waarde i.p.v. binair.
+  const FLOW_SPEED_METRICS = new Set(['speed_from_right', 'speed_left_turn', 'speed_oncoming', 'speed_elevation']);
+  const BINARY_SPEED_RGBA = [235, 110, 20, 230];   // opvallend amber/oranje
+  const UNAVAILABLE_GREY_RGBA = [160, 160, 170, 180]; // half-transparant grijs: data nog niet beschikbaar
+
+  // Blauw (vrij/snel) → rood (langzaam): norm=0 is langzaam, norm=1 is snel
+  function speedRgba(norm) {
+    const n = 1 - norm; // omdraaien: hoge snelheid = koel blauw
+    const r = Math.min(255, Math.round(n * 2 * 255));
+    const g = Math.min(255, Math.round((1 - n) * 1.5 * 255));
+    const b = Math.min(255, Math.round((1 - n) * 255));
+    return [r, g, b, 210];
+  }
+
+  // Grijs/transparant (laag) → amber → rood (hoog), voor continue Snelheid-lagen.
+  function redOrangeRgba(norm) {
+    if (norm <= 0) return [80, 80, 100, 120];
+    if (norm >= 1) return [231, 76, 60, 230];
+    if (norm < 0.5) {
+      // grijs (0,0.2,0.4,0.6) → amber
+      const t = norm * 2;
+      const r = Math.round(80 + t * (235 - 80));
+      const g = Math.round(80 + t * (110 - 80));
+      const b = Math.round(100 + t * (20 - 100));
+      const a = Math.round(120 + t * (230 - 120));
+      return [r, g, b, a];
+    }
+    // amber → rood
+    const t = (norm - 0.5) * 2;
+    const r = Math.round(235 + t * (231 - 235));
+    const g = Math.round(110 + t * (76 - 110));
+    const b = Math.round(20 + t * (60 - 20));
+    return [r, g, b, 230];
+  }
+
+  // Hellingspercentage: groen (bergaf, negatief) → geel (0%) → rood (bergop, positief).
+  // maxAbs = maximum absolute helling in het geladen gebied.
+  function slopeRgba(pct, maxAbs) {
+    if (maxAbs <= 0 || pct == null || !isFinite(pct)) return [255, 220, 80, 230];
+    const stop = [
+      { p: -maxAbs, c: [30, 160, 60] },   // groen, bergaf
+      { p: 0,       c: [255, 220, 80] },   // geel, vlak
+      { p: maxAbs,  c: [220, 50, 40] }    // rood, bergop
+    ];
+    // lineair interpoleren tussen de twee dichtstbijzijnde stops
+    let a = stop[0], b = stop[stop.length - 1];
+    for (let i = 0; i < stop.length - 1; i++) {
+      if (pct >= stop[i].p && pct <= stop[i + 1].p) { a = stop[i]; b = stop[i + 1]; break; }
+    }
+    const range = b.p - a.p || 1;
+    const t = Math.max(0, Math.min(1, (pct - a.p) / range));
+    const r = Math.round(a.c[0] + t * (b.c[0] - a.c[0]));
+    const g = Math.round(a.c[1] + t * (b.c[1] - a.c[1]));
+    const bl = Math.round(a.c[2] + t * (b.c[2] - a.c[2]));
+    return [r, g, bl, 230];
+  }
+
+  // Lichtblauw (laag) → diepblauw (hoog)
+  function capacityRgba(norm) {
+    const r = Math.round(30 + (1 - norm) * 140);
+    const g = Math.round(80 + (1 - norm) * 120);
+    const b = Math.round(200 + norm * 55);
+    return [r, g, b, 210];
+  }
+
+  // ── Applicatielogica ──────────────────────────────────────────────────────
+
+  const { MapboxOverlay, GeoJsonLayer, ScatterplotLayer, PathLayer, IconLayer, PolygonLayer } = deck;
+
+  // ── Gemiddelde voertuiglengte (voor de bezettingsgraad-metric) ──────────────
+  // Gewogen naar de typeverdeling (RDW-benadering): personenauto 55 % × 4,5 m,
+  // stadsauto 15 % × 3,2 m, SUV/MPV 15 % × 4,8 m, bestelwagen 10 % × 5,5 m,
+  // vrachtauto 5 % × 10 m → 4,725 m. Fiets: 1,85 m.
+  const AVG_CAR_LEN  = 4.725;
+  const AVG_BIKE_LEN = 1.85;
+  function avgVehicleLengthForMode(mode) {
+    return String(mode || MODE).toUpperCase() === 'BIKE' ? AVG_BIKE_LEN : AVG_CAR_LEN;
+  }
+
+  // ── Debounce helper ───────────────────────────────────────────────────────
+
+  function debounce(fn, ms) {
+    let timer;
+    return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+  }
+
+  // Globaal maximum flow — toegankelijk voor flowToRgba() die buiten de async IIFE staat
+  let globalMaxFlow     = 1;
+  let globalMaxFlowBike = 1;  // idem, alleen voor fietslinks (MIXED-modus)
+  // Plafonds voor het ongeschaalde etmaaltotaal (flowDaypart === 'etmaal'), apart van
+  // bovenstaande omdat een etmaaltotaal een heel andere orde van grootte heeft dan een
+  // per-dagdeel uurintensiteit — anders verzadigt de kleur-/breedteschaal in die stand.
+  let globalMax24hFlow     = 1;
+  let globalMax24hFlowBike = 1;
+
+  /** Welke transportmodi zichtbaar zijn. Alleen relevant in MIXED-modus. */
+  const visibleModes = new Set(['CAR', 'BIKE', 'PEDESTRIAN']);
+
+  /**
+   * Haal een routes-collectie op als NDJSON-stream (?format=ndjson) en parse
+   * progressief, regel voor regel. Retourneert een FeatureCollection-achtig
+   * object { type, features, properties } dat identiek is aan de gewone
+   * GeoJSON-respons, zodat _parseAndAddRoutes() ongewijzigd kan blijven.
+   * Gooit bij een niet-OK status of ontbrekende stream, zodat de aanroeper
+   * kan terugvallen op de gewone fetch.
+   */
+  async function _fetchRoutesNdjson(url) {
+    const resp = await fetch(url, { headers: { Accept: 'application/x-ndjson' } });
+    if (!resp.ok) throw new Error(`routes ndjson ${resp.status}`);
+    const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+    if (!resp.body || !ct.includes('ndjson')) {
+      // Server ondersteunt geen streaming → gebruik de complete JSON.
+      return resp.json();
+    }
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const features = [];
+    let properties = {};
+    let buf = '';
+    let count = 0;
+
+    const handleLine = (line) => {
+      const s = line.trim();
+      if (!s) return;
+      let obj;
+      try { obj = JSON.parse(s); } catch { return; }
+      if (obj && obj.type === 'Header') {
+        properties = obj.properties || {};
+        return;
+      }
+      features.push(obj);
+      count++;
+      if ((count & 1023) === 0) setLoaderMsg(`${T('loaderRoutes')} (${count})`);
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    buf += decoder.decode();
+    if (buf.length) handleLine(buf);
+
+    return { type: 'FeatureCollection', features, properties };
+  }
+
+  /**
+   * Haal de panden-collectie op als NDJSON-stream (?format=ndjson), zelfde
+   * patroon als _fetchRoutesNdjson: header-regel + één feature per regel,
+   * progressief geparsed. Werkt het aantal al ontvangen panden bij in de
+   * statusregel van het "Pand productie/attractie"-paneel. Valt terug op de
+   * gewone JSON-respons als de server geen streaming content-type teruggeeft.
+   */
+  async function _fetchBuildingsNdjson(url) {
+    const resp = await fetch(url, { headers: { Accept: 'application/x-ndjson' } });
+    if (!resp.ok) throw new Error(`buildings ndjson ${resp.status}`);
+    const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+    if (!resp.body || !ct.includes('ndjson')) {
+      return resp.json();
+    }
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const features = [];
+    let properties = {};
+    let buf = '';
+    const statusEl = document.getElementById('lmpBuildingsStatusText');
+
+    const handleLine = (line) => {
+      const s = line.trim();
+      if (!s) return;
+      let obj;
+      try { obj = JSON.parse(s); } catch { return; }
+      if (obj && obj.type === 'Header') {
+        properties = obj.properties || {};
+        return;
+      }
+      features.push(obj);
+      if (statusEl && (features.length & 1023) === 0) statusEl.textContent = `ophalen (${features.length})`;
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    buf += decoder.decode();
+    if (buf.length) handleLine(buf);
+
+    return { type: 'FeatureCollection', features, properties };
+  }
+
+  // Haalt panden op (NDJSON met JSON-fallback). Bestaan ze nog niet, dan start de
+  // server een achtergrondjob en antwoordt 201 + jobID: poll /jobs/{id} tot die
+  // klaar is en vraag daarna opnieuw op (zelfde patroon als vegetatie).
+  // isStale(): true als het resultaat niet meer nodig is (bv. ander gebied).
+  async function _fetchBuildingsWithJob(url, isStale = () => false) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const data = await _fetchBuildingsNdjson(url + '&format=ndjson')
+        .catch(() => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null));
+      if (!data || !data.jobID || Array.isArray(data.features)) return data;
+      let done = false;
+      for (let i = 0; i < 200 && !done; i++) {      // 200 × 3s ≈ 10 minuten timeout
+        await new Promise(res => setTimeout(res, 3000));
+        if (isStale()) return null;
+        let job = null;
+        try {
+          const jr = await fetch(`/jobs/${data.jobID}`);
+          if (jr.ok) job = await jr.json();
+        } catch (_) { /* netwerkhapering: gewoon blijven pollen */ }
+        if (job?.status === 'failed') {
+          console.warn('[buildings] ophalen mislukt:', (job.log || []).join(' | '));
+          return null;
+        }
+        done = job?.status === 'successful';
+      }
+      if (!done) return null;   // time-out
+    }
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  (async () => {
+
+    // ── 0. Pre-fetch alle databestanden parallel (start vóór elke await) ───
+    const _nwFetch = fetch(GEOJSON_FILE).then(r => {
+      if (!r.ok) throw new Error(`Netwerkbestand niet gevonden (${r.status}) — gebied bestaat niet meer of is verplaatst.`);
+      return r.json();
+    });
+    const _zFetch  = fetch(apiUrl('ZONE')).then(r => r.ok ? r.json() : null).catch(() => null);
+    const _flFetch = fetch(apiUrl('FEEDLINK')).then(r => r.ok ? r.json() : null).catch(() => null);
+    // Routes progressief laden via NDJSON (?format=ndjson): één JSON-object per
+    // regel (header + features). Vermijdt één grote blokkerende JSON.parse en
+    // geeft voortgang. Valt terug op gewone GeoJSON bij fouten/oude caches.
+    const _fetchRoutes = (url) => {
+      const ndUrl = url + (url.includes('?') ? '&' : '?') + 'format=ndjson';
+      return _fetchRoutesNdjson(ndUrl)
+        .catch(() => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null));
+    };
+    const _rtFetch = MODE === 'MIXED'
+      ? Promise.all([
+          _fetchRoutes(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=CAR')),
+          _fetchRoutes(apiUrl('ROUTES').replace(/mode=[^&]+/, 'mode=BIKE')),
+        ])
+      : _fetchRoutes(ROUTES_FILE);
+    // ── Daglichtdata (sunrise/sunset per maand, Rotterdam) ────────────────
+    const _daylightData = [
+      { month:  1, sunrise_hour: 8, sunset_hour: 16 },
+      { month:  2, sunrise_hour: 8, sunset_hour: 17 },
+      { month:  3, sunrise_hour: 7, sunset_hour: 18 },
+      { month:  4, sunrise_hour: 7, sunset_hour: 20 },
+      { month:  5, sunrise_hour: 6, sunset_hour: 21 },
+      { month:  6, sunrise_hour: 5, sunset_hour: 21 },
+      { month:  7, sunrise_hour: 5, sunset_hour: 22 },
+      { month:  8, sunrise_hour: 5, sunset_hour: 21 },
+      { month:  9, sunrise_hour: 6, sunset_hour: 20 },
+      { month: 10, sunrise_hour: 7, sunset_hour: 19 },
+      { month: 11, sunrise_hour: 7, sunset_hour: 17 },
+      { month: 12, sunrise_hour: 8, sunset_hour: 16 },
+    ];
+
+    // ── Zonlicht-helpers ──────────────────────────────────────────────────
+    /** Lineaire interpolatie tussen twee hex-kleuren (#rrggbb). */
+    function _lerpHex(a, b, t) {
+      t = Math.max(0, Math.min(1, t));
+      const h = s => parseInt(s, 16);
+      const ar = h(a.slice(1, 3)), ag = h(a.slice(3, 5)), ab = h(a.slice(5, 7));
+      const br = h(b.slice(1, 3)), bg = h(b.slice(3, 5)), bb = h(b.slice(5, 7));
+      return '#'
+        + Math.round(ar + (br - ar) * t).toString(16).padStart(2, '0')
+        + Math.round(ag + (bg - ag) * t).toString(16).padStart(2, '0')
+        + Math.round(ab + (bb - ab) * t).toString(16).padStart(2, '0');
+    }
+
+    /**
+     * Berekent zonpositie en lichtkleur voor Rotterdam (lat 51.9°N).
+     * @param {number} month  – maand 1–12
+     * @param {number} hour   – uur 0–23
+     * @returns {{ azimuthal, polar, intensity, lightColor, isDay, skyColor, horizonColor, fogColor }}
+     */
+    function _getSunState(month, hour) {
+      const entry = _daylightData.find(d => d.month === month)
+                 || { sunrise_hour: 7, sunset_hour: 19 };
+      const sr = entry.sunrise_hour, ss = entry.sunset_hour;
+      const isDay = hour >= sr && hour < ss;
+
+      if (!isDay) {
+        return {
+          azimuthal: 180, polar: 92, intensity: 0.06,
+          lightColor: '#1a2840', isDay: false,
+          skyColor: '#050a14', horizonColor: '#0c1828', fogColor: '#091220',
+        };
+      }
+
+      // Fractie van de dag: 0 = zonsopgang, 0.5 = middag, 1 = zonsondergang
+      const frac = (hour - sr) / (ss - sr);
+
+      // Max zonhoogte op middag voor Rotterdam: 90° - 51.9° + 23.5° × sin((maand-3)×π/6)
+      const maxAlt = 90 - 51.9 + 23.5 * Math.sin((month - 3) * Math.PI / 6);
+      const alt    = Math.sin(frac * Math.PI) * maxAlt;   // hoogte boven horizon in graden
+
+      // MapLibre setLight position: [r, azimuthal°, polar°]
+      //   azimuthal: 0=N, 90=O, 180=Z, 270=W (kloksgewijs)
+      //   polar:     0 = recht boven, 90 = horizon
+      const azimuthal = 90 + frac * 180;               // Oost → Zuid → West
+      const polar     = Math.max(5, 90 - alt);          // min. 5° om artefacten te vermijden
+
+      // Genormaliseerde hoogte t: 0 = horizon, 1 = middag
+      const t         = maxAlt > 0 ? alt / maxAlt : 0;
+      const intensity = 0.35 + t * 0.55;               // 0.35..0.90
+      const lightColor = _lerpHex('#ff9040', '#fffcee', t); // warm oranje → zacht wit
+
+      // Hemelkleuren: schemering (t < 0.15) interpoleren van donkeroranje naar blauw
+      const skyColor     = t < 0.15 ? _lerpHex('#1a2a6a', '#87b9e8', t / 0.15) : '#87b9e8';
+      const horizonColor = t < 0.15 ? _lerpHex('#e05520', '#c8dff0', t / 0.15) : '#c8dff0';
+      const fogColor     = t < 0.15 ? _lerpHex('#c04420', '#d8e8f0', t / 0.15) : '#d8e8f0';
+
+      return { azimuthal, polar, intensity, lightColor, isDay: true, skyColor, horizonColor, fogColor };
+    }
+
+    /**
+     * Leest de huidige tijdsbron (flow-scaler-paneel of dagdeel + vandaag)
+     * en past MapLibre belichting en hemelkleur aan.
+     */
+    let _fspActiveLabel = null;   // declared before updateSunLight() to avoid TDZ (async IIFE)
+    let daypart         = 'mrh'; // idem — moet overeenkomen met de startklok (08:00)
+    // Stuurt verkeersintensiteiten aan (dpFlowOf, routeproductie, …).
+    // Gelijk aan `daypart` tijdens afspelen; kan tijdens pauze afwijken (incl. 'etmaal',
+    // een waarde die `daypart` zelf nooit aanneemt — gebouwen blijven dan op 'rest' staan).
+    let flowDaypart     = 'mrh';
+    let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
+    let _sunIsDay       = true;  // idem — laatst berekende dag/nacht-status (updateSunLight)
+    function updateSunLight() {
+      // GMT Analyzer heeft geen dag/nacht-belichting op basis van de klok (geen
+      // doorlopende/weer-gebonden simulatie); de kaart gebruikt de standaard
+      // belichting/hemel van de basemap-stijl. Zie GMT Digital Twin voor de
+      // live dag/nacht-cyclus.
+      return;
+      if (!map || !map.isStyleLoaded()) return;
+
+      let hour, month;
+      // De analoge simulatieklok is altijd actief: gebruik datum + uur daarvan.
+      const dateVal = document.getElementById('fspDate').value;
+      hour  = parseInt(document.getElementById('fspHour').value, 10);
+      month = dateVal
+        ? new Date(dateVal + 'T12:00:00').getMonth() + 1
+        : new Date().getMonth() + 1;
+
+      const sun = _getSunState(month, hour);
+      _sunIsDay = sun.isDay;
+      _applyGroundNightTint(_sunIsDay);
+
+      const lightProps = {
+        anchor:    'map',
+        color:     sun.lightColor,
+        intensity: sun.intensity,
+        position:  [1.15, sun.azimuthal, sun.polar],
+      };
+      const skyProps = {
+        'sky-color':         sun.skyColor,
+        'sky-horizon-blend': 0.5,
+        'horizon-color':     sun.horizonColor,
+        'horizon-fog-blend': 0.1,
+        'fog-color':         sun.fogColor,
+        'fog-ground-blend':  0.9,
+      };
+
+      map.setLight(lightProps);
+      map.setSky(skyProps);
+
+      // Rechterkaart meenemen als split-view actief is
+      if (map2 && map2.isStyleLoaded()) {
+        map2.setLight(lightProps);
+        map2.setSky(skyProps);
+      }
+    }
+
+    // ── 3. MapLibre kaart — start parallel met laden van data ─────────────
+    // OSM-afgeleide data (gebouwen, groen, verkeersobjecten) valt onder de
+    // OpenStreetMap ODbL-licentie; deze attributie is daarom verplicht zodra de
+    // data getoond wordt. Gebruikt in de attributionControl van alle kaarten.
+    const OSM_ATTRIBUTION =
+      'OSM-verrijking (gebouwen, groen, verkeersobjecten) ' +
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> ' +
+      'contributors (ODbL)';
+    const map = new maplibregl.Map({
+      container: 'map',
+      style:     'https://tiles.openfreemap.org/styles/liberty',
+      center:    CENTER,
+      zoom:      14.5,
+      pitch:     (_fitParam || _MAQUETTE) ? 0 : 58,
+      bearing:   (_fitParam || _MAQUETTE) ? 0 : -10,
+      antialias: true,
+      maxPitch:  85,
+      // OSM/ODbL-attributie voor de OSM-afgeleide lagen (gebouwen, groen,
+      // verkeersobjecten). Deze worden deels via deck.gl gerenderd en zouden
+      // anders niet in de standaard-attributie verschijnen.
+      attributionControl: { customAttribution: OSM_ATTRIBUTION },
+    });
+    window.map = map;
+
+    // Deel de MapLibre-instantie met de closures in de buitenste scope
+    // (_startFollowMode, camera-toggle IIFE). Zonder dit verwijst `map` daar
+    // naar het <div id="map">-element (globale named-access), dat geen
+    // getSource/unproject heeft.
+    _maquetteMap = map;
+
+    // fitBounds en lucht worden ingesteld zodra zowel kaart als areaBounds gereed zijn
+    let _mapLoadFired  = false;
+    let _areaBoundsSet = false;
+
+    function _fitAndSky() {
+      if (_fitParam) {
+        // Top-left uitlijning: west=links, north=boven, zoom zo ver mogelijk in
+        // tot ofwel oost de rechterrand raakt ofwel zuid de onderrand.
+        const [[west, south], [east, north]] = _fitParam;
+        const W = map.getContainer().offsetWidth;
+        const H = map.getContainer().offsetHeight;
+        if (W && H) {
+          // Mercator-hulpfuncties (MapLibre: 512px tiles → wereldgrootte = 512 * 2^z)
+          const TILE = 512;
+          const mX = (lon) => (lon + 180) / 360;
+          const mY = (lat) => {
+            const s = Math.sin(lat * Math.PI / 180);
+            return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+          };
+          const bboxFracW = mX(east)  - mX(west);
+          const bboxFracH = mY(south) - mY(north); // south > north in Mercator (y-as omlaag)
+          const zoomX = Math.log2(W / (bboxFracW * TILE));
+          const zoomY = Math.log2(H / (bboxFracH * TILE));
+          const zoom  = Math.min(zoomX, zoomY);
+
+          const worldPx = TILE * Math.pow(2, zoom);
+          const nwX = mX(west)  * worldPx;
+          const nwY = mY(north) * worldPx;
+          const cX  = nwX + W / 2;
+          const cY  = nwY + H / 2;
+          const cLon = cX / worldPx * 360 - 180;
+          const cLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * cY / worldPx))) * 180 / Math.PI;
+
+          map.jumpTo({ center: [cLon, cLat], zoom, pitch: 0, bearing: 0 });
+        }
+      } else {
+        const bounds = [[areaBounds[0], areaBounds[1]], [areaBounds[2], areaBounds[3]]];
+        map.fitBounds(bounds, { padding: 60, pitch: _MAQUETTE ? 0 : 58, bearing: _MAQUETTE ? 0 : -10, duration: 0 });
+      }
+      updateSunLight();
+    }
+
+    map.once('load', () => {
+      _mapLoadFired = true;
+      if (_areaBoundsSet) _fitAndSky();
+
+      // ── Maquette highlight-laag (oplichten bij link_preview SSE) ───────────
+      if (_MAQUETTE) {
+        map.addSource('maquette-highlight', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'maquette-highlight-line',
+          type: 'line',
+          source: 'maquette-highlight',
+          paint: {
+            'line-color': '#ff6600',
+            'line-width': 8,
+            'line-opacity': 0.9,
+          },
+        });
+
+        // ── Calibratie: het gebied dat de camera in beeld heeft ──────────────
+        map.addSource('maquette-calib-rect', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'maquette-calib-rect-fill',
+          type: 'fill',
+          source: 'maquette-calib-rect',
+          paint: { 'fill-color': '#00e0ff', 'fill-opacity': 0.15 },
+        });
+        map.addLayer({
+          id: 'maquette-calib-rect-line',
+          type: 'line',
+          source: 'maquette-calib-rect',
+          paint: { 'line-color': '#00e0ff', 'line-width': 2 },
+        });
+        // Herstel opgeslagen calibratie (kaartweergave + cameravoetafdruk).
+        if (typeof _maquetteRestore === 'function') _maquetteRestore();
+      }
+
+      // ── viewport-bounds meta bijwerken na elke kaartbeweging ───────────────
+      const _updateViewportMeta = () => {
+        const b = map.getBounds();
+        let meta = document.getElementById('map-viewport');
+        if (!meta) {
+          meta = document.createElement('meta');
+          meta.id = 'map-viewport';
+          document.head.appendChild(meta);
+        }
+        meta.dataset.west  = b.getWest().toFixed(8);
+        meta.dataset.south = b.getSouth().toFixed(8);
+        meta.dataset.east  = b.getEast().toFixed(8);
+        meta.dataset.north = b.getNorth().toFixed(8);
+      };
+      map.on('moveend', _updateViewportMeta);
+      // Direct één keer vullen zodat de viewport ook zonder kaartbeweging
+      // beschikbaar is (bijv. voor de maquette-camera).
+      _updateViewportMeta();
+
+      // ── Polygoon of bbox-rechthoek tekenen ─────────────────────────────────
+      if (_polygonParam || _bboxParam) {
+        const ring = _polygonParam
+          ? [..._polygonParam, _polygonParam[0]]  // sluit de ring
+          : (() => { const [[w,s],[e,n]] = _bboxParam; return [[w,s],[e,s],[e,n],[w,n],[w,s]]; })();
+        map.addSource('fit-shape-src', {
+          type: 'geojson',
+          data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] } }
+        });
+        map.addLayer({
+          id: 'fit-shape-fill',
+          type: 'fill',
+          source: 'fit-shape-src',
+          paint: { 'fill-color': '#7ec8e3', 'fill-opacity': 0.08 }
+        });
+        map.addLayer({
+          id: 'fit-shape-line',
+          type: 'line',
+          source: 'fit-shape-src',
+          paint: { 'line-color': '#7ec8e3', 'line-width': 2, 'line-opacity': 0.75, 'line-dasharray': [4, 3] }
+        });
+      }
+    });
+
+    // ── 1. Netwerkdata laden ────────────────────────────────────────────────
+    setLoaderMsg(T('loaderNetwork'));
+    const geojson = await _nwFetch;
+    if (!Array.isArray(geojson?.features))
+      throw new Error(`Ongeldig netwerkbestand — geen GeoJSON FeatureCollection ontvangen.`);
+
+     const features = geojson.features.filter(
+       f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+     );
+     _networkFeatures = features; // beschikbaar stellen voor maquette highlight
+     _setKaart2Network(features);
+
+    const flowValues = features.map(f => f.properties.flow);
+    const minFlow    = Math.min(...flowValues);
+    const maxFlow    = Math.max(...flowValues);
+    const flowRange  = maxFlow - minFlow || 1;
+
+    /** Schat het maximaal aantal voertuigen tegelijk op de wegen via Little's Law.
+     *  λ = Σ dpFlowOf(seg) / 60  [vtg/min]
+     *  W = gewogen gem. rijtijd per segment  [min]
+     *  L = λ × W  [vtg] */
+    function updateCarCount() {
+      const el = document.getElementById('carCountStrip');
+      if (!el) return;
+      if (!segments || segments.length === 0) { el.textContent = ''; return; }
+      let totalFlow = 0;
+      let totalWeightedTimeSec = 0;
+      for (const seg of segments) {
+        const flow = dpFlowOf(seg.props);
+        if (flow <= 0 || !seg.speedMs) continue;
+        totalFlow += flow;
+        totalWeightedTimeSec += flow * (seg.length / seg.speedMs);
+      }
+      if (totalFlow === 0) { el.textContent = ''; return; }
+      const avgTripDurMin = (totalWeightedTimeSec / totalFlow) / 60;
+      const maxCars = Math.round((totalFlow / 60) * avgTripDurMin);
+      el.textContent = T('carCountFmt', maxCars);
+    }
+
+    /** Herbereken en toon de min/max flow voor het actieve dagdeel. */
+    /** Legenda-blokjes [{c, label}] voor categorische lagen; null = gradient-legenda. */
+    function categoricalLegendOf(metric) {
+      if (isSafetyMetric(metric)) {
+        return [['GOED', 'scoreGood'], ['REDELIJK', 'scoreFair'], ['MATIG', 'scoreModerate'], ['SLECHT', 'scorePoor'], ['NVT', 'scoreNA']]
+          .map(([score, key]) => ({ c: kpiColor(score), label: T(key) }));
+      }
+      const dl = DESIGN_CLASS_LAYERS[metric];
+      if (dl) {
+        return Object.values(dl.classes).map(c =>
+          ({ c: `rgb(${c.rgba.slice(0, 3).join(',')})`, label: _designClassLabel(c) }));
+      }
+      if (CATEGORICAL_SPEED_METRICS.has(metric)) {
+        return [
+          { c: 'rgb(231,76,60)',  label: T('catSignal') },
+          { c: 'rgb(46,204,113)', label: T('catRoundabout') },
+          { c: 'rgb(241,196,15)', label: T('catSpeedBump') },
+        ];
+      }
+      return null;
+    }
+
+    function updateLegend() {
+      syncLayerPanels();
+      const legendStrip = document.getElementById('legendStrip');
+      if (colorMetric === 'none') { legendStrip.style.display = 'none'; return; }
+      legendStrip.style.display = '';
+
+      // Verberg normale gradient-legende als de verschilplot actief is
+      const legendLabelsEl  = legendStrip.querySelector('.legend-labels');
+      if (diffPlotActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiff').style.display  = '';
+        document.getElementById('legendDiffSub').textContent =
+          'Breedte = schaal t.o.v. grootste verschil (' + metricShortLabel(colorMetric) + ')';
+        return;
+      }
+      if (diffStackActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiffStack').style.display = '';
+        document.getElementById('legendDiffStackSub').textContent =
+          'Grijze kern = ongewijzigd deel · gekleurde rand = toe-/afname (' +
+          metricShortLabel(colorMetric) + ')';
+        return;
+      }
+      if (diffSmileyActive) {
+        document.getElementById('legendBar').style.display    = 'none';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        if (legendLabelsEl) legendLabelsEl.style.display = 'none';
+        document.getElementById('legendDiffSmiley').style.display = '';
+        return;
+      }
+      // Normaal: zorg dat alles weer zichtbaar is
+      document.getElementById('legendBar').style.display    = '';
+      if (legendLabelsEl) legendLabelsEl.style.display = '';
+      document.getElementById('legendDiff').style.display   = 'none';
+      document.getElementById('legendDiffStack').style.display = 'none';
+      document.getElementById('legendDiffSmiley').style.display = 'none';
+      const unit = T('legendUnit');
+      // Dynamische gradient: breakpoint van blauw→groen ligt bij 25 vtg/u op de statische schaal
+      const bp = Math.max(2, Math.round(25 / (currentFlowCeiling(false) || 1) * 100));
+      const flowGradient = `linear-gradient(to right, #1450dc, #00e676 ${bp}%, #ffea00 55%, #ff1744)`;
+      // Vaste 3-bands gradient voor grenswaarde-lagen: groen (toegestaan) →
+      // geel/oranje (grijs gebied) → rood (overschrijding). De legenda-uiteinden
+      // tonen de standaard- en grenswaarde, niet de dataspreiding.
+      const _limitGradient = 'linear-gradient(to right, #63d668, #63d668 18%, #ffdc00 40%, #e6551e 60%, #c81e1e 82%, #b00000)';
+      const metricMeta = {
+        flow:             { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
+        flow_scaled:      { labelKey: 'legendFlow',      unit,         gradient: flowGradient },
+        occupancy:        { labelKey: 'legendIC', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        occupancy_scaled: { labelKey: 'legendIC', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        coverage:         { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        coverage_scaled:  { labelKey: 'legendOccupancy', unit: '%',    gradient: 'linear-gradient(to right, #00e676, #ffea00, #ff1744)' },
+        speed:            { labelKey: 'legendSpeed',     unit: 'km/h', gradient: 'linear-gradient(to right, #ff1744, #ffea00, #2196f3)' },
+        safety:           { labelKey: 'legendSafety',    unit: '',     gradient: 'linear-gradient(to right, #c62828, #e65100, #fbc02d, #388e3c)' },
+        capacity:         { labelKey: 'legendCapacity',  unit,         gradient: (() => {
+          const stops = [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000].map(v => {
+            const norm = Math.sqrt(v / 4000);
+            const r = Math.round(30 + (1 - norm) * 140);
+            const g = Math.round(80 + (1 - norm) * 120);
+            const b = Math.round(200 + norm * 55);
+            return `rgb(${r},${g},${b}) ${(v / 40).toFixed(1)}%`;
+          });
+          return `linear-gradient(to right, ${stops.join(', ')})`;
+        })() },
+        spectrum:         { labelKey: null, unit, gradient: flowGradient },
+        noise_lden:       { labelKey: 'legendNoiseLden',   unit: 'dB(A)',  gradient: _limitGradient },
+        noise_lnight:     { labelKey: 'legendNoiseLnight', unit: 'dB(A)',  gradient: _limitGradient },
+        emis_co2:         { labelKey: 'legendCo2',  unit: 'kg/km', gradient: _limitGradient },
+        emis_nox:         { labelKey: 'legendNox',  unit: 'kg/km', gradient: _limitGradient },
+        emis_pm10:        { labelKey: 'legendPm10', unit: 'kg/km', gradient: _limitGradient },
+        speed_crossings:       { labelKey: 'legendSpeedCrossings',       unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_cycle_crossings: { labelKey: 'legendSpeedCycleCrossings',  unit: '', gradient: 'linear-gradient(to right, #a0a0aa, #a0a0aa 30%, #505064 60%, #eb6e14)' },
+        speed_intersections:   { labelKey: 'legendSpeedIntersections',   unit: '', gradient: null },
+        speed_yield:           { labelKey: 'legendSpeedYield',           unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_refuge:          { labelKey: 'legendSpeedRefuge',          unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #eb6e14)' },
+        speed_from_right:      { labelKey: 'legendSpeedFromRight',       unit,         gradient: flowGradient },
+        speed_left_turn:       { labelKey: 'legendSpeedLeftTurn',        unit,         gradient: flowGradient },
+        speed_oncoming:        { labelKey: 'legendSpeedOncoming',        unit,         gradient: flowGradient },
+        speed_elevation:       { labelKey: 'legendSpeedElevation',       unit: '%',    gradient: 'linear-gradient(to right, rgb(30,160,60), rgb(255,220,80), rgb(220,50,40))' },
+        speed_penalty_total:   { labelKey: 'legendSpeedPenaltyTotal',    unit: 'sec', gradient: _limitGradient },
+        priority_roads:        { labelKey: 'legendPriorityRoads',        unit: '', gradient: 'linear-gradient(to right, #505064, #505064 60%, #1a73e8)' },
+      };
+      // Spectrum: aparte MapLibre-laag, legenda toont gradient van de laag zelf
+      if (colorMetric === 'spectrum') {
+        const dpLabel = { mrh: 'OS', erh: 'AS', rest: 'RD' }[daypart] || '';
+        document.getElementById('legendBar').style.background = flowGradient;
+        document.getElementById('legendBar').style.display    = '';
+        if (legendLabelsEl) legendLabelsEl.style.display = '';
+        document.getElementById('legendLabel').textContent = `Spectrum (${dpLabel})`;
+        document.getElementById('legendMin').textContent   = '0';
+        document.getElementById('legendMax').textContent   = 'hoog';
+        document.getElementById('legendBarBike').style.display    = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        updateCarCount();
+        return;
+      }
+      const { labelKey, unit: u, gradient } = metricMeta[colorMetric] || metricMeta.flow;
+
+      // Categorische lagen: gekleurde blokjes met labels i.p.v. gradient.
+      const catColors = categoricalLegendOf(colorMetric);
+      if (catColors) {
+        const legendBar = document.getElementById('legendBar');
+        legendBar.style.background = 'transparent';
+        legendBar.style.height = 'auto';
+        const html = catColors.map(x =>
+          `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;color:#6a757c">` +
+          `<span style="display:inline-block;width:14px;height:14px;border-radius:2px;background:${x.c};box-shadow:inset 0 0 0 1px rgba(0,0,0,0.15)"></span>${x.label}</span>`
+        ).join('');
+        legendBar.innerHTML = `<div style="display:flex;flex-wrap:wrap;row-gap:4px;padding:2px 0">${html}</div>`;
+        document.getElementById('legendLabel').textContent =
+          isSafetyMetric(colorMetric) ? safetyMetricLabel(colorMetric)
+          : DESIGN_CLASS_LAYERS[colorMetric] ? T(DESIGN_CLASS_LAYERS[colorMetric].labelKey)
+          : T(labelKey);
+        document.getElementById('legendMin').textContent = '';
+        document.getElementById('legendMax').textContent = '';
+        document.getElementById('legendBarBike').style.display = 'none';
+        document.getElementById('legendLabelsBike').style.display = 'none';
+        updateCarCount();
+        return;
+      }
+      // Herstel gradient-weergave na categorische laag.
+      document.getElementById('legendBar').innerHTML = '';
+      document.getElementById('legendBar').style.height = '';
+      document.getElementById('legendBar').style.background = gradient;
+
+      // MIXED + flow/flow_scaled: toon aparte balk voor fiets; label de auto-balk "Auto"
+      const showBike = MODE === 'MIXED' && (colorMetric === 'flow' || colorMetric === 'flow_scaled');
+      document.getElementById('legendLabel').textContent =
+        showBike ? T('legendFlow') + ' — Auto' : T(labelKey);
+      document.getElementById('legendBarBike').style.display   = showBike ? '' : 'none';
+      document.getElementById('legendLabelsBike').style.display = showBike ? '' : 'none';
+      if (showBike) {
+        document.getElementById('legendBarBike').style.background =
+          'linear-gradient(to right, #5000a0, #dc28c8 50%, #ffaa00)';
+      }
+
+      const fmt = u === '%'
+        ? v => Math.round(v) + ' %'
+        : v => (Math.abs(v) > 0 && Math.abs(v) < 10
+                  ? Number(v.toFixed(2)).toLocaleString(T('numberLocale'))
+                  : Math.round(v).toLocaleString(T('numberLocale'))) + ' ' + u;
+      if (colorMetric === 'flow' || colorMetric === 'flow_scaled' || colorMetric === 'speed_from_right') {
+        // Statische schaal: altijd de netwerk-brede maximum als referentie (ongeacht dagdeel of scaler)
+        document.getElementById('legendMin').textContent = fmt(0);
+        document.getElementById('legendMax').textContent = fmt(currentFlowCeiling(false));
+        if (showBike) {
+          document.getElementById('legendMinBike').textContent = fmt(0);
+          document.getElementById('legendMaxBike').textContent = fmt(currentFlowCeiling(true));
+        }
+      } else if (colorMetric === 'capacity') {
+        // Vaste schaal 0–4000, onafhankelijk van de data
+        document.getElementById('legendMin').textContent = fmt(0);
+        document.getElementById('legendMax').textContent = fmt(4000);
+      } else if (METRIC_LIMITS[colorMetric]) {
+        // Grenswaarde-lagen: toon de standaardwaarde (links, grens toegestaan) en
+        // de grenswaarde (rechts, overschrijding) i.p.v. de dataspreiding.
+        const lim = METRIC_LIMITS[colorMetric];
+        document.getElementById('legendMin').textContent = fmt(lim.std);
+        document.getElementById('legendMax').textContent = fmt(lim.max);
+      } else if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        // Toekomstige Snelheid-lagen zonder brondata: geen min/max, wel tekstlabel.
+        document.getElementById('legendMin').textContent = '–';
+        document.getElementById('legendMax').textContent = '–';
+      } else if (FLOW_SPEED_METRICS.has(colorMetric) && colorMetric !== 'speed_from_right') {
+        // Continue Snelheid-lagen met eigen min/max (elevation/left_turn/oncoming).
+        let vMin = Infinity, vMax = -Infinity;
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < vMin) vMin = v;
+            if (v > vMax) vMax = v;
+          }
+        }
+        if (colorMetric === 'speed_elevation' && isFinite(vMin) && isFinite(vMax)) {
+          document.getElementById('legendMin').textContent = fmt(vMin);
+          document.getElementById('legendMax').textContent = fmt(vMax);
+        } else {
+          document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
+          document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
+        }
+      } else {
+        // Andere metrics: scan segmenten voor het actieve dagdeel
+        let vMin = Infinity, vMax = -Infinity;
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < vMin) vMin = v;
+            if (v > vMax) vMax = v;
+          }
+        }
+        document.getElementById('legendMin').textContent = isFinite(vMin) ? fmt(vMin) : '–';
+        document.getElementById('legendMax').textContent = isFinite(vMax) ? fmt(vMax) : '–';
+      }
+      updateCarCount();
+    }
+
+    // Netwerknaam instellen vanuit GeoJSON top-level properties
+    const networkName = geojson.properties?.name || AREA_ID;
+    window._networkName = networkName;
+    document.getElementById('networkTitle').textContent = T('networkTitle', networkName);
+    // document.title = T('pageTitle', networkName);
+
+    // Bepaal bbox voor kaartnavigatie: uit properties of berekend uit features
+    let areaBounds = geojson.properties?.bbox;  // [minLon, minLat, maxLon, maxLat]
+    if (!areaBounds || areaBounds.length < 4) {
+      let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+      for (const f of features) {
+        for (const [lon, lat] of f.geometry.coordinates) {
+          if (lon < minLon) minLon = lon;
+          if (lat < minLat) minLat = lat;
+          if (lon > maxLon) maxLon = lon;
+          if (lat > maxLat) maxLat = lat;
+        }
+      }
+      areaBounds = [minLon, minLat, maxLon, maxLat];
+    }
+    // Kaart kan nu naar het gebied navigeren (race met map.once('load'))
+    _areaBoundsSet = true;
+    if (_mapLoadFired) _fitAndSky();
+
+    // ── Gebouwen: classificatie, kleur en kaartlaag ──────────────────────────
+
+    let _buildingsGeoJson = null;
+    let _buildingsRaw     = null;   // ruwe OSM-data vóór zone-verrijking
+    let _buildingsLoadPromise = null; // lopende/afgeronde ophaalactie (zie _ensureBuildingsLoaded)
+    let _trafficAssetsNoFile = false;  // TRAFFIC-ASSETS bestand ontbreekt (Kruispunten-metriek)
+    let _zonesForJoin     = null;   // zone-features beschikbaar voor ruimtelijke koppeling
+    let _NORM             = null;   // normalisatiefactoren per motief (95e percentiel)
+    let _currentPurpose   = 'off';  // actief geselecteerd motief ('off' = grondvlak verborgen)
+    let _mapReady         = false;
+    let _libertyFillLayerIds = null; // Liberty fill/background/raster layer IDs (verborgen in satellietmodus)
+    let _libertyAllLayerIds  = null; // Alle Liberty layer IDs (verborgen in geen-kaart-modus)
+    let basemapStyle       = localStorage.getItem('basemapStyle') || 'map'; // 'map' | 'satellite' | 'none'
+    window._basemapStyleSafe = basemapStyle;
+
+    // Gebouwclassificatie op basis van OSM-tags
+     function classifyBuilding(props) {
+      // 'building' is vaak generiek ('yes'); de semantische waarde staat dan in
+      // 'buildingType' (bv. building=yes + buildingType=house). Val in dat geval
+      // terug op buildingType zodat woningen e.d. correct worden herkend.
+      let b         = (props.building         || '').toLowerCase();
+      const bType   = (props.buildingType     || '').toLowerCase();
+      if ((!b || b === 'yes') && bType) b = bType;
+      const amenity = (props.amenity          || '').toLowerCase();
+      const shop    = (props.shop             || '').toLowerCase();
+      const office  = (props.office           || '').toLowerCase();
+      const pt      = (props.public_transport || '').toLowerCase();
+      const railway = (props.railway          || '').toLowerCase();
+      const leisure = (props.leisure          || '').toLowerCase();
+
+      // Parkeren staat bewust NIET vooraan — parkeerlocaties erven eerst de landuse-context
+      // van hun omgeving (zie verderop). Alleen als er geen context is, komen ze hier terug.
+
+      // Stations en OV-hubs
+      if (['train_station','transportation','airport'].includes(b)
+          || railway === 'station' || railway === 'halt'
+          || pt === 'station' || pt === 'stop_area'
+          || amenity === 'bus_station' || amenity === 'ferry_terminal')
+        return 'transport';
+
+      // Sport & recreatie
+      if (['stadium','sports_centre','sports_hall','hotel','hostel','motel',
+           'guest_house'].includes(b)
+          || ['sports_centre','stadium','swimming_pool','ice_rink'].includes(leisure)
+          || (props.tourism || '').toLowerCase() === 'hotel'
+          || amenity === 'theatre' || amenity === 'cinema' || amenity === 'place_of_worship')
+        return 'recreation';
+
+      // Specifieke use-tags gaan altijd vóór het generieke building-type.
+      // Zo wint building=house + shop=bakery terecht → commercial,
+      // en building=residential + amenity=cafe → commercial.
+
+      // Kantoren
+      if (b === 'office' || office) return 'office';
+
+      // Winkels / horeca (inclusief cuisine-tag als indicator voor horecagelegenheid)
+      if (['retail','supermarket','commercial','kiosk'].includes(b) || shop
+          || ['restaurant','cafe','bar','fast_food','food_court',
+              'marketplace','fuel'].includes(amenity)
+          || props.cuisine)
+        return 'commercial';
+
+      // Onderwijs
+      if (['school','university','college','kindergarten'].includes(b)
+          || ['school','university','college','kindergarten','library'].includes(amenity))
+        return 'education';
+
+      // Industrie / opslag
+      if (['industrial','warehouse','factory','storage_tank',
+           'storage','container'].includes(b))
+        return 'industrial';
+
+      // Woningen — generiek building-type, alleen bereikt als geen specifieke use-tag matcht
+      if (['residential','house','apartments','detached','terrace',
+           'semidetached_house','bungalow','dormitory','cabin','houseboat'].includes(b))
+        return 'residential';
+
+      // Fallback: genormaliseerde buildingType-categorie uit de digital twin.
+      // Alleen benut als geen enkele OSM-use-tag of building-waarde matchte.
+      const _btCat = {
+        residential:'residential', house:'residential', apartments:'residential',
+        office:'office',
+        commercial:'commercial', retail:'commercial', shop:'commercial',
+        industrial:'industrial', warehouse:'industrial',
+        education:'education',
+        recreational:'recreation', recreation:'recreation', sport:'recreation',
+        transport:'transport', station:'transport',
+        parking:'parking',
+      };
+      if (_btCat[bType]) return _btCat[bType];
+
+      // Fallback 1: gebruik landuse-type van het omvattende gebied
+      const landuse = (props['_landuse'] || '').toLowerCase();
+      if (['residential','housing'].includes(landuse))                          return 'residential';
+      if (['commercial','retail'].includes(landuse))                            return 'commercial';
+      if (['industrial','port','depot','harbour','brownfield'].includes(landuse)) return 'industrial';
+      if (['education'].includes(landuse))                                      return 'education';
+      if (['recreation_ground','allotments','village_green','grass'].includes(landuse)) return 'recreation';
+      if (['railway','transportation'].includes(landuse))                       return 'transport';
+
+      // Fallback 2: parkeren — eigen categorie als er geen landuse-context beschikbaar is.
+      // Hierdoor erft een parkeerterrein in een woonwijk de woonwijk-scores, en een
+      // parkeergarage bij een winkelcentrum de commerciële scores.
+      if (['parking','garage','garages','carport','bicycle_parking'].includes(b)
+          || amenity === 'parking' || amenity === 'parking_space' || amenity === 'fuel')
+        return 'parking';
+
+      return 'other';
+    }
+
+    // Fysieke parkeer-detectie, onafhankelijk van classifyBuilding.
+    // classifyBuilding kan een parkeerplaats als 'residential' e.d. labelen (landuse-erfenis
+    // voor de kleur); deze helper bewaart of het pand fysiek een parkeervoorziening is,
+    // zodat het géén inwoners krijgt en niet meetelt in de vloeroppervlak-noemer per type.
+     function _isPhysicalParking(props) {
+      let b         = (props.building || '').toLowerCase();
+      const bType   = (props.buildingType || '').toLowerCase();
+      if ((!b || b === 'yes') && bType) b = bType;
+      const amenity = (props.amenity  || '').toLowerCase();
+      return ['parking','garage','garages','carport','bicycle_parking'].includes(b)
+          || amenity === 'parking' || amenity === 'parking_space';
+    }
+
+    // Richting per gebouwtype en dagdeel: -1 = productie (rood), 0 = neutraal, +1 = attractie (groen)
+    const _BUILDING_SCORES = {
+      residential: { mrh: -1.0, erh:  1.0, rest:  0.3 },  // restdag: lichte attractie (thuiskomen/thuis zijn)
+      office:      { mrh:  1.0, erh: -1.0, rest:  0.3 },
+      commercial:  { mrh:  0.2, erh: -0.6, rest: -0.2 },  // klein beetje attractie in mrh (personeel+wat publiek);
+                                                            // in erh verlaat het personeel het pand (productie);
+                                                            // restdag: lichte productie (winkelend publiek vertrekt weer)
+      education:   { mrh:  1.0, erh: -0.1, rest: -0.5 },  // mrh: enorme attractie (leerlingen komen aan);
+                                                            // erh: vrijwel opgelost (school is al leeg);
+                                                            // restdag: productie (naar huis/activiteit)
+      industrial:  { mrh:  0.6, erh: -0.6, rest:  0   },  // mrh: attractie (werknemers komen aan);
+                                                            // erh: productie (werknemers vertrekken)
+      parking:     { mrh:  0,   erh:  0,   rest:  0   },  // neutraal: context ontbreekt (zie herclassificatie in _tryZoneJoin)
+      transport:   { mrh:  0.8, erh:  0.8, rest:  0.5 },  // OV-hub: altijd attractief
+      recreation:  { mrh:  0,   erh:  0.7, rest:  0.8 },  // recreatie na werk/school
+      other:       { mrh:  0,   erh:  0,   rest:  0   },
+    };
+
+    // Motief-specifieke richtingsoverschrijvingen.
+    // Sommige gebouwtypen hebben een andere P/A-richting afhankelijk van het motief.
+    const _BUILDING_DIR_OVERRIDES = {
+      // Woningen zijn avondspits + restdag productieplek voor recreatie:
+      // bewoners vertrekken vanuit huis om te recreëren.
+      residential: {
+        recreatie: { mrh: 0, erh: -1.0, rest: -0.8 },
+      },
+    };
+
+    // Retourneert de richting (−1…+1) voor een gebouwtype, motief en dagdeel.
+    // Past _BUILDING_DIR_OVERRIDES toe vóór de algemene _BUILDING_SCORES.
+    function _getBuildingDir(type, purpose, dp) {
+      const override = _BUILDING_DIR_OVERRIDES[type]?.[purpose];
+      if (override !== undefined) return override[dp] ?? 0;
+      return (_BUILDING_SCORES[type] || _BUILDING_SCORES.other)[dp] ?? 0;
+    }
+
+    // Kleur: score ∈ [-1, 1] → rood (#d62728) ↔ grijs (#888888) ↔ groen (#2ca02c)
+    function buildingColor(score) {
+      const c = Math.max(-1, Math.min(1, score));
+      let r, g, b;
+      if (c >= 0) {
+        r = Math.round(0x88 + c * (0x2c - 0x88));
+        g = Math.round(0x88 + c * (0xa0 - 0x88));
+        b = Math.round(0x88 + c * (0x2c - 0x88));
+      } else {
+        const t = 1 + c;
+        r = Math.round(0xd6 + t * (0x88 - 0xd6));
+        g = Math.round(0x27 + t * (0x88 - 0x27));
+        b = Math.round(0x28 + t * (0x88 - 0x28));
+      }
+      return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+    }
+
+    // Point-in-polygon via ray casting
+    function _pointInPolygon(px, py, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi)
+          inside = !inside;
+      }
+      return inside;
+    }
+
+    // Centroïde van het buitenste polygoonring
+    function _buildingCentroid(coords) {
+      const ring = coords[0];
+      const n    = ring.length - 1;
+      let sx = 0, sy = 0;
+      for (let i = 0; i < n; i++) { sx += ring[i][0]; sy += ring[i][1]; }
+      return [sx / n, sy / n];
+    }
+
+    // Oppervlakte van de buitenste polygoonring via de schoenveterformule.
+    // Resultaat in graden² — voor relatieve weging binnen een zone volstaat dit.
+    function _polygonArea(coords) {
+      const ring = coords[0];
+      let area = 0;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        area += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+      }
+      return Math.abs(area) / 2;
+    }
+
+    // Grondoppervlak in m² (schoenveter in graden² → m² op basis van breedtegraad `lat`).
+    function _polygonAreaM2(coords, lat) {
+      const mPerDegLon = 111320 * Math.cos((lat || 0) * Math.PI / 180);
+      const mPerDegLat = 110540;
+      return _polygonArea(coords) * mPerDegLon * mPerDegLat;
+    }
+
+    // Demografische capaciteitsindicator per gebouwtype en motief
+    function _getBuildingCapacity(type, purpose, zp) {
+      const shopJobs = (zp.arbeidsplaatsen_overige_winkelfunctie          || 0)
+                     + (zp.arbeidsplaatsen_overige_voedselwinkelfunctie   || 0)
+                     + (zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie || 0);
+      const eduSeats = (zp.leerlingplaatsen_basisonderwijs           || 0)
+                     + (zp.leerlingplaatsen_middelbaaronderwijs       || 0)
+                     + (zp.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                     + (zp.leerlingplaatsen_hogeronderwijs            || 0)
+                     || (zp.arbeidsplaatsen_onderwijsfunctie          || 0);
+      switch (purpose) {
+        case 'all':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'office':      return zp.arbeidsplaatsen_kantoorfunctie || 0;
+            case 'commercial':  return shopJobs;
+            case 'education':   return eduSeats;
+            case 'industrial':  return zp.arbeidsplaatsen_industriefunctie || 0;
+            case 'parking':     return zp.autos || 0;
+            case 'transport':   return zp.inwoners || 0;
+            case 'recreation':  return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            case 'other':       return (zp.arbeidsplaatsen_overige_gebruiksfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+          }
+          break;
+        case 'werk':
+          switch (type) {
+            case 'residential': return zp.inwoners_arbeidssituatie_werkend || 0;
+            case 'office':      return zp.arbeidsplaatsen_kantoorfunctie || 0;
+            case 'commercial':  return Math.round(shopJobs * 0.3);
+            case 'industrial':  return zp.arbeidsplaatsen_industriefunctie || 0;
+            case 'parking':     return zp.inwoners_arbeidssituatie_werkend || 0;
+            case 'transport':   return zp.inwoners_arbeidssituatie_werkend || 0;
+            default: return 0;
+          }
+        case 'onderwijs':
+          switch (type) {
+            case 'residential': return zp.inwoners_leeftijd_00_17_jaar || 0;  // kinderen < 18 jaar
+            case 'education':   return eduSeats;                               // leerlingplaatsen (attractie)
+            case 'transport':   return zp.inwoners_leeftijd_00_17_jaar || 0;
+            default: return 0;
+          }
+        case 'winkelen':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'commercial':  return shopJobs;
+            case 'parking':     return zp.huishoudens || 0;
+            default: return 0;
+          }
+        case 'recreatie':
+          switch (type) {
+            case 'residential': return zp.huishoudens || 0;
+            case 'recreation':  return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            case 'other':       return (zp.arbeidsplaatsen_sportfunctie || 0)
+                                     + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0);
+            default: return 0;
+          }
+      }
+      return 0;
+    }
+
+    // Demografische maat per gebouwtype: welke zone-grootheid hoort bij het type
+    // (inwoners voor wonen, leerlingplaatsen voor onderwijs, arbeidsplaatsen voor werk).
+    // Retourneert { key: i18n-label, zoneVal: totaal in de zone }.
+    function _buildingDemographic(type, zp) {
+      const shopJobs = (zp.arbeidsplaatsen_overige_winkelfunctie          || 0)
+                     + (zp.arbeidsplaatsen_overige_voedselwinkelfunctie   || 0)
+                     + (zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie || 0);
+      const eduSeats = (zp.leerlingplaatsen_basisonderwijs           || 0)
+                     + (zp.leerlingplaatsen_middelbaaronderwijs       || 0)
+                     + (zp.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                     + (zp.leerlingplaatsen_hogeronderwijs            || 0)
+                     || (zp.arbeidsplaatsen_onderwijsfunctie          || 0);
+      switch (type) {
+        case 'residential': return { key:'capBaseResidents',   zoneVal: zp.inwoners || 0 };
+        case 'office':      return { key:'capBaseJobsOffice',   zoneVal: zp.arbeidsplaatsen_kantoorfunctie || 0 };
+        case 'commercial':  return { key:'capBaseJobsShop',     zoneVal: shopJobs };
+        case 'education':   return { key:'capBaseSeats',        zoneVal: eduSeats };
+        case 'industrial':  return { key:'capBaseJobsIndustry', zoneVal: zp.arbeidsplaatsen_industriefunctie || 0 };
+        case 'parking':     return { key:'capBaseCars',         zoneVal: zp.autos || 0 };
+        case 'transport':   return { key:'capBaseResidents',    zoneVal: zp.inwoners || 0 };
+        case 'recreation':  return { key:'capBaseJobsRec',      zoneVal: (zp.arbeidsplaatsen_sportfunctie || 0) + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0) };
+        default:            return { key:'capBaseJobsOther',    zoneVal: (zp.arbeidsplaatsen_overige_gebruiksfunctie || 0) + (zp.arbeidsplaatsen_bijeenkomstfunctie || 0) };
+      }
+    }
+
+    /**
+     * Bouwt een HTML-breakdown die laat zien hoe de demografische maat van een pand
+     * wordt afgeleid: vloeroppervlak → aandeel in zone-type → zone-totaal → pand-waarde
+     * (inwoners bij wonen, leerlingen bij onderwijs, arbeidsplaatsen bij werk).
+     * Herbruikbaar in de latere bewerk-stap. Verwacht de (mogelijk JSON-geserialiseerde)
+     * gebouw-properties `p`; retourneert een HTML-string ('' als niets te tonen).
+     */
+    function _buildingCalcHtml(p) {
+      const floorArea = Number(p._floorArea) || 0;
+      const share     = Number(p._demoShare ?? p._areaShare) || 0;
+      const demoKey   = p._demoKey || null;
+      const zoneVal   = Number(p._demoZoneVal) || 0;
+
+      const nfmt = (v, d = 0) => Number(v).toLocaleString(T('numberLocale'),
+        { minimumFractionDigits: d, maximumFractionDigits: d });
+      const row = (label, value) => `<tr>
+        <td style="color:#6a757c;padding-right:10px;white-space:nowrap">${label}</td>
+        <td style="text-align:right;white-space:nowrap"><b>${value}</b></td></tr>`;
+
+      const rows = [];
+      rows.push(row(T('calcFloorArea'), floorArea > 0 ? nfmt(floorArea) + '\u202fm\u00b2' : '\u2013'));
+
+      // demoKey is leeg voor parkeren of ontbrekende zone → geen demografie tonen
+      if (demoKey) {
+        const perBuilding = zoneVal * share;
+        rows.push(row(`${T(demoKey)} ${T('calcInZone')}`, nfmt(zoneVal)));
+        if (share > 0) rows.push(row(T('calcShare'), nfmt(share * 100, 1) + '\u202f%'));
+        rows.push(row(`${T(demoKey)} ${T('calcInBuilding')}`, nfmt(perBuilding, perBuilding < 10 ? 1 : 0)));
+      }
+
+      if (!rows.length) return '';
+      return `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
+        <div style="color:#00a5ab;font-size:11px;margin-bottom:3px">${T('calcTitle')}</div>
+        <table style="border-collapse:collapse;font-size:12px;width:100%">${rows.join('')}</table>
+      </div>`;
+    }
+
+    // Ruimtelijke koppeling gebouwen ↔ zones; wordt uitgevoerd zodra beide datasets gereed zijn
+    let zoneAreaBreakdown = new Map(); // zoneId → { residential, office, industrial, commercial, education, recreation, other } in m²
+    function _tryZoneJoin() {
+      if (!_buildingsRaw || !_zonesForJoin) return;
+
+      // Bouw opzoekstructuur: niet-BOUNDARY zones; Polygon én MultiPolygon
+      const zoneLookup = [];
+      for (const f of _zonesForJoin) {
+        const cl = f.properties?.zoneClass;
+        if (cl === 'BOUNDARY') continue;
+        const geom = f.geometry;
+        if (!geom) continue;
+        // Normaliseer naar lijst van polygonen (elk een array van ringen)
+        let polys;
+        if      (geom.type === 'Polygon')      polys = [geom.coordinates];
+        else if (geom.type === 'MultiPolygon') polys = geom.coordinates;
+        else continue;
+        for (const poly of polys) {
+          const ring = poly[0];
+          if (!ring || ring.length < 3) continue;
+          let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+          for (const [x, y] of ring) {
+            if (x < mnX) mnX = x; if (y < mnY) mnY = y;
+            if (x > mxX) mxX = x; if (y > mxY) mxY = y;
+          }
+          zoneLookup.push({ props: f.properties, ring, mnX, mnY, mxX, mxY });
+        }
+      }
+
+      // Eerste pass: ken zone + type toe aan elk gebouw; sla centroïde op voor nabijheidsmatching
+      for (const f of _buildingsRaw.features) {
+        const p    = f.properties;
+        let   type = classifyBuilding(p);
+        const coords = f.geometry?.coordinates;
+        if (!coords) { p._bzoneProps = null; p._bzoneId = null; p._btype = type; p._floorArea = 0; p._cx = null; p._cy = null; continue; }
+
+        const [cx, cy] = _buildingCentroid(coords);
+        p._cx = cx; p._cy = cy;
+
+        // Vloeroppervlak = grondoppervlak (m²) × aantal verdiepingen × floorFraction
+        const footprintM2   = _polygonAreaM2(coords, cy);
+        const levels        = Math.max(1, parseFloat(p['building:levels']) || Math.round(p.height / 3) || 1);
+        const floorFraction = Number(p.floorFraction) > 0 ? Number(p.floorFraction) : 1;
+        p._footprintM2  = footprintM2;
+        p._levels       = levels;
+        p._floorFraction = floorFraction;
+        p._floorArea    = footprintM2 * levels * floorFraction;
+
+        let foundZone = null;
+        for (const z of zoneLookup) {
+          if (cx < z.mnX || cx > z.mxX || cy < z.mnY || cy > z.mxY) continue;
+          if (_pointInPolygon(cx, cy, z.ring)) { foundZone = z; break; }
+        }
+        p._bzoneId    = foundZone?.props?.zoneId ?? null;
+        p._bzoneProps = foundZone ? foundZone.props : null;
+        p._btype      = type;
+        p._bPark      = _isPhysicalParking(p);
+      }
+
+      // Herclassificeer parkeergebouwen op basis van nabijgelegen gebouwen (binnen 100 m).
+      // Inverse-afstand weging: dichter bij = meer invloed.
+      {
+        const _PARK_RADIUS_M = 100;
+        const R_LAT = _PARK_RADIUS_M / 110540;  // graden breedte voor snelle voorfilter
+        for (const f of _buildingsRaw.features) {
+          const p = f.properties;
+          if (p._btype !== 'parking' || p._cx == null) continue;
+          const latCos = Math.cos(p._cy * Math.PI / 180);
+          const scores = {};
+          for (const nb of _buildingsRaw.features) {
+            const np = nb.properties;
+            if (np._btype === 'parking' || np._btype === 'other' || np._cx == null) continue;
+            if (Math.abs(np._cy - p._cy) > R_LAT) continue;  // snelle lat-voorfilter
+            const dx = (np._cx - p._cx) * latCos * 111320;
+            const dy = (np._cy - p._cy) * 110540;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > _PARK_RADIUS_M || dist < 0.1) continue;
+            scores[np._btype] = (scores[np._btype] || 0) + 1 / dist;
+          }
+          // Kies type met hoogste gewogen score; geen buren → blijft 'parking' (neutraal grijs)
+          let bestType = null, bestScore = 0;
+          for (const [t, s] of Object.entries(scores)) {
+            if (s > bestScore) { bestScore = s; bestType = t; }
+          }
+          if (bestType) p._btype = bestType;
+        }
+      }
+
+      // Sommeer vloeroppervlak per zone×type (na herclassificatie parkeren).
+      // Fysieke parkeervoorzieningen krijgen een eigen 'parking'-bucket, zodat ze de
+      // residential-m² (en dus de inwoners-verdeling van échte woningen) niet vervuilen.
+      const zoneTypeAreaMap = new Map();
+      zoneAreaBreakdown = new Map();
+      for (const f of _buildingsRaw.features) {
+        const p = f.properties;
+        const effType = p._bPark ? 'parking' : (p._btype || 'other');
+        p._bEffType = effType;
+        if (p._bzoneId && p._floorArea) {
+          const key = `${p._bzoneId}|${effType}`;
+          zoneTypeAreaMap.set(key, (zoneTypeAreaMap.get(key) || 0) + p._floorArea);
+          // Bouw ook de per-zone breakdown voor de tooltip
+          if (!zoneAreaBreakdown.has(p._bzoneId)) zoneAreaBreakdown.set(p._bzoneId, {});
+          const bd = zoneAreaBreakdown.get(p._bzoneId);
+          bd[effType] = (bd[effType] || 0) + p._floorArea;
+        }
+      }
+
+      // Tweede pass: bepaal kleur-intensiteit per motief op basis van vloeroppervlak.
+      // (De granulaire zone-demografie per functie is niet meer beschikbaar; de richting
+      //  komt uit _BUILDING_SCORES, de felheid uit de m² van het pand.)
+      // Daarnaast: reken het zone-aggregaat (inwoners / arbeidsplaatsen) voor naar het pand,
+      // naar rato van vloeroppervlak binnen de functiegroep, voor de tooltip-breakdown.
+      const POP_TYPES = ['residential', 'transport'];              // → inwoners
+      const JOB_TYPES = ['office', 'industrial', 'commercial'];    // → arbeidsplaatsen (kantoor/industrie/winkel)
+      const purposes = ['all', 'werk', 'onderwijs', 'winkelen', 'recreatie'];
+      for (const f of _buildingsRaw.features) {
+        const p         = f.properties;
+        const type      = p._btype || 'other';
+        const zp        = p._bzoneProps;
+        p.color_mrh = p.color_erh = p.color_rest = '#888888';
+
+        // Demografie-toewijzing voor de tooltip: kies aggregaat + functiegroep.
+        const bd = zoneAreaBreakdown.get(p._bzoneId) || {};
+        let demoKey = null, zoneVal = 0, groupArea = 0;
+        if (p._bPark) {
+          // parkeren: geen demografie tonen
+        } else if (POP_TYPES.includes(type)) {
+          demoKey = 'capBaseResidents';
+          zoneVal = zp?.inwoners || 0;
+          groupArea = POP_TYPES.reduce((s, t) => s + (bd[t] || 0), 0);
+        } else if (JOB_TYPES.includes(type)) {
+          demoKey = 'capBaseJobs';
+          zoneVal = zp?.arbeidsplaatsen || 0;
+          groupArea = JOB_TYPES.reduce((s, t) => s + (bd[t] || 0), 0);
+        } else if (type === 'education') {
+          // Onderwijs → leerlingplaatsen (consistent met inwoners/arbeidsplaatsen).
+          demoKey = 'capBaseSeats';
+          zoneVal = (zp?.leerlingplaatsen_basisonderwijs            || 0)
+                  + (zp?.leerlingplaatsen_middelbaaronderwijs       || 0)
+                  + (zp?.leerlingplaatsen_middelbaarberoepsonderwijs || 0)
+                  + (zp?.leerlingplaatsen_hogeronderwijs            || 0)
+                  || (zp?.arbeidsplaatsen_onderwijsfunctie          || 0);
+          groupArea = bd['education'] || 0;
+        }
+        // overige functies (onderwijs, recreatie, overig): geen passend aggregaat → alleen m²
+        const demoShare = groupArea > 0 ? (p._floorArea / groupArea) : 0;
+        p._demoKey     = demoKey;
+        p._demoZoneVal = zoneVal;
+        p._demoShare   = demoShare;
+        // _areaShare blijft het aandeel binnen dezelfde functiegroep (voor de tooltip)
+        p._areaShare   = demoShare;
+
+        // Geschat aantal personen voor dit pand (inwoners/arbeidsplaatsen/
+        // leerlingen), naar rato van vloeroppervlak-aandeel binnen de zone×
+        // functiegroep. Dit is de primaire maat voor kleur-intensiteit en
+        // geschaalde hoogte (zodat bv. 0.9 vs. 1.8 inwoners echt een ander
+        // pand oplevert, i.p.v. alleen het vloeroppervlak). Panden zonder
+        // passend demografie-aggregaat (recreatie/overig) vallen terug op
+        // het vloeroppervlak zelf.
+        const demoCount = zoneVal * demoShare;
+        p._demoCount = demoCount;
+
+        p._cap = {};
+        for (const pur of purposes) {
+          const rel   = _PURPOSE_RELEVANT_TYPES[pur];
+          const isRel = rel == null || rel.has(type);
+          if (!isRel) { p._cap[pur] = 0; continue; }
+          p._cap[pur] = demoCount > 0 ? demoCount : p._floorArea;
+        }
+      }
+
+      _buildingsGeoJson = _buildingsRaw;
+
+      // Normalisatie: mediaan (P50) van de vloeroppervlakken per motief, zodat een
+      // gemiddeld pand duidelijk gekleurd is en alleen erg kleine panden lichter zijn.
+      _NORM = {};
+      for (const pur of purposes) {
+        const vals = _buildingsGeoJson.features
+          .map(f => f.properties._cap?.[pur] || 0)
+          .filter(v => v > 0)
+          .sort((a, b) => a - b);
+        _NORM[pur] = vals.length > 0
+          ? (vals[Math.floor(vals.length * 0.5)] || vals[vals.length - 1])
+          : 1;
+      }
+
+      _doUpdateBuildingColors('all');
+
+      // Toon de gebouwengroep (icoon + beide dropdowns) nu gebouwen verrijkt zijn
+      const buildingGroup = document.getElementById('buildingGroup');
+      if (buildingGroup) buildingGroup.style.display = 'flex';
+
+      _tryAddBuildings();
+
+      // Pas het al geselecteerde motief (indien aangeklikt vóórdat de data
+      // beschikbaar was) alsnog toe, en werk de status-UI bij naar 'beschikbaar'.
+      _applyBuildingDisplay();
+    }
+
+    // Schrijf color_mrh/erh/rest op elk gebouw voor het gegeven motief
+    // Welke gebouwtypen zijn relevant per motief (null = geen filter = alles)
+    const _PURPOSE_RELEVANT_TYPES = {
+      all:       null,
+      werk:      new Set(['residential','office','industrial','commercial','parking','transport']),
+      onderwijs: new Set(['residential','education','transport']),
+      winkelen:  new Set(['residential','commercial','parking']),
+      recreatie: new Set(['residential','recreation','transport','other']),
+    };
+
+    // Dominante motiefcategorie per pandtype, voor de 24-uurs (etmaal) weergave.
+    // null = neutraal/ondersteunend type (geen eigen motiefkleur, altijd grijs).
+    const _BUILDING_MOTIEF_CATEGORY = {
+      residential: 'wonen',
+      office:      'werk',
+      industrial:  'werk',
+      education:   'onderwijs',
+      commercial:  'winkelen',
+      recreation:  'recreatie',
+      parking:     null,
+      transport:   null,
+      other:       null,
+    };
+
+    // Motiefkleuren voor de etmaal-weergave. Zelfde kleurtaal als MOTIF_COLORS
+    // (motiefverdeling op routes, verderop in dit bestand) — hier als letterlijke
+    // waarden herhaald omdat MOTIF_COLORS pas later in deze IIFE wordt gedefinieerd.
+    const _MOTIEF_CATEGORY_COLOR = {
+      wonen:     '#4e9af1', // = MOTIF_COLORS.house
+      werk:      '#f4b942', // = MOTIF_COLORS.work
+      onderwijs: '#a29bfe', // = MOTIF_COLORS.education
+      winkelen:  '#e05c5c', // = MOTIF_COLORS.shopping
+      recreatie: '#5cb85c', // = MOTIF_COLORS.recreational
+    };
+    const _BUILDING_NEUTRAL_GRAY = '#888888'; // zelfde grijs als buildingColor(0)
+
+    function _doUpdateBuildingColors(purpose, scaled = false, forceGrayColor = false) {
+      if (!_buildingsGeoJson || !_NORM) return;
+      const norm         = _NORM[purpose] || 1;
+      const relevantTypes = _PURPOSE_RELEVANT_TYPES[purpose] ?? null;
+
+      // ── Geschaalde hoogte: schaal t.o.v. het pand met de HOOGSTE productie-
+      // resp. attractie-waarde (per dagdeel), niet t.o.v. de mediaan. Het
+      // pand met de hoogste waarde krijgt zo de volledige hoogte (100%); een
+      // pand met bv. 1/10 van die waarde krijgt ook echt 1/10 van de hoogte.
+      // Eerste doorloop: bepaal de max. ruwe productie/attractie-waarde
+      // (= cap × |richting|) per dagdeel, over alle relevante panden.
+      const maxProd = { mrh: 0, erh: 0, rest: 0 };
+      const maxAttr = { mrh: 0, erh: 0, rest: 0 };
+      let maxCap = 0;
+      if (scaled) {
+        for (const f of _buildingsGeoJson.features) {
+          const p    = f.properties;
+          const type = p._btype || 'other';
+          const cap  = p._cap?.[purpose] ?? 0;
+          const isRelevant = relevantTypes === null || relevantTypes.has(type);
+          if (!isRelevant || cap <= 0) continue;
+          if (cap > maxCap) maxCap = cap;
+          for (const dp of ['mrh', 'erh', 'rest']) {
+            const dir = _getBuildingDir(type, purpose, dp);
+            if (dir < 0) {
+              const v = cap * Math.abs(dir);
+              if (v > maxProd[dp]) maxProd[dp] = v;
+            } else if (dir > 0) {
+              const v = cap * dir;
+              if (v > maxAttr[dp]) maxAttr[dp] = v;
+            }
+          }
+        }
+      }
+
+      for (const f of _buildingsGeoJson.features) {
+        const p    = f.properties;
+        const type = p._btype || 'other';
+        const cap  = p._cap?.[purpose] ?? 0;   // = geschat aantal (inwoners/arbeidsplaatsen/leerlingen), of vloeroppervlak als fallback
+        const isRelevant = relevantTypes === null || relevantTypes.has(type);
+
+        // Etmaal (24 uur): productie en attractie zijn over een vol etmaal per saldo
+        // in balans, dus de rood-grijs-groen schaal is hier niet informatief. Toon
+        // in plaats daarvan een categorale motiefkleur: bij 'alles' elk pand in zijn
+        // eigen motiefkleur, bij een specifiek motief alleen de panden van dát motief
+        // (de rest grijs).
+        const motiefCat = _BUILDING_MOTIEF_CATEGORY[type] || null;
+        p.color_etmaal = (forceGrayColor || !motiefCat || (purpose !== 'all' && motiefCat !== purpose))
+          ? _BUILDING_NEUTRAL_GRAY
+          : _MOTIEF_CATEGORY_COLOR[motiefCat];
+
+        for (const dp of ['mrh', 'erh', 'rest']) {
+          const dir = _getBuildingDir(type, purpose, dp);
+          let score;
+          if (!isRelevant || dir === 0) {
+            score = 0;               // niet relevant of neutrale functie → grijs
+          } else if (cap > 0) {
+            score = dir * Math.min(1, cap / norm);   // richting × intensiteit (kleur blijft mediaan-genormaliseerd)
+          } else {
+            score = dir * 0.5;       // relevant maar geen m² bekend → halve intensiteit
+          }
+          p['color_' + dp] = buildingColor(forceGrayColor ? 0 : score);
+
+          // Geschaalde hoogte per productie/attractie-richting (per dagdeel,
+          // want de richting van een gebouwtype kan per dagdeel omslaan).
+          // Conventie (zie _BUILDING_SCORES hierboven): dir < 0 = productie
+          // (mensen VERLATEN het pand), dir > 0 = attractie (mensen KOMEN aan).
+          if (scaled) {
+            let prodFrac = 0, attrFrac = 0;
+            if (isRelevant && cap > 0 && dir < 0 && maxProd[dp] > 0) {
+              prodFrac = (cap * Math.abs(dir)) / maxProd[dp];
+            } else if (isRelevant && cap <= 0 && dir < 0) {
+              prodFrac = 0.5;   // relevant maar geen data bekend → halve hoogte
+            }
+            if (isRelevant && cap > 0 && dir > 0 && maxAttr[dp] > 0) {
+              attrFrac = (cap * dir) / maxAttr[dp];
+            } else if (isRelevant && cap <= 0 && dir > 0) {
+              attrFrac = 0.5;
+            }
+            p['height_sc_prod_' + dp] = 2 + prodFrac * 98;
+            p['height_sc_attr_' + dp] = 2 + attrFrac * 98;
+          }
+        }
+        // Geschaalde hoogte (totaal): schaal t.o.v. het pand met de hoogste
+        // waarde voor dit motief (ongeacht productie/attractie-richting).
+        if (scaled) {
+          const totalFrac = (cap > 0 && maxCap > 0) ? Math.min(1, cap / maxCap) : 0;
+          p.height_sc = 2 + totalFrac * 98;
+        }
+      }
+
+    }
+
+    /** Leest #buildingPurpose en past het gekleurde 2D-grondvlak
+     *  (buildings-fill) toe; 'off' (standaard) verbergt dit grondvlak volledig. */
+    function _applyBuildingDisplay() {
+      const purpose = document.getElementById('buildingPurpose')?.value ?? 'off';
+      _currentPurpose = purpose;
+
+      document.querySelectorAll('.lmp-motief-spinner').forEach(s => s.classList.remove('visible'));
+
+      // Panden pas ophalen zodra er een motief gekozen is; _tryZoneJoin roept
+      // deze functie opnieuw aan zodra de data verrijkt is.
+      if (purpose !== 'off' && !_buildingsGeoJson) _ensureBuildingsLoaded();
+
+      if (purpose !== 'off' && _buildingsGeoJson && _NORM) {
+        _doUpdateBuildingColors(purpose, false, false);
+        if (map.getSource('buildings')) {
+          // Spinner naast het gekozen motief totdat MapLibre klaar is met (her)tekenen
+          const rowSpinner = document.querySelector(`input[name="lmpBuildingPurpose"][value="${purpose}"]`)
+            ?.closest('.lmp-radio-row')?.querySelector('.lmp-motief-spinner');
+          if (rowSpinner) {
+            rowSpinner.classList.add('visible');
+            map.once('idle', () => rowSpinner.classList.remove('visible'));
+          }
+          map.getSource('buildings').setData(_buildingsGeoJson);
+        }
+      }
+
+      // ── Productie/attractie: het gekleurde grondvlak (buildings-fill) ──
+      // Zonder gekozen motief ('off', standaard) blijft het grondvlak verborgen.
+      if (map.getLayer('buildings-fill')) {
+        map.setLayoutProperty('buildings-fill', 'visibility', purpose === 'off' ? 'none' : 'visible');
+      }
+      if (purpose !== 'off' && map.getLayer('buildings-fill')) {
+        map.setPaintProperty('buildings-fill', 'fill-color',
+          ['get', flowDaypart === 'etmaal' ? 'color_etmaal' : `color_${daypart}`]);
+      }
+
+      _refreshBuildingsStatusUI();
+    }
+
+    /** Werkt de statusregel onderaan het "Pand productie/attractie"-blok bij:
+     *  'nog niet opgehaald' (geen motief actief, data nog niet klaar),
+     *  'ophalen' (motief actief maar data nog niet klaar), of 'beschikbaar'. */
+    function _refreshBuildingsStatusUI() {
+      const textEl = document.getElementById('lmpBuildingsStatusText');
+      if (!textEl) return;
+      const spinEl    = document.getElementById('lmpBuildingsStatusSpinner');
+      const available = !!(_buildingsGeoJson && _NORM);
+      const fetching  = !available && _currentPurpose !== 'off';
+      textEl.textContent = available ? 'beschikbaar' : (fetching ? 'ophalen' : 'nog niet opgehaald');
+      if (spinEl) spinEl.classList.toggle('visible', fetching);
+    }
+
+    // Schakel tussen kaart (Liberty vector), satelliet (ESRI raster) en geen ondergrond.
+    // Liberty lijnlagen (roads) en symboollagen (labels) blijven zichtbaar als overlay.
+    // Montréal-ondergrond: de 'mtl-*'-lagen komen uit common/js/montreal-basemap.js
+    // (window.MontrealBasemap), gedeeld met de digital-twin.
+
+    function _applyBasemapStyle(style) {
+      basemapStyle = style;
+      window._basemapStyleSafe = style;
+      localStorage.setItem('basemapStyle', style);
+      // Houd beide radiogroepen (instellingen-paneel + linker menu) in sync
+      document.querySelectorAll('input[name="spBasemap"], input[name="lmpBasemap"]').forEach(r => {
+        r.checked = r.value === style;
+      });
+      const isSat   = style === 'satellite';
+      const isNone  = style === 'none';
+      const isWhite = style === 'white';
+      const isMtl   = style === 'montreal';
+      // 'none' (zwart) en 'white' (wit) verbergen allebei de Liberty-kaartlagen;
+      // alleen de achtergrondkleur van de container verschilt.
+      const hideMap = isNone || isWhite;
+
+      // Helper: past de basemap-stijl toe op één MapLibre-instantie.
+      // Voegt de satelliet-source/laag toe indien die nog ontbreekt.
+      function _applyToMap(m) {
+        if (!m) return;
+        // Satelliet raster-laag
+        if (!m.getSource('esri-satellite')) {
+          m.addSource('esri-satellite', {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256, maxzoom: 19,
+            attribution: '© Esri, i-cubed, USDA, USGS, AEX, GeoEye',
+          });
+        }
+        if (!m.getLayer('satellite-bg')) {
+          const firstLayerId = m.getStyle().layers[0]?.id;
+          m.addLayer({
+            id: 'satellite-bg', type: 'raster', source: 'esri-satellite',
+            layout: { visibility: 'none' }, paint: { 'raster-opacity': 1 },
+          }, firstLayerId);
+        }
+        try { m.setLayoutProperty('satellite-bg', 'visibility', isSat ? 'visible' : 'none'); } catch (_) {}
+        // Liberty lagen aan/uit. De Liberty-gebouwlagen ('building'/'building-3d')
+        // en onze eigen 'buildings-*'-lagen worden hier bewust overgeslagen: hun
+        // zichtbaarheid wordt uitsluitend bepaald door de 'Gebouw productie/
+        // attractie'-radio's (zie _applyBuildingDisplay), niet door de
+        // achtergrondkeuze.
+        // Montréal-modus: alle Liberty-lagen behalve de labels (symbol) uit;
+        // de 'mtl-*'-lagen tekenen de ondergrond.
+        if (_libertyAllLayerIds) {
+          const types = new Map(m.getStyle().layers.map(l => [l.id, l.type]));
+          for (const id of _libertyAllLayerIds) {
+            if (id === 'building' || id === 'building-3d' || id.startsWith('buildings')) continue;
+            const show = !hideMap && (!isMtl || types.get(id) === 'symbol');
+            try { m.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none'); } catch (_) {}
+          }
+        }
+        try {
+          if (isMtl) window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+          window.MontrealBasemap.setVisible(m, isMtl);
+        } catch (e) { console.warn('Montréal-ondergrond:', e); }
+        m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
+        // Satelliet: verberg ook de Liberty fill/background lagen
+        if (!hideMap && !isMtl && _libertyFillLayerIds) {
+          for (const id of _libertyFillLayerIds) {
+            try { m.setLayoutProperty(id, 'visibility', isSat ? 'none' : 'visible'); } catch (_) {}
+          }
+        }
+      }
+
+      _applyToMap(map);
+      if (map2) _applyToMap(map2);
+
+      // Herstel de gebouw-zichtbaarheid: de generieke Liberty-toggle hierboven
+      // laat 'building'/'building-3d' met rust, maar bij het (opnieuw) tonen
+      // van de kaart-stijl moet buildings-fill alsnog expliciet
+      // gesynchroniseerd worden met de productie/attractie-status.
+      if (typeof _applyBuildingDisplay === 'function') _applyBuildingDisplay();
+
+      // Dag/nacht-overlay opnieuw toepassen: een handmatige stijlwissel mag de
+      // eerder door updateSunLight() bepaalde nachtstatus niet ongedaan maken.
+      _applyGroundNightTint(_sunIsDay);
+    }
+    // Globaal beschikbaar maken zodat panelen buiten deze functie-scope
+    // (bijv. initLeftMenuPanel) hem ook kunnen aanroepen.
+    window._applyBasemapStyle = _applyBasemapStyle;
+
+    // ── Donkere grondtint bij nacht (gesimuleerde klok) ───────────────────────
+    // Tint alleen de grond (park/landuse/landcover) via één halfdoorzichtige
+    // achtergrondlaag die vlak vóór 'water' in de stijl-volgorde ligt —
+    // water/wegen/gebouwen worden daarna getekend en blijven dus ongewijzigd
+    // van kleur.
+    function _applyGroundNightTint(isDay) {
+      const wantTint = !isDay && basemapStyle === 'map';
+
+      function _applyToMap(m) {
+        if (!m) return;
+        if (!m.getLayer('ground-night-tint')) {
+          m.addLayer({
+            id: 'ground-night-tint', type: 'background',
+            paint: { 'background-color': '#05080c', 'background-opacity': 0 },
+          }, m.getLayer('water') ? 'water' : undefined);
+        }
+        try { m.setPaintProperty('ground-night-tint', 'background-opacity', wantTint ? 0.4 : 0); } catch (_) {}
+      }
+
+      _applyToMap(map);
+      if (map2) _applyToMap(map2);
+    }
+
+    function _tryAddBuildings() {
+      if (!_mapReady || !_buildingsGeoJson) return;
+
+      // Maquette-modus: verberg alle gebouwlagen en stop hier
+      // (building/building-3d zijn al verborgen door _onMapStyleLoad())
+      if (_MAQUETTE) {
+        try { if (map.getLayer('buildings-fill')) map.setLayoutProperty('buildings-fill', 'visibility', 'none'); } catch (_) {}
+        return;
+      }
+
+      // OGC GeoJSON-source (kleuren). generateId → stabiele feature-ids voor
+      // feature-state (selectie-highlight).
+      if (!map.getSource('buildings')) {
+        map.addSource('buildings', { type: 'geojson', data: _buildingsGeoJson, generateId: true, attribution: OSM_ATTRIBUTION });
+      } else {
+        map.getSource('buildings').setData(_buildingsGeoJson);
+      }
+
+      if (!map.getLayer('buildings-fill')) {
+        // Voeg 2D fill-laag in vóór de Liberty building-3d zodat die er transparant overheen ligt.
+        // Standaard verborgen: 'Gebouw productie/attractie' staat standaard op 'uit'.
+        map.addLayer({
+          id:     'buildings-fill',
+          type:   'fill',
+          source: 'buildings',
+          layout: {
+            visibility: 'none',
+          },
+          paint: {
+            'fill-color':         ['get', `color_${daypart}`],
+            'fill-opacity':       0.9,
+            'fill-outline-color': 'transparent',
+          },
+        }, map.getLayer('building-3d') ? 'building-3d' : undefined);
+
+        // ── Selectie-highlight: gele contour rond het geselecteerde pand ────
+        if (!map.getLayer('buildings-selected')) {
+          map.addLayer({
+            id:     'buildings-selected',
+            type:   'line',
+            source: 'buildings',
+            paint: {
+              'line-color': '#ffd400',
+              'line-width': 3,
+              'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0],
+            },
+          }, map.getLayer('building-3d') ? 'building-3d' : undefined);
+        }
+
+        // Id van het momenteel geselecteerde pand (feature-state), of null.
+        let _bSelectedId = null;
+
+        // ── Gebouw-tooltip via native MapLibre-events ──────────────────────
+        const _bTip         = document.getElementById('buildingTooltip');
+        const _TOOLTIP_ZOOM = 15;   // tooltip alleen actief op straatniveau
+        let _bTipHideTimer = null;
+        let _bTipShowTimer = null;  // vertraagd tonen (2 s)
+        let _bTipLastEvent = null;  // meest recente mousemove-event
+        let _bTipVisible   = false; // is de tooltip momenteel zichtbaar?
+
+        const _bTipRender = e => {
+          if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
+          const f = e.features?.[0];
+          if (!f) { _bTip.style.display = 'none'; _bTipVisible = false; return; }
+          const p = f.properties;
+
+          // Properties met object-waarden zijn door MapLibre JSON-geserialiseerd
+          let cap = 0;
+          try { cap = (JSON.parse(p._cap || '{}')?.[_currentPurpose] ?? 0); } catch (_) {}
+          let zoneName = null;
+          try { zoneName = JSON.parse(p._bzoneProps || 'null')?.zoneName ?? null; } catch (_) {}
+
+          const _labelType = p._bEffType || p._btype || 'other';
+          const typeKey   = 'buildingType' + _labelType.charAt(0).toUpperCase()
+                            + _labelType.slice(1);
+          const typeLabel = T(typeKey) || _labelType || '–';
+          const heightM   = p.height ? Math.round(p.height) + '\u202fm' : '–';
+          const capFmt    = cap > 0 ? Math.round(cap).toLocaleString(T('numberLocale')) : '–';
+
+          // Productie/attractie voor het huidige motief + dagdeel. Bij 24 uur (etmaal)
+          // is deze balans niet informatief; toon in plaats daarvan de motiefcategorie
+          // waarmee het pand op de kaart gekleurd is (zie color_etmaal).
+          let dirHtml = '';
+          if (flowDaypart === 'etmaal') {
+            const motiefCat = _BUILDING_MOTIEF_CATEGORY[p._btype || 'other'] || null;
+            if (motiefCat) {
+              const catLabel = { wonen: T('tooltipPurposeWonen'), werk: T('tooltipPurposeWerk'),
+                                  onderwijs: T('tooltipPurposeOnderwijs'), winkelen: T('tooltipPurposeWinkelen'),
+                                  recreatie: T('tooltipPurposeRecreat') }[motiefCat] || motiefCat;
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingMotief')}</span><br>
+                <b style="color:${_MOTIEF_CATEGORY_COLOR[motiefCat]}">${catLabel}</b>
+              </div>`;
+            }
+          } else if (_currentPurpose && _currentPurpose !== 'off' && _NORM && _BUILDING_SCORES) {
+            const btype      = p._btype || 'other';
+            const norm       = _NORM[_currentPurpose] || 1;
+            const dir        = _getBuildingDir(btype, _currentPurpose, daypart);
+            const relTypes   = _PURPOSE_RELEVANT_TYPES[_currentPurpose] ?? null;
+            const isRelevant = relTypes === null || relTypes.has(btype);
+            let score = 0;
+            if (isRelevant) {
+              if (cap > 0)      score = dir * Math.min(1, cap / norm);
+              else if (dir !== 0) score = dir * 0.5;  // geen demografie: vaste richting, halve intensiteit
+            }
+            const dpLabel  = { mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') }[daypart] || daypart;
+            const purLabel = { all: T('tooltipPurposeAll'), werk: T('tooltipPurposeWerk'),
+                               onderwijs: T('tooltipPurposeOnderwijs'), winkelen: T('tooltipPurposeWinkelen'),
+                               recreatie: T('tooltipPurposeRecreat') }[_currentPurpose] || _currentPurpose;
+            const pct = Math.round(Math.abs(score) * 100);
+            if (Math.abs(score) > 0.02) {
+              const isAttr = score > 0;
+              const color  = isAttr ? '#2ca02c' : '#d62728';
+              const arrow  = isAttr ? '↑' : '↓';
+              const label  = T(isAttr ? 'tooltipBuildingAttraction' : 'tooltipBuildingProduction');
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
+                <b style="color:${color}">${arrow} ${label}</b><span style="color:#888"> (${pct}%)</span>
+              </div>`;
+            } else if (isRelevant) {
+              dirHtml = `<div style="margin-top:5px;border-top:1px solid rgba(0,165,171,0.15);padding-top:5px">
+                <span style="color:#6a757c;font-size:11px">${T('tooltipBuildingDir')} (${purLabel} / ${dpLabel})</span><br>
+                <b style="color:#888">${T('tooltipBuildingNeutral')}</b>
+              </div>`;
+            }
+          }
+
+          // OSM-tags: alleen 'building' en 'buildingType' tonen
+          const _SHOW = ['building', 'buildingType'];
+          const osmRows = _SHOW
+            .filter((k) => p[k] != null && p[k] !== '')
+            .map((k) => `<tr>
+              <td style="color:#6a757c;padding-right:10px;white-space:nowrap">${k}</td>
+              <td style="word-break:break-word"><b>${p[k]}</b></td>
+            </tr>`)
+            .join('');
+
+          const osmLink = p.osm_id
+            ? `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
+                <a href="https://www.openstreetmap.org/way/${p.osm_id}" target="_blank"
+                   style="color:#00a5ab;font-size:11px">OSM way/${p.osm_id} ↗</a>
+               </div>` : '';
+
+          _bTip.innerHTML = `
+            <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">${typeLabel}</div>
+            ${zoneName ? `<div><span style="color:#6a757c">${T('tooltipBuildingZone')}: </span><b>${zoneName}</b></div>` : ''}
+            <div><span style="color:#6a757c">${T('tooltipBuildingHeight')}: </span><b>${heightM}</b></div>
+            ${dirHtml}
+            ${_buildingCalcHtml(p)}
+            ${osmRows ? `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
+              <table style="border-collapse:collapse;font-size:12px;width:100%">${osmRows}</table>
+            </div>` : ''}
+            ${osmLink}
+          `;
+
+          // Positioneer net rechtsonder de cursor, pas aan als tooltip buiten scherm valt
+          const x = e.originalEvent.clientX;
+          const y = e.originalEvent.clientY;
+          _bTip.style.display = '';
+          const tw = _bTip.offsetWidth, th = _bTip.offsetHeight;
+          _bTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+          _bTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+        };
+
+        const _bLayers = ['buildings-fill'];
+
+        map.on('mouseenter', _bLayers, () => {
+          if (map.getZoom() < _TOOLTIP_ZOOM) return;
+          map.getCanvas().style.cursor = 'pointer';
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          // Start vertraagd tonen (2 s) als tooltip nog niet zichtbaar is
+          if (!_bTipVisible && !_bTipShowTimer) {
+            _bTipShowTimer = setTimeout(() => {
+              _bTipShowTimer = null;
+              if (_bTipLastEvent) { _bTipRender(_bTipLastEvent); _bTipVisible = true; }
+            }, 2000);
+          }
+        });
+
+        map.on('mouseleave', _bLayers, () => {
+          map.getCanvas().style.cursor = '';
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
+          _bTipVisible = false;
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        // Keep tooltip visible when mouse moves over it (to allow clicking the OSM link)
+        _bTip.addEventListener('mouseenter', () => {
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+        });
+        _bTip.addEventListener('mouseleave', () => {
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          _bTipHideTimer = setTimeout(() => { _bTip.style.display = 'none'; }, 150);
+        });
+
+        map.on('mousemove', _bLayers, e => {
+          if (_bSelectedId != null) return;   // selectie-tooltip blijft vastgepind
+          if (map.getZoom() < _TOOLTIP_ZOOM) { _bTip.style.display = 'none'; return; }
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          _bTipLastEvent = e;
+          // Tooltip is al zichtbaar: direct positie/inhoud bijwerken
+          if (_bTipVisible) _bTipRender(e);
+        });
+
+        // ── Klik: pand selecteren/deselecteren ─────────────────────────────
+        // Selecteren → gele contour + tooltip direct tonen (vastgepind).
+        // Opnieuw klikken op hetzelfde pand → deselecteren + tooltip weg.
+        map.on('click', _bLayers, e => {
+          const f = e.features?.[0];
+          if (!f || f.id == null) return;
+          const id = f.id;
+
+          // Klik op reeds geselecteerd pand → deselecteren
+          if (_bSelectedId === id) {
+            map.setFeatureState({ source: 'buildings', id }, { selected: false });
+            _bSelectedId   = null;
+            _bTipVisible   = false;
+            _bTip.style.display = 'none';
+            return;
+          }
+
+          // Vorige selectie opheffen
+          if (_bSelectedId != null) {
+            map.setFeatureState({ source: 'buildings', id: _bSelectedId }, { selected: false });
+          }
+
+          _bSelectedId = id;
+          map.setFeatureState({ source: 'buildings', id }, { selected: true });
+
+          // Tooltip direct tonen op de klikpositie
+          if (_bTipShowTimer) { clearTimeout(_bTipShowTimer); _bTipShowTimer = null; }
+          if (_bTipHideTimer) { clearTimeout(_bTipHideTimer); _bTipHideTimer = null; }
+          _bTipRender(e);
+          _bTipVisible = true;
+        });
+
+        // ── Klik náást een pand → huidige selectie opheffen ────────────────
+        // Algemene kaartklik: als er géén gebouw onder de cursor zit, deselecteren.
+        map.on('click', e => {
+          if (_bSelectedId == null) return;
+          const hits = map.getLayer('buildings-fill')
+            ? map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] })
+            : [];
+          if (hits.length) return;   // op een pand geklikt → laat de laag-handler het afhandelen
+          map.setFeatureState({ source: 'buildings', id: _bSelectedId }, { selected: false });
+          _bSelectedId = null;
+          _bTipVisible = false;
+          _bTip.style.display = 'none';
+        });
+      }
+    }
+
+    // ── Data-store voor de Snelheid-metrieken (Kruispunten/Haaientanden/
+    // Vluchtheuvels) ───────────────────────────────────────────────────────
+    let _taSpeedBumpFeatures = [];   // speedBump-polygonen (gebruikt door de Kruispunten-metriek)
+    // De onderstaande vier blijven altijd leeg: GMT Analyzer heeft geen
+    // traffic_signs/vegetation-achtige live-serving voor losse verkeersborden-
+    // categorieën meer (zie GMT Digital Twin). rebuildSpeedLayers() gebruikt ze
+    // alleen als aanvullende classificatie bovenop de rechtstreekse
+    // netwerk-eigenschappen (trafficSignal/numGiveWays/numRefugeAreas), die voor
+    // actuele netwerkdata al volstaan.
+    let _taSignalFeatures              = [];
+    let _taMarkFeatures                = [];
+    let _taRefugeAreaCrossingFeatures  = [];
+    let _taRefugeAreaTrafficFeatures   = [];
+    let _taHover             = null; // {props,lngLat} van het object onder de cursor
+    let _networkHoverLink    = null; // {linkId} — laatst gehoverd wegvak
+
+    // Bouw de deck.gl-laag voor verkeersdrempels (aangeroepen in updateOverlay).
+    // Platte drempel-vlakken (speedBump-polygonen), plat op het wegdek.
+    // Aparte laag zodat ze ONDER de intensiteits-laag (network) getekend worden.
+    // Alleen actief voor de Kruispunten-metriek.
+    function makeSpeedBumpLayer() {
+      const active = colorMetric === 'speed_intersections';
+      if (!active) return null;
+      if (!_taSpeedBumpFeatures.length) return null;
+      return new GeoJsonLayer({
+        id:            'ta-speedbumps-deck',
+        data:          { type: 'FeatureCollection', features: _taSpeedBumpFeatures },
+        extruded:      false,
+        filled:        true,
+        stroked:       active,
+        getFillColor:  active ? [241, 196, 15, 200] : [150, 150, 155, 170],
+        getLineColor:  [0, 0, 0, 255],
+        lineWidthUnits: 'pixels',
+        getLineWidth:  active ? 1 : 0,
+        getFillLineDash: active ? [2, 2] : null,
+        pickable:      true,
+        onHover:       info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; },
+      });
+    }
+
+
+    // Fallback: bestaande NDW/Overpass-borden (volledige area, geen bbox).
+    // Cache voor de globale speedBump-fetch (Kruispunten-metriek): voorkomt
+    // dat dezelfde data opnieuw wordt opgehaald.
+    let _lastAssetBboxSpeedBump = null; // bbox waarvoor we alle speedBumps hebben
+
+    async function _loadSpeedBumpsForArea() {
+      // Haal ALLE speedBumps voor het gebied op zodra de Kruispunten-laag actief
+      // is. Het TRAFFIC-ASSETS bestand bevat doorgaans maximaal enkele duizenden
+      // drempels; dit is een acceptabele eenmalige payload.
+      if (_lastAssetBboxSpeedBump) {
+        console.debug('[TA] speedBump fetch al compleet (full area)');
+        return;
+      }
+      if (_trafficAssetsNoFile) return;
+      const r = await fetch(`/collections/traffic_assets/items?areaId=${AREA_ID}&assetType=speedBump&f=ndgeojson`);
+      if (r.status === 404) { _trafficAssetsNoFile = true; return; }
+      if (!r.ok) { console.debug('[TA] speedBump fetch niet ok, status=', r.status); return; }
+      const text = await r.text();
+      const feats = [];
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        try { feats.push(JSON.parse(line)); } catch (_) {}
+      }
+      if (!feats.length) return;
+      _taSpeedBumpFeatures = feats;
+      _lastAssetBboxSpeedBump = [ -180, -90, 180, 90 ]; // markeer als globaal compleet
+    }
+
+    /**
+     * Zet 'Pand productie/attractie' terug op de standaard UIT-stand. Wordt
+     * aangeroepen bij het binnenkomen van een (nieuw of aangepast) scenario,
+     * zodat een keuze uit een vorig scenario niet blijft "doorlekken" naar
+     * het volgende.
+     */
+    function _resetSceneryDisplayDefaults() {
+      const buildingPurposeSel = document.getElementById('buildingPurpose');
+      if (buildingPurposeSel && buildingPurposeSel.value !== 'off') {
+        buildingPurposeSel.value = 'off';
+        buildingPurposeSel.dispatchEvent(new Event('change'));
+      }
+      // Auto/fiets/voetganger-lagen: ook buiten MIXED-modus standaard UIT bij
+      // binnenkomen van een scenario. De netwerklaag zelf blijft zichtbaar
+      // (die filtert niet op visibleModes buiten MIXED-modus); alleen het
+      // plaatsen van auto's wordt uitgesteld tot de gebruiker het vinkje aanzet.
+      document.querySelectorAll('.modeBtn').forEach(btn => {
+        btn.classList.remove('active');
+        visibleModes.delete(btn.dataset.mode);
+      });
+      updateOverlay(true);
+      updateLegend();
+    }
+    window._resetSceneryDisplayDefaults = _resetSceneryDisplayDefaults;
+
+    // Laad gebouwen pas bij eerste gebruik ('Pand productie/attractie' ≠ uit, zie
+    // _applyBuildingDisplay); verrijking vindt plaats zodra ook zones beschikbaar zijn.
+    // Progressief via NDJSON (?format=ndjson), met fallback op de gewone JSON-respons.
+    function _ensureBuildingsLoaded() {
+      if (_buildingsLoadPromise) return _buildingsLoadPromise;
+      const _buildingsUrl = `/collections/buildings/items?areaId=${AREA_ID}`;
+      const _buildingsArea = AREA_ID;
+      _buildingsLoadPromise = _fetchBuildingsWithJob(_buildingsUrl, () => AREA_ID !== _buildingsArea)
+        .then(data => {
+          if (!data || !Array.isArray(data.features)) return;
+          // Verwijder brugpijlers en ondergrondse niet-parkeer objecten.
+          // Parkeerlocaties (ook ondergronds) worden altijd bewaard maar krijgen hoogte 0.
+          data.features = data.features.filter(f => {
+            const p     = f.properties;
+            const bldg  = (p.building || '').toLowerCase();
+            const isParking = (p.amenity || '').toLowerCase() === 'parking'
+              || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
+            if (p['bridge:support']) return false;
+            // Ondergronds: parkeren bewaren, rest verwijderen
+            if ((p.location || '').toLowerCase() === 'underground' && !isParking) return false;
+            // Negatief level: zelfde logica
+            const levelStr = String(p.level ?? '');
+            if (!isParking) {
+              if (levelStr.startsWith('-')) return false;
+              const lvl = parseFloat(levelStr);
+              if (!isNaN(lvl) && lvl < 0) return false;
+            }
+            return true;
+          });
+          // Hoogte toekennen (eenmalig; kleur wordt later berekend in _tryZoneJoin)
+          for (const f of data.features) {
+            const p       = f.properties;
+            const bldg    = (p.building || '').toLowerCase();
+            const amenity = (p.amenity  || '').toLowerCase();
+            const parking = (p.parking  || '').toLowerCase();
+            const isParking = amenity === 'parking'
+              || ['parking','garage','garages','carport','bicycle_parking'].includes(bldg);
+
+            // Ondergrondse parkeergarages en maaiveld-parkeerterreinen: altijd hoogte 0
+            const levelStr    = String(p.level ?? '');
+            const levelNeg    = levelStr.startsWith('-')
+              || (!isNaN(parseFloat(levelStr)) && parseFloat(levelStr) < 0);
+            const isUnderground = (p.location || '').toLowerCase() === 'underground'
+              || parking === 'underground' || (isParking && levelNeg);
+            const isSurface = isParking && !isUnderground
+              && parking !== 'multi-storey' && parking !== 'rooftop'
+              && !['garage','garages','multi-storey'].includes(bldg);
+
+            if (isParking && (isUnderground || isSurface)) {
+              p.height = 0;
+            } else {
+              const hRaw = parseFloat(p.height);
+              if (p.height != null && !isNaN(hRaw)) {
+                p.height = Math.max(0, hRaw);
+              } else if (p['building:levels']) {
+                const lvls = parseFloat(p['building:levels']);
+                p.height = isNaN(lvls) ? 4 : Math.max(0, lvls) * 3;
+              } else {
+                p.height = 4;
+              }
+            }
+          }
+          _buildingsRaw = data;
+          _tryZoneJoin();
+        })
+        .catch(() => {})  // gebouwen zijn optioneel; stil negeren bij fout
+        .finally(() => {
+          // Mislukt/leeg: volgende keer opnieuw proberen en de status-UI bijwerken
+          if (!_buildingsRaw) { _buildingsLoadPromise = null; _refreshBuildingsStatusUI(); }
+        });
+      return _buildingsLoadPromise;
+    }
+
+    // Verzamelproperty-namen die in het netwerk bestaan, zodat we later kunnen
+    // detecteren of toekomstige Snelheid-kolommen al geleverd zijn.
+    const _speedSegmentsPropSearch = new Set();
+    for (const f of features) {
+      if (!f.properties) continue;
+      for (const k of Object.keys(f.properties)) _speedSegmentsPropSearch.add(k);
+    }
+
+    // Segmenten pre-processen — uniforme interface: { coords, length, speedMs, ... }
+    const segments    = features.map(f => ({
+      coords:  f.geometry.coordinates,
+      length:  linkLengthM(f),
+      speedMs: f.properties.speed / 3.6,
+      flow:    f.properties.flow,
+      norm:    (f.properties.flow - minFlow) / flowRange,
+      props:   f.properties,
+    }));
+
+    // Schaalfactoren per dagdeel op basis van totale netwerk-flow.
+    // Worden gebruikt in route-modus om het auto-aantal te schalen.
+    const dpScales = (() => {
+      const sums = { mrh: 0, erh: 0, rest: 0 };
+      for (const seg of segments) {
+        const dp = seg.props.flowsPerDaypart;
+        if (!dp) continue;
+        sums.mrh  += dp.mrh  || 0;
+        sums.erh  += dp.erh  || 0;
+        sums.rest += dp.rest || 0;
+      }
+      const ref = sums.erh || 1;
+      return { mrh: sums.mrh / ref, erh: 1.0, rest: sums.rest / ref };
+    })();
+
+    // ── 2. Routes laden (optioneel) ─────────────────────────────────────────
+
+    // linkId → geometrie (voor route-reconstructie)
+    const linkGeomMap      = new Map();
+    // linkId → snelheid in m/s (voor per-link snelheidsmodel)
+    const linkSpeedMap     = new Map();
+    // linkId → capaciteit in veh/u (voor CB-vulmethode)
+    const linkCapacityMap  = new Map();
+    // linkId → flow per dagdeel (vtg/u), wordt bijgewerkt via rebuildLinkFlowMap()
+    const linkFlowMap   = new Map();
+    // linkId → route[] — gebouwd door buildLinkRouteMap() na het vullen van routeList
+    const linkRouteMap  = new Map();
+    for (const seg of segments) {
+      linkGeomMap.set(seg.props.linkId,     seg.coords);
+      linkSpeedMap.set(seg.props.linkId,    seg.speedMs);
+      linkCapacityMap.set(seg.props.linkId, seg.props.capacity ?? 1800);
+    }
+    /** Herbouw linkFlowMap voor het huidige dagdeel (aanroepen na dagdeel-wijziging) */
+    function rebuildLinkFlowMap() {
+      linkFlowMap.clear();
+      for (const seg of segments) {
+        linkFlowMap.set(seg.props.linkId, segFlow(seg));
+      }
+    }
+    // Initiële vulling gebeurt na declaratie van `daypart` (verderop)
+
+    // Netwerk-graph voor pathfinding (Dijkstra)
+    // Alle links inclusief voedingslinks zodat zone-nodes bereikbaar zijn.
+    const nodeCoords  = new Map();   // nodeId → [lon, lat]
+    const nodeLinkMap = new Map();   // linkId → { fromNode, toNode }
+    const adj         = new Map();   // nodeId → [{ toNode, linkId, length, coords, speedMs }]
+    const adjReverse  = new Map();   // nodeId → [{ toNode, linkId, length, coords, speedMs }] (omgekeerde graph)
+    for (const f of geojson.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const p = f.properties, c = f.geometry.coordinates;
+      nodeCoords.set(p.fromNode, c[0]);
+      nodeCoords.set(p.toNode,   c[c.length - 1]);
+      nodeLinkMap.set(p.linkId, { fromNode: p.fromNode, toNode: p.toNode });
+      if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
+      adj.get(p.fromNode).push({
+        toNode:   p.toNode,
+        linkId:   p.linkId,
+        length:   p.length || 1,
+        coords:   c,
+        speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+        linkMode: p.mode ? p.mode.toUpperCase() : null,
+      });
+      if (!adjReverse.has(p.toNode)) adjReverse.set(p.toNode, []);
+      adjReverse.get(p.toNode).push({
+        toNode:   p.fromNode,
+        linkId:   p.linkId,
+        length:   p.length || 1,
+        coords:   c,
+        speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+        linkMode: p.mode ? p.mode.toUpperCase() : null,
+      });
+    }
+
+    // Focus naar eventueel in de URL gevraagde link of node. Bij beide wordt
+    // de node voorrang gegeven. Dit gebeurt nadat zowel kaart als netwerk
+    // geometrie beschikbaar zijn, en overschrijft de initiele gebieds-fit.
+    function _focusUrlLinkOrNode() {
+      if (NODE_ID_PARAM) {
+        const coord = nodeCoords.get(NODE_ID_PARAM) ?? nodeCoords.get(Number(NODE_ID_PARAM));
+        if (coord) {
+          map.easeTo({ center: coord, zoom: 18, pitch: 0, bearing: 0, essential: true });
+          return;
+        }
+        console.warn(`[focus] nodeId ${NODE_ID_PARAM} niet gevonden`);
+      }
+      if (LINK_ID_PARAM) {
+        const coords = linkGeomMap.get(LINK_ID_PARAM) ?? linkGeomMap.get(Number(LINK_ID_PARAM));
+        if (coords && coords.length >= 2) {
+          let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+          for (const [lon, lat] of coords) {
+            if (lon < minLon) minLon = lon;
+            if (lat < minLat) minLat = lat;
+            if (lon > maxLon) maxLon = lon;
+            if (lat > maxLat) maxLat = lat;
+          }
+          map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+            padding: 80, pitch: 0, bearing: 0, duration: 1000, essential: true
+          });
+          return;
+        }
+        console.warn(`[focus] linkId ${LINK_ID_PARAM} niet gevonden`);
+      }
+    }
+    if (NODE_ID_PARAM || LINK_ID_PARAM) {
+      if (map.loaded()) {
+        _focusUrlLinkOrNode();
+      } else {
+        map.once('load', _focusUrlLinkOrNode);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  "SNELHEID" — knooppunt-classificatie + straf-seconden (v0, fallback)
+    //  ---------------------------------------------------------------------
+    //  Fallback-implementatie zonder gmt-library-data (zie
+    //  docs/plan-snelheid-strafseconden.md, Deel A). Knooppunten worden
+    //  geclassificeerd o.b.v. de dichtstbijzijnde bestaande punt-assets
+    //  (verkeerslicht/voorrangsbord), en wegvakken krijgen vaste straf-
+    //  seconden o.b.v. zebra/verkeerslicht/haaientanden/stopbord in de buurt.
+    //  Flow-afhankelijke componenten (verkeer van rechts, linksaf-hinder,
+    //  tegenliggerhinder) zitten hier bewust nog niet in.
+    // ═══════════════════════════════════════════════════════════════════════
+    const SPEED_NODE_SNAP_M = 20;   // marge punt → knooppunt (zelfde als geplande gmt-library-marge)
+    const SPEED_LINK_SNAP_M = 15;   // marge punt → wegvak
+    const SPEED_REFUGE_END_MARGIN_M = 15;   // vluchtheuvels binnen deze afstand van een knooppunt gelden als "aan het eind" en tellen niet mee
+    const SPEED_PENALTY_SEC = { zebra: 2, signal: 10, yield: 2, stop: 4, refuge: 2, elevationMax: 6 };  // voorstelwaarden, zie plan
+    const SPEED_ELEVATION_MIN_PCT = 3;   // vanaf dit hellingspercentage telt omhoog rijden mee
+    const SPEED_ELEVATION_MAX_PCT = 15;  // boven dit percentage is de straf maximaal
+
+    let nodeControlMap  = new Map();   // nodeId → 'signalized' | 'priority' | 'uncontrolled'
+    let nodeIntersectionsMap = new Map(); // nodeId → 1=verkeerslicht, 2=rotonde, 3=verkeersdrempel op kruispunt
+    let speedLinkFlags  = new Map();   // linkId → { zebra, signal, yield, stop }
+    let penaltyByLinkId = new Map();   // linkId → { zebra, cycleX, signal, yield, stop, refuge, elevation, fromRight, leftTurn, rightTurn, oncoming, total }
+    let _speedLayersVersion = 0;       // bumpt bij elke rebuildSpeedLayers(), voor deck.gl updateTriggers
+
+    function _mPerDeg(lat) {
+      return [111320 * Math.cos(lat * Math.PI / 180) || 1, 110540];
+    }
+
+    /** Weegfactoren dagdeel → uurintensiteit.
+     *  OS=2u, AS=2u, restdag=20u; wegingsbasis 14.4
+     *  Formule: (weging/duur) / 14.4
+     *  Ge-declareerd vóór de Snelheid-functies zodat rebuildSpeedLayers()
+     *  dpFlowOf() veilig kan aanroepen zonder TDZ-fout. */
+    const DP_FRACTION = { mrh: (2/2)/14.4, erh: (2/2)/14.4, rest: (10.4/20)/14.4 };
+
+    /** Controleer of in het geladen netwerk minstens een segment een bepaald
+     *  attribuut draagt. Gebruikt om te bepalen of toekomstige Snelheid-lagen
+     *  al zinvolle data hebben (grijs = nog niet beschikbaar). */
+    function _speedHasAnySegmentWith(checkProp) {
+      if (!_speedSegmentsPropSearch) return false;
+      for (const key of _speedSegmentsPropSearch) {
+        if (checkProp(key)) return true;
+      }
+      return false;
+    }
+
+    /** Hellingspercentage (%) van een wegvak; positief = omhoog rijden
+     *  (van elevationFrom naar elevationTo). */
+    function _speedSlopePct(p) {
+      const from = p.elevationFrom, to = p.elevationTo, len = p.length;
+      if (from == null || to == null || !(len > 0)) return null;
+      return ((to - from) / len) * 100;
+    }
+
+    /** Effectieve wegbreedte voor tegenliggerhinder: roadWidthM lijkt de
+     *  rijstrookbreedte per richting te zijn; vermenigvuldig met het aantal
+     *  rijstroken en met 2 voor tweerichtingsverkeer. */
+    function _speedEffectiveRoadWidth(p) {
+      const widthPerLane = p.roadWidthM != null ? p.roadWidthM : 0;
+      const lanes = p.lanes != null ? p.lanes : 1;
+      return widthPerLane * lanes * 2;
+    }
+
+    /** Actuele uurintensiteit (vtg/u) van een conflict-link opvragen, op basis
+     *  van het huidige dagdeel. Fallback op statische 24u-flow. */
+    function _speedConflictFlow(linkId) {
+      if (linkId == null) return 0;
+      if (linkFlowMap) {
+        const live = linkFlowMap.get(linkId);
+        if (live != null && isFinite(live)) return live;
+      }
+      // Fallback: zoek de segment-properties in het geladen netwerk.
+      const seg = segments && segments.find(s => s.props && s.props.linkId === linkId);
+      if (seg) return segFlow(seg) ?? 0;
+      return 0;
+    }
+
+    /** Straf-seconden voor omhoog rijden, lineair vanaf 3% tot 15%. */
+    function _speedElevationPenaltySec(p) {
+      const slope = _speedSlopePct(p);
+      if (slope == null || slope < SPEED_ELEVATION_MIN_PCT) return 0;
+      const t = Math.min(1, (slope - SPEED_ELEVATION_MIN_PCT) / (SPEED_ELEVATION_MAX_PCT - SPEED_ELEVATION_MIN_PCT));
+      return Math.round(t * SPEED_PENALTY_SEC.elevationMax * 10) / 10;
+    }
+
+    function _speedDistMeters(lon1, lat1, lon2, lat2) {
+      const [mPerLng, mPerLat] = _mPerDeg((lat1 + lat2) / 2);
+      const dx = (lon2 - lon1) * mPerLng, dy = (lat2 - lat1) * mPerLat;
+      return Math.hypot(dx, dy);
+    }
+
+    // Kortste afstand (m) van punt (lon,lat) tot lijnstuk-geometrie coords.
+    function _speedDistToLine(lon, lat, coords) {
+      if (!coords || coords.length < 2) return Infinity;
+      const [mPerLng, mPerLat] = _mPerDeg(lat);
+      let best = Infinity;
+      for (let i = 0; i < coords.length - 1; i++) {
+        const a = coords[i], b = coords[i + 1];
+        const ax = (a[0] - lon) * mPerLng, ay = (a[1] - lat) * mPerLat;
+        const bx = (b[0] - lon) * mPerLng, by = (b[1] - lat) * mPerLat;
+        const vx = bx - ax, vy = by - ay;
+        const len2 = vx * vx + vy * vy;
+        let t = len2 > 0 ? -(ax * vx + ay * vy) / len2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const px = ax + t * vx, py = ay + t * vy;
+        const d = Math.hypot(px, py);
+        if (d < best) best = d;
+      }
+      return best;
+    }
+
+    function _speedNearestNodeId(lon, lat, maxM) {
+      let bestId = null, bestD = maxM;
+      for (const [nodeId, c] of nodeCoords) {
+        const d = _speedDistMeters(lon, lat, c[0], c[1]);
+        if (d < bestD) { bestD = d; bestId = nodeId; }
+      }
+      return bestId;
+    }
+
+    function _speedNearestLinkId(lon, lat, maxM) {
+      let bestId = null, bestD = maxM;
+      for (const [linkId, coords] of linkGeomMap) {
+        const d = _speedDistToLine(lon, lat, coords);
+        if (d < bestD) { bestD = d; bestId = linkId; }
+      }
+      return bestId;
+    }
+
+    // Representatief punt [lon,lat] voor een feature-geometrie (Point of
+    // Polygon/MultiPolygon — voor vluchtheuvels, die als vlak of punt
+    // kunnen binnenkomen).
+    function _speedFeatureCentroid(f) {
+      const g = f.geometry; if (!g) return null;
+      if (g.type === 'Point') return g.coordinates;
+      let ring = null;
+      if (g.type === 'Polygon') ring = g.coordinates?.[0];
+      else if (g.type === 'MultiPolygon') ring = g.coordinates?.[0]?.[0];
+      if (!ring || !ring.length) return null;
+      let sx = 0, sy = 0;
+      for (const [x, y] of ring) { sx += x; sy += y; }
+      return [sx / ring.length, sy / ring.length];
+    }
+
+    /** Herbouw knooppunt-classificatie + straf-seconden-maps. Aanroepen
+     *  zodra `_taSignalFeatures`/`_taMarkFeatures` zijn (bij)gewerkt. */
+    function rebuildSpeedLayers() {
+      // Bereken knoopgraad om echte kruispunten (≥3 links) te vinden.
+      const nodeDegree = new Map();
+      for (const nlm of nodeLinkMap.values()) {
+        nodeDegree.set(nlm.fromNode, (nodeDegree.get(nlm.fromNode) || 0) + 1);
+        nodeDegree.set(nlm.toNode,   (nodeDegree.get(nlm.toNode)   || 0) + 1);
+      }
+      const junctionNodeIds = new Set();
+      for (const [nid, deg] of nodeDegree) { if (deg >= 3) junctionNodeIds.add(nid); }
+      // Log hulp voor debuggen van kruispunt-classificatie.
+      console.debug('[speed] junction nodes:', junctionNodeIds.size, 'intersection nodes:', junctionNodeIds.size);
+
+      // 1a. Kruispunt-categorieën (nieuwe laag "Kruispunten")
+      // Prioriteit: verkeerslicht (1) > rotonde (2) > verkeersdrempel (3).
+      const niMap = new Map();
+      // Rotondes op basis van de NETWORK-CAR-kolom `isRoundabout`/`roundaboutType`
+      // (nieuwe exports), met OSM-weg/junction-tag als fallback voor oudere data.
+      for (const f of geojson.features) {
+        const p = f.properties;
+        const isRoundabout = p.isRoundabout === true || p.roundaboutType === 'roundabout' ||
+          p.junction === 'roundabout' || p.highway === 'roundabout' || p.highway === 'mini_roundabout';
+        if (!isRoundabout) continue;
+        const nlm = nodeLinkMap.get(p.linkId);
+        if (!nlm) continue;
+        niMap.set(nlm.fromNode, 2);
+        niMap.set(nlm.toNode,   2);
+      }
+      // Verkeerslichten: pas op kruispunt-nodes met >=3 links.
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid == null || !junctionNodeIds.has(nid)) continue;
+        if (!niMap.has(nid)) niMap.set(nid, 1);
+      }
+      // Fallback voor netwerken die de trafficSignal boolean meeleveren:
+      // markeer kruispunt-nodes aan het einde van een signaal-link als
+      // verkeerslicht.
+      const _signalNodeSet = new Set();
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null) _signalNodeSet.add(nid);
+      }
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!('trafficSignal' in p) || p.trafficSignal !== true) continue;
+        const nlm = nodeLinkMap.get(p.linkId);
+        if (!nlm) continue;
+        const toJunction   = junctionNodeIds.has(nlm.toNode);
+        const fromJunction = junctionNodeIds.has(nlm.fromNode);
+        if (toJunction)   _signalNodeSet.add(nlm.toNode);
+        if (fromJunction) _signalNodeSet.add(nlm.fromNode);
+      }
+      for (const nid of _signalNodeSet) {
+        if (!junctionNodeIds.has(nid)) continue;
+        if (!niMap.has(nid)) niMap.set(nid, 1);
+      }
+        nodeIntersectionsMap = niMap;
+
+      // 1b. Knooppunt-classificatie voor straf-seconden: signalized > priority
+      //    (voorrangs-/stopbord/haaientanden) > uncontrolled (default, geen entry).
+      const ncMap = new Map();
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null) ncMap.set(nid, 'signalized');
+      }
+      for (const f of _taMarkFeatures) {
+        const t = f.properties?.assetType;
+        if (t !== 'giveWay' && t !== 'stopSign') continue;
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const nid = _speedNearestNodeId(c[0], c[1], SPEED_NODE_SNAP_M);
+        if (nid != null && !ncMap.has(nid)) ncMap.set(nid, 'priority');
+      }
+      nodeControlMap = ncMap;
+
+      // 2. Sub-laag-vlaggen per wegvak (zebra/verkeerslicht/haaientanden/stopbord).
+      const flagMap = new Map();
+      const flag = (linkId, key) => {
+        if (linkId == null) return;
+        let e = flagMap.get(linkId);
+        if (!e) { e = {}; flagMap.set(linkId, e); }
+        e[key] = true;
+      };
+      for (const f of _taMarkFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        const t = f.properties?.assetType;
+        const key = t === 'pedestrianCrossing' ? 'zebra'
+                  : t === 'giveWay'             ? 'yield'
+                  : t === 'stopSign'            ? 'stop'
+                  : null;
+        if (!key) continue;
+        flag(_speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M), key);
+      }
+      for (const f of _taSignalFeatures) {
+        const c = f.geometry?.coordinates; if (!c) continue;
+        flag(_speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M), 'signal');
+      }
+      // Vluchtheuvels (refugeAreaCrossing/refugeAreaTraffic) — alleen degene die
+      // NIET aan het eind van het wegvak liggen (binnen SPEED_REFUGE_END_MARGIN_M
+      // van een knooppunt): die horen bij de kruising zelf, niet bij een losse
+      // midden-op-het-wegvak-hindernis.
+      const _refugeFeaturesForSpeed = [
+        ..._taRefugeAreaCrossingFeatures,
+        ..._taRefugeAreaTrafficFeatures,
+      ];
+      for (const f of _refugeFeaturesForSpeed) {
+        const c = _speedFeatureCentroid(f); if (!c) continue;
+        const linkId = _speedNearestLinkId(c[0], c[1], SPEED_LINK_SNAP_M);
+        if (linkId == null) continue;
+        const nlm = nodeLinkMap.get(linkId);
+        if (nlm) {
+          const fromC = nodeCoords.get(nlm.fromNode);
+          const toC   = nodeCoords.get(nlm.toNode);
+          const dFrom = fromC ? _speedDistMeters(c[0], c[1], fromC[0], fromC[1]) : Infinity;
+          const dTo   = toC   ? _speedDistMeters(c[0], c[1], toC[0],   toC[1])   : Infinity;
+          if (dFrom < SPEED_REFUGE_END_MARGIN_M || dTo < SPEED_REFUGE_END_MARGIN_M) continue;  // aan het eind → overslaan
+        }
+        flag(linkId, 'refuge');
+      }
+      speedLinkFlags = flagMap;
+
+      // 3. Straf-seconden v0 — vaste componenten + flow-onafhankelijke
+      //    bronkolommen die nu al in NETWORK-CAR zitten (elevationFrom/To,
+      //    numCycleCrossings), plus flow-afhankelijke kolommen (fromRightLinkId,
+      //    oppositeLinkId, fromRightFlow, oppositeFlow, fromLeftFlow,
+      //    leftTurnRatio, rightTurnRatio, roadWidthM) als deze beschikbaar
+      //    zijn. Zie docs/plan-snelheid-strafseconden.md.
+      const penMap = new Map();
+      const hasFromRight   = _speedHasAnySegmentWith(k => k === 'fromRightLinkId');
+      const hasFromLeft    = _speedHasAnySegmentWith(k => k === 'fromLeftFlow');
+      const hasOpposite    = _speedHasAnySegmentWith(k => k === 'oppositeLinkId');
+      const hasTurnRatio   = _speedHasAnySegmentWith(k => k === 'leftTurnRatio' || k === 'rightTurnRatio');
+      const hasRoadWidth   = _speedHasAnySegmentWith(k => k === 'roadWidthM');
+      const hasElevation   = _speedHasAnySegmentWith(k => k === 'elevationFrom' || k === 'elevationTo');
+      const hasCycleCross  = _speedHasAnySegmentWith(k => k === 'numCycleCrossings');
+
+      for (const f of geojson.features) {
+        const p = f.properties;
+        const linkId = p.linkId;
+        const flags = flagMap.get(linkId) || {};
+
+        const zebra  = flags.zebra  || ('numPedestrianCrossings' in p && (p.numPedestrianCrossings || 0) > 0) ? SPEED_PENALTY_SEC.zebra  : 0;
+        const cycleX = hasCycleCross && ((p.numCycleCrossings || 0) > 0 || (p.numCyclePaths || 0) > 0) ? SPEED_PENALTY_SEC.zebra : 0; // zelfde orde als zebra
+        const signal = flags.signal || ('trafficSignal' in p && p.trafficSignal === true) ? SPEED_PENALTY_SEC.signal : 0;
+        const yieldS = flags.yield  || (('numGiveWays' in p && (p.numGiveWays || 0) > 0) || ('numStoppingLanes' in p && (p.numStoppingLanes || 0) > 0)) ? SPEED_PENALTY_SEC.yield  : 0;
+        const stop   = flags.stop   ? SPEED_PENALTY_SEC.stop   : 0;
+        const refuge = flags.refuge || ('numRefugeAreas' in p && (p.numRefugeAreas || 0) > 0) ? SPEED_PENALTY_SEC.refuge : 0;
+        const elevation = hasElevation ? _speedElevationPenaltySec(p) : 0;
+
+        // Flow-afhankelijke componenten (fase 3 + fase 4). De kalibratie-
+        // constanten zijn voorlopige startwaarden; zie plan.
+        const k_rechts      = 3 / 600;   // verkeer van rechts: ≈ 3 sec bij 600 veh/24h
+        const k_links       = 4 / 800;   // linksaf-hinder: ≈ 4 sec bij 800 veh/24h
+        const k_rechts_af   = 1 / 800;   // rechtsaf-hinder: marginaal, ≈ 1 sec bij 800 veh/24h
+        const k_oncoming    = 2 / 600;   // tegenliggerhinder op smalle weg
+
+        // Verkeer-van-rechts-straf geldt alleen bij een ongeregeld knooppunt
+        // (uncontrolled). Bij verkeerslicht, voorrangsweg of rotonde is deze
+        // straf niet van toepassing (wordt via andere componenten afgevangen).
+        const uncontrolledTo = p.nodeControlTo === 'uncontrolled';
+        const fromRightFlow = hasFromRight && uncontrolledTo && p.fromRightLinkId != null
+          ? _speedConflictFlow(p.fromRightLinkId) : 0;
+        const fromRight = Math.round(fromRightFlow * k_rechts * 10) / 10;
+
+        // Linksaf kruist zowel tegenliggers als verkeer van links;
+        // rechtsaf alleen verkeer van links. Beide worden gewogen door het
+        // daadwerkelijke aandeel afslaand verkeer op de toNode.
+        const leftRatio  = hasTurnRatio && p.leftTurnRatio  != null ? p.leftTurnRatio  : 0;
+        const rightRatio = hasTurnRatio && p.rightTurnRatio != null ? p.rightTurnRatio : 0;
+        const fromLeft   = hasFromLeft && p.fromLeftLinkId != null ? _speedConflictFlow(p.fromLeftLinkId) : 0;
+        const opposite   = hasOpposite && p.oppositeLinkId != null ? _speedConflictFlow(p.oppositeLinkId) : 0;
+        const leftTurn  = Math.round((opposite + fromLeft) * k_links * leftRatio * 10) / 10;
+        const rightTurn = Math.round(fromLeft * k_rechts_af * rightRatio * 10) / 10;
+
+        // Tegenliggerhinder (fase 4): smalle weg zonder middenscheiding.
+        // roadWidthM wordt geinterpreteerd als rijstrookbreedte per richting;
+        // effectieve breedte = roadWidthM * lanes * 2.
+        // Fallback: geen middenscheiding aannemen. TODO: vervangen zodra
+        // hasCenterSeparation geleverd wordt.
+        let oncoming = 0;
+        if (hasRoadWidth && p.roadWidthM != null) {
+          const narrowThreshold = 5.5;   // m, onder deze breedte wordt het krap
+          const effectiveWidth = _speedEffectiveRoadWidth(p);
+          const widthShortage = Math.max(0, narrowThreshold - effectiveWidth);
+          const oncomingFlow = hasOpposite && p.oppositeLinkId != null ? _speedConflictFlow(p.oppositeLinkId) : 0;
+          oncoming = Math.round(widthShortage * oncomingFlow * k_oncoming * 10) / 10;
+        }
+
+        const total = zebra + cycleX + signal + yieldS + stop + refuge + elevation + fromRight + leftTurn + rightTurn + oncoming;
+        penMap.set(linkId, {
+          zebra, cycleX, signal, yield: yieldS, stop, refuge, elevation,
+          fromRight, leftTurn, rightTurn, oncoming, total
+        });
+      }
+      penaltyByLinkId = penMap;
+      _speedLayersVersion++;
+    }
+
+    // Initiële opbouw van Snelheid-lagen direct op basis van het netwerk —
+    // de variabelen nodeControlMap/speedLinkFlags/penaltyByLinkId zijn nu
+    // gedeclareerd, dus dit kan veilig.
+    rebuildSpeedLayers();
+
+    // Zone-data laden: fromNodeProportions / toNodeProportions
+    setLoaderMsg(T('loaderZones'));
+    const zoneMap = new Map();   // zoneId → { from: {nodeId: prop}, to: {nodeId: prop} }
+    let zoneFeaturesRaw = [];    // alle zone-features (voor node-laag)
+    try {
+      const zoneData = await _zFetch;
+      if (zoneData) {
+        zoneFeaturesRaw = zoneData.features || [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties;
+          if (p.zoneId) zoneMap.set(p.zoneId, {
+            from:       p.fromNodeProportions || {},
+            to:         p.toNodeProportions   || {},
+            boundary:   p.zoneClass === 'BOUNDARY',
+            production: p.production          || 0,   // veh/u voor dit dagdeel
+          });
+        }
+        console.info(`Zones geladen: ${zoneMap.size}`);
+      }
+    } catch (e) { console.info('Zone-bestand niet beschikbaar:', e.message); }
+
+    // Voedingslinks laden: de authoritative connector tussen zone-centroïde en
+    // het echte wegennet (apart FEEDLINK-bestand — niet af te leiden uit
+    // route.linkIds, want voedingslink-IDs zitten niet in het NETWERK-bestand
+    // en dus ook niet in linkGeomMap). Per zone max. 1 productie- + 1 attractie-
+    // richting; welke is welke wordt bepaald via capacity-match met de zone's
+    // eigen productie/attractie-waarde (zie gmt_network_core.feedlink_fetcher).
+    const feedLinkByZone = new Map();  // zoneId → { production: coords|null, attraction: coords|null }
+    try {
+      const feedData = await _flFetch;
+      if (feedData?.features?.length) {
+        const zonePropsById = new Map(zoneFeaturesRaw.map(f => [f.properties?.zoneId, f.properties]));
+        for (const f of feedData.features) {
+          const p = f.properties || {};
+          const zId = p.zoneId;
+          if (!zId || f.geometry?.type !== 'LineString' || !f.geometry.coordinates?.length) continue;
+          const zp = zonePropsById.get(zId);
+          const cap = p.capacity ?? 0;
+          const isProduction = zp
+            ? Math.abs(cap - (zp.production ?? 0)) <= Math.abs(cap - (zp.attraction ?? 0))
+            : true;
+          const entry = feedLinkByZone.get(zId) ?? { production: null, attraction: null };
+          entry[isProduction ? 'production' : 'attraction'] = f.geometry.coordinates;
+          feedLinkByZone.set(zId, entry);
+        }
+        console.info(`Voedingslinks geladen: ${feedLinkByZone.size} zones`);
+      }
+    } catch (e) { console.info('Voedingslinken-bestand niet beschikbaar:', e.message); }
+
+    // Koppel gebouwen aan zones zodra zone-geometrie beschikbaar is
+    _zonesForJoin = zoneFeaturesRaw;
+    _tryZoneJoin();
+
+    /** Kies gewogen willekeurig een nodeId uit een proporties-object */
+    function pickNode(proportions) {
+      const entries = Object.entries(proportions);
+      if (!entries.length) return null;
+      const total = entries.reduce((s, [, v]) => s + v, 0);
+      let r = Math.random() * total;
+      for (const [k, v] of entries) { r -= v; if (r <= 0) return parseInt(k); }
+      return parseInt(entries[entries.length - 1][0]);
+    }
+
+    /**
+     * Dijkstra van source → target langs het netwerk.
+     * Geeft array van link-segmenten terug: [{ coords, length, speedMs }, ...]
+     * of null als onbereikbaar. Resultaten worden gecached.
+     */
+    const dijkstraCache = new Map();
+    function dijkstraPath(source, target, vehicleMode) {
+      if (source === target) return [];
+      const key = MODE === 'MIXED' ? `${vehicleMode ?? ''}:${source}→${target}` : `${source}→${target}`;
+      if (dijkstraCache.has(key)) return dijkstraCache.get(key);
+
+      const dist = new Map([[source, 0]]);
+      const prev = new Map();
+      const open = [[0, source]];
+
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        if (u === target) break;
+        for (const e of (adj.get(u) || [])) {
+          if (vehicleMode && e.linkMode && e.linkMode !== vehicleMode) continue;
+          const nd = d + e.length;
+          if (nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            prev.set(e.toNode, { via: u, coords: e.coords, speedMs: e.speedMs });
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+
+      if (!prev.has(target)) { dijkstraCache.set(key, null); return null; }
+
+      // Bouw de lijst van link-segmenten op (van achter naar voor)
+      const segs = [];
+      let cur = target;
+      while (prev.has(cur)) {
+        const { via, coords, speedMs } = prev.get(cur);
+        segs.unshift({ coords, speedMs, toNode: cur });
+        cur = via;
+      }
+      dijkstraCache.set(key, segs);
+      return segs;
+    }
+
+    /**
+     * Single-source Dijkstra vanuit startNode.
+     * Stopt zodra alle bereikbare knopen binnen maxDistM zijn bezocht.
+     * Geeft Map<nodeId, distanceM> terug.
+     */
+    function dijkstraDistances(startNode, maxDistM) {
+      const dist = new Map([[startNode, 0]]);
+      const open = [[0, startNode]];
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > maxDistM) break;
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        for (const e of (adj.get(u) || [])) {
+          const nd = d + e.length;
+          if (nd <= maxDistM && nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+      return dist;
+    }
+
+    /**
+     * Dijkstra met padreconstructie.
+     * Geeft { dist: Map<node,m>, prev: Map<node,{fromNode,linkId}> }
+     */
+    function dijkstraWithPaths(startNode, maxDistM, adjMap = adj) {
+      const dist = new Map([[startNode, 0]]);
+      const prev = new Map();           // node → { fromNode, linkId }
+      const open = [[0, startNode]];
+      while (open.length) {
+        open.sort((a, b) => a[0] - b[0]);
+        const [d, u] = open.shift();
+        if (d > maxDistM) break;
+        if (d > (dist.get(u) ?? Infinity)) continue;
+        for (const e of (adjMap.get(u) || [])) {
+          const nd = d + e.length;
+          if (nd <= maxDistM && nd < (dist.get(e.toNode) ?? Infinity)) {
+            dist.set(e.toNode, nd);
+            prev.set(e.toNode, { fromNode: u, linkId: e.linkId });
+            open.push([nd, e.toNode]);
+          }
+        }
+      }
+      return { dist, prev };
+    }
+
+    /** Reconstrueer een lijst van linkIds van startNode naar targetNode via prev-map. */
+    function _reconstructLinkPath(prev, startNode, targetNode) {
+      const links = [];
+      let cur = targetNode;
+      let safety = 2000;
+      while (cur !== startNode && safety-- > 0) {
+        const p = prev.get(cur);
+        if (!p) return null;          // geen pad gevonden
+        if (p.linkId != null) links.push(p.linkId);
+        cur = p.fromNode;
+      }
+      return links.reverse();
+    }
+
+    /**
+     * Zoek de nodeId die geografisch het dichtst bij (lon, lat) ligt
+     * én aanwezig is in nodeDistMap. Geeft { nodeId, distM } of null.
+     */
+    function _nearestReachableNode(lon, lat, nodeDistMap) {
+      let bestNode = null, bestGeo = Infinity;
+      for (const [nodeId] of nodeDistMap) {
+        const c = nodeCoords.get(nodeId);
+        if (!c) continue;
+        const dx = (c[0] - lon) * 80000;   // ~m per degree lon (BE)
+        const dy = (c[1] - lat) * 111000;  // ~m per degree lat
+        const geo = dx * dx + dy * dy;
+        if (geo < bestGeo) { bestGeo = geo; bestNode = nodeId; }
+      }
+      return bestNode ? { nodeId: bestNode, distM: nodeDistMap.get(bestNode) } : null;
+    }
+
+    /** EXTERNAL highway-types die Groep B bepalen */
+    const _EXTERNAL_HW = new Set([
+      'motorway','motorway_link','trunk','trunk_link','primary','primary_link'
+    ]);
+
+    /**
+     * Schat de motiefverdeling voor een link zonder route-data.
+     * Combineert:
+     *   Groep A – Top-20 zones (intern + EXTERN) op basis van Dijkstra-afstand
+     *   Groep B – EXTERNAL zones waarvan centroid dicht bij een hoofdweg-link ligt
+     * Geeft Map<motief, gewogenFlow> of null als niets gevonden.
+     */
+    function estimatePurposeFlowForLink(linkId) {
+      const nlm = nodeLinkMap.get(linkId) ?? nodeLinkMap.get(Number(linkId));
+      if (!nlm) return null;
+
+      const nodeDistMap = dijkstraDistances(nlm.fromNode, 15000);
+      if (nodeDistMap.size < 2) return null;
+
+      // ── Groep B: EXTERNAL zones bij een hoofdweg-link ──────────────────────
+      const externalMainNodes = new Set();
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!p) continue;
+        const hw = p.highway ?? p.linkType ?? p.road_type ?? '';
+        if (!_EXTERNAL_HW.has(hw)) continue;
+        // Neem fromNode/toNode van dit wegvak als potentieel zone-koppelknoop
+        const lnm = nodeLinkMap.get(p.linkId) ?? nodeLinkMap.get(Number(p.linkId));
+        if (lnm) { externalMainNodes.add(lnm.fromNode); externalMainNodes.add(lnm.toNode); }
+      }
+
+      // ── Alle zones rangschikken op afstand ──────────────────────────────────
+      const zoneScores = [];
+      for (const f of zoneFeaturesRaw) {
+        const p = f.properties;
+        if (!p?.zoneId) continue;
+        const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+        const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+        if (lon == null || lat == null) continue;
+
+        const nr = _nearestReachableNode(lon, lat, nodeDistMap);
+        if (!nr) continue;
+
+        const isExternal = p.zoneClass === 'EXTERNAL';
+        const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
+        const distKm     = nr.distM / 1000;
+        const weight     = (p.production || 0) / (1 + distKm * distKm);
+
+        zoneScores.push({ zoneId: p.zoneId, weight, isGroupB });
+      }
+
+      if (!zoneScores.length) return null;
+
+      // Groep A: top 20 op weight
+      zoneScores.sort((a, b) => b.weight - a.weight);
+      const selectedZones = new Set(zoneScores.slice(0, 20).map(z => z.zoneId));
+      // Groep B: EXTERNAL zones bij hoofdwegen (altijd toevoegen)
+      for (const z of zoneScores) { if (z.isGroupB) selectedZones.add(z.zoneId); }
+
+      // ── Aggregeer motifRatio van matching routes ────────────────────────────
+      const purposeFlow = new Map();
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+
+      for (const route of routeList) {
+        if (!selectedZones.has(route.fromZoneId)) continue;
+        if (!route.motifRatio) continue;
+        const zs = zoneScores.find(z => z.zoneId === route.fromZoneId);
+        const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0) * (zs ? zs.weight : 1);
+        for (const [m, ratio] of Object.entries(route.motifRatio)) {
+          purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + flow * ratio);
+        }
+      }
+
+      return purposeFlow.size > 0 ? purposeFlow : null;
+    }
+
+    /**
+     * Schat route-paden voor een link zonder route-data via Dijkstra.
+     * Geeft { pathData, flowByFromZone, flowByToZone } — zelfde structuur als computeLinkRouteData.
+     * pathData-items hebben extra veld `estimated: true`.
+     */
+    function computeEstimatedLinkRouteData(linkId) {
+      const nlm = nodeLinkMap.get(linkId) ?? nodeLinkMap.get(Number(linkId));
+      if (!nlm) return { pathData: [], flowByFromZone: new Map(), flowByToZone: new Map() };
+
+      // Dijkstra vanuit fromNode op reverse graph (productiekant: zones → fromNode)
+      const { dist: distFwd, prev: prevFwd } = dijkstraWithPaths(nlm.fromNode, 25000, adjReverse);
+      // Dijkstra vanuit toNode op forward graph (attractiekant: toNode → zones)
+      const { dist: distBwd, prev: prevBwd } = dijkstraWithPaths(nlm.toNode,   25000, adj);
+
+      // ── Groep B: EXTERNAL zones bij hoofdwegen ──────────────────────────────
+      const externalMainNodes = new Set();
+      for (const f of geojson.features) {
+        const p = f.properties;
+        if (!p) continue;
+        const hw = p.highway ?? p.linkType ?? p.road_type ?? '';
+        if (!_EXTERNAL_HW.has(hw)) continue;
+        const lnm = nodeLinkMap.get(p.linkId) ?? nodeLinkMap.get(Number(p.linkId));
+        if (lnm) { externalMainNodes.add(lnm.fromNode); externalMainNodes.add(lnm.toNode); }
+      }
+
+      // ── Helper: score zones gegeven een distMap en gewichtskolom ───────────
+      function scoreZones(distMap, weightKey) {
+        const scores = [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties;
+          if (!p?.zoneId) continue;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) continue;
+          const nr = _nearestReachableNode(lon, lat, distMap);
+          if (!nr) continue;
+          const isExternal = p.zoneClass === 'EXTERNAL';
+          const isGroupB   = isExternal && externalMainNodes.has(nr.nodeId);
+          const distKm     = nr.distM / 1000;
+          const wVal       = (p[weightKey] || p.production || 1);
+          const weight     = wVal / (1 + distKm * distKm);
+          scores.push({ zoneId: p.zoneId, lon, lat, nr, weight, isGroupB,
+                        production: p.production || 0, attraction: p.attraction || 0 });
+        }
+        scores.sort((a, b) => b.weight - a.weight);
+        const selected = new Set(scores.slice(0, 20).map(z => z.zoneId));
+        for (const z of scores) { if (z.isGroupB) selected.add(z.zoneId); }
+        return { scores, selected };
+      }
+
+      // ── Bouw paden voor één richting ────────────────────────────────────────
+      function buildPaths(scores, selected, prev, anchorNode, flowKey, color, flowByZone, reverseOrder = false) {
+        const dpFrac   = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+        const maxW     = scores[0]?.weight ?? 1;
+        let count = 0;
+        for (const z of scores) {
+          if (!selected.has(z.zoneId)) continue;
+          const linkPath = _reconstructLinkPath(prev, anchorNode, z.nr.nodeId);
+          if (!linkPath || !linkPath.length) continue;
+          // Bij reverse Dijkstra zit de volgorde omgekeerd door de built-in reverse() in
+          // _reconstructLinkPath: nog een keer omdraaien geeft de juiste zone→anchorNode volgorde.
+          if (reverseOrder) linkPath.reverse();
+          const coords = [];
+          for (const lid of linkPath) {
+            const geom = linkGeomMap.get(lid) ?? linkGeomMap.get(Number(lid));
+            if (geom) for (const c of geom) coords.push(c);
+          }
+          if (coords.length < 2) continue;
+          const flow = (z.weight / maxW) * dpFrac * (z[flowKey] || 1);
+          pathData.push({ coords, flow, color, zoneId: z.zoneId });
+          flowByZone.set(z.zoneId, (flowByZone.get(z.zoneId) ?? 0) + flow);
+          count++;
+        }
+        return count;
+      }
+
+      const pathData       = [];
+      const flowByFromZone = new Map();
+      const flowByToZone   = new Map();
+
+      // Productiekant: zones → fromNode via reverse graph (oranje)
+      const { scores: prodScores, selected: prodSel } = scoreZones(distFwd, 'production');
+      const nProd = buildPaths(prodScores, prodSel, prevFwd, nlm.fromNode,
+                               'production', [255, 120, 0, 200], flowByFromZone, true);
+
+      // Attractiekant: toNode → attractiezones via forward graph (cyaan)
+      const { scores: attrScores, selected: attrSel } = scoreZones(distBwd, 'attraction');
+      const nAttr = buildPaths(attrScores, attrSel, prevBwd, nlm.toNode,
+                               'attraction', [0, 210, 255, 200], flowByToZone, false);
+
+      console.log('[Dijkstra] linkId:', linkId,
+        '| productie:', nProd, '/', prodSel.size,
+        '| attractie:', nAttr, '/', attrSel.size,
+        '| pathData totaal:', pathData.length);
+      return { pathData, flowByFromZone, flowByToZone };
+    }
+
+    setLoaderMsg(T('loaderRoutes'));
+    let routeMode        = false;
+    let routeList        = [];
+    let totalRouteWeight = 1;
+
+    /**
+     * Parst een routes-GeoJSON en voegt routes toe aan routeList.
+     * Gebruikt het volledige linkPath; voedingslinks die niet in linkGeomMap staan
+     * worden gefilterd. Geen N_SKIP-trim, geen Dijkstra aanloop/uitloop.
+     * @param {object|null} routesFc    - GeoJSON FeatureCollection met routes (null → skip)
+     * @param {string}      vehicleMode - 'CAR' | 'BIKE' | 'PEDESTRIAN' of MODE
+     */
+    function _parseAndAddRoutes(routesFc, vehicleMode) {
+      if (!routesFc?.features) return;
+      // linkId → lengte (m); -1 = niet in linkGeomMap / < 2 coördinaten.
+      // Voorgevuld met de segmentlengtes (meestal het `length`-attribuut uit het netwerkbestand).
+      const linkLenCache = new Map();
+      for (const seg of segments) {
+        if (seg.coords?.length >= 2) linkLenCache.set(seg.props.linkId, seg.length);
+      }
+      // Pass 1: bereken zone-totaal én OD-totaal voor de isAbsolute-detectie
+      const zoneTripSumMap = new Map(); // fromZoneId → totaal r.trips
+      const odTripSumMap   = new Map(); // "from_to"  → totaal r.trips voor dit OD-paar
+      for (const feat of routesFc.features) {
+        const fz  = feat.properties.fromZoneId;
+        const tz  = feat.properties.toZoneId;
+        const key = `${fz}_${tz}`;
+        for (const r of feat.properties.routes ?? []) {
+          const t = r.trips ?? 0;
+          zoneTripSumMap.set(fz, (zoneTripSumMap.get(fz) ?? 0) + t);
+          odTripSumMap.set(key,  (odTripSumMap.get(key)  ?? 0) + t);
+        }
+      }
+      for (const feat of routesFc.features) {
+        const routes     = feat.properties.routes;
+        const fromZoneId = feat.properties.fromZoneId;
+        const toZoneId   = feat.properties.toZoneId;
+        if (!routes) continue;
+        const zoneSum    = zoneTripSumMap.get(fromZoneId) ?? 1;
+        const isAbsolute = zoneSum > 1.5;
+        const odKey      = `${fromZoneId}_${toZoneId}`;
+        const odSum      = odTripSumMap.get(odKey) ?? 0;
+
+        // originProduction: absolute dagproductie van de herkomstzone (veh/dag)
+        // tripFraction: aandeel van de productie dat naar deze bestemming gaat
+        const originProd = feat.properties.originProduction ?? (isAbsolute ? zoneSum : 0);
+        const tripFrac   = feat.properties.tripFraction
+                         ?? (isAbsolute && zoneSum > 0 ? odSum / zoneSum : odSum);
+
+        for (const r of routes) {
+          if (!r.linkPath || !r.linkPath.length) continue;
+          // Gebruik het volledige linkPath; filter op aanwezigheid in linkGeomMap
+          // Normaliseer linkPath IDs naar het type dat linkGeomMap gebruikt:
+          // - string-keyed maps (bijv. Vreden: linkId is large_string met _N-suffix)
+          // - number-keyed maps (bijv. Hasselt: linkId is int64)
+          const linkIds = [];
+          let totalLen  = 0;
+          for (const raw of r.linkPath) {
+            const id = linkGeomMap.has(raw) ? raw : parseInt(raw);
+            // Linklengte één keer per link berekenen (haversine over alle
+            // coördinaten), niet opnieuw voor elke route die de link gebruikt.
+            let len = linkLenCache.get(id);
+            if (len === undefined) {
+              const c = linkGeomMap.get(id);
+              len = c?.length >= 2 ? segmentLength(c) : -1;  // -1 = geen bruikbare geometrie
+              linkLenCache.set(id, len);
+            }
+            if (len < 0) continue;
+            linkIds.push(id);
+            totalLen += len;
+          }
+          if (!linkIds.length) continue;
+          if (totalLen < 30) continue;
+          routeList.push({
+            linkIds,
+            fromZoneId,
+            toZoneId,
+            originProduction: originProd,
+            tripFraction:     tripFrac,
+            weight:           isAbsolute ? r.trips / zoneSum : r.trips,
+            vehicleMode,
+            motifRatio:       feat.properties.motifRatio ?? null,
+          });
+        }
+      }
+    }
+
+    const _tPost = performance.now();
+    try {
+      if (MODE === 'MIXED') {
+        const [carFc, bikeFc] = await _rtFetch;
+        const _tP0 = performance.now();
+        _parseAndAddRoutes(carFc,  'CAR');
+        _parseAndAddRoutes(bikeFc, 'BIKE');
+        console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
+      } else {
+        const routesFc = await _rtFetch;
+        if (!routesFc) throw new Error('geen data');
+        const _tP0 = performance.now();
+        _parseAndAddRoutes(routesFc, MODE);
+        console.log('[perf] _parseAndAddRoutes:', (performance.now() - _tP0).toFixed(0), 'ms');
+      }
+      totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
+      routeMode = routeList.length > 0;
+      const _tBlrm = performance.now();
+      buildLinkRouteMap();
+      console.log('[perf] buildLinkRouteMap:', (performance.now() - _tBlrm).toFixed(0), 'ms | routes:', routeList.length);
+      if (routeMode) {
+        document.getElementById('odEditBtn').style.display   = '';
+      }
+    } catch (e) {
+      console.info('Routes-bestand niet beschikbaar, segment-modus actief:', e.message);
+    }
+
+    // ── 4. Applicatiestatus ─────────────────────────────────────────────────
+     let zoneCentroidMode = 'off';   // 'off' | 'production' | 'attraction'
+     let selectedZoneId   = null;    // zoneId van geselecteerde zone (voor route-highlight)
+     let hoveredZoneId    = null;    // zoneId onder de cursor (bijgehouden via onHover)
+     let hoveredOdArrowZoneId   = null; // counterpartId van de OD-pijl onder de cursor (via onHover)
+     let highlightedOdZoneId   = null; // counterpartId van de "vastgeklikte" OD-pijl: dimt overige pijlen/routes
+    // daypart is declared near updateSunLight() (above) to avoid TDZ in async IIFE
+    const _tRlfm = performance.now();
+    rebuildLinkFlowMap();  // daypart is beschikbaar (gedeclareerd bovenaan)
+    console.log('[perf] rebuildLinkFlowMap:', (performance.now() - _tRlfm).toFixed(0), 'ms');
+    const _tCal = performance.now();
+    calibrateRouteProductions();  // IPF-kalibratie tegen gemeten link-flows (actief dagdeel)
+    console.log('[perf] calibrateRouteProductions:', (performance.now() - _tCal).toFixed(0), 'ms');
+    console.log('[perf] TOTAL post-routes sync:', (performance.now() - _tPost).toFixed(0), 'ms');
+    let widthScale = false;
+    let colorMetric = 'flow';
+
+    // ── Afgeleide lagen (geluid / emissie) ────────────────────────────────────
+    // Deze worden niet in het NETWORK-bestand meegeleverd, maar los opgehaald via
+    // /collections/noise|emission/items en op linkId gejoind met de netwerk-props.
+    /** Map linkId → geluid-props ({noiseLden, noiseLnight, …}); null = nog niet geladen. */
+    let noiseByLinkId = null;
+    /** Map linkId → emissie-props ({co2Kg, noxKg, pm10Kg, length, …}); null = nog niet geladen. */
+    let emisByLinkId = null;
+
+    /** Haal de afgeleide laag ('noise' of 'emission') op en vul de bijbehorende
+     *  linkId-lookup. Idempotent: doet niets als de map al gevuld is. */
+    async function ensureDerivedLayer(kind) {
+      const already = kind === 'noise' ? noiseByLinkId : emisByLinkId;
+      if (already) return already;
+      const url = `/collections/${kind}/items?areaId=${AREA_ID}&mode=${MODE}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${kind} laden mislukt: ${r.status} ${r.statusText}`);
+      const fc = await r.json();
+      const m = new Map();
+      for (const f of (fc.features || [])) {
+        const p = f.properties || {};
+        if (p.linkId != null) m.set(p.linkId, p);
+      }
+      if (kind === 'noise') noiseByLinkId = m; else emisByLinkId = m;
+      return m;
+    }
+
+    /** Metric-ids die een afgeleide laag vereisen → welke laag ('noise'/'emission'). */
+    const DERIVED_METRIC_KIND = {
+      noise_lden:   'noise',
+      noise_lnight: 'noise',
+      emis_co2:     'emission',
+      emis_nox:     'emission',
+      emis_pm10:    'emission',
+    };
+
+    /** Metrieken waarvoor de verschilplot (Δ) beschikbaar is.
+     *  Geschaalde varianten (_scaled) vallen hier buiten: daar werkt het niet op.
+     *  Veiligheid (categorisch), spectrum/compare/none vallen ook buiten. */
+    const DIFF_SUPPORTED = new Set([
+      'flow', 'occupancy', 'coverage', 'speed', 'capacity',
+      'noise_lden', 'noise_lnight', 'emis_co2', 'emis_nox', 'emis_pm10',
+    ]);
+
+    /** Metrieken die optelbaar zijn → de gestapelde plot (Δ▤, grijze kern + gekleurde
+     *  rand) is fysiek zinvol. Verhoudingen (I/C, bezetting), snelheid en het
+     *  logaritmische geluid (dB) vallen hier buiten: alleen de gewone deltaplot. */
+    const DIFF_ADDITIVE = new Set([
+      'flow', 'capacity', 'emis_co2', 'emis_nox', 'emis_pm10',
+    ]);
+
+    /** Metrieken waarbij een TOENAME een verbetering is (blije smiley). Voor alle
+     *  overige DIFF_SUPPORTED-metrieken geldt: een AFNAME is de verbetering. */
+    const DIFF_HIGHER_IS_BETTER = new Set([
+      'speed', 'capacity',
+    ]);
+
+    // ── Wegenscan state ───────────────────────────────────────────────────────
+    /** GeoJSON van het WEGENSCAN-bestand; null als nog niet geladen. */
+    let wegenscanData = null;
+    /** Map van linkId (string) → safety-properties object */
+    let wegenscanByLinkId = new Map();
+    /** deck.gl layer-id voor de wegenscan-overlay */
+    const WS_SOURCE = 'wegenscan-src';
+    const WS_LAYER  = 'wegenscan-layer';
+
+    /** Veiligheidskleur (RGBA) voor een generic_safety waarde */
+    function safetyToRgba(score) {
+      switch (score) {
+        case 'GOED':     return [56,  142,  60, 220];   // groen
+        case 'REDELIJK': return [251, 192,  45, 220];   // geel
+        case 'MATIG':    return [230, 120,  20, 220];   // oranje
+        case 'SLECHT':   return [198,  40,  40, 220];   // rood
+        default:         return [90,  90,  110, 160];   // grijs (NVT/onbekend)
+      }
+    }
+
+
+    /** Kleur (hex) per KPI-score voor het zijpaneel */
+    function kpiColor(score) {
+      return { GOED:'#388e3c', REDELIJK:'#fbc02d', MATIG:'#e65100', SLECHT:'#c62828' }[score] ?? '#5a6272';
+    }
+
+    /** Indeling van de KPI's in het Veiligheid-panel (kaartlaag 'safety:<kpi>'). */
+    const SAFETY_KPI_GROUPS = [
+      { labelKey: 'safetyGroupRoad', kpis: ['r_functional_usage', 'r_longitudinal_marking', 'r_directional_separation',
+        'r_lane_width', 'r_road_width', 'r_road_surface', 'r_speed_bumps', 'r_roadside_damage'] },
+      { labelKey: 'safetyGroupPedestrian', kpis: ['r_pedestrian_facility', 'r_pedestrian_width', 'r_pedestrian_crossing'] },
+      { labelKey: 'safetyGroupBicycle', kpis: ['r_bicycle_facility', 'r_bicycle_width', 'r_bicycle_crossing',
+        'r_bike_speed', 'r_bike_usage', 'r_bike_parking'] },
+      { labelKey: 'safetyGroupParkingBus', kpis: ['r_parking_facility', 'r_parking_location', 'r_bus_stop_facility', 'r_bus_location'] },
+      { labelKey: 'safetyGroupOther', kpis: ['r_social_interaction'] },
+    ];
+
+    /** Alle KPI's in panelvolgorde; naam via T('kpi_<key>'). */
+    const KPI_KEYS = SAFETY_KPI_GROUPS.flatMap(g => g.kpis);
+    const kpiLabel = key => T('kpi_' + key);
+
+    /** Veiligheidslaag: het totaal ('safety') of één KPI ('safety:<kpi>'). */
+    function isSafetyMetric(metric) {
+      return metric === 'safety' || (typeof metric === 'string' && metric.startsWith('safety:'));
+    }
+
+    /** Wegenscan-score (GOED/REDELIJK/MATIG/SLECHT/NVT) van een link voor de gegeven veiligheidslaag. */
+    function safetyScoreOf(linkId, metric) {
+      const ws = wegenscanByLinkId.get(String(linkId));
+      if (!ws) return null;
+      return metric === 'safety' ? ws.generic_safety : ws.safety?.[metric.slice('safety:'.length)];
+    }
+
+    /** Naam van een veiligheidslaag (totaal of KPI). */
+    function safetyMetricLabel(metric) {
+      return metric === 'safety' ? T('legendSafety') : kpiLabel(metric.slice('safety:'.length));
+    }
+
+    // KPI-radio's in het Veiligheid-panel en bijbehorende opties in #colorMetric
+    // genereren (de radio↔select-koppeling vereist dat elke waarde een optie is).
+    (function buildSafetyKpiControls() {
+      const body = document.getElementById('lmpSafetyBody');
+      const select = document.getElementById('colorMetric');
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = 'Veiligheid';
+      for (const group of SAFETY_KPI_GROUPS) {
+        const head = document.createElement('div');
+        head.className = 'lmp-subhead';
+        head.dataset.i18n = group.labelKey;
+        head.textContent = T(group.labelKey);
+        body?.appendChild(head);
+        for (const kpi of group.kpis) {
+          const label = document.createElement('label');
+          label.className = 'lmp-radio-row';
+          label.innerHTML = `<input type="radio" name="lmpMetric" value="safety:${kpi}"> <span data-i18n="kpi_${kpi}">${kpiLabel(kpi)}</span>`;
+          body?.appendChild(label);
+          const opt = document.createElement('option');
+          opt.value = `safety:${kpi}`;
+          opt.dataset.i18n = `kpi_${kpi}`;
+          opt.textContent = kpiLabel(kpi);
+          optgroup.appendChild(opt);
+        }
+      }
+      select?.querySelector('#safetyOption')?.after(optgroup);
+      syncLayerPanels();
+    })();
+
+    /** Laad WEGENSCAN-GeoJSON van de server, bouw lookupMap op. */
+    async function loadWegenscanData() {
+      const url = `/collections/wegenscan/items?areaId=${AREA_ID}&mode=${MODE}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.statusText);
+      wegenscanData = await r.json();
+      wegenscanByLinkId.clear();
+      for (const f of (wegenscanData.features ?? [])) {
+        const p = f.properties ?? {};
+        const id = p.linkId ?? p.spectrumId;
+        if (id != null) wegenscanByLinkId.set(String(id), p);
+      }
+      console.log('[wegenscan] geladen:', wegenscanByLinkId.size, 'features');
+      renderWegenscanCoverage();
+    }
+
+    // ── Wegenscan-invoer: waarde + bron per veld ─────────────────────────────
+    // `in` = sleutel in wegenscan_invoer (waarmee gerekend is), `src` = sleutel
+    // in wegenscan_sources. Velden zonder src hebben nooit een databron.
+    const WS_INPUT_ROWS = [
+      { in: 'r_category',              src: 'road_category',       labelKey: 'wsInCategory' },
+      { in: 'r_speed',                 src: 'max_speed_s85',       labelKey: 'wsInSpeed',  fmt: v => `${v} km/h` },
+      { in: 'r_width',                 src: 'width',               labelKey: 'wsInWidth',  fmt: v => `${Number(v).toFixed(1)} m` },
+      { in: 'r_surface',               src: 'surface',             labelKey: 'wsInSurface' },
+      { in: 'r_flow',                  src: 'flow',                labelKey: 'wsInFlow',   fmt: v => `${Math.round(v)}` },
+      { in: 'r_profile',               src: 'profile',             labelKey: 'wsInProfile' },
+      { in: 'r_bicycle_location',      src: 'bicycle_location',    labelKey: 'wsInBicycle' },
+      { in: 'r_pedestrian_location',   src: 'pedestrian_location', labelKey: 'wsInPedestrian' },
+      { in: 'r_pedestrian_crossing',   src: 'pedestrian_crossing', labelKey: 'wsInPedCrossing' },
+      { in: 'r_parking_location',      src: 'parking_location',    labelKey: 'wsInParking' },
+      { in: 'r_speed_bumps',           src: 'speed_bumps',         labelKey: 'wsInSpeedBumps' },
+      { in: 'r_longitudinal_markings',                             labelKey: 'wsInMarkings' },
+      { in: 'r_separation',                                        labelKey: 'wsInSeparation' },
+      { in: 'r_bus_facility',                                      labelKey: 'wsInBus' },
+      { in: 'r_social_interaction',                                labelKey: 'wsInSocial' },
+    ];
+    /** Velden in de dekkingsregel (volgorde = belang voor de score). */
+    const WS_COVERAGE_ROWS = ['road_category', 'width', 'surface', 'bicycle_location',
+      'pedestrian_location', 'parking_location', 'speed_bumps'];
+
+    const _wsEsc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    /** Bronlabel (netwerk / NWB / BGT/OSM / aanname / geen bron) als klein badge. */
+    function wsSourceBadge(src) {
+      const kind = !src ? 'none' : src.startsWith('netwerk') ? 'net'
+        : src.startsWith('databricks') ? 'nwb' : src.startsWith('assets') ? 'assets' : 'default';
+      const style = {
+        net:     ['wsSrcNetwork', '#00838a', 'rgba(0,165,171,0.12)'],
+        nwb:     ['wsSrcNwb',     '#1565c0', 'rgba(25,118,210,0.12)'],
+        assets:  ['wsSrcAssets',  '#6a1b9a', 'rgba(106,27,154,0.10)'],
+        default: ['wsSrcDefault', '#a35a00', 'rgba(230,120,20,0.14)'],
+        none:    ['wsSrcNone',    '#6b7385', 'rgba(35,41,49,0.07)'],
+      }[kind];
+      const title = src && src !== 'default' ? ` title="${_wsEsc(src)}"` : '';
+      return `<span data-i18n="${style[0]}"${title} style="font-size:11px;padding:1px 6px;border-radius:8px;
+        color:${style[1]};background:${style[2]};white-space:nowrap">${T(style[0])}</span>`;
+    }
+
+    /** Verhardingsklasse zoals de kaartlaag Inrichting → Verharding. */
+    function wsSurfaceLabel(props) {
+      const cls = window.MontrealBasemap?.surfaceClass?.(props);
+      const key = cls && DESIGN_CLASS_LAYERS.surface_class.classes[cls]?.labelKey;
+      return key && cls !== 'onbekend' ? T(key) : null;
+    }
+
+    /** HTML-blok 'Invoer' voor het zijpaneel. */
+    function wegenscanInputsHtml(props) {
+      const invoer = props?.wegenscan_invoer;
+      const sources = props?.wegenscan_sources ?? {};
+      if (!invoer) {
+        return `<div style="margin-bottom:14px;padding:8px 10px;border-radius:8px;background:rgba(230,120,20,0.10);color:#a35a00;font-size:12px">
+          <span data-i18n="wsOldRunPanel">${T('wsOldRunPanel')}</span>
+          <a href="#" onclick="runWegenscan();return false" style="color:#00838a;margin-left:4px" data-i18n="wsRerun">${T('wsRerun')}</a>
+        </div>`;
+      }
+      const rows = WS_INPUT_ROWS.map(row => {
+        let value = invoer[row.in];
+        if (value == null) return '';
+        value = row.fmt ? row.fmt(value) : value;
+        const src = row.src ? (sources[row.src] ?? 'default') : null;
+        let extra = '';
+        // Geen echte V85 in het netwerk: dan is het de limiet, en dat moet zichtbaar zijn.
+        if (row.in === 'r_speed' && src?.endsWith('(limiet)')) value += ' (limiet)';
+        // Diepte van het parkeervak (bepaalt haaks/langs) als die gemeten is.
+        if (row.in === 'r_parking_location' && invoer.r_parking_width > 0) value += ` (${Number(invoer.r_parking_width).toFixed(1)} m)`;
+        if (row.in === 'r_surface' && src !== 'default') {
+          const cls = wsSurfaceLabel(props);
+          extra = cls ? `<span style="color:#8892aa;font-weight:400">${_wsEsc(cls)}${props.surface ? ` (${_wsEsc(props.surface)})` : ''} → </span>` : '';
+        }
+        return `<div style="padding:4px 0;border-bottom:1px solid rgba(35,41,49,0.05)">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <span style="color:#8892aa" data-i18n="${row.labelKey}">${T(row.labelKey)}</span>${wsSourceBadge(src)}
+          </div>
+          <div style="font-weight:600;margin-top:1px">${extra}${_wsEsc(value)}</div>
+        </div>`;
+      }).join('');
+      return `<details open style="margin-bottom:16px">
+        <summary style="cursor:pointer;color:#00a5ab;font-weight:700;margin-bottom:4px" data-i18n="wsInputs">${T('wsInputs')}</summary>
+        <div style="color:#8892aa;font-size:12px;margin-bottom:6px" data-i18n="wsInputsHint">${T('wsInputsHint')}</div>
+        ${rows}
+      </details>`;
+    }
+
+    /** Dekkingsregel in het Veiligheid-blok: per invoerveld % links met data. */
+    function renderWegenscanCoverage() {
+      let el = document.getElementById('lmpSafetyCoverage');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'lmpSafetyCoverage';
+        el.style.cssText = 'font-size:11px;color:#6b7385;margin:2px 0 8px 22px;line-height:1.5';
+        document.getElementById('lmpSafetyOption')?.closest('label')?.after(el);
+      }
+      if (!wegenscanData) { el.innerHTML = ''; return; }
+      const cov = wegenscanData.properties?.wegenscan_coverage ?? wegenscanData.wegenscan_coverage;
+      const rerun = `<a href="#" onclick="runWegenscan();return false" style="color:#00838a" data-i18n="wsRerun">${T('wsRerun')}</a>`;
+      if (!cov) {
+        el.innerHTML = `<span style="color:#a35a00" data-i18n="wsOldRun">${T('wsOldRun')}</span> ${rerun}`;
+        return;
+      }
+      const label = key => T(WS_INPUT_ROWS.find(r => r.src === key)?.labelKey ?? key);
+      const parts = WS_COVERAGE_ROWS.filter(k => k in cov).map(k => {
+        const pct = cov[k];
+        const color = pct >= 75 ? '#00838a' : pct >= 25 ? '#a35a00' : '#9aa1b0';
+        return `${_wsEsc(label(k).toLowerCase())} <b style="color:${color}">${pct}%</b>`;
+      });
+      el.innerHTML = `<span data-i18n="wsCoverage">${T('wsCoverage')}</span> ${parts.join(' · ')}<br>${rerun}`;
+    }
+
+    /** Toon het KPI-zijpaneel voor de gegeven feature-properties. */
+    function openWegenscanPanel(props) {
+      const panel   = document.getElementById('wegenscanPanel');
+      const linkEl  = document.getElementById('wegenscanPanelLinkId');
+      const scoreEl = document.getElementById('wegenscanGenericScore');
+      const listEl  = document.getElementById('wegenscanKpiList');
+
+      const linkId  = props?.linkId ?? props?.spectrumId ?? '?';
+      const safety  = props?.safety ?? {};
+      const generic = props?.generic_safety ?? 'NVT';
+
+      linkEl.textContent  = `Wegvak ${linkId}`;
+      scoreEl.textContent = generic;
+      scoreEl.style.color = kpiColor(generic);
+      document.getElementById('wegenscanInputs').innerHTML = wegenscanInputsHtml(props);
+
+      listEl.innerHTML = KPI_KEYS.map(key => {
+        const label = kpiLabel(key);
+        const score = safety[key] ?? 'NVT';
+        const color = kpiColor(score);
+        const active = colorMetric === `safety:${key}`;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;
+          padding:5px 0;border-bottom:1px solid rgba(35,41,49,0.05)${active ? ';font-weight:700;background:rgba(222,0,88,0.06)' : ''}">
+          <span style="color:#aab4c8">${label}</span>
+          <span style="font-weight:600;color:${color}">${score}</span>
+        </div>`;
+      }).join('');
+
+      panel.style.display = 'block';
+    }
+
+    /** Sluit het KPI-zijpaneel. */
+    function closeWegenscanPanel() {
+      document.getElementById('wegenscanPanel').style.display = 'none';
+    }
+
+    /** Stel de wegenscan-banner in (zichtbaar/verborgen, tekst). */
+    function setWegenscanBanner(visible, msg) {
+      const el = document.getElementById('wegenscanBanner');
+      el.style.display = visible ? 'flex' : 'none';
+      if (msg) document.getElementById('wegenscanBannerMsg').textContent = msg;
+    }
+
+    /** Poll job-status en laad data na voltooiing. */
+    async function pollWegenscanJob(jobId) {
+      const progress = document.getElementById('wegenscanProgress');
+      progress.style.display = '';
+      progress.textContent = 'Bezig…';
+      for (let i = 0; i < 600; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const r = await fetch(`/jobs/${jobId}`);
+          if (!r.ok) continue;
+          const job = await r.json();
+          if (job.status === 'successful') {
+            progress.textContent = 'Klaar!';
+            document.getElementById('wegenscanRunBtn').disabled = false;
+            closeWegenscanPanel();
+            await loadWegenscanData();
+            setWegenscanBanner(false);
+            updateOverlay(true);
+            updateLegend();
+            return;
+          }
+          if (job.status === 'failed') {
+            progress.textContent = 'Mislukt';
+            document.getElementById('wegenscanRunBtn').disabled = false;
+            return;
+          }
+          const lastLog = job.log?.slice(-1)[0] ?? '';
+          if (lastLog) progress.textContent = lastLog.slice(0, 60);
+        } catch (_) {}
+      }
+      progress.textContent = 'Time-out';
+    }
+
+    // ── Flow-scaler staat ────────────────────────────────────────────────────
+    /** Originele flow-waarden per linkId; gevuld bij eerste toepassing, null als niet actief. */
+    let _fspOriginal = null;  // Map<linkId, {flow, flow24hrs, flowsPerDaypart}>
+    /** Teller die oploopt bij elke apply/reset; dient als deck.gl updateTrigger. */
+    let _fspVersion  = 0;
+    /** Overschreven max-flow voor de legenda terwijl de flow-scaler actief is; null = gebruik per-dagdeel scan. */
+    let _fspMaxFlow  = null;
+    // _fspActiveLabel is declared near updateSunLight() (above) to avoid temporal dead zone errors.
+
+    /** Ververs het debug-paneel met actuele statistieken over data en simulatie. */
+    function updateDebugPanel() {
+      if (!window._debugMode) return;
+      const nBoundary = [...zoneMap.values()].filter(z => z.boundary).length;
+      document.getElementById('dbgArea').innerHTML =
+        `areaId: <b>${AREA_ID}</b><br>` +
+        `mode: <b>${MODE}</b><br>` +
+        `dagdeel: <b>${daypart}</b><br>` +
+        `bbox: <b>[${areaBounds.map(v => v.toFixed(5)).join(', ')}]</b>`;
+      document.getElementById('dbgNetwork').innerHTML =
+        `wegvakken: <b>${segments.length}</b><br>` +
+        `knopen: <b>${nodeCoords.size}</b><br>` +
+        `zones: <b>${zoneMap.size}</b> (boundary: <b>${nBoundary}</b>)<br>` +
+        `routes: <b>${routeList.length}</b> &mdash; ${routeMode
+          ? `route-modus, gewicht: <b>${Math.round(totalRouteWeight)}</b>`
+          : `<b>segment-modus</b>`}<br>` +
+        `globalMaxFlow: <b>${Math.round(currentFlowCeiling(false))}</b> vtg/u &mdash; flowDaypart: <b>${flowDaypart}</b>`;
+    }
+    // Exporteer zodat de globale DBG-handler (buiten IIFE) het paneel kan verversen
+    window._updateDebugPanel = updateDebugPanel;
+    setInterval(updateDebugPanel, 300);
+
+    /** Uurintensiteit voor het actieve dagdeel (stuurt op flowDaypart, niet op daypart —
+     *  zie de 'etmaal'-selectie op de gepauzeerde klok, die gebouwen op 'rest' laat staan
+     *  maar de écht ongeschaalde etmaalwaarde voor verkeer teruggeeft).
+     *  Als dp[flowDaypart] gevuld (>0): direct teruggeven.
+     *  Anders (bijv. Tampere: dp=0 maar flow24hrs gevuld): fractie van flow24hrs. */
+    function dpFlowOf(props) {
+      if (flowDaypart === 'etmaal') return props.flow24hrs ?? props.flow ?? 0;
+      const dp = props.flowsPerDaypart;
+      if (dp && dp[flowDaypart]) return dp[flowDaypart];
+      const base = props.flow24hrs ?? props.flow ?? 0;
+      return base * (DP_FRACTION[flowDaypart] ?? (1/14.4));
+    }
+
+    /** Schaalplafond voor kleur-/breedtenormalisatie: het ongeschaalde etmaaltotaal
+     *  (flowDaypart === 'etmaal') zit op een heel andere grootte-orde dan een
+     *  per-dagdeel uurintensiteit, dus die twee plafonds nooit door elkaar gebruiken. */
+    function currentFlowCeiling(isBike) {
+      if (flowDaypart === 'etmaal') return isBike ? globalMax24hFlowBike : globalMax24hFlow;
+      return isBike ? globalMaxFlowBike : globalMaxFlow;
+    }
+
+    /** Flow voor het actieve dagdeel (segment-modus) */
+    function segFlow(seg) {
+      return dpFlowOf(seg.props);
+    }
+
+    /** Globaal maximum uurintensiteit (vtg/h) over álle dagdelen en álle wegvakken.
+     *  Wordt als vaste schaalbovengrens gebruikt, zodat kleuren per dagdeel vergelijkbaar zijn. */
+    globalMaxFlow = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        for (const dp of Object.keys(DP_FRACTION)) {
+          const props   = seg.props;
+          const dpFlows = props.flowsPerDaypart;
+          const v = (dpFlows && dpFlows[dp])
+            ? dpFlows[dp]
+            : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
+          if (v > mx) mx = v;
+        }
+      }
+      return mx || 1;
+    })();
+
+    /** Maximum uurintensiteit uitsluitend over fietslinks; schaalbovengrens voor bikeFlowToRgba(). */
+    globalMaxFlowBike = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        if ((seg.props.mode ?? '').toUpperCase() !== 'BIKE') continue;
+        for (const dp of Object.keys(DP_FRACTION)) {
+          const props   = seg.props;
+          const dpFlows = props.flowsPerDaypart;
+          const v = (dpFlows && dpFlows[dp])
+            ? dpFlows[dp]
+            : (props.flow24hrs ?? props.flow ?? 0) * (DP_FRACTION[dp] ?? (1 / 14.4));
+          if (v > mx) mx = v;
+        }
+      }
+      return mx || 1;
+    })();
+
+    /** Zelfde als globalMaxFlow, maar dan voor het ongeschaalde etmaaltotaal
+     *  ('24 uur'-selectie op de gepauzeerde klok) — geen DP_FRACTION-deling. */
+    globalMax24hFlow = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        const v = seg.props.flow24hrs ?? seg.props.flow ?? 0;
+        if (v > mx) mx = v;
+      }
+      return mx || 1;
+    })();
+
+    /** Zelfde als globalMaxFlowBike, maar dan voor het ongeschaalde etmaaltotaal. */
+    globalMax24hFlowBike = (() => {
+      let mx = 0;
+      for (const seg of segments) {
+        if ((seg.props.mode ?? '').toUpperCase() !== 'BIKE') continue;
+        const v = seg.props.flow24hrs ?? seg.props.flow ?? 0;
+        if (v > mx) mx = v;
+      }
+      return mx || 1;
+    })();
+
+    /** Set van absolute link-IDs die zowel als positief als negatief voorkomen in het netwerk.
+     *  Gebruikt in de intensiteit-view om bidirectionele wegen (30 km/u) smaller te tekenen. */
+    const biDirLinkIds = (() => {
+      const pos = new Set(), neg = new Set();
+      for (const seg of segments) {
+        const id = seg.props.linkId;
+        if (id > 0) pos.add(id);
+        else if (id < 0) neg.add(-id);
+      }
+      return new Set([...pos].filter(id => neg.has(id)));
+    })();
+
+    /** Waarde van de actieve metric voor een feature-properties object */
+    function getMetricValue(p) {
+      return evalMetric(p, colorMetric, noiseByLinkId, emisByLinkId);
+    }
+
+    /** Bereken de metriekwaarde voor een wegvak, met expliciet meegegeven
+     *  geluid-/emissie-lookups. Zo kan zowel het huidige scenario (globale maps)
+     *  als het bronscenario (aparte maps) geëvalueerd worden. */
+    function evalMetric(p, metric, noiseMap, emisMap) {
+      switch (metric) {
+        case 'flow':
+        case 'flow_scaled': {
+          return dpFlowOf(p);
+        }
+        case 'occupancy':
+        case 'occupancy_scaled': {
+          const v = dpFlowOf(p);
+          return p.capacity > 0 ? (v / p.capacity) * 100 : null;
+        }
+        case 'coverage':
+        case 'coverage_scaled': {
+          // Fysieke bezettingsgraad: aandeel wegdek bedekt door voertuig-
+          // footprints + veilige remweg (2-secondenregel), volle rijstrook-
+          // breedte geblokkeerd. Weglengte en strookbreedte vallen weg:
+          //   dekking% = 0.1 × q × (L_voertuig + v/1.8) / (v × rijstroken)
+          // met q=flow (vtg/u), v=snelheid (km/h). Mag > 100% (oververzadiging).
+          const q     = dpFlowOf(p);
+          const vKmh  = p.speed;
+          const lanes = p.lanes || 1;
+          if (!(q > 0) || !(vKmh > 0) || !(lanes > 0)) return null;
+          const Lveh   = avgVehicleLengthForMode(p.mode);
+          const occLen = Lveh + vKmh / 1.8;   // eigen lengte + remweg (v_ms × 2)
+          return 0.1 * q * occLen / (vKmh * lanes);
+        }
+        case 'speed':    return p.speed ?? null;
+        case 'capacity': return p.capacity ?? null;
+        case 'priority_roads': return p.priorityRoad === true ? 1 : 0;
+        // "Snelheid"-sub-lagen: binaire aanwezigheid van de betreffende factor
+        // op dit wegvak. Voor de v0-lagen kijken we bij voorkeur naar de
+        // NETWORK-CAR attributen (geen zoom-16 drempel), met de verkregen
+        // traffic-assets als fallback voor oudere exports zonder deze kolommen.
+        case 'speed_crossings': {
+          if ('numPedestrianCrossings' in p) return (p.numPedestrianCrossings || 0) > 0 ? 1 : 0;
+          const flags = speedLinkFlags.get(p.linkId);
+          return flags?.zebra ? 1 : null;
+        }
+        case 'speed_intersections': {
+          const nlm = nodeLinkMap.get(p.linkId);
+          if (!nlm) return null;
+          // Categorie op basis van doelknoop; fallback op beginknoop (bijv. richting rotonde).
+          const toCat   = nodeIntersectionsMap.get(nlm.toNode);
+          const fromCat = nodeIntersectionsMap.get(nlm.fromNode);
+          return toCat != null ? toCat : (fromCat != null ? fromCat : null);
+        }
+        case 'speed_yield': {
+          if ('numGiveWays' in p || 'numStoppingLanes' in p) {
+            return ((p.numGiveWays || 0) > 0 || (p.numStoppingLanes || 0) > 0) ? 1 : 0;
+          }
+          const flags = speedLinkFlags.get(p.linkId);
+          return (flags?.yield || flags?.stop) ? 1 : null;
+        }
+        case 'speed_refuge': {
+          // Alleen op basis van NETWORK-CAR registratie (numRefugeAreas).
+          // Traffic-assets worden wel getekend als aparte visuele laag, maar
+          // niet gebruikt voor de penalty/kaartlaag. Zie plan-snelheid-
+          // strafseconden.md, Fase 1.
+          if ('numRefugeAreas' in p) return (p.numRefugeAreas || 0) > 0 ? 1 : 0;
+          const flags = speedLinkFlags.get(p.linkId);
+          return flags?.refuge ? 1 : null;
+        }
+        // Toekomstige Snelheid-sub-lagen: al zichtbaar in het menu; grijs zolang
+        // de bronkolommen (Deel A / numCycleCrossings / fietspaden) ontbreken.
+        // Beschikbaarheid wordt gedetecteerd op basis van het geladen netwerk.
+        case 'speed_cycle_crossings': {
+          if ('numCycleCrossings' in p) return (p.numCycleCrossings || 0) > 0 ? 1 : 0;
+          if ('numCyclePaths' in p) return (p.numCyclePaths || 0) > 0 ? 1 : 0;
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'cycleCrossing' || attr === 'numCycleCrossings' || attr === 'numCyclePaths');
+          if (!hasAttr) return null;
+          return p.cycleCrossing === true ? 1 : 0;
+        }
+        case 'speed_from_right': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'fromRightLinkId');
+          if (!hasAttr) return null;
+          // Toon de actuele uurintensiteit (dagdeel) van de link van rechts,
+          // net als bij de gewone intensiteitskaart. Geen ID = geen weg van rechts.
+          return _speedConflictFlow(p.fromRightLinkId);
+        }
+        case 'speed_left_turn': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'oppositeLinkId');
+          if (!hasAttr) return null;
+          // Raw flows die gekruist worden bij linksafslaan: tegenliggers + van links.
+          const opposite = _speedConflictFlow(p.oppositeLinkId);
+          const fromLeft = _speedConflictFlow(p.fromLeftLinkId);
+          return Math.round((opposite + fromLeft) * 10) / 10;
+        }
+        case 'speed_oncoming': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'roadWidthM');
+          if (!hasAttr) return null;
+          // Raw tegenliggers-flow op smalle weg (effectieve breedte < 5,5 m).
+          const effectiveWidth = _speedEffectiveRoadWidth(p);
+          if (effectiveWidth >= 5.5) return 0;
+          return _speedConflictFlow(p.oppositeLinkId);
+        }
+        case 'speed_elevation': {
+          const hasAttr = _speedHasAnySegmentWith(attr => attr === 'elevationFrom' || attr === 'elevationTo');
+          if (!hasAttr) return null;
+          // Toon de werkelijke helling (%), negatief = omlaag, positief = omhoog.
+          const slope = _speedSlopePct(p);
+          return slope != null ? Math.round(slope * 10) / 10 : null;
+        }
+        case 'speed_penalty_total': {
+          const d = penaltyByLinkId.get(p.linkId);
+          return d ? d.total : 0;
+        }
+        // Geluid (dB(A)) — losse laag, gejoind op linkId
+        case 'noise_lden':
+        case 'noise_lnight': {
+          const d = noiseMap && noiseMap.get(p.linkId);
+          if (!d) return null;
+          const v = metric === 'noise_lden' ? d.noiseLden : d.noiseLnight;
+          return (v != null) ? v : null;
+        }
+        // Emissie per km — kg/etmaal gedeeld door linklengte (lengte-onafhankelijk)
+        case 'emis_co2':
+        case 'emis_nox':
+        case 'emis_pm10': {
+          const d = emisMap && emisMap.get(p.linkId);
+          if (!d) return null;
+          const kg = metric === 'emis_co2' ? d.co2Kg
+                   : metric === 'emis_nox' ? d.noxKg
+                   : d.pm10Kg;
+          if (kg == null) return null;
+          const len = (d.length != null) ? d.length : p.length;
+          const lenKm = (len > 0) ? len / 1000 : null;
+          return lenKm ? kg / lenKm : null;
+        }
+        default:         return p.flow;
+      }
+    }
+
+    // Initialiseer legenda met avondspits-waarden
+    updateLegend();
+
+    /**
+     * Bouw een vlakke [lon,lat][] uit een reeks link-ID's via linkGeomMap.
+     * Het eerste punt van elke volgende link (dubbel eindpunt) wordt overgeslagen.
+     * Opeenvolgende identieke punten worden gededupliceerd (zelfde als Python _path_to_linestring).
+     * @param {number[]} linkIds
+     * @returns {number[][]}
+     */
+    function _linkIdsToCoords(linkIds) {
+      const result = [];
+      let first = true;
+      for (const id of linkIds) {
+        const seg = linkGeomMap.get(id);
+        if (!seg || seg.length < 2) continue;
+        const start = first ? 0 : 1;
+        for (let j = start; j < seg.length; j++) result.push(seg[j]);
+        first = false;
+      }
+      // Dedupliceer opeenvolgende identieke punten
+      const deduped = [];
+      for (const pt of result) {
+        const last = deduped[deduped.length - 1];
+        if (!last || pt[0] !== last[0] || pt[1] !== last[1]) deduped.push(pt);
+      }
+      return deduped;
+    }
+
+    // ── OD-paar bewerking — state ────────────────────────────────────────────
+    let odEditActive   = false;       // true als OD-edit modus actief
+    let odEditStep     = 'from';      // 'from' | 'to'
+    let odEditFromZone = null;        // { zoneId, label }
+    let odEditToZone   = null;        // { zoneId, label }
+
+    /** Verberg het OD-edit paneel en reset de state volledig. */
+    function deactivateOdEdit() {
+      if (!odEditActive) return;
+      odEditActive   = false;
+      odEditStep     = 'from';
+      odEditFromZone = null;
+      odEditToZone   = null;
+      document.getElementById('odEditBtn').classList.remove('active');
+      document.getElementById('odEditPanel').style.display = 'none';
+      map.getCanvas().style.cursor = '';
+      // Zone productie/attractie-weergave weer uitzetten
+      if (zoneCentroidMode !== 'off') {
+        document.getElementById('zoneCentroidSelect').value = 'off';
+        document.getElementById('zoneCentroidSelect').dispatchEvent(new Event('change'));
+      }
+      updateOverlay(true);
+    }
+
+    /** Toon het OD-edit paneel in stap-1 (herkomst kiezen) toestand. */
+    function _odEditShowPanel() {
+      const panel = document.getElementById('odEditPanel');
+      panel.style.display = 'block';
+      _odEditUpdateStepDisplay();
+    }
+
+    /** Bijwerken van de step-labels en cursor. */
+    function _odEditUpdateStepDisplay() {
+      const fromVal  = document.getElementById('odEditFromVal');
+      const toVal    = document.getElementById('odEditToVal');
+      const fields   = document.getElementById('odEditFields');
+
+      if (odEditFromZone) {
+        fromVal.textContent = odEditFromZone.label;
+        fromVal.classList.remove('waiting');
+      } else {
+        fromVal.textContent = T('odEditWaiting');
+        fromVal.classList.add('waiting');
+      }
+      if (odEditToZone) {
+        toVal.textContent = odEditToZone.label;
+        toVal.classList.remove('waiting');
+      } else {
+        toVal.textContent = T('odEditWaiting');
+        toVal.classList.add('waiting');
+      }
+
+      const bothSelected = odEditFromZone && odEditToZone;
+      fields.style.display = bothSelected ? 'block' : 'none';
+      if (bothSelected) _odEditLoadPair();
+
+      // Cursor: kruishaar zolang in kies-modus
+      map.getCanvas().style.cursor = (!bothSelected || odEditStep !== 'done') ? 'crosshair' : '';
+      // Herbereken lagen (toon/verberg bestemmingszones)
+      updateOverlay(true);
+    }
+
+    /** Lees de routes voor het geselecteerde OD-paar en vul het formulier. */
+    function _odEditLoadPair() {
+      const fromId = odEditFromZone.zoneId;
+      const toId   = odEditToZone.zoneId;
+
+      // Zoek het matching OD-paar in routeList
+      const pairRoutes = routeList.filter(
+        r => String(r.fromZoneId) === String(fromId)
+          && String(r.toZoneId)   === String(toId)
+      );
+
+      // originProduction van eerste route (alle routes in het paar hebben dezelfde)
+      const originProd = pairRoutes.length > 0 ? (pairRoutes[0].originProduction ?? 0) : 0;
+      const tripFrac   = pairRoutes.length > 0 ? (pairRoutes[0].tripFraction    ?? 0) : 0;
+      const totalTrips = originProd * tripFrac;
+
+      // Aggregeer motifRatio (gewogen op weight/trips)
+      const motifAgg = {};
+      let   motifTotal = 0;
+      for (const r of pairRoutes) {
+        if (!r.motifRatio) continue;
+        const w = r.weight ?? 0;
+        for (const [m, v] of Object.entries(r.motifRatio)) {
+          motifAgg[m] = (motifAgg[m] ?? 0) + v * w;
+          motifTotal += v * w;
+        }
+      }
+      // Normaliseer
+      if (motifTotal > 0) {
+        for (const m of Object.keys(motifAgg)) motifAgg[m] /= motifTotal;
+      }
+
+      // Toon info-rij
+      const infoEl = document.getElementById('odEditRouteInfo');
+      const loc    = T('numberLocale');
+      infoEl.innerHTML = pairRoutes.length
+        ? `${T('odEditFoundRoutes', pairRoutes.length)} &nbsp;·&nbsp; `
+          + `${T('odEditCurrentTrips')} <b>${totalTrips.toLocaleString(loc, {maximumFractionDigits:1})}</b>`
+        : `<span style="color:#e63312">${T('odEditNoRoutes')}</span>`;
+
+      // Trips invoer
+      document.getElementById('odEditTripsInput').value = totalTrips.toFixed(1);
+
+      // Sla originProduction op als data-attribuut voor later gebruik
+      document.getElementById('odEditTripsInput').dataset.originProd = String(originProd);
+
+      // Bouw motief-grid: altijd alle (standaard-)motieven tonen, ook als er
+      // (nog) geen trips voor zijn, zodat je die alsnog een aandeel kunt geven.
+      // Onbekende motieven uit de data zelf blijven ook meegenomen.
+      const grid = document.getElementById('odEditMotifGrid');
+      grid.innerHTML = '';
+      const _baseMotifKeys = ['work','shopping','recreational','school','hospital','parking','other','unclassified'];
+      const motifKeys = [...new Set([..._baseMotifKeys, ...Object.keys(motifAgg)])];
+
+      for (const key of motifKeys) {
+        if (key === 'house' || key === 'unknown') continue;
+        const pct = ((motifAgg[key] ?? 0) * 100).toFixed(1);
+        const color = _motifColor(key);
+        const label = T(`motifLabel_${key}`) ?? key;
+        grid.insertAdjacentHTML('beforeend', `
+          <span class="ode-motif-dot" style="background:${color};display:inline-block"></span>
+          <span class="ode-motif-key">${label}</span>
+          <input type="number" class="ode-motif-pct" data-motif="${key}"
+            min="0" max="100" step="0.1" value="${pct}"/>
+        `);
+      }
+      _odEditCheckMotifSum();
+
+      // Toon routes op de kaart (hergebruik zone-centroid modus)
+      _odEditHighlightRoutes(fromId, toId);
+    }
+
+    /** Controleer of de motiefpercentages optellen tot ~100 %. */
+    function _odEditCheckMotifSum() {
+      const inputs = document.querySelectorAll('.ode-motif-pct');
+      const sum    = [...inputs].reduce((s, el) => s + (parseFloat(el.value) || 0), 0);
+      const sumEl  = document.getElementById('odEditMotifSum');
+      const ok     = Math.abs(sum - 100) < 0.5;
+      sumEl.textContent = `∑ = ${sum.toFixed(1)} %`;
+      sumEl.className   = `ode-motif-sum ${ok ? 'ok' : 'bad'}`;
+      document.getElementById('odEditSaveBtn').disabled = !ok;
+    }
+
+    /** Markeer routes van het geselecteerde OD-paar op de kaart (PathLayer). */
+    function _odEditHighlightRoutes(fromId, toId) {
+      // Vul _odEditHighlightedRoutes voor use in makeLayers (hergebruikt selectedLinkId-flow)
+      window._odEditRouteData = routeList.filter(
+        r => String(r.fromZoneId) === String(fromId)
+          && String(r.toZoneId)   === String(toId)
+      );
+      updateOverlay(true);
+    }
+
+    /** Sla de bewerking op als pendingChange en sluit het paneel. */
+    function _odEditSave() {
+      if (!odEditFromZone || !odEditToZone) return;
+
+      const tripsInput = document.getElementById('odEditTripsInput');
+      const originProd = parseFloat(tripsInput.dataset.originProd) || 0;
+      const newTrips   = parseFloat(tripsInput.value) || 0;
+      const newFrac    = originProd > 0 ? newTrips / originProd : 0;
+
+      // Bouw motifRatio
+      const motifRatio = {};
+      let   total = 0;
+      for (const el of document.querySelectorAll('.ode-motif-pct')) {
+        const v = parseFloat(el.value) || 0;
+        motifRatio[el.dataset.motif] = v / 100;
+        total += v;
+      }
+      // Normaliseer naar 1.0 als nodig
+      if (Math.abs(total - 100) > 0.1 && total > 0) {
+        for (const k of Object.keys(motifRatio)) motifRatio[k] /= (total / 100);
+      }
+
+      const change = {
+        _isOd:            true,
+        fromZoneId:       odEditFromZone.zoneId,
+        toZoneId:         odEditToZone.zoneId,
+        originProduction: originProd,
+        tripFraction:     newFrac,
+        motifRatio,
+        _label: `${odEditFromZone.label} → ${odEditToZone.label}`,
+      };
+      pendingChanges.push(change);
+      renderChangesList();
+
+      // Paneel sluiten na het toevoegen aan de wijzigingen
+      deactivateOdEdit();
+    }
+
+    // ── 5. Deck.gl lagen ────────────────────────────────────────────────────
+
+    // ── ScenarioVergelijker — state ──
+    let splitViewActive    = false;
+    let splitViewSrcAreaId = null;   // area_id van het bronscenario (gezet bij loadAdjustedResult)
+    var diffPlotActive     = false;  // verschilplot actief
+    var diffStackActive    = false;  // gestapelde verschilplot (grijze kern + gekleurde rand) actief
+    var diffSmileyActive   = false;  // smiley-verschilplot actief
+    var diffSmileyThreshold = 0.10;  // relatieve drempel (0..1) voor "duidelijke" wijziging
+    var diffSmileyMode     = 'rel';  // 'rel' = relatieve drempel, 'abs' = absolute drempel
+    var diffSmileyAbsThreshold = 0;  // absolute drempel in metriek-eenheden
+    var diffByLinkId       = new Map(); // linkId → verschil berekend−bron (voor actieve metriek)
+    var curValByLinkId     = new Map(); // linkId → huidige metriekwaarde (berekend scenario)
+    var diffMaxOrigFlow    = 1;      // max bron-metriekwaarde (schaalreferentie stapelplot)
+    var diffMaxAbs         = 1;      // max |verschil| (breedte-referentie gewone deltaplot)
+    var diffMetric         = 'flow'; // metriek waarvoor de verschilplot berekend is
+    var diffVersion        = 0;      // ophoog-teller: forceert deck.gl-accessors te hertekenen
+
+    // ── Spectrum — state ─────────────────────────────────────────────────────
+    var _spectrumLayerDpKey = null;  // dpKey waarvoor de MapLibre-laag momenteel zichtbaar is
+
+    /** Verwijder bestaande Spectrum MapLibre source + layers */
+    function _removeSpectrumLayer() {
+      if (map.getLayer('spectrum-label'))  map.removeLayer('spectrum-label');
+      if (map.getLayer('spectrum-line'))   map.removeLayer('spectrum-line');
+      if (map.getSource('spectrum-tiles')) map.removeSource('spectrum-tiles');
+      _spectrumLayerDpKey = null;
+    }
+
+    /** Voeg Spectrum MVT-laag toe of update hem als het dagdeel wijzigt */
+    function updateSpectrumLayer() {
+      const dpKey  = { mrh: 'OS', erh: 'AS', rest: 'RD' }[daypart] || 'AS';
+      const layerUuid   = localStorage.getItem(`spSpectrumLayer${dpKey}`)   || '';
+      const mappingUuid = localStorage.getItem(`spSpectrumMapping${dpKey}`) || '';
+
+      if (!layerUuid || !mappingUuid) {
+        _removeSpectrumLayer();
+        return;
+      }
+
+      // Als de laag al bestaat voor hetzelfde dagdeel, niets doen
+      if (_spectrumLayerDpKey === dpKey && map.getSource('spectrum-tiles')) return;
+
+      _removeSpectrumLayer();
+
+      map.addSource('spectrum-tiles', {
+        type: 'vector',
+        tiles: [`${window.location.origin}/proxy/mvt/${layerUuid}/{z}/{x}/{y}.mvt?mappingUuid=${encodeURIComponent(mappingUuid)}`],
+        minzoom: 10,
+        maxzoom: 16,
+      });
+
+      map.addLayer({
+        id: 'spectrum-line',
+        type: 'line',
+        source: 'spectrum-tiles',
+        'source-layer': 'geometries',
+        paint: {
+          'line-color': [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'sizeSlice'], 0],
+            0,    '#313695',
+            100,  '#4575b4',
+            500,  '#74add1',
+            1000, '#fee090',
+            3000, '#f46d43',
+            6000, '#d73027',
+            10000,'#a50026',
+          ],
+          'line-width': [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'sizeSlice'], 0],
+            0,    1,
+            500,  3,
+            5000, 8,
+          ],
+          'line-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: 'spectrum-label',
+        type: 'symbol',
+        source: 'spectrum-tiles',
+        'source-layer': 'geometries',
+        minzoom: 14,
+        layout: {
+          'text-field': ['to-string', ['round', ['coalesce', ['get', 'sizeSlice'], 0]]],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-anchor': 'center',
+          'symbol-placement': 'line-center',
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+        },
+        paint: {
+          'text-color': '#111111',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      _spectrumLayerDpKey = dpKey;
+    }
+    // map2 is declared near updateSunLight() (above) to avoid TDZ in async IIFE
+    let overlay2           = null;   // deck.gl MapboxOverlay voor rechterkaart
+    let origSegments       = [];     // segments-array voor rechterkaart
+    let origGeojsonFeatures = [];    // geojson.features voor rechterkaart
+    let origZoneFeatures   = [];     // zoneFeaturesRaw voor rechterkaart
+    let _mapSyncing        = false;  // guard tegen recursieve camera-sync
+    let overlayMode        = false;  // swipe-modus: kaarten gestapeld, splitter = clip-lijn
+    let overlayX           = 0;      // huidige splitter-positie in px (overlay-modus)
+    // Splitter-drag state
+    let _splitterDragging  = false;
+    let _splitterStartX    = 0;
+    let _splitterLeftBasis = 0;
+
+    let nodeEditActive = false;
+    let linkEditActive = false;
+    let linkFlowEditActive = false;
+    let linkAddActive  = false;        // Nieuw wegvak intekenen
+    let zoneExplodeActive = false;     // Zone opsplitsen (explode)
+    let linkAddVertices = [];          // [[lon,lat], ...] vertices van de lijn in aanbouw
+    let _linkAddMouseCoord = null;     // huidige muispositie (rubberbanding)
+    // ── Selected Link Analysis — state ──────────────────────────────────────
+    let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
+    let selectedLinkActive = false;   // true als de link-selectie-modus actief is
+    let hoveredLinkId      = null;    // linkId onder de cursor (bijgehouden via onHover)
+    const _estimatedRouteCache = new Map(); // linkId → {pathData, flowByFromZone, flowByToZone} (Dijkstra-schatting)
+
+    let nodeSelectMode   = 'click';  // 'click' | 'polygon'
+    let polygonVertices  = [];       // [[lon, lat], ...]
+    let polygonNodesInside = [];     // zone-knopen binnen de gesloten polygon
+
+    let linkSelectMode        = 'click';  // 'click' | 'polygon'
+    let linkPolygonVertices   = [];       // [[lon, lat], ...]
+    let linkPolygonLinksInside = [];      // link-features binnen de gesloten polygon
+
+    // ── What-if wegafsluiting — state ────────────────────────────────────────
+    let whatifRcActive = false;           // true als what-if wegafsluiting-modus actief is
+    let whatifRcLinks  = new Map();       // linkId (string) → label (string)
+
+    // ── Segment-tooltip — state en render ───────────────────────────────────
+    let _segTipTimer    = null;
+    let _segTipVisible  = false;
+    let _segTipLastInfo = null;
+    const _segTip = document.getElementById('segmentTooltip');
+    const _segTipRender = (info, sourceMap) => {
+      const p = info?.object?.properties;
+      if (!p) { _segTip.style.display = 'none'; return; }
+      const dpLabels = { etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+      const dpFlow = dpFlowOf(p);
+      const occ = p.capacity > 0 ? ((dpFlow / p.capacity) * 100).toFixed(0) + '%' : '–';
+      // Fysieke bezettingsgraad (zelfde model als de 'coverage'-metric)
+      const _cov = (() => {
+        const lanes = p.lanes || 1;
+        if (!(dpFlow > 0) || !(p.speed > 0) || !(lanes > 0)) return '–';
+        const occLen = avgVehicleLengthForMode(p.mode) + p.speed / 1.8;
+        return (0.1 * dpFlow * occLen / (p.speed * lanes)).toFixed(0) + '%';
+      })();
+      const loc = T('numberLocale');
+      const contextLabel = _fspActiveLabel ?? dpLabels[flowDaypart];
+      const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
+      _segTip.innerHTML = `
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', p.linkId)}
+        </div>
+        <div><span style="color:#6a757c">${contextKey}: </span><b>${contextLabel}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipFlow')}: </span><b>${dpFlow.toFixed(0)} ${flowDaypart === 'etmaal' ? T('tooltipFlow24Unit') : T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipSpeed')}: </span><b>${p.speed} km/h</b></div>
+        <div><span style="color:#6a757c">${T('tooltipLanes')}: </span><b>${p.lanes}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCap')}: </span><b>${p.capacity?.toLocaleString(loc)} ${T('tooltipCapUnit')}</b></div>
+        ${flowDaypart === 'etmaal' ? '' : `<div><span style="color:#6a757c">${T('tooltipOccup')}: </span><b>${occ}</b></div>
+        <div><span style="color:#6a757c">${T('tooltipCoverage')}: </span><b>${_cov}</b></div>`}
+        <div><span style="color:#6a757c">${T('tooltipLength')}: </span><b>${p.length?.toFixed(0)} m</b></div>
+        ${p.roadWidthM != null ? `<div><span style="color:#6a757c">${T('tooltipWidth')}: </span><b>${Number(p.roadWidthM).toFixed(1)} m</b></div>` : ''}
+        ${(() => {
+          const dl = DESIGN_CLASS_LAYERS[colorMetric];
+          if (!dl) return '';
+          const cls = dl.classes[dl.classOf(p)];
+          const raw = dl.rawOf(p);
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            <span style="color:#6a757c">${T(dl.labelKey)}: </span><b>${_designClassLabel(cls)}</b>
+            ${raw != null ? `<span style="color:#6a757c"> (${raw})</span>` : ''}
+          </div>`;
+        })()}
+        ${(() => {
+          const nd = noiseByLinkId && noiseByLinkId.get(p.linkId);
+          if (!nd) return '';
+          let h = '';
+          if (nd.noiseLden != null)   h += `<div><span style="color:#6a757c">${T('legendNoiseLden')}: </span><b>${nd.noiseLden.toFixed(1)} dB(A)</b></div>`;
+          if (nd.noiseLnight != null) h += `<div><span style="color:#6a757c">${T('legendNoiseLnight')}: </span><b>${nd.noiseLnight.toFixed(1)} dB(A)</b></div>`;
+          return h;
+        })()}
+        ${(() => {
+          const ed = emisByLinkId && emisByLinkId.get(p.linkId);
+          if (!ed) return '';
+          const len = (ed.length != null) ? ed.length : p.length;
+          if (!(len > 0)) return '';
+          const km = len / 1000;
+          let h = '';
+          if (ed.co2Kg  != null) h += `<div><span style="color:#6a757c">CO\u2082: </span><b>${(ed.co2Kg/km).toFixed(1)} kg/km</b></div>`;
+          if (ed.noxKg  != null) h += `<div><span style="color:#6a757c">NO\u2093: </span><b>${(ed.noxKg/km).toFixed(2)} kg/km</b></div>`;
+          if (ed.pm10Kg != null) h += `<div><span style="color:#6a757c">PM10: </span><b>${(ed.pm10Kg/km).toFixed(2)} kg/km</b></div>`;
+          return h;
+        })()}
+        ${(() => {
+          const wsProps = wegenscanByLinkId.get(String(p.linkId));
+          if (!wsProps?.generic_safety) return '';
+          let kpiRow = '';
+          if (isSafetyMetric(colorMetric) && colorMetric !== 'safety') {
+            const sc = safetyScoreOf(p.linkId, colorMetric) ?? 'NVT';
+            kpiRow = `<div><span style="color:#6a757c">${safetyMetricLabel(colorMetric)}: </span><b style="color:${kpiColor(sc)}">${sc}</b></div>`;
+          }
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            ${kpiRow}
+            <span style="color:#6a757c">Veiligheid: </span>
+            <b style="color:${kpiColor(wsProps.generic_safety)}">${wsProps.generic_safety}</b>
+            ${isSafetyMetric(colorMetric)
+              ? `<span style="color:#00a5ab;margin-left:6px;cursor:pointer" onclick="openWegenscanPanel(wegenscanByLinkId.get('${p.linkId}'))">→ details</span>`
+              : ''}
+          </div>`;
+        })()}
+        ${(() => {
+          const pen = penaltyByLinkId.get(p.linkId);
+          if (!pen || !pen.total) return '';
+          const parts = [];
+          if (pen.zebra)  parts.push(`Zebra: +${pen.zebra} sec`);
+          if (pen.cycleX) parts.push(`Fietsoversteek: +${pen.cycleX} sec`);
+          if (pen.signal) parts.push(`Verkeerslicht: +${pen.signal} sec`);
+          if (pen.yield)  parts.push(`Haaientanden: +${pen.yield} sec`);
+          if (pen.stop)   parts.push(`Stopbord: +${pen.stop} sec`);
+          if (pen.refuge) parts.push(`Vluchtheuvel: +${pen.refuge} sec`);
+          if (pen.elevation) parts.push(`Helling: +${pen.elevation} sec`);
+          if (pen.fromRight) parts.push(`Verkeer van rechts: +${pen.fromRight} sec`);
+          if (pen.leftTurn)  parts.push(`Linksaf-hinder: +${pen.leftTurn} sec`);
+          if (pen.rightTurn) parts.push(`Rechtsaf-hinder: +${pen.rightTurn} sec`);
+          if (pen.oncoming)  parts.push(`Tegenliggerhinder: +${pen.oncoming} sec`);
+          return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+            <span style="color:#6a757c">Straf-seconden: </span>
+            <b>${pen.total} sec</b>
+            <div style="color:#6a757c;font-size:11px">${parts.join(' · ')}</div>
+          </div>`;
+        })()}
+        ${(() => {
+          // Tooltip-line voor actieve Snelheid-sub-laag (bestaand en toekomstig).
+          if (![...BINARY_SPEED_METRICS, ...FUTURE_BINARY_SPEED_METRICS, ...FLOW_SPEED_METRICS, 'speed_penalty_total', 'priority_roads'].includes(colorMetric)) return '';
+          const v = getMetricValue(p);
+          if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            if (v == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v ? T('tooltipSpeedFactorPresent') : T('tooltipSpeedFactorAbsent')}</b>
+            </div>`;
+          } else if (FLOW_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            const unit = (colorMetric === 'speed_from_right' ||
+                          colorMetric === 'speed_left_turn'   ||
+                          colorMetric === 'speed_oncoming') ? 'vtg/u'
+                       : colorMetric === 'speed_elevation' ? '%'
+                       : 'sec';
+            if (v == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v}${unit ? ' ' + unit : ''}</b>
+            </div>`;
+           } else if (colorMetric === 'speed_elevation') {
+            const slope = _speedSlopePct(p);
+            if (slope == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T('legendSpeedElevation')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T('legendSpeedElevation')}: </span>
+              <b>${slope > 0 ? '+' : ''}${slope.toFixed(1)}%</b>
+            </div>`;
+          } else if (colorMetric === 'priority_roads') {
+            const key = metricShortLabelKey(colorMetric);
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${v ? T('tooltipSpeedFactorPresent') : T('tooltipSpeedFactorAbsent')}</b>
+            </div>`;
+          } else if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+            const key = metricShortLabelKey(colorMetric);
+            const catName = v === 1 ? T('catSignal')
+                          : v === 2 ? T('catRoundabout')
+                          : null;
+            if (catName == null) {
+              return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px;color:#9a9aa5">
+                <b>${T(key || 'legendSpeedPenaltyTotal')}</b>: ${T('tooltipSpeedDataUnavailable')}
+              </div>`;
+            }
+            return `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+              <span style="color:#6a757c">${T(key)}: </span>
+              <b>${catName}</b>
+            </div>`;
+          }
+          return '';
+        })()}
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      // In deck.gl interleaved mode is info.x/y soms t.o.v. het hele scherm/venster
+      // en soms t.o.v. het canvas. We kiezen voor de betrouwbaarste bron: het
+      // oorspronkelijke pointer-event van de browser.
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    function makeNetworkLayer() {
+      // Bereken min/max voor de actieve metric. Voor toekomstige Snelheid-lagen
+      // zonder brondata tellen we de null-waarden niet mee zodat (metricMin,
+      // metricMax) ongedefinieerd blijft; de renderer springt dan naar grijs.
+      let metricMin = Infinity, metricMax = -Infinity;
+      let slopeMaxAbs = 0;
+      if (!FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        for (const seg of segments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < metricMin) metricMin = v;
+            if (v > metricMax) metricMax = v;
+          }
+          if (colorMetric === 'speed_elevation') {
+            const s = _speedSlopePct(seg.props);
+            if (s != null && isFinite(s)) slopeMaxAbs = Math.max(slopeMaxAbs, Math.abs(s));
+          }
+        }
+      }
+      slopeMaxAbs = Math.max(slopeMaxAbs, 0.01);
+      // Bewaar ook de flow-range apart voor breedte-schaling
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of segments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      const metricRange = metricMax - metricMin || 1;
+      const dpRange     = dpMax - dpMin || 1;
+
+      return new GeoJsonLayer({
+        id: 'network',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        visible: !nodeEditActive && !linkEditActive && colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum' && !selectedZoneId && !selectedLinkId && !diffPlotActive && !diffStackActive,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+         getLineWidth: f => {
+           if (f.properties.capacity === 0) return 1;
+           const lanes = f.properties.lanes || 1;
+           const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
+           const maxW = isBike ? 1.2 : 12;   // max meter per rijstrook (fiets: 1.2 m, auto: 12 m)
+           const baseW = isBike ? 1.2 : 3;   // statische breedte per rijstrook
+           if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+             let v;
+             if (colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+               v = getMetricValue(f.properties) ?? 0;
+               // Logaritmische schaal op 0–100 (waarden > 100% worden geklemd voor breedte)
+               const t = Math.log1p(Math.max(0, Math.min(100, v))) / Math.log1p(100);
+               return Math.max(1.5, t * lanes * maxW);
+             } else {
+              v = dpFlowOf(f.properties);
+              const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
+              return Math.max(1.5, t * lanes * maxW);
+            }
+          }
+          if (colorMetric === 'flow') {
+             // Intensiteit-view: smal voor wegen met vrijwel geen flow
+             const flowNorm = dpFlowOf(f.properties) / (currentFlowCeiling(isBike) || 1);
+             if (flowNorm < 0.04) return 1;   // nauwelijks gebruik: minimaal lijntje
+             if (isBike) return Math.max(1.5, lanes * 1);
+             const speed = f.properties.speed ?? 999;
+             const absId = Math.abs(f.properties.linkId ?? 0);
+             if (speed <= 30 && absId > 0 && biDirLinkIds.has(absId)) return Math.max(1.5, lanes * 2);
+             return Math.max(1.5, lanes * 3);
+           }
+           return Math.max(1.5, lanes * baseW);
+         },
+          getLineColor: f => {
+           if (f.properties.capacity === 0) return [210, 40, 40, 200];
+           // Veiligheidsmodus: kleur op basis van wegenscan generic_safety of de gekozen KPI
+           if (isSafetyMetric(colorMetric)) {
+             return safetyToRgba(safetyScoreOf(f.properties.linkId, colorMetric));
+           }
+           // Inrichtingslagen met vaste klassen
+           const _dl = DESIGN_CLASS_LAYERS[colorMetric];
+           if (_dl) return _dl.classes[_dl.classOf(f.properties)].rgba;
+              // Spectrum: aparte MapLibre-laag, netwerk-links normaal inkleuren
+              const v = getMetricValue(f.properties);
+            // Binaire toekomstige Snelheid-lagen zonder brondata: grijs tonen.
+            if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+              if (v == null) return UNAVAILABLE_GREY_RGBA;
+              return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+            }
+            // Continue Snelheid-lagen (flow/penalty-gebaseerd).
+            if (FLOW_SPEED_METRICS.has(colorMetric)) {
+              if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
+              // speed_from_right gebruikt de gewone intensiteitskleuren (flowGradient)
+              // zodat de kaart er identiek uitziet als de intensiteiten-laag.
+              if (colorMetric === 'speed_from_right') {
+                const _ceil = currentFlowCeiling(false);
+                const flowNorm = (_ceil || 1) > 0 ? v / _ceil : 0;
+                return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
+              }
+              if (v === 0) return [80, 80, 100, 120];
+              const norm = metricRange > 0 ? Math.max(0, Math.min(1, (v - metricMin) / metricRange)) : 0;
+              return redOrangeRgba(norm);
+            }
+            if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+            // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+            { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+             // Binaire Snelheid-sub-lagen: oranje indien factor aanwezig (1),
+             // anders de neutrale netwerk-kleur.
+             if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+             // Voorrangswegen: blauw indien voorrangsweg, anders neutrale kleur.
+             if (colorMetric === 'priority_roads') return v ? [26, 115, 232, 230] : [80, 80, 100, 120];
+             // Categorische Snelheid-laag "Kruispunten": twee vaste kleuren.
+             if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+               if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+               return v === 1 ? [231, 76, 60, 230]
+                    : v === 2 ? [46, 204, 113, 230]
+                    : [80, 80, 100, 120];
+             }
+             // Absolute grenswaarde-inkleuring voor geluid/emissie (niet-relatief)
+            { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+             // Binaire Snelheid-sub-lagen: oranje indien factor aanwezig (1).
+             if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+              // Categorische Snelheid-laag "Kruispunten": twee vaste kleuren.
+              if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+                if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+                return v === 1 ? [231, 76, 60, 230]
+                     : v === 2 ? [46, 204, 113, 230]
+                     : [80, 80, 100, 120];
+              }
+             const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
+            let norm;
+           if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+               colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
+             norm = Math.max(0, Math.min(1, v / 100));
+           } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+             norm = Math.max(0, Math.min(1, v / (currentFlowCeiling(isMultimodalBike) || 1)));
+           } else if (colorMetric === 'capacity') {
+             // Vaste schaal 0–4000 met sqrt-schaling
+             norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
+           } else {
+             norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+           }
+           switch (colorMetric) {
+             case 'speed':     return speedRgba(norm);
+             case 'capacity':  return capacityRgba(norm);
+             case 'occupancy': return greenRedRgba(norm);
+            case 'coverage':  return greenRedRgba(norm);
+            default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
+          }
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          // Voor de klik-op-wegvak debug ("welke assets horen bij dit wegvak"):
+          // houd het gehoverde linkId bij, onafhankelijk van de tooltip-logica.
+          _networkHoverLink = object ? { linkId: object.properties?.linkId } : null;
+          // hoveredLinkId is de generieke "welk wegvak staat onder de cursor"-
+          // vlag die map.on('click') gebruikt voor o.a. veiligheidsmodus,
+          // voertuigteller plaatsen, link-selectie en what-if wegafsluiting.
+          hoveredLinkId = object ? (object.properties?.linkId ?? null) : null;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
+        },
+      });
+    }
+
+    /**
+     * Netwerklaag voor de rechterkaart in split-view (bronscenario).
+     * Herbruikt de logica van makeNetworkLayer() maar dan op de originele
+     * data (origSegments / origGeojsonFeatures) i.p.v. het actieve scenario.
+     */
+    function makeNetworkLayer2() {
+      // Bereken min/max over het bronscenario
+      let metricMin = Infinity, metricMax = -Infinity;
+      if (!FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+        for (const seg of origSegments) {
+          const v = getMetricValue(seg.props);
+          if (v != null && isFinite(v)) {
+            if (v < metricMin) metricMin = v;
+            if (v > metricMax) metricMax = v;
+          }
+        }
+      }
+      let dpMin = Infinity, dpMax = -Infinity;
+      for (const seg of origSegments) {
+        const v = segFlow(seg);
+        if (v < dpMin) dpMin = v;
+        if (v > dpMax) dpMax = v;
+      }
+      const metricRange = metricMax - metricMin || 1;
+      const dpRange     = dpMax - dpMin || 1;
+
+      const data = MODE !== 'MIXED'
+        ? origGeojsonFeatures
+        : origGeojsonFeatures.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      return new GeoJsonLayer({
+        id: 'network-orig',
+        data,
+        visible: colorMetric !== 'compare' && colorMetric !== 'none' && colorMetric !== 'spectrum',
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth: f => {
+          if (f.properties.capacity === 0) return 1;
+          const lanes = f.properties.lanes || 1;
+          const isBike = MODE === 'BIKE' || (f.properties.mode && f.properties.mode.toUpperCase() === 'BIKE');
+          const maxW = isBike ? 1.2 : 12;
+          const baseW = isBike ? 1.2 : 3;
+          if (colorMetric === 'flow_scaled' || colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+            let v;
+            if (colorMetric === 'occupancy_scaled' || colorMetric === 'coverage_scaled') {
+              v = getMetricValue(f.properties) ?? 0;
+              const t = Math.log1p(Math.max(0, Math.min(100, v))) / Math.log1p(100);
+              return Math.max(1.5, t * lanes * maxW);
+            } else {
+              v = dpFlowOf(f.properties);
+              const t = Math.log1p(Math.max(0, v - dpMin)) / Math.log1p(dpRange);
+              return Math.max(1.5, t * lanes * maxW);
+            }
+          }
+          if (colorMetric === 'flow') {
+            const flowNorm = dpFlowOf(f.properties) / (currentFlowCeiling(isBike) || 1);
+            if (flowNorm < 0.04) return 1;
+            if (isBike) return Math.max(1.5, lanes * 1);
+            return Math.max(1.5, lanes * 3);
+          }
+          return Math.max(1.5, lanes * baseW);
+        },
+        getLineColor: f => {
+          if (f.properties.capacity === 0) return [210, 40, 40, 200];
+          const v = getMetricValue(f.properties);
+          if (FUTURE_BINARY_SPEED_METRICS.has(colorMetric)) {
+            if (v == null) return UNAVAILABLE_GREY_RGBA;
+            return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+          }
+          if (FLOW_SPEED_METRICS.has(colorMetric)) {
+            if (v == null || !isFinite(v)) return UNAVAILABLE_GREY_RGBA;
+            if (colorMetric === 'speed_from_right') {
+              const _ceil = currentFlowCeiling(false);
+              const flowNorm = (_ceil || 1) > 0 ? v / _ceil : 0;
+              return flowToRgba(Math.max(0, Math.min(1, flowNorm)));
+            }
+            if (v === 0) return [80, 80, 100, 120];
+            const norm = metricRange > 0 ? Math.max(0, Math.min(1, (v - metricMin) / metricRange)) : 0;
+            return redOrangeRgba(norm);
+          }
+          if (v == null || !isFinite(v)) return [80, 80, 100, 120];
+          { const _lim = METRIC_LIMITS[colorMetric]; if (_lim) return limitBandRgba(v, _lim.std, _lim.max); }
+          if (BINARY_SPEED_METRICS.has(colorMetric)) return v ? BINARY_SPEED_RGBA : [80, 80, 100, 120];
+          if (colorMetric === 'priority_roads') return v ? [26, 115, 232, 230] : [80, 80, 100, 120];
+          if (CATEGORICAL_SPEED_METRICS.has(colorMetric)) {
+            return v === 1 ? [231, 76, 60, 230]
+                 : v === 2 ? [46, 204, 113, 230]
+                 : [80, 80, 100, 120];
+          }
+          const isMultimodalBike = MODE === 'MIXED' && (f.properties.mode ?? '').toUpperCase() === 'BIKE';
+          let norm;
+          if (colorMetric === 'occupancy' || colorMetric === 'occupancy_scaled' ||
+              colorMetric === 'coverage'  || colorMetric === 'coverage_scaled') {
+            norm = Math.max(0, Math.min(1, v / 100));
+          } else if (colorMetric === 'flow' || colorMetric === 'flow_scaled') {
+            norm = Math.max(0, Math.min(1, v / (currentFlowCeiling(isMultimodalBike) || 1)));
+          } else if (colorMetric === 'capacity') {
+            norm = Math.sqrt(Math.max(0, Math.min(1, v / 4000)));
+          } else {
+            norm = Math.max(0, Math.min(1, (v - metricMin) / metricRange));
+          }
+          switch (colorMetric) {
+            case 'speed':     return speedRgba(norm);
+            case 'capacity':  return capacityRgba(norm);
+            case 'occupancy': return greenRedRgba(norm);
+            case 'coverage':  return greenRedRgba(norm);
+            default:          return isMultimodalBike ? bikeFlowToRgba(norm) : flowToRgba(norm);
+          }
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
+        },
+      });
+    }
+
+    // ── Verschilplot-tooltip render ───────────────────────────────────────────
+    const _diffTipRender = (info) => {
+      const p = info?.object?.properties;
+      if (!p) { _segTip.style.display = 'none'; return; }
+      const linkId  = p.linkId;
+      const diff    = diffByLinkId.get(linkId);
+      const newVal  = curValByLinkId.has(linkId) ? curValByLinkId.get(linkId) : null;
+      const oldVal  = (diff != null && newVal != null) ? newVal - diff : null;
+      const loc     = T('numberLocale');
+      const unit    = metricUnit(diffMetric);
+      const diffColor = diff == null || Math.abs(diff) < 1e-9
+        ? '#aaa'
+        : diff > 0 ? '#e85555' : '#3dc45a';
+      const diffStr = diff != null
+        ? (diff > 0 ? '+' : '') + fmtMetricVal(diff, diffMetric)
+        : '–';
+      _segTip.innerHTML = `
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', linkId)}
+        </div>
+        <div><span style="color:#6a757c">Oud: </span><b>${fmtMetricVal(oldVal, diffMetric)}</b></div>
+        <div><span style="color:#6a757c">Nieuw: </span><b>${fmtMetricVal(newVal, diffMetric)}</b></div>
+        <div><span style="color:#6a757c">Verschil: </span><b style="color:${diffColor}">${diffStr}</b></div>
+        <div style="margin-top:4px;font-size:10px;color:#666">${p.speed} km/h · ${p.lanes} rijstr. · ${p.length?.toFixed(0)} m</div>
+      `;
+      const rect = map.getCanvas().getBoundingClientRect();
+      const x = rect.left + info.x;
+      const y = rect.top  + info.y;
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    // ── Verschilplot-laag: toont toe-/afname per wegvak t.o.v. bronscenario ──────
+    function makeDiffLayer() {
+      if (!diffPlotActive || !diffByLinkId.size) {
+        return new GeoJsonLayer({ id: 'diff-plot', data: [] });
+      }
+      const isBike = MODE === 'BIKE';
+      const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer
+
+      // Schaal de breedte t.o.v. het grootste voorkomende |verschil|, zodat de
+      // gewijzigde wegvakken altijd goed zichtbaar zijn — ook voor metrieken waar
+      // het verschil klein is t.o.v. de absolute waarde (bijv. geluid in dB).
+      const ref = diffMaxAbs;
+
+      return new GeoJsonLayer({
+        id: 'diff-plot',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        visible: true,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1.5,
+        getLineWidth: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null || diff === 0) return 1.5;
+          const lanes  = f.properties.lanes || 1;
+          // Logaritmische schaal op |diff| t.o.v. het maximale verschil
+          const t = Math.log1p(Math.abs(diff)) / Math.log1p(ref);
+          return Math.max(1.5, t * lanes * maxW);
+        },
+        getLineColor: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null || diff === 0) return [140, 140, 140, 60];
+          return diff > 0
+            ? [220, 30, 30, 220]   // toename → rood
+            : [30, 180, 60, 220];  // afname  → groen
+        },
+        pickable: true,
+        onHover: info => {
+          if (info.object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _diffTipRender(info);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+              }, 600);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getLineColor: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getLineWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+        },
+      });
+    }
+
+    // ── Gestapelde verschilplot: grijze kern (ongewijzigd deel) + gekleurde rand ──
+    // Twee lagen: onder een gekleurde laag met breedte = max(oud,nieuw), erbovenop
+    // een grijze laag met breedte = min(oud,nieuw). De gekleurde rand die overblijft
+    // stelt |verschil| voor (rood = toename, groen = afname).
+    function makeDiffStackLayer() {
+      if (!diffStackActive || !diffByLinkId.size || !DIFF_ADDITIVE.has(diffMetric)) {
+        return [];
+      }
+      const isBike = MODE === 'BIKE';
+      const maxW   = isBike ? 1.2 : 12;   // zelfde schaal als makeNetworkLayer/makeDiffLayer
+      const ref    = diffMaxOrigFlow;     // schaalreferentie (max bron-metriekwaarde)
+
+      // Lineaire breedteschaal: de breedte is recht evenredig met de metriekwaarde,
+      // zodat de verhouding grijze kern (ongewijzigd) t.o.v. gekleurde rand (verschil)
+      // klopt. Een logaritmische schaal zou die verhouding verstoren.
+      const widthOf = (f, val) => {
+        if (!(val > 0)) return 0;
+        const lanes = f.properties.lanes || 1;
+        const t = val / ref;
+        return t * lanes * maxW;
+      };
+
+      const data = MODE !== 'MIXED'
+        ? geojson.features
+        : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      const commonHover = info => {
+        if (info.object) {
+          _segTipLastInfo = info;
+          if (_segTipVisible) {
+            _diffTipRender(info);
+          } else if (!_segTipTimer) {
+            _segTipTimer = setTimeout(() => {
+              _segTipTimer = null;
+              _segTipVisible = true;
+              if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+            }, 600);
+          }
+        } else {
+          clearTimeout(_segTipTimer); _segTipTimer = null;
+          _segTipVisible = false;
+          _segTip.style.display = 'none';
+        }
+      };
+
+      // Verschuif een polylijn loodrecht met `dist` meter naar één vaste zijde.
+      // Werkt in een lokale equirectangular benadering (meters ↔ graden per vertex).
+      const offsetPath = (coords, dist) => {
+        const R_LAT = 111320;
+        const n = coords.length;
+        const out = new Array(n);
+        // Per-segment loodrechte normalen (rechterzijde van de rijrichting)
+        const segNx = new Array(n - 1), segNy = new Array(n - 1);
+        for (let i = 0; i < n - 1; i++) {
+          const [lng1, lat1] = coords[i];
+          const [lng2, lat2] = coords[i + 1];
+          const latMid = (lat1 + lat2) * 0.5 * Math.PI / 180;
+          const dx = (lng2 - lng1) * R_LAT * Math.cos(latMid);
+          const dy = (lat2 - lat1) * R_LAT;
+          const len = Math.hypot(dx, dy) || 1;
+          // Normaal (rechterzijde): (dy, -dx) genormaliseerd
+          segNx[i] = dy / len;
+          segNy[i] = -dx / len;
+        }
+        for (let i = 0; i < n; i++) {
+          // Gemiddelde normaal van aangrenzende segmenten (vloeiende hoeken)
+          let nx = 0, ny = 0;
+          if (i > 0)     { nx += segNx[i - 1]; ny += segNy[i - 1]; }
+          if (i < n - 1) { nx += segNx[i];     ny += segNy[i];     }
+          const nl = Math.hypot(nx, ny) || 1;
+          nx /= nl; ny /= nl;
+          const [lng, lat] = coords[i];
+          const latRad = lat * Math.PI / 180;
+          const oLng = (nx * dist) / (R_LAT * Math.cos(latRad));
+          const oLat = (ny * dist) / R_LAT;
+          out[i] = [lng + oLng, lat + oLat];
+        }
+        return out;
+      };
+
+      // Bouw offset-paden voor de gekleurde band: volledig aan de buitenzijde van
+      // de grijze kern (de binnenrand raakt de buitenrand van de grijze kern).
+      const colorPaths = [];
+      for (const f of data) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = f.properties.linkId;
+        const diff   = diffByLinkId.get(linkId);
+        if (diff == null || diff === 0) continue;
+        const newVal = curValByLinkId.get(linkId);
+        if (newVal == null) continue;
+        const oldVal = newVal - diff;
+        const greyW = widthOf(f, Math.min(oldVal, newVal));
+        const colW  = widthOf(f, Math.abs(diff));
+        if (!(colW > 0)) continue;
+        // Middellijn van de band ligt op greyW/2 + colW/2 uit de wegas.
+        const off = greyW / 2 + colW / 2;
+        colorPaths.push({
+          path: offsetPath(f.geometry.coordinates, off),
+          color: diff > 0 ? [220, 30, 30, 230] : [30, 180, 60, 230],
+          width: colW,
+          properties: f.properties,
+        });
+      }
+
+      // Onderlaag: gekleurde band (toe-/afname), volledig aan de buitenzijde
+      const colorLayer = new PathLayer({
+        id: 'diff-stack-color',
+        data: colorPaths,
+        widthUnits: 'meters',
+        widthMinPixels: 1.5,
+        capRounded: false,
+        jointRounded: true,
+        getPath:  d => d.path,
+        getColor: d => d.color,
+        getWidth: d => d.width,
+        pickable: true,
+        onHover: commonHover,
+        updateTriggers: {
+          getColor: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+          getPath:  [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+        },
+      });
+
+      // Bovenlaag: grijze kern met breedte = min(oud, nieuw) = het wegvak zelf
+      const coreLayer = new GeoJsonLayer({
+        id: 'diff-stack-core',
+        data,
+        visible: true,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'meters',
+        lineWidthMinPixels: 1,
+        getLineWidth: f => {
+          const linkId = f.properties.linkId;
+          const diff   = diffByLinkId.get(linkId);
+          if (diff == null) return 1.5;
+          const newVal = curValByLinkId.get(linkId);
+          if (newVal == null) return 1.5;
+          const oldVal = newVal - diff;
+          return widthOf(f, Math.min(oldVal, newVal));
+        },
+        getLineColor: [140, 140, 140, 255],  // ondoorzichtig grijs = ongewijzigd deel
+        pickable: true,
+        onHover: commonHover,
+        updateTriggers: {
+          getLineWidth: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion],
+        },
+      });
+
+      return [colorLayer, coreLayer];
+    }
+
+    // ── Smiley-verschilplot: blije/boze smiley per wegvak ────────────────────
+    // Bouw éénmalig een icon-atlas (canvas) met twee sprites: een groene blije
+    // smiley (verbetering) en een rode boze smiley (verslechtering).
+    let _smileyIconAtlas = null;
+    const _SMILEY_ICON_MAP = {
+      happy: { x: 0,   y: 0, width: 128, height: 128, mask: false },
+      angry: { x: 128, y: 0, width: 128, height: 128, mask: false },
+    };
+    function _getSmileyIconAtlas() {
+      if (_smileyIconAtlas) return _smileyIconAtlas;
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 128;
+      const ctx = cv.getContext('2d');
+
+      const drawFace = (cx, kind) => {
+        const cy = 64, r = 56;
+        const isHappy = kind === 'happy';
+        // Gezicht
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = isHappy ? '#2e9e4f' : '#d64545';
+        ctx.fill();
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = isHappy ? '#1e6e37' : '#9e2f2f';
+        ctx.stroke();
+
+        // Ogen
+        ctx.fillStyle = '#ffffff';
+        const eyeY = cy - 14, eyeDX = 20, eyeR = 8;
+        ctx.beginPath(); ctx.arc(cx - eyeDX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + eyeDX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+
+        // Boze wenkbrauwen (alleen bij angry)
+        if (!isHappy) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(cx - eyeDX - 12, eyeY - 16); ctx.lineTo(cx - eyeDX + 10, eyeY - 6);
+          ctx.moveTo(cx + eyeDX + 12, eyeY - 16); ctx.lineTo(cx + eyeDX - 10, eyeY - 6);
+          ctx.stroke();
+        }
+
+        // Mond: blij = opwaartse boog, boos = neerwaartse boog
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        if (isHappy) {
+          ctx.arc(cx, cy + 6, 24, 0.15 * Math.PI, 0.85 * Math.PI, false);
+        } else {
+          ctx.arc(cx, cy + 34, 24, 1.15 * Math.PI, 1.85 * Math.PI, false);
+        }
+        ctx.stroke();
+      };
+
+      drawFace(64, 'happy');
+      drawFace(192, 'angry');
+      _smileyIconAtlas = cv;
+      return _smileyIconAtlas;
+    }
+
+    function makeSmileyLayer() {
+      if (!diffSmileyActive || !diffByLinkId.size) {
+        return new IconLayer({ id: 'diff-smiley', data: [] });
+      }
+      const higherBetter = DIFF_HIGHER_IS_BETTER.has(diffMetric);
+      const useAbs = diffSmileyMode === 'abs';
+      const tau = diffSmileyThreshold;      // relatieve drempel (0..1)
+      const absTau = diffSmileyAbsThreshold; // absolute drempel (metriek-eenheden)
+      const EPS = 1e-9;
+
+      const data = MODE !== 'MIXED'
+        ? geojson.features
+        : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase()));
+
+      // Bouw punten (wegvak-middelpunt) met een 'happy'/'angry' klasse.
+      const pts = [];
+      for (const f of data) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = f.properties.linkId;
+        const diff   = diffByLinkId.get(linkId);
+        if (diff == null || diff === 0) continue;
+        const newVal = curValByLinkId.get(linkId);
+        if (newVal == null) continue;
+        const baseline = newVal - diff;
+        // Marginaal? → niets tonen (relatieve of absolute drempel)
+        if (useAbs) {
+          if (Math.abs(diff) < absTau) continue;
+        } else {
+          const rel = diff / Math.max(Math.abs(baseline), EPS);
+          if (Math.abs(rel) < tau) continue;
+        }
+        // Is de wijziging een verbetering?
+        const improved = higherBetter ? (diff > 0) : (diff < 0);
+        // Middelpunt van de polylijn (middelste vertex)
+        const coords = f.geometry.coordinates;
+        const mid = coords[Math.floor(coords.length / 2)];
+        pts.push({ position: mid, icon: improved ? 'happy' : 'angry', properties: f.properties });
+      }
+
+      return new IconLayer({
+        id: 'diff-smiley',
+        data: pts,
+        iconAtlas: _getSmileyIconAtlas(),
+        iconMapping: _SMILEY_ICON_MAP,
+        getIcon: d => d.icon,
+        getPosition: d => d.position,
+        sizeUnits: 'pixels',
+        getSize: 22,
+        billboard: true,
+        pickable: true,
+        onHover: info => {
+          if (info.object) {
+            _segTipLastInfo = { ...info, object: { properties: info.object.properties } };
+            if (_segTipVisible) {
+              _diffTipRender(_segTipLastInfo);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _diffTipRender(_segTipLastInfo);
+              }, 600);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+        updateTriggers: {
+          getIcon:     [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+          getPosition: [diffByLinkId.size, daypart, flowDaypart, diffMetric, diffVersion, diffSmileyThreshold, diffSmileyMode, diffSmileyAbsThreshold],
+        },
+      });
+    }
+
+    function makeLinkEditLayer() {      return new GeoJsonLayer({
+        id: 'link-edit',
+        data: geojson,
+        visible: linkEditActive || linkFlowEditActive,
+        pickable: linkEditActive || linkFlowEditActive,
+        stroked: true,
+        filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 14,
+        getLineWidth: 14,
+        getLineColor: f => {
+          const linkId = String(f.properties?.linkId ?? '');
+          const changedCap  = pendingChanges.some(c => c._isLink     && String(c.linkId) === linkId);
+          const changedFlow = pendingChanges.some(c => c._isLinkFlow && String(c.linkId) === linkId);
+          if (changedFlow) return [80, 200, 120, 220];
+          if (changedCap)  return [255, 200, 60, 220];
+          return [255, 180, 80, 140];
+        },
+        updateTriggers: { getLineColor: [pendingChanges.length] },
+        onHover: info => {
+          if (nodeEditActive && nodeSelectMode === 'polygon') return;
+          if (linkEditActive && linkSelectMode === 'polygon') return;
+          // Houd hoveredLinkId bij zodat map.on('click') de flow-dialoog kan openen
+          if (linkFlowEditActive) hoveredLinkId = info.object?.properties?.linkId ?? null;
+          map.getCanvas().style.cursor = ((linkEditActive || linkFlowEditActive) && info.object) ? 'pointer' : '';
+        },
+      });
+    }
+
+    // Achtergrond-netwerk bij 'Zone productie/attractie': zodra een zone is
+    // geselecteerd verdwijnt de normale (gekleurde) netwerklaag (zie
+    // makeNetworkLayer, visible: ... && !selectedZoneId), zodat alleen de
+    // routes van/naar die zone overblijven. Toon dan het volledige netwerk
+    // als dunne, lichtgrijze context-laag eronder.
+    function makeZoneNetworkBackdropLayer() {
+      if (zoneCentroidMode === 'off' || !selectedZoneId)
+        return new GeoJsonLayer({ id: 'zone-network-backdrop', data: [] });
+
+      return new GeoJsonLayer({
+        id: 'zone-network-backdrop',
+        data: MODE !== 'MIXED'
+          ? geojson.features
+          : geojson.features.filter(f => visibleModes.has((f.properties.mode ?? 'CAR').toUpperCase())),
+        pickable: false,
+        stroked: false,
+        filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 1,
+        getLineWidth: 1,
+        getLineColor: [170, 170, 170, 90],
+      });
+    }
+
+    // Goudappel-groen (#49a748) — gebruikt om STUDY-zones te markeren.
+    const ZONE_STUDY_COLOR = [73, 167, 72];
+
+    // Standaard-fill voor STUDY-zones: altijd zichtbaar (ongeacht selectie), met een
+    // transparante versie van ZONE_STUDY_COLOR, zodat het studiegebied in één oogopslag
+    // herkenbaar is. BOUNDARY- en NODE-klassen hebben toch geen bruikbare polygoon.
+    function makeZoneStudyFillLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      const feats = zoneFeaturesRaw.filter(f =>
+        f.properties?.zoneClass === 'STUDY' &&
+        (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'));
+      if (!feats.length) return new GeoJsonLayer({ id: 'zone-study-fill', data: [] });
+
+      return new GeoJsonLayer({
+        id:           'zone-study-fill',
+        data:         feats,
+        pickable:     false,
+        stroked:      false,
+        filled:       true,
+        getFillColor: [...ZONE_STUDY_COLOR, 40],
+      });
+    }
+
+    // Toon zone-grenzen als gestippelde lijn (PathLayer) wanneer modus niet 'off' is.
+    // Altijd zwart, onafhankelijk van productie/attractie-modus.
+    // BOUNDARY- en NODE-klassen worden overgeslagen (te groot of geen polygoon).
+    function makeZoneBoundaryLayer() {
+      if (zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new PathLayer({ id: 'zone-boundaries', data: [] });
+
+      const color      = [0, 0, 0, 160];
+      const studyColor = [...ZONE_STUDY_COLOR, 220];   // Goudappel-groen — STUDY-zones
+
+      // Extraheer buitenranden van Polygon/MultiPolygon zones
+      const paths = [];
+      for (const f of zoneFeaturesRaw) {
+        const cl = f.properties?.zoneClass;
+        if (cl === 'BOUNDARY' || cl === 'NODE') continue;
+        const isStudy = cl === 'STUDY';
+        const geom = f.geometry;
+        if (!geom) continue;
+        if (geom.type === 'Polygon' && geom.coordinates?.[0]?.length >= 2) {
+          paths.push({ path: geom.coordinates[0], isStudy });
+        } else if (geom.type === 'MultiPolygon') {
+          for (const poly of geom.coordinates)
+            if (poly?.[0]?.length >= 2) paths.push({ path: poly[0], isStudy });
+        }
+      }
+      if (!paths.length) return new PathLayer({ id: 'zone-boundaries', data: [] });
+
+      // Gebruik PathStyleExtension voor gestippeld effect indien beschikbaar
+      const dashProps = deck.PathStyleExtension
+        ? { getDashArray: [6, 5], dashJustified: true,
+            extensions: [new deck.PathStyleExtension({ dash: true })] }
+        : {};
+
+      return new PathLayer({
+        id:             'zone-boundaries',
+        data:           paths,
+        pickable:       false,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 3,
+        getPath:        d => d.path,
+        getColor:       d => d.isStudy ? studyColor : color,
+        getWidth:       d => d.isStudy ? 5 : 1.5,
+        ...dashProps,
+        updateTriggers: { getColor: [], getWidth: [] },
+      });
+    }
+
+    // Lichte fill voor de geometrie van de geselecteerde zone (geen grens-/
+    // knoop-zone, die hebben toch geen bruikbare polygoon). Kleur volgt de
+    // actieve 'Zone productie/attractie'-modus: oranje = productie, blauw = attractie.
+    function makeZoneSelectedFillLayer() {
+      if (!selectedZoneId || zoneCentroidMode === 'off' || !zoneFeaturesRaw.length)
+        return new GeoJsonLayer({ id: 'zone-selected-fill', data: [] });
+
+      const feat = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const cl   = feat?.properties?.zoneClass;
+      if (!feat || cl === 'BOUNDARY' || cl === 'NODE' ||
+          (feat.geometry?.type !== 'Polygon' && feat.geometry?.type !== 'MultiPolygon'))
+        return new GeoJsonLayer({ id: 'zone-selected-fill', data: [] });
+
+      const isProduction = zoneCentroidMode === 'production';
+      const fillColor = isProduction ? [255, 140, 0, 60] : [30, 120, 255, 60];
+
+      return new GeoJsonLayer({
+        id:           'zone-selected-fill',
+        data:         [feat],
+        pickable:     false,
+        stroked:      false,
+        filled:       true,
+        getFillColor: fillColor,
+        updateTriggers: { getFillColor: [zoneCentroidMode, selectedZoneId] },
+      });
+    }
+
+    function makeZoneCentroidLayer() {
+      // Zones verbergen als: mode=off EN geen zone/link geselecteerd, OF geen data
+      const showForLinkSel  = selectedLinkId !== null && zoneFeaturesRaw.length > 0 && (() => {
+        const numKey = Number(selectedLinkId);
+        const feat = geojson.features.find(f => f.properties?.linkId === numKey || f.properties?.linkId === selectedLinkId);
+        return (feat?.properties?.capacity ?? -1) !== 0;
+      })();
+      const showForOdEdit   = odEditActive && odEditStep === 'to' && odEditFromZone;
+      if ((zoneCentroidMode === 'off' && !selectedZoneId && !showForLinkSel && !showForOdEdit) || !zoneFeaturesRaw.length) {
+        return new ScatterplotLayer({ id: 'zone-centroids', data: [] });
+      }
+
+      // Radius-schaling: bolgrootte relatief aan productie/attractie (of flow).
+      // sqrt-schaling zodat het OPPERVLAK ~ waarde (perceptueel eerlijke vergelijking).
+      // Minimum-radius zodat kleine zones zichtbaar blijven.
+      const ZONE_RADIUS_MIN = 6;    // px
+      const ZONE_RADIUS_MAX = 26;   // px
+      const normRadius = norm =>
+        ZONE_RADIUS_MIN + (ZONE_RADIUS_MAX - ZONE_RADIUS_MIN) *
+          Math.sqrt(Math.max(0, Math.min(1, norm)));
+
+      // In OD-edit stap 'to': toon bestemmingszones die routes hebben vanuit de herkomst
+      if (showForOdEdit) {
+        const fromId = String(odEditFromZone.zoneId);
+        // Bereken trips per bestemming
+        const tripsByTo = new Map();
+        for (const r of routeList) {
+          if (String(r.fromZoneId) !== fromId) continue;
+          const toId = String(r.toZoneId);
+          tripsByTo.set(toId, (tripsByTo.get(toId) ?? 0) + (r.originProduction ?? 0) * (r.weight ?? 0));
+        }
+        const maxTrips = Math.max(...tripsByTo.values(), 1);
+        const normAlpha = norm => Math.round(50 + 190 * Math.sqrt(Math.max(0, Math.min(1, norm))));
+
+        const pts = [];
+        for (const f of zoneFeaturesRaw) {
+          const p = f.properties || {};
+          const zId = String(p.zoneId ?? '');
+          const trips = tripsByTo.get(zId) ?? 0;
+          if (trips <= 0) continue;
+
+          let lon = p.centroidLon ?? null;
+          let lat = p.centroidLat ?? null;
+          if (lon == null && f.geometry?.type === 'Point') {
+            [lon, lat] = f.geometry.coordinates;
+          } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+            const ring = f.geometry.coordinates[0];
+            lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+            lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+          }
+          if (lon == null || lat == null) continue;
+
+          pts.push({
+            lon, lat, zoneId: p.zoneId ?? null,
+            zoneName:  p.zoneName || String(p.zoneId ?? ''),
+            zoneClass: p.zoneClass || '',
+            production: p.production ?? 0,
+            attraction: p.attraction ?? 0,
+            flow: trips,
+            isSelected: false,
+            sizeNorm: trips / maxTrips,
+            alpha: normAlpha(trips / maxTrips),
+          });
+        }
+
+        return new ScatterplotLayer({
+          id: 'zone-centroids', data: pts, pickable: true,
+          stroked: true, filled: true,
+          radiusUnits: 'pixels', lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
+          getPosition:    d => [d.lon, d.lat],
+          getRadius:      d => normRadius(d.sizeNorm),
+          getFillColor:   d => [30, 120, 255, d.alpha],
+          getLineColor:   d => [30,  80, 200, Math.min(d.alpha + 40, 255)],
+          getLineWidth:   1.5,
+          onHover: ({ object }) => {
+            const newId = object?.zoneId ?? null;
+            const changed = newId !== hoveredZoneId;
+            hoveredZoneId = newId;
+            map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
+            if (changed) updatePurposeChart();
+          },
+          updateTriggers: { getFillColor: [odEditFromZone?.zoneId, daypart, flowDaypart],
+                            getLineColor: [odEditFromZone?.zoneId, daypart, flowDaypart],
+                            getRadius:    [odEditFromZone?.zoneId, daypart, flowDaypart] },
+        });
+      }
+
+      // Effectieve modus: bij link-selectie met mode=off valt terug op 'production'
+      const effectiveMode = zoneCentroidMode === 'off' ? 'production' : zoneCentroidMode;
+      const isProduction  = effectiveMode === 'production';
+
+      // Globale max voor alpha-normalisatie (onafhankelijk van selectie)
+      const allVals = zoneFeaturesRaw.map(f => {
+        const p = f.properties || {};
+        return isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+      });
+      const globalMax = Math.max(...allVals, 1);
+
+      // Selectie-afhankelijke tegenpool-data
+      let flowByZone = null;
+      let maxCounterpartFlow = 1;
+      if (selectedZoneId) {
+        ({ flowByZone } = computeZoneRouteData());
+        maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
+      } else if (showForLinkSel) {
+        let { flowByFromZone, flowByToZone } = computeLinkRouteData();
+        if (!flowByFromZone.size && !flowByToZone.size) {
+          ({ flowByFromZone, flowByToZone } = computeEstimatedLinkRouteData(selectedLinkId));
+        }
+        flowByZone = isProduction ? flowByFromZone : flowByToZone;
+        maxCounterpartFlow = Math.max(...flowByZone.values(), 1);
+      }
+
+      // Alpha-helper: sqrt-schaling norm [0,1] → [50, 240]
+      // klein (val≈0) → alpha≈50 (~80% transparant), groot (val≈max) → alpha=240 (bijna opaque)
+      const normAlpha = norm =>
+        Math.round(50 + 190 * Math.sqrt(Math.max(0, Math.min(1, norm))));
+
+      // Bouw puntenlijst
+      const pts = [];
+      for (const f of zoneFeaturesRaw) {
+        const p = f.properties || {};
+
+        // Centroïd: centroidLon/Lat → Point-geometrie → Polygon (gemiddelde buitenring)
+        let lon = p.centroidLon ?? null;
+        let lat = p.centroidLat ?? null;
+        if (lon == null && f.geometry?.type === 'Point') {
+          [lon, lat] = f.geometry.coordinates;
+        } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+          const ring = f.geometry.coordinates[0];
+          lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+          lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+        }
+        if (lon == null || lat == null) continue;
+
+        const isSelected = p.zoneId === selectedZoneId;
+        let alpha, flow = 0, sizeNorm = 0;
+        const ownVal = isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+
+        if (isSelected) {
+          alpha = 220;                                          // geselecteerde zone: vaste hoge alpha
+          sizeNorm = globalMax > 0 ? ownVal / globalMax : 0;    // grootte blijft magnitude tonen
+        } else if (flowByZone) {
+          if (!flowByZone.has(p.zoneId)) continue;             // geen enkele route naar/van deze zone: overslaan
+          flow = flowByZone.get(p.zoneId) ?? 0;
+          sizeNorm = flow / maxCounterpartFlow;
+          alpha = flow > 0 ? normAlpha(sizeNorm) : 40;         // flow 0: dun/dim bolletje i.p.v. onzichtbaar
+        } else {
+          if (ownVal <= 0) continue;
+          sizeNorm = ownVal / globalMax;
+          alpha = normAlpha(sizeNorm);
+        }
+
+        pts.push({
+          lon, lat, alpha, sizeNorm, zoneId: p.zoneId ?? null, isSelected,
+          zoneName:   p.zoneName || String(p.zoneId ?? ''),
+          zoneClass:  p.zoneClass || '',
+          production: p.production ?? 0,
+          attraction: p.attraction ?? 0,
+          flow,
+        });
+      }
+
+      return new ScatterplotLayer({
+        id:             'zone-centroids',
+        data:           pts,
+        pickable:       true,
+        stroked:        true,
+        filled:         true,
+        radiusUnits:    'pixels',
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 1,
+        getPosition:    d => [d.lon, d.lat],
+        getRadius:      d => normRadius(d.sizeNorm),
+        getFillColor:   d => d.isSelected
+          ? (isProduction ? [255, 140,  0, 220] : [30, 120, 255, 220])
+          : (isProduction ? [255, 140,  0, d.alpha] : [30, 120, 255, d.alpha]),
+        getLineColor:   d => d.isSelected
+          ? (isProduction ? [255, 200,  80, 255] : [ 80, 200, 255, 255])
+          : (isProduction ? [255, 140,   0, Math.min(d.alpha + 40, 255)]
+                          : [ 30, 120, 255, Math.min(d.alpha + 40, 255)]),
+        getLineWidth:   d => d.isSelected ? 2.5 : 1.5,
+        onHover: ({ object }) => {
+          const newId = object?.zoneId ?? null;
+          const changed = newId !== hoveredZoneId;
+          hoveredZoneId = newId;
+          map.getCanvas().style.cursor = hoveredZoneId ? 'pointer' : '';
+          // Bij hover over een zone-bol de bestemmings-motieven tonen (of terug
+          // naar de link-chart als de cursor de bol verlaat).
+          if (changed) updatePurposeChart();
+        },
+        updateTriggers: {
+          getFillColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+          getLineColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+          getLineWidth: [selectedZoneId, selectedLinkId],
+          getRadius:    [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+        },
+      });
+    }
+
+
+    function makeZoneRoutesLayer() {
+      // ── OD-edit: toon routes van het geselecteerde OD-paar ────────────────
+      if (odEditActive && window._odEditRouteData?.length) {
+        const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+        const pathData = [];
+        for (const route of window._odEditRouteData) {
+          const coords = _linkIdsToCoords(route.linkIds);
+          if (coords.length >= 2) {
+            pathData.push({ coords, flow: (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0) });
+          }
+        }
+        if (pathData.length) {
+          const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+          return new PathLayer({
+            id:             'zone-routes',
+            data:           pathData,
+            pickable:       false,
+            widthUnits:     'pixels',
+            widthMinPixels: 1.5,
+            widthMaxPixels: 10,
+            getPath:        d => d.coords,
+            getWidth:       d => Math.max(1.5, (d.flow / maxFlow) * 10),
+            getColor:       [100, 200, 255, 220],
+            updateTriggers: { getPath: [odEditFromZone?.zoneId, odEditToZone?.zoneId, daypart, flowDaypart] },
+          });
+        }
+        return new PathLayer({ id: 'zone-routes', data: [] });
+      }
+
+      // ── Selected Link: toon alle routes die door het geselecteerde wegvak lopen ──
+      // (alleen als die modus ook echt actief is — anders kan een oude
+      // selectedLinkId blijven "doorschemeren" en de zone-weergave overschaduwen)
+      if (selectedLinkActive && selectedLinkId) {
+        // Links met capaciteit 0 kunnen nooit in routes zitten → geen routes tonen
+        const _numKey0 = Number(selectedLinkId);
+        const _feat0 = geojson.features.find(f => f.properties?.linkId === _numKey0 || f.properties?.linkId === selectedLinkId);
+        if ((_feat0?.properties?.capacity ?? -1) === 0) return new PathLayer({ id: 'zone-routes', data: [] });
+        let { pathData, flowByFromZone, flowByToZone } = computeLinkRouteData();
+        const numKey = Number(selectedLinkId);
+        if (!pathData.length && _estimatedRouteCache.has(numKey)) {
+          // Gebruik gecachete Dijkstra-schatting (zelfde stijl als echte routes)
+          ({ pathData, flowByFromZone, flowByToZone } = _estimatedRouteCache.get(numKey));
+        }
+        if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
+        const maxFlow      = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+        const isProduction = zoneCentroidMode !== 'attraction';
+        const defaultColor = isProduction ? [255, 120, 0, 180] : [0, 210, 255, 180];
+        return new PathLayer({
+          id:             'zone-routes',
+          data:           pathData,
+          pickable:       false,
+          widthUnits:     'pixels',
+          widthMinPixels: 1,
+          widthMaxPixels: 8,
+          getPath:        d => d.coords,
+          getWidth:       d => Math.max(1, (d.flow / maxFlow) * 8),
+          getColor:       d => d.color ?? defaultColor,
+        updateTriggers: {
+          getLineColor: [daypart, flowDaypart, colorMetric, _fspVersion, wegenscanByLinkId.size, _speedLayersVersion],
+          getLineWidth: [daypart, flowDaypart, colorMetric, _fspVersion],
+        },
+        pickable: true,
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _segTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _segTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+      });
+    }
+
+      // ── Selected Zone: toon routes van/naar de geselecteerde zone ─────────────
+      if (!selectedZoneId || zoneCentroidMode === 'off') {
+        return new PathLayer({ id: 'zone-routes', data: [] });
+      }
+
+      const { pathData, linkIdsByZone, linkFlowByZone } = computeZoneRouteData();
+      if (!pathData.length) return new PathLayer({ id: 'zone-routes', data: [] });
+
+      const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+      const isProduction = zoneCentroidMode === 'production';
+      const baseColor = isProduction ? [255, 120, 0] : [0, 220, 255];
+
+      // Flow-verdeling per wegvak is sterk scheef (de meeste wegvakken dragen
+      // maar een fractie van wat het drukste voedingswegvak bij de zone draagt).
+      // Eén kanaal (breedte) alleen geeft dan weinig contrast, omdat de meeste
+      // wegvakken tegen de minimumbreedte aanlopen. Daarom ook de dekking laten
+      // meeschalen (sqrt zodat lage waarden nog zichtbaar blijven i.p.v. bijna
+      // transparant) — samen geven breedte + dekking een veel duidelijker
+      // verloop van dichtbij (dik/vol) naar verderop (dun/vaag).
+      const norm = d => Math.max(0, Math.min(1, d.flow / maxFlow));
+
+      // Bij een vastgeklikte OD-pijl (highlightedOdZoneId): alleen de wegvakken
+      // van dát OD-paar in volle kleur, de rest gedimd.
+      const highlightLinkIds = highlightedOdZoneId !== null
+        ? (linkIdsByZone.get(highlightedOdZoneId) ?? new Set())
+        : null;
+      const isDimmedLink = d => highlightLinkIds !== null && !highlightLinkIds.has(d.linkId);
+
+      // Bij een vastgeklikte OD-pijl: normaliseer de breedte/dekking van de
+      // gehighlighte wegvakken op de max flow van dát OD-paar zelf i.p.v. de
+      // zone-brede maxFlow, zodat een laag-volume alternatieve route (Yen's
+      // k-shortest-paths) niet wordt weggedrukt door de dominante zone-flow.
+      const pairLinkFlow = highlightedOdZoneId !== null
+        ? (linkFlowByZone.get(highlightedOdZoneId) ?? new Map())
+        : null;
+      let pairMaxFlow = 1e-9;
+      if (pairLinkFlow) for (const f of pairLinkFlow.values()) pairMaxFlow = Math.max(pairMaxFlow, f);
+      const normPair = d => Math.max(0, Math.min(1, (pairLinkFlow?.get(d.linkId) ?? 0) / pairMaxFlow));
+
+      return new PathLayer({
+        id:             'zone-routes',
+        data:           pathData,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 14,
+        getPath:        d => d.coords,
+        getWidth:       d => {
+          // sqrt() i.p.v. lineaire schaling: zonder demping verdwijnen minder
+          // dominante routes (bv. 10% van de flow) bijna in de minimumbreedte,
+          // terwijl de kleurdekking hierboven al wel met sqrt gedempt wordt.
+          if (highlightLinkIds !== null && !isDimmedLink(d)) {
+            return Math.max(2, Math.sqrt(normPair(d)) * 14);
+          }
+          const w = Math.max(1, Math.sqrt(norm(d)) * 14);
+          return isDimmedLink(d) ? Math.max(0.5, w * 0.3) : w;
+        },
+        getColor:       d => {
+          if (highlightLinkIds !== null && !isDimmedLink(d)) {
+            const aPair = Math.round(50 + 190 * Math.sqrt(normPair(d)));
+            return [...baseColor, aPair];
+          }
+          const a = Math.round(50 + 190 * Math.sqrt(norm(d)));
+          return isDimmedLink(d) ? [...baseColor, Math.round(a * 0.15)] : [...baseColor, a];
+        },
+        updateTriggers: {
+          getColor: [zoneCentroidMode, selectedZoneId, daypart, flowDaypart, highlightedOdZoneId],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart, highlightedOdZoneId],
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
+        },
+        onHover: info => {
+          const { object } = info;
+          if (object) {
+            _segTipLastInfo = info;
+            if (_segTipVisible) {
+              _zoneRouteTipRender(info, map2);
+            } else if (!_segTipTimer) {
+              _segTipTimer = setTimeout(() => {
+                _segTipTimer = null;
+                _segTipVisible = true;
+                if (_segTipLastInfo) _zoneRouteTipRender(_segTipLastInfo, map2);
+              }, 1000);
+            }
+          } else {
+            clearTimeout(_segTipTimer); _segTipTimer = null;
+            _segTipVisible = false;
+            _segTip.style.display = 'none';
+          }
+        },
+      });
+    }
+
+    /** Bereken routes + flows voor de geselecteerde zone.
+     *  Gedeeld door makeZoneRoutesLayer en makeZoneCentroidLayer.
+     *
+     *  pathData bevat één entry per fysiek wegvak (niet per route): de flow
+     *  van alle routes van/naar de zone die dat wegvak gebruiken wordt
+     *  gesommeerd, zodat gedeelde wegvakken (waar meerdere routes overlappen)
+     *  hun werkelijke totale belasting tonen i.p.v. de flow van één route. */
+    function computeZoneRouteData() {
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+      const relevant = routeList.filter(r =>
+        zoneCentroidMode === 'production' ? r.fromZoneId === selectedZoneId : r.toZoneId === selectedZoneId
+      );
+
+      const flowByZone  = new Map();  // counterpartZoneId → totale flow [veh/hr]
+      const dailyFlowByZone = new Map(); // counterpartZoneId → totale flow [veh/dag], dagdeel-onafhankelijk
+      const flowByLink  = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
+      const routeCountByZone = new Map(); // counterpartZoneId → aantal route-objecten (diagnose)
+      const linkIdsByZone = new Map(); // counterpartZoneId → Set van linkIds van routes naar/van die zone (voor OD-pijl-isolatie)
+      const linkFlowByZone = new Map(); // counterpartZoneId → Map<linkId, flow>, per-paar flowsom per wegvak (voor OD-paar-eigen normalisatie bij highlight)
+
+      for (const route of relevant) {
+        const flow        = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        const counterpart = zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId;
+        flowByZone.set(counterpart, (flowByZone.get(counterpart) ?? 0) + flow);
+        dailyFlowByZone.set(counterpart, (dailyFlowByZone.get(counterpart) ?? 0) + (route.originProduction ?? 0) * (route.weight ?? 0));
+        routeCountByZone.set(counterpart, (routeCountByZone.get(counterpart) ?? 0) + 1);
+
+        if (!linkIdsByZone.has(counterpart)) linkIdsByZone.set(counterpart, new Set());
+        const cpLinkIds = linkIdsByZone.get(counterpart);
+
+        if (!linkFlowByZone.has(counterpart)) linkFlowByZone.set(counterpart, new Map());
+        const cpLinkFlow = linkFlowByZone.get(counterpart);
+
+        for (const linkId of route.linkIds ?? []) {
+          flowByLink.set(linkId, (flowByLink.get(linkId) ?? 0) + flow);
+          cpLinkIds.add(linkId);
+          cpLinkFlow.set(linkId, (cpLinkFlow.get(linkId) ?? 0) + flow);
+        }
+      }
+
+      const pathData = [];
+      for (const [linkId, flow] of flowByLink) {
+        const coords = linkGeomMap.get(linkId) ?? linkGeomMap.get(Number(linkId));
+        if (coords && coords.length >= 2) pathData.push({ coords, flow, linkId });
+      }
+
+      // Welke tegenpool-zones hebben daadwerkelijk minstens één wegvak met
+      // geometrie in pathData? (diagnose voor "pijl zonder zichtbare route")
+      const linkIdsWithGeom = new Set(pathData.map(pd => pd.linkId));
+      const zonesWithPath = new Set();
+      for (const route of relevant) {
+        const hasGeom = (route.linkIds ?? []).some(id => linkIdsWithGeom.has(id));
+        if (hasGeom) zonesWithPath.add(zoneCentroidMode === 'production' ? route.toZoneId : route.fromZoneId);
+      }
+
+      return { pathData, flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath, linkIdsByZone, linkFlowByZone };
+    }
+
+    /** Centroïd (lon/lat) van een zone opzoeken op zoneId, met dezelfde fallback-
+     *  volgorde (centroidLon/Lat → Point-geometrie → Polygon-gemiddelde) als
+     *  elders in de zone-weergave. Retourneert null als geen centroïd te bepalen is. */
+    function _zoneCentroidLonLat(zoneId) {
+      const f = zoneFeaturesRaw.find(ft => ft.properties?.zoneId === zoneId);
+      if (!f) return null;
+      const p = f.properties || {};
+      let lon = p.centroidLon ?? null;
+      let lat = p.centroidLat ?? null;
+      if (lon == null && f.geometry?.type === 'Point') {
+        [lon, lat] = f.geometry.coordinates;
+      } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+        const ring = f.geometry.coordinates[0];
+        lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+        lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+      }
+      if (lon == null || lat == null) return null;
+      return [lon, lat];
+    }
+
+    /** Bouw een pijlkop (driehoek, 3 punten) op [lon, lat], wijzend in de richting
+     *  (dLon, dLat). lengthM/widthM zijn bij benadering in meters; analoog aan
+     *  _taBuildDirectionArrow maar met instelbare afmeting. */
+    function _buildArrowHead(lon, lat, dLon, dLat, lengthM, widthM) {
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      const vx = dLon * mLng, vy = dLat * mLat;
+      const vlen = Math.hypot(vx, vy) || 1;
+      const ux = vx / vlen, uy = vy / vlen;
+      const px = -uy, py = ux;
+      const tip  = [lon + (ux * lengthM / 2) / mLng, lat + (uy * lengthM / 2) / mLat];
+      const back = [lon - (ux * lengthM / 2) / mLng, lat - (uy * lengthM / 2) / mLat];
+      const left  = [back[0] + (px * widthM / 2) / mLng, back[1] + (py * widthM / 2) / mLat];
+      const right = [back[0] - (px * widthM / 2) / mLng, back[1] - (py * widthM / 2) / mLat];
+      return [tip, left, right];
+    }
+
+    /** Rechte "verbindingspijlen" tussen de geselecteerde zone en elke tegenpool-
+     *  zone (herkomst of bestemming, afhankelijk van productie/attractie-modus).
+     *  Breedte/dekking schalen met de totale flow (productie × som(tripFractie))
+     *  voor dat OD-paar, met een zichtbare minimumbreedte ook bij flow 0.
+     *
+     *  In tegenstelling tot makeZoneRoutesLayer (die over het wegennetwerk loopt
+     *  en dus afhankelijk is van succesvolle padreconstructie per wegvak) volgt
+     *  deze laag geen netwerkgeometrie, maar verbindt simpelweg de centroïden.
+     *  Zo blijft de OD-relatie zichtbaar ook als er geen (volledig) pad kon
+     *  worden gereconstrueerd. */
+    // Felle, van de route-paden (oranje/cyaan) en de voedingslinks (groen)
+    // onderscheidbare kleur voor de schematische OD-pijlen.
+    const ZONE_OD_ARROW_COLOR = [255, 214, 0];
+
+    function makeZoneOdArrowLayers() {
+      const empty = () => [
+        new PathLayer({ id: 'zone-od-arrow-shafts', data: [] }),
+        new PolygonLayer({ id: 'zone-od-arrow-heads', data: [] }),
+      ];
+      if (!selectedZoneId || zoneCentroidMode === 'off' || !zoneFeaturesRaw.length) return empty();
+
+      const { flowByZone, dailyFlowByZone, routeCountByZone, zonesWithPath } = computeZoneRouteData();
+      const originCoord = _zoneCentroidLonLat(selectedZoneId);
+      if (!originCoord || !flowByZone.size) return empty();
+
+      const isProduction = zoneCentroidMode === 'production';
+      const maxFlow = Math.max(...flowByZone.values(), 1e-9);
+
+      const shafts = [];
+      const heads  = [];
+      for (const [counterpartId, flow] of flowByZone) {
+        if (counterpartId === selectedZoneId) continue;
+        const destCoord = _zoneCentroidLonLat(counterpartId);
+        if (!destCoord) continue;
+
+        // Productie: pijl van geselecteerde zone náár bestemming.
+        // Attractie: pijl van herkomst náár geselecteerde zone.
+        const from = isProduction ? originCoord : destCoord;
+        const to   = isProduction ? destCoord   : originCoord;
+        const flowNorm  = Math.max(0, Math.min(1, flow / maxFlow));
+        const hasPath   = zonesWithPath.has(counterpartId);
+        const routeCount = routeCountByZone.get(counterpartId) ?? 0;
+        const dailyFlow = dailyFlowByZone.get(counterpartId) ?? 0;
+        // Is er een vastgeklikte OD-pijl (highlightedOdZoneId) en is dit 'm niet?
+        // Dan dimmen we deze pijl, zodat de geselecteerde pijl/route opvalt.
+        const isDimmed = highlightedOdZoneId !== null && counterpartId !== highlightedOdZoneId;
+
+        shafts.push({ coords: [from, to], flow, dailyFlow, flowNorm, counterpartId, hasPath, routeCount, isDimmed });
+
+        // Pijlkop op 60% van de lijn, wijzend in de richting from → to.
+        const tLon = from[0] + (to[0] - from[0]) * 0.6;
+        const tLat = from[1] + (to[1] - from[1]) * 0.6;
+        heads.push({
+          polygon: _buildArrowHead(tLon, tLat, to[0] - from[0], to[1] - from[1], 40, 22),
+          flowNorm, counterpartId, flow, dailyFlow, hasPath, routeCount, isDimmed,
+        });
+      }
+
+      const shaftLayer = new PathLayer({
+        id:             'zone-od-arrow-shafts',
+        data:           shafts,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 12,
+        getPath:        d => d.coords,
+        getWidth:       d => {
+          const w = Math.max(2, Math.sqrt(d.flowNorm) * 10);
+          return d.isDimmed ? Math.max(1, w * 0.4) : w;
+        },
+        getColor:       d => {
+          const a = Math.round(150 + 105 * Math.sqrt(d.flowNorm));
+          return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
+        },
+        updateTriggers: {
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart, highlightedOdZoneId],
+          getColor: [highlightedOdZoneId],
+        },
+        onHover: info => {
+          hoveredOdArrowZoneId = info?.object?.counterpartId ?? null;
+          map.getCanvas().style.cursor = hoveredOdArrowZoneId ? 'pointer' : '';
+          _zoneOdArrowTipRender(info, map2);
+        },
+      });
+
+      const headLayer = new PolygonLayer({
+        id:             'zone-od-arrow-heads',
+        data:           heads,
+        pickable:       true,
+        stroked:        false,
+        filled:         true,
+        getPolygon:     d => d.polygon,
+        getFillColor:   d => {
+          const a = Math.round(190 + 65 * Math.sqrt(d.flowNorm));
+          return d.isDimmed ? [...ZONE_OD_ARROW_COLOR, Math.round(a * 0.18)] : [...ZONE_OD_ARROW_COLOR, a];
+        },
+        updateTriggers: { getPolygon: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart], getFillColor: [highlightedOdZoneId] },
+        onHover: info => {
+          hoveredOdArrowZoneId = info?.object?.counterpartId ?? null;
+          map.getCanvas().style.cursor = hoveredOdArrowZoneId ? 'pointer' : '';
+          _zoneOdArrowTipRender(info, map2);
+        },
+      });
+
+      return [shaftLayer, headLayer];
+    }
+
+    /** Tooltip voor het hoveren over een OD-pijl (makeZoneOdArrowLayers): toont
+     *  de tegenpool-zone, de flow en — als diagnose voor "pijl zonder route" —
+     *  of er daadwerkelijk minstens één wegvak met geometrie achter deze
+     *  verbinding zit. */
+    const _zoneOdArrowTipRender = (info, sourceMap) => {
+      const d = info?.object;
+      if (!d) { _segTip.style.display = 'none'; return; }
+      const isProduction = zoneCentroidMode === 'production';
+      const selFeat   = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const cpFeat    = zoneFeaturesRaw.find(f => f.properties?.zoneId === d.counterpartId);
+      const selName   = selFeat?.properties?.zoneName || selFeat?.properties?.name || String(selectedZoneId);
+      const cpName    = cpFeat?.properties?.zoneName  || cpFeat?.properties?.name  || String(d.counterpartId);
+      const fromName  = isProduction ? selName : cpName;
+      const toName    = isProduction ? cpName  : selName;
+      const pathNote  = d.hasPath
+        ? `<span style="color:#3ecf5f">Ja (${d.routeCount} route${d.routeCount === 1 ? '' : 's'})</span>`
+        : `<span style="color:#e83333">Nee — geen wegvak-geometrie gevonden</span>`;
+      _segTip.innerHTML = `
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">OD-verbinding</div>
+        <div><span style="color:#6a757c">Herkomst: </span><b>${fromName}</b></div>
+        <div><span style="color:#6a757c">Bestemming: </span><b>${toName}</b></div>
+        <div><span style="color:#6a757c">Flow (dagdeel): </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">${T('odEditTripsLabel')}: </span><b>${d.dailyFlow.toLocaleString(T('numberLocale'), {maximumFractionDigits:1})} ${T('tooltipZoneProdUnit')}</b></div>
+        <div><span style="color:#6a757c">Route op het wegennet: </span>${pathNote}</div>
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+    /** Diagnostische laag: toont de voedingslinks van ALLE zones in het groen —
+     *  authoritative connector-geometrie uit het FEEDLINK-bestand (feedLinkByZone),
+     *  niet afgeleid uit route.linkIds. Per zone de richting die bij de actieve
+     *  modus hoort (productie: zone → netwerk, attractie: netwerk → zone). De
+     *  voedingslink van de geselecteerde zone wordt dikker/feller uitgelicht. */
+    function makeZoneFeedLinksLayer() {
+      if (zoneCentroidMode === 'off' || !feedLinkByZone.size) return new PathLayer({ id: 'zone-feed-links', data: [] });
+
+      const feedLinkData = [];
+      for (const [zoneId, entry] of feedLinkByZone) {
+        const coords = entry[zoneCentroidMode];
+        if (coords?.length >= 2) feedLinkData.push({ coords, zoneId, isSelected: zoneId === selectedZoneId });
+      }
+      if (!feedLinkData.length) return new PathLayer({ id: 'zone-feed-links', data: [] });
+
+      return new PathLayer({
+        id:             'zone-feed-links',
+        data:           feedLinkData,
+        pickable:       true,
+        widthUnits:     'pixels',
+        widthMinPixels: 1.5,
+        widthMaxPixels: 4,
+        getPath:        d => d.coords,
+        getWidth:       d => d.isSelected ? 4 : 1.5,
+        getColor:       d => d.isSelected ? [60, 255, 110, 255] : [40, 200, 90, 160],
+        updateTriggers: {
+          getWidth: [selectedZoneId],
+          getColor: [selectedZoneId],
+          getPath:  [zoneCentroidMode],
+        },
+        onHover: info => {
+          const d = info?.object;
+          if (!d) { _segTip.style.display = 'none'; return; }
+          const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === d.zoneId);
+          const zName = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(d.zoneId);
+          _segTip.innerHTML = `
+            <div style="color:#28dc5a;font-weight:600;margin-bottom:6px">Voedingslink</div>
+            <div><span style="color:#6a757c">Zone: </span><b>${zName}</b></div>
+            <div><span style="color:#6a757c">Richting: </span><b>${zoneCentroidMode === 'production' ? 'productie (zone → netwerk)' : 'attractie (netwerk → zone)'}</b></div>
+          `;
+          const rect = map.getCanvas().getBoundingClientRect();
+          const ev = info.srcEvent;
+          const x = ev ? ev.clientX : (rect.left + info.x);
+          const y = ev ? ev.clientY : (rect.top + info.y);
+          _segTip.style.display = '';
+          const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+          _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+          _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+        },
+      });
+    }
+
+    /** Tooltip voor het hoveren over een wegvak in de geselecteerde-zone-laag:
+     *  toont de flow vanuit/naar de geselecteerde zone op dit wegvak en het
+     *  aandeel daarvan in de totale (gemeten) flow van het wegvak. */
+    const _zoneRouteTipRender = (info, sourceMap) => {
+      const d = info?.object;
+      if (!d) { _segTip.style.display = 'none'; return; }
+      const isProduction = zoneCentroidMode === 'production';
+      const zFeat  = zoneFeaturesRaw.find(f => f.properties?.zoneId === selectedZoneId);
+      const zName  = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(selectedZoneId);
+      const totalFlow = linkFlowMap.get(d.linkId) ?? linkFlowMap.get(Number(d.linkId)) ?? 0;
+      const share = totalFlow > 0 ? Math.min(100, (d.flow / totalFlow) * 100) : null;
+      _segTip.innerHTML = `
+        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
+          ${T('tooltipSegment', d.linkId)}
+        </div>
+        <div><span style="color:#6a757c">${isProduction ? 'Herkomstzone' : 'Bestemmingszone'}: </span><b>${zName}</b></div>
+        <div><span style="color:#6a757c">Flow ${isProduction ? 'vanuit' : 'naar'} zone: </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">Totale flow (dagdeel): </span><b>${totalFlow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
+        <div><span style="color:#6a757c">Aandeel van totaal: </span><b>${share != null ? share.toFixed(0) + '%' : '–'}</b></div>
+      `;
+      const rect = (sourceMap ?? map).getCanvas().getBoundingClientRect();
+      const ev = info.srcEvent;
+      const x = ev ? ev.clientX : (rect.left + info.x);
+      const y = ev ? ev.clientY : (rect.top + info.y);
+      _segTip.style.display = '';
+      const tw = _segTip.offsetWidth, th = _segTip.offsetHeight;
+      _segTip.style.left = (x + 14 + tw > window.innerWidth  ? x - tw - 14 : x + 14) + 'px';
+      _segTip.style.top  = (y + 14 + th > window.innerHeight ? y - th - 8  : y + 14) + 'px';
+    };
+
+
+    /** Bouw linkRouteMap: linkId → route[] na het vullen van routeList. */
+    function buildLinkRouteMap() {
+      linkRouteMap.clear();
+      for (const route of routeList) {
+        for (const id of route.linkIds) {
+          if (!linkRouteMap.has(id)) linkRouteMap.set(id, []);
+          linkRouteMap.get(id).push(route);
+        }
+      }
+    }
+
+    /**
+     * IPF-kalibratie van route-producties tegen de gemeten link-flows (optie 2b).
+     *
+     * Doel: voor elk gemeten, richting-specifiek niet-voedingswegvak L moet de som van
+     * de effectieve uurproducties van alle routes die door L lopen ≈ de gemeten
+     * uurintensiteit van het actieve dagdeel (linkFlowMap[L] = dpFlowOf) benaderen.
+     * Zo komt de animatie-teller (in simulatietijd) overeen met de segment-popup.
+     *
+     * Effectieve uurproductie per route:
+     *   p_r = originProduction × DP_FRACTION[daypart] × weight × calib
+     * Alleen route.calib wordt bijgesteld; originProduction/weight blijven ongemoeid.
+     *
+     * Iteratief (Iterative Proportional Fitting): per stap krijgt elke route de
+     * geometrisch gemiddelde correctie F_L/M_L over zijn gemeten inner-links.
+     * Voedingslinks (eerste + laatste linkId) worden uitgesloten.
+     */
+    function calibrateRouteProductions() {
+      const DBG = /[?&]debug\b/.test(location.search);
+      if (!routeList.length) return;
+
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+
+      // Init calib
+      for (const route of routeList) {
+        if (typeof route.calib !== 'number' || !isFinite(route.calib)) route.calib = 1;
+      }
+
+      // Inner-link → routes map (voedingslinks uitgesloten via slice(1,-1))
+      const innerLinkRoutes = new Map(); // linkId → route[]
+      for (const route of routeList) {
+        const inner = route.linkIds.slice(1, -1);
+        for (const id of inner) {
+          if (!innerLinkRoutes.has(id)) innerLinkRoutes.set(id, []);
+          innerLinkRoutes.get(id).push(route);
+        }
+      }
+
+      // Doelwaarden F_L per gemeten inner-link (>0). linkFlowMap is richting-specifiek.
+      const targetF = new Map(); // linkId → F_L
+      for (const id of innerLinkRoutes.keys()) {
+        const f = linkFlowMap.get(id) ?? 0;
+        if (f > 0) targetF.set(id, f);
+      }
+      if (!targetF.size) return; // niets te kalibreren
+
+      // Cache: per route zijn gemeten inner-links (met F_L>0)
+      const routeMeasuredLinks = new Map(); // route → linkId[]
+      for (const route of routeList) {
+        const ids = [];
+        for (const id of route.linkIds.slice(1, -1)) {
+          if (targetF.has(id)) ids.push(id);
+        }
+        if (ids.length) routeMeasuredLinks.set(route, ids);
+      }
+
+      const baseProd = route => (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+
+      // Snapshot M_L vóór kalibratie (voor validatie)
+      const mBefore = new Map();
+      if (DBG) {
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let m = 0;
+          for (const r of routes) m += baseProd(r) * (r.calib ?? 1);
+          mBefore.set(id, m);
+        }
+      }
+
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      const K = 10;
+      for (let it = 0; it < K; it++) {
+        // Bereken huidige M_L
+        const M = new Map();
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let m = 0;
+          for (const r of routes) m += baseProd(r) * (r.calib ?? 1);
+          M.set(id, m);
+        }
+        // Per route: geomean(F_L/M_L) over gemeten inner-links, clamp per stap
+        for (const [route, ids] of routeMeasuredLinks) {
+          let logSum = 0, n = 0;
+          for (const id of ids) {
+            const m = M.get(id) ?? 0;
+            const f = targetF.get(id) ?? 0;
+            if (m > 0 && f > 0) { logSum += Math.log(f / m); n++; }
+          }
+          if (n === 0) continue;
+          const mr = clamp(Math.exp(logSum / n), 0.2, 5);
+          route.calib = clamp((route.calib ?? 1) * mr, 0.05, 20);
+        }
+      }
+
+      if (DBG) {
+        const rows = [];
+        for (const [id, routes] of innerLinkRoutes) {
+          if (!targetF.has(id)) continue;
+          let mAfter = 0;
+          for (const r of routes) mAfter += baseProd(r) * (r.calib ?? 1);
+          const mB = mBefore.get(id) ?? 0;
+          rows.push({
+            linkId: id,
+            F_L: Math.round(targetF.get(id)),
+            M_L_voor: Math.round(mB),
+            M_L_na: Math.round(mAfter),
+            factor: mB > 0 ? +(mAfter / mB).toFixed(2) : null,
+          });
+        }
+        console.log(`[calibrateRouteProductions] daypart=${daypart}, flowDaypart=${flowDaypart}, links=${targetF.size}, routes=${routeMeasuredLinks.size}`);
+        console.table(rows);
+      }
+    }
+
+    /** Aggregeer herkomst/bestemmings-flows voor het geselecteerde wegvak.
+     *  Geeft { flowByFromZone, flowByToZone, pathData } terug. */
+    function computeLinkRouteData() {
+      const dpFrac   = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+      // Verdedigende lookup: probeer zowel het originele type als Number()-conversie
+      const numKey   = Number(selectedLinkId);
+      const relevant = linkRouteMap.get(numKey)
+                    ?? linkRouteMap.get(selectedLinkId)
+                    ?? [];
+      const flowByFromZone = new Map();
+      const flowByToZone   = new Map();
+      const pathData       = [];
+      const purposeFlow    = new Map();
+      for (const route of relevant) {
+        const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        flowByFromZone.set(route.fromZoneId, (flowByFromZone.get(route.fromZoneId) ?? 0) + flow);
+        flowByToZone.set(route.toZoneId,   (flowByToZone.get(route.toZoneId)   ?? 0) + flow);
+        // Aggregeer motiefverdeling: flow × motifRatio per motief
+        if (route.motifRatio) {
+          for (const [m, ratio] of Object.entries(route.motifRatio)) {
+            purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + flow * ratio);
+          }
+        }
+        // Splits route op de geselecteerde link: upstream = oranje, downstream = cyaan
+        // Sla eerste link (voedingslink herkomst) en laatste link (voedingslink bestemming) over
+        const idx = route.linkIds.findIndex(id => id === numKey || id === selectedLinkId);
+        const upIds   = idx > 1              ? route.linkIds.slice(1, idx)                        : [];
+        const downIds = idx < route.linkIds.length - 2 ? route.linkIds.slice(idx + 1, -1) : [];
+        const upCoords   = upIds.length   ? _linkIdsToCoords(upIds)   : [];
+        const downCoords = downIds.length ? _linkIdsToCoords(downIds) : [];
+        if (upCoords.length   >= 2) pathData.push({ coords: upCoords,   flow, color: [255, 120, 0,   200] });
+        if (downCoords.length >= 2) pathData.push({ coords: downCoords, flow, color: [0,   210, 255, 200] });
+      }
+      return { flowByFromZone, flowByToZone, pathData, purposeFlow };
+    }
+
+    // ── Kleurenpalet per motief ──────────────────────────────────────────────
+    const MOTIF_COLORS = {
+      house:         '#4e9af1',
+      work:          '#f4b942',
+      shopping:      '#e05c5c',
+      recreational:  '#5cb85c',
+      school:        '#a29bfe',
+      education:     '#a29bfe',
+      hospital:      '#fd79a8',
+      parking:       '#636e72',
+      other:         '#b2bec3',
+      unclassified:  '#78909c',
+      unknown:       '#546e7a',
+    };
+    // Fallback-reeks voor onbekende sleutels
+    const _MOTIF_FALLBACK = ['#00b894','#00cec9','#fdcb6e','#e17055','#6c5ce7','#fab1a0'];
+    let   _motifFallbackIdx = 0;
+    const _motifColorCache  = {};
+    function _motifColor(key) {
+      if (MOTIF_COLORS[key]) return MOTIF_COLORS[key];
+      if (!_motifColorCache[key]) {
+        _motifColorCache[key] = _MOTIF_FALLBACK[_motifFallbackIdx++ % _MOTIF_FALLBACK.length];
+      }
+      return _motifColorCache[key];
+    }
+
+    /** Rendert het taartdiagram + legenda in #purposeChartPanel.
+     *  Verbergt het paneel als er geen motifRatio-data beschikbaar is. */
+    /**
+     * Berekent de motiefverdeling op basis van attractiezones.
+     * Voor elke zone in flowByToZone: zoek alle routes in routeList met die
+     * toZoneId, verdeel de zone-flow naar motief via route.motifRatio × route.weight.
+     * Geeft een Map<motifKey, flow> terug, of null als er niets te berekenen valt.
+     */
+    function _purposeFlowFromAttractionZones(flowByToZone) {
+      if (!flowByToZone || !flowByToZone.size) return null;
+
+      // Bouw lookup toZoneId → routes (eenmalig over flowByToZone-zones)
+      const zoneIds = new Set(flowByToZone.keys());
+      const routesByZone = new Map();
+      for (const route of routeList) {
+        if (!zoneIds.has(route.toZoneId)) continue;
+        if (!route.motifRatio) continue;
+        const arr = routesByZone.get(route.toZoneId) ?? [];
+        arr.push(route);
+        routesByZone.set(route.toZoneId, arr);
+      }
+
+      const purposeFlow = new Map();
+
+      for (const [zoneId, zoneFlow] of flowByToZone) {
+        const routes = routesByZone.get(zoneId);
+        if (!routes || !routes.length) continue;
+
+        // Normaliseer over het totale gewicht van routes naar deze zone
+        const totalWeight = routes.reduce((s, r) => s + (r.weight ?? 0), 0);
+        if (totalWeight <= 0) continue;
+
+        for (const route of routes) {
+          const share = (route.weight ?? 0) / totalWeight;
+          for (const [m, ratio] of Object.entries(route.motifRatio)) {
+            if (m === 'house') continue;
+            purposeFlow.set(m, (purposeFlow.get(m) ?? 0) + zoneFlow * share * ratio);
+          }
+        }
+      }
+
+      return purposeFlow.size > 0 ? purposeFlow : null;
+    }
+
+    /**
+     * Bestemmings-motieven van een zone, rechtstreeks afgeleid uit de socio-
+     * economische ZONE-kolommen (altijd aanwezig, i.t.t. de gebouw-breakdown):
+     *   wonen        → huishoudens (of inwoners)
+     *   werk         → arbeidsplaatsen (gedetailleerd indien beschikbaar)
+     *   onderwijs    → leerlingplaatsen_*
+     *   winkelen/rec → detail-arbeidsplaatsen indien aanwezig
+     * Geeft Map<motifKey, waarde> terug, of null.
+     */
+    function _purposeFlowFromZone(zoneId) {
+      const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === zoneId);
+      const zp = zFeat?.properties;
+      if (!zp) return null;
+      const n = v => { const x = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(x) && x > 0 ? x : 0; };
+
+      const eduSeats = n(zp.leerlingplaatsen_basisonderwijs)
+                     + n(zp.leerlingplaatsen_middelbaaronderwijs)
+                     + n(zp.leerlingplaatsen_middelbaarberoepsonderwijs)
+                     + n(zp.leerlingplaatsen_hogeronderwijs);
+      const house = n(zp.huishoudens) || n(zp.inwoners);
+
+      // Gedetailleerde baan-uitsplitsing (alleen aanwezig in rijkere datasets)
+      const shopping = n(zp.arbeidsplaatsen_overige_winkelfunctie)
+                     + n(zp.arbeidsplaatsen_overige_voedselwinkelfunctie)
+                     + n(zp.arbeidsplaatsen_supermarkt_voedselwinkelfunctie);
+      const recreational = n(zp.arbeidsplaatsen_sportfunctie) + n(zp.arbeidsplaatsen_bijeenkomstfunctie);
+      const kantoor  = n(zp.arbeidsplaatsen_kantoorfunctie);
+      const industrie = n(zp.arbeidsplaatsen_industriefunctie);
+      const eduJobs  = n(zp.arbeidsplaatsen_onderwijsfunctie);
+      const overige  = n(zp.arbeidsplaatsen_overige_gebruiksfunctie);
+      const detailedJobs = shopping + recreational + kantoor + industrie + eduJobs + overige;
+
+      const m = new Map();
+      if (house > 0)     m.set('house', house);
+      if (eduSeats > 0)  m.set('education', eduSeats);
+
+      if (detailedJobs > 0) {
+        if (kantoor + industrie > 0) m.set('work', kantoor + industrie);
+        if (shopping > 0)            m.set('shopping', shopping);
+        if (recreational > 0)        m.set('recreational', recreational);
+        if (overige > 0)             m.set('other', overige);
+        if (!eduSeats && eduJobs > 0) m.set('education', eduJobs);
+      } else {
+        // Alleen totalen beschikbaar: alle arbeidsplaatsen → werk
+        const jobs = n(zp.arbeidsplaatsen);
+        if (jobs > 0) m.set('work', jobs);
+      }
+      return m.size > 0 ? m : null;
+    }
+
+    function updatePurposeChart() {
+      const panel   = document.getElementById('purposeChartPanel');
+      const svg     = document.getElementById('purposeChartSvg');
+      const legend  = document.getElementById('purposeChartLegend');
+      const estTag  = document.getElementById('purposeChartEstTag');
+      const noData  = document.getElementById('purposeChartNoData');
+      const body    = document.getElementById('purposeChartBody');
+      const subtitle= document.getElementById('purposeChartSubtitle');
+
+      // ── Bron A: hover over een zone-bol → bestemmings-motieven van die zone ──
+      // Heeft voorrang boven de link-chart zolang de cursor op een bol staat.
+      const _zonesVisible = zoneCentroidMode !== 'off' || selectedLinkId != null || selectedZoneId != null;
+      if (hoveredZoneId != null && _zonesVisible) {
+        const zpf = _purposeFlowFromZone(hoveredZoneId);
+        if (zpf) {
+          const entries = [...zpf.entries()]
+            .filter(([, v]) => v > 0)
+            .sort(([, a], [, b]) => b - a);
+          const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === hoveredZoneId);
+          const zName = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(hoveredZoneId);
+          if (subtitle) { subtitle.textContent = '· ' + zName; subtitle.style.display = 'inline'; }
+          _renderPurposeChart(entries, true);   // building-schatting → estimated-badge
+          return;
+        }
+      }
+      if (subtitle) { subtitle.style.display = 'none'; subtitle.textContent = ''; }
+
+      if (!selectedLinkId) {
+        panel.style.display = 'none';
+        return;
+      }
+
+      // ── Stap 1: haal flowByToZone op ─────────────────────────────────────
+      // Links met echte routes: gebruik linkRouteMap-data
+      // Links zonder routes:    gebruik Dijkstra-schatting
+      const numLinkId  = Number(selectedLinkId);
+      const hasRoutes  = (linkRouteMap.get(numLinkId) ?? linkRouteMap.get(selectedLinkId) ?? []).length > 0;
+
+      // Links met capaciteit 0 kunnen nooit in routes zitten → paneel verbergen
+      const _selFeatPC = geojson.features.find(f => f.properties?.linkId === numLinkId || f.properties?.linkId === selectedLinkId);
+      if ((_selFeatPC?.properties?.capacity ?? -1) === 0 && !hasRoutes) {
+        panel.style.display = 'none';
+        return;
+      }
+
+      // ── Stap 1: primaire bron = flowsPerMotive op de link zelf ────────────
+      // Dit is de werkelijke motiefverdeling van het wegvak. De route-motifRatio
+      // is in de huidige data nietszeggend ({"unclassified": 1.0}); daarom is de
+      // link-eigen verdeling leidend, óók als de link op een route ligt.
+      let entries = [];
+      let estimated = false;
+
+      const linkFeat = _selFeatPC ?? geojson.features.find(
+        f => f.properties?.linkId === numLinkId || f.properties?.linkId === selectedLinkId
+      );
+      const fpm = linkFeat?.properties?.flowsPerMotive;
+      if (fpm) {
+        const raw = typeof fpm === 'string' ? JSON.parse(fpm) : fpm;
+        entries = Object.entries(raw)
+          .filter(([k, v]) => k !== 'house' && v > 0)
+          .sort(([, a], [, b]) => b - a);
+      }
+
+      // ── Stap 2 (fallback): schat de verdeling via attractiezones als de link
+      //    zelf geen bruikbare flowsPerMotive heeft ──────────────────────────
+      if (!entries.length) {
+        let flowByToZone;
+        if (hasRoutes) {
+          ({ flowByToZone } = computeLinkRouteData());
+        } else {
+          const est = _estimatedRouteCache.get(numLinkId) ?? _estimatedRouteCache.get(selectedLinkId);
+          flowByToZone = est ? est.flowByToZone : null;
+          estimated = true;
+        }
+        const pf = _purposeFlowFromAttractionZones(flowByToZone);
+        if (pf) {
+          entries = [...pf.entries()]
+            .filter(([, v]) => v > 0)
+            .sort(([, a], [, b]) => b - a);
+        }
+      }
+
+      // ── Laatste fallback: toon "100% onbekend" ────────────────────────────
+      if (!entries.length) {
+        entries = [['unknown', 1]];
+        estimated = false;
+      }
+
+      _renderPurposeChart(entries, estimated);
+    }
+
+    /** Gedeelde weergave van taart + legenda in #purposeChartPanel. */
+    function _renderPurposeChart(entries, estimated) {
+      const panel   = document.getElementById('purposeChartPanel');
+      const svg     = document.getElementById('purposeChartSvg');
+      const legend  = document.getElementById('purposeChartLegend');
+      const estTag  = document.getElementById('purposeChartEstTag');
+      const noData  = document.getElementById('purposeChartNoData');
+      const body    = document.getElementById('purposeChartBody');
+
+      if (!entries || !entries.length) {
+        entries = [['unknown', 1]];
+        estimated = false;
+      }
+
+      estTag.style.display  = estimated ? 'inline' : 'none';
+      noData.style.display  = 'none';
+      body.style.display    = 'flex';
+
+      const total = entries.reduce((s, [, v]) => s + v, 0);
+
+      // ── SVG taart ────────────────────────────────────────────────────────
+      const cx = 65, cy = 65, r = 58;
+      let svgHtml = '';
+      let angle   = -Math.PI / 2;   // begin bovenaan
+
+      for (const [key, val] of entries) {
+        const slice  = (val / total) * 2 * Math.PI;
+        const endAng = angle + slice;
+        const x1 = cx + r * Math.cos(angle);
+        const y1 = cy + r * Math.sin(angle);
+        const x2 = cx + r * Math.cos(endAng);
+        const y2 = cy + r * Math.sin(endAng);
+        const large = slice > Math.PI ? 1 : 0;
+        const color = _motifColor(key);
+
+        if (Math.abs(slice - 2 * Math.PI) < 1e-6) {
+          svgHtml += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`;
+        } else {
+          svgHtml += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z"
+            fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`;
+        }
+        angle = endAng;
+      }
+      svg.innerHTML = svgHtml;
+
+      // ── Legenda ───────────────────────────────────────────────────────────
+      legend.innerHTML = entries.map(([key, val]) => {
+        const pct   = ((val / total) * 100).toFixed(1);
+        const _lk   = T(`motifLabel_${key}`);
+        const label = _lk === `motifLabel_${key}` ? key : _lk;   // val terug op de ruwe key i.p.v. de i18n-sleutel
+        const color = _motifColor(key);
+        return `<div class="pcl-item">
+          <span class="pcl-dot" style="background:${color}"></span>
+          <span class="pcl-label">${label}</span>
+          <span class="pcl-pct">${pct}%</span>
+        </div>`;
+      }).join('');
+
+      panel.style.display = 'block';
+    }
+
+    /** Twee GeoJsonLayers die het geselecteerde wegvak markeren als glowing red. */
+    function makeSelectedLinkHighlightLayers() {
+      if (!selectedLinkId) return [
+        new GeoJsonLayer({ id: 'selected-link-glow', data: [] }),
+        new GeoJsonLayer({ id: 'selected-link-core', data: [] }),
+      ];
+      const feat = geojson.features.find(
+        f => f.properties?.linkId === selectedLinkId
+          || f.properties?.linkId === Number(selectedLinkId)
+      );
+      const data = feat ? [feat] : [];
+      return [
+        // Buitenste gloed: breed, semi-transparant rood
+        new GeoJsonLayer({
+          id: 'selected-link-glow',
+          data,
+          stroked: false, filled: false,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 22,
+          getLineWidth: 22,
+          getLineColor: [255, 0, 0, 160],
+          updateTriggers: { getLineColor: [selectedLinkId] },
+        }),
+        // Binnenste kern: smal, vol wit-rood
+        new GeoJsonLayer({
+          id: 'selected-link-core',
+          data,
+          stroked: false, filled: false,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 6,
+          getLineWidth: 6,
+          getLineColor: [255, 220, 220, 255],
+          updateTriggers: { getLineColor: [selectedLinkId] },
+        }),
+      ];
+    }
+
+    function makeWhatifRcHighlightLayer() {
+      const features = [];
+      for (const [lid] of whatifRcLinks) {
+        const coords = linkGeomMap.get(Number(lid)) ?? linkGeomMap.get(lid);
+        if (coords?.length >= 2) {
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: coords },
+            properties: { linkId: lid },
+          });
+        }
+      }
+      return new GeoJsonLayer({
+        id: 'whatif-rc-highlight',
+        data: features.length ? { type: 'FeatureCollection', features } : { type: 'FeatureCollection', features: [] },
+        stroked: false, filled: false,
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 5,
+        getLineWidth: 5,
+        getLineColor: [255, 80, 80, 230],
+        updateTriggers: { getLineColor: [whatifRcLinks.size] },
+      });
+    }
+
+     function makeTooltip({ object, layer }) {
+       if (!object) return null;
+
+       // ── Zone-centroid tooltip ────────────────────────────────────────────
+       if (layer?.id === 'zone-centroids') {
+         const d = object;
+         const loc = T('numberLocale');
+         const isProduction = zoneCentroidMode === 'production';
+         const accentColor  = isProduction ? '#ff9a30' : '#4bcfff';
+         const classLabel   = ({
+           STUDY:     T('tooltipZoneClassStudy'),
+           INFLUENCE: T('tooltipZoneClassInfluence'),
+           BOUNDARY:  T('tooltipZoneClassBoundary'),
+           CBS:       T('tooltipZoneClassCbs'),
+         })[d.zoneClass] ?? d.zoneClass;
+         const dpLabels = { etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), erh: T('dpLabelErh'), rest: T('dpLabelRest') };
+         const flowRow = d.flow > 0
+           ? `<div><span style="color:#6a757c">${T('tooltipZoneRoute')} (${dpLabels[flowDaypart]}): </span>
+                <b>${d.flow.toFixed(0)}\u202f${T('tooltipZoneRouteUnit')}</b></div>`
+           : '';
+
+         // Vloeroppervlak-breakdown uit gebouwen-data (alleen als geladen)
+         const floorTypes = [
+           ['residential', 'tooltipZoneFloorResidential'],
+           ['office',       'tooltipZoneFloorOffice'],
+           ['industrial',   'tooltipZoneFloorIndustrial'],
+           ['commercial',   'tooltipZoneFloorCommercial'],
+           ['education',    'tooltipZoneFloorEducation'],
+           ['recreation',   'tooltipZoneFloorRecreation'],
+           ['transport',    'tooltipZoneFloorTransport'],
+           ['other',        'tooltipZoneFloorOther'],
+         ];
+         const bd = zoneAreaBreakdown.get(d.zoneId);
+         const floorRows = bd
+           ? floorTypes
+               .map(([type, key]) => {
+                 const m2 = Math.round(bd[type] || 0);
+                 if (!m2) return '';
+                 return `<div style="display:flex;justify-content:space-between;gap:16px">
+                   <span style="color:#6a757c">${T(key)}</span>
+                   <b>${m2.toLocaleString(loc)}\u202f${T('tooltipZoneFloorUnit')}</b></div>`;
+               })
+               .join('')
+           : '';
+         const floorSection = floorRows
+           ? `<div style="margin-top:6px;border-top:1px solid rgba(35,41,49,0.1);padding-top:6px">
+                <div style="color:#7a8494;font-size:11px;margin-bottom:3px">${T('tooltipZoneFloorTitle')}</div>
+                ${floorRows}
+              </div>`
+           : '';
+         return {
+           html: `
+             <div style="font:13px var(--ga-font),sans-serif;color:#232931;line-height:1.8">
+               <div style="color:${accentColor};font-weight:600;margin-bottom:6px">
+                 ${d.zoneName}
+               </div>
+               <div><span style="color:#6a757c">${T('tooltipZoneClass')}: </span>
+                 <b>${classLabel}</b></div>
+               <div><span style="color:#6a757c">${T('tooltipZoneProd')}: </span>
+                 <b>${(d.production).toLocaleString(loc, { maximumFractionDigits: 0 })}\u202f${T('tooltipZoneProdUnit')}</b></div>
+                <div><span style="color:#6a757c">${T('tooltipZoneAttr')}: </span>
+                  <b>${(d.attraction).toLocaleString(loc, { maximumFractionDigits: 0 })}\u202f${T('tooltipZoneAttrUnit')}</b></div>
+                ${flowRow}
+                ${floorSection}
+             </div>`,
+           style: {
+             background: 'rgba(13,17,23,0.95)', borderRadius: '10px',
+             padding: '12px 16px', border: '1px solid rgba(126,200,227,0.25)',
+             boxShadow: '0 4px 20px rgba(0,0,0,0.5)', pointerEvents: 'none',
+           },
+         };
+       }
+
+       // ── Netwerk-segment tooltip — afgehandeld via DOM-element met 1 s vertraging
+       return null;
+     }
+
+    // ── 6. Initialisatie ────────────────────────────────────────────────────
+
+    let pendingChanges        = [];       // [{ nodeId, zoneId, production, attraction, label }]
+    let _changesPanelReadOnly = false;   // true = geopend via ☰-knop (alleen-lezen)
+    let _historicalChanges    = [];      // Properties-objecten van /collections/changes/items
+
+    // Maatregelset-paneel (extern JS-bestand) toegang geven tot deze closure-
+    // variabelen, zodat gegenereerde wijzigingen als scenario kunnen worden ingeladen.
+    window.pendingChanges = pendingChanges;
+    window._setChangesPanelReadOnly = _setChangesPanelReadOnly;
+    window.renderChangesList = renderChangesList;
+
+    const overlay = new MapboxOverlay({
+      interleaved: true,
+      layers: [makeNetworkLayer(), makeZoneNetworkBackdropLayer(), makeLinkEditLayer(), makeZoneStudyFillLayer(), makeZoneSelectedFillLayer(), makeZoneBoundaryLayer(), makeZoneCentroidLayer(), makeZoneRoutesLayer(), makeZoneFeedLinksLayer(), ...makeZoneOdArrowLayers()],
+      getTooltip: makeTooltip,
+      getCursor: ({ isDragging, isHovering }) => {
+        if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
+         if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
+         if (linkAddActive) return 'crosshair';
+         if ((linkEditActive || linkFlowEditActive || selectedLinkActive) && isHovering) return 'pointer';
+         return '';
+      },
+      onClick: (info, event) => {
+        // Polygon-modus: hoekpunt toevoegen als een deck.gl-object geraakt werd.
+        // Voor lege kaartgebieden fired deck.gl onClick niet (interleaved mode),
+        // of retourneert het false – map.on('click') neemt dat over.
+        if (nodeEditActive && nodeSelectMode === 'polygon') {
+          if (info.picked) {
+            if (document.getElementById('polygonDialog').style.display !== 'block') {
+              const coord = info.coordinate ?? [0, 0];
+              polygonVertices.push([coord[0], coord[1]]);
+              updatePolygonDraw();
+              if (polygonVertices.length >= 1)
+                document.getElementById('polygonClearBtn').style.display  = 'block';
+              if (polygonVertices.length >= 3)
+                document.getElementById('polygonFinishBtn').style.display = 'block';
+            }
+            return true; // stop propagation → voorkom dubbel-fire via map.on('click')
+          }
+          return false; // niets gepickt → laat map.on('click') het afhandelen
+        }
+        // Zone-centroid klik: afgehandeld via map.on('click') + hoveredZoneId (zie verderop)
+
+        if (!linkEditActive || linkSelectMode !== 'click') return;
+        if (!info.object)    return;
+        if (info.layer?.id !== 'link-edit') return;
+        const pixel = info.pixel ?? [0, 0];
+        openLinkDialog(info.object, { x: pixel[0], y: pixel[1] });
+        return true;
+      },
+    });
+    map.addControl(overlay);
+
+    // Zone-centroid klik via map.on('click') + hoveredZoneId (deck.gl onClick onbetrouwbaar
+    // in interleaved-modus; onHover werkt wel en houdt hoveredZoneId bij).
+    map.on('click', (e) => {
+      // OD-pijl isolatie: klik op een pijl isoleert dat OD-paar (dimt de rest);
+      // nogmaals op dezelfde pijl, of ergens anders klikken, zet het weer terug.
+      if (hoveredOdArrowZoneId) {
+        highlightedOdZoneId = (highlightedOdZoneId === hoveredOdArrowZoneId) ? null : hoveredOdArrowZoneId;
+        updateOverlay(true);
+        return;
+      } else if (highlightedOdZoneId !== null) {
+        highlightedOdZoneId = null;
+        updateOverlay(true);
+        // Geen return: een eventuele andere klik-actie (zone selecteren, etc.) mag doorgaan.
+      }
+      // Nieuw wegvak intekenen: voeg vertex toe
+      if (linkAddActive) {
+        const coord = [e.lngLat.lng, e.lngLat.lat];
+        linkAddVertices.push(coord);
+        _linkAddMouseCoord = coord;
+        updateLinkAddPreview();
+        // Toon "Afronden"-popup zodra we >= 2 vertices hebben
+        if (linkAddVertices.length >= 2)
+          document.getElementById('linkAddFinishPopup').style.display = 'block';
+        return;
+      }
+      // Flow per wegvak wijzigen via hoveredLinkId (deck.gl onClick onbetrouwbaar)
+      if (linkFlowEditActive && hoveredLinkId !== null) {
+        const numKey = Number(hoveredLinkId);
+        const feat = geojson.features.find(f =>
+          f.properties?.linkId === numKey || f.properties?.linkId === hoveredLinkId);
+        if (feat) {
+          const point = e.point ?? { x: 0, y: 0 };
+          openLinkFlowDialog(feat, { x: point.x, y: point.y });
+        }
+        return;
+      }
+      // Veiligheidsmodus: open KPI-paneel voor het aangeklikte wegvak
+      if (isSafetyMetric(colorMetric) && hoveredLinkId !== null) {
+        const wsProps = wegenscanByLinkId.get(String(hoveredLinkId));
+        if (wsProps) openWegenscanPanel(wsProps);
+        return;
+      }
+      // Link-selectie via selectedLinkActive + hoveredLinkId
+      if (selectedLinkActive && hoveredLinkId !== null) {
+        const prevId = selectedLinkId;
+        selectedLinkId = (selectedLinkId === hoveredLinkId) ? null : hoveredLinkId;
+        // Cache opschonen als een ander link geselecteerd wordt
+        if (prevId !== null && prevId !== selectedLinkId) _estimatedRouteCache.delete(prevId);
+        if (selectedLinkId !== null) {
+          const numKey = Number(selectedLinkId);
+          const routes = linkRouteMap.get(numKey) ?? linkRouteMap.get(selectedLinkId) ?? [];
+          console.log('[SLA] geselecteerd linkId:', selectedLinkId, typeof selectedLinkId,
+            '| linkRouteMap.size:', linkRouteMap.size,
+            '| routes voor dit link:', routes.length,
+            '| routeList.length:', routeList.length,
+            '| zoneFeaturesRaw.length:', zoneFeaturesRaw.length);
+          // Links met capaciteit 0 kunnen nooit in routes zitten → geen OD-schatting
+          const _selFeat = geojson.features.find(f => f.properties?.linkId === numKey || f.properties?.linkId === selectedLinkId);
+          const _selCap0 = (_selFeat?.properties?.capacity ?? -1) === 0;
+          // Geen routes in de data → schat async via Dijkstra (20 nearest + extern)
+          if (routes.length === 0 && !_estimatedRouteCache.has(numKey) && !_selCap0) {
+            const calcOverlay    = document.getElementById('calcOverlay');
+            const calcOverlayMsg = document.getElementById('calcOverlayMsg');
+            calcOverlay.style.display = 'flex';
+            calcOverlayMsg.textContent = T('estimatingRoutes');
+            const capturedId = numKey;
+            setTimeout(() => {
+              try {
+                const result = computeEstimatedLinkRouteData(capturedId);
+                _estimatedRouteCache.set(capturedId, result);
+              } finally {
+                calcOverlay.style.display = 'none';
+                updateOverlay(true);
+                updatePurposeChart();
+              }
+            }, 0);
+            return; // updateOverlay/updatePurposeChart volgen na de berekening
+          }
+        }
+        updateOverlay(true);
+        updatePurposeChart();
+        return;
+      }
+      // What-if wegafsluiting link-selectie
+      if (whatifRcActive && hoveredLinkId !== null) {
+        const lid = String(hoveredLinkId);
+        if (whatifRcLinks.has(lid)) {
+          whatifRcLinks.delete(lid);
+        } else {
+          whatifRcLinks.set(lid, T('whatifRcLinkLabel', lid));
+        }
+        renderWhatifRcList();
+        updateOverlay(true);
+        return;
+      }
+      if (zoneCentroidMode === 'off' || !hoveredZoneId) return;
+
+      // OD-edit zone-selectie (hogere prioriteit dan gewone zone-selectie)
+      if (odEditActive) {
+        const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === hoveredZoneId);
+        const label = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(hoveredZoneId);
+        if (odEditStep === 'from') {
+          odEditFromZone = { zoneId: hoveredZoneId, label };
+          odEditStep     = 'to';
+        } else {
+          odEditToZone = { zoneId: hoveredZoneId, label };
+          odEditStep   = 'done';
+        }
+        _odEditUpdateStepDisplay();
+        return;
+      }
+
+      selectedZoneId = (selectedZoneId === hoveredZoneId) ? null : hoveredZoneId;
+      updateOverlay(true);
+    });
+
+    // ── Afgesloten wegvakken symboollaag ───────────────────────────────────────
+    const CLOSED_SOURCE = 'closed-links-src';
+    const CLOSED_LAYER  = 'closed-links-layer';
+    const CLOSED_ICON   = 'no-entry';
+
+    // ── Snelheidsbordje symboollaag ────────────────────────────────────────────
+    const SPEED_SOURCE = 'speed-signs-src';
+    const SPEED_LAYER  = 'speed-signs-layer';
+
+    // Initialiseer afsluiting-symbolen zodra de kaart-stijl gereed is (ook zonder edit-modus)
+    if (map.isStyleLoaded()) {
+      initClosedLinksLayer();
+    } else {
+      const _onMapReady = () => { map.off('idle', _onMapReady); initClosedLinksLayer(); };
+      map.on('idle', _onMapReady);
+    }
+
+      function updateOverlay() {
+         overlay.setProps({ layers: [
+           makeSpeedBumpLayer(),
+          makeNetworkLayer(),
+          makeZoneNetworkBackdropLayer(),
+          makeDiffLayer(),
+          ...makeDiffStackLayer(),
+          makeSmileyLayer(),
+          makeLinkEditLayer(),
+          ...makeSelectedLinkHighlightLayers(),
+          makeWhatifRcHighlightLayer(),
+          makeZoneStudyFillLayer(),
+          makeZoneSelectedFillLayer(),
+          makeZoneBoundaryLayer(),
+          makeZoneCentroidLayer(),
+          makeZoneRoutesLayer(),
+          makeZoneFeedLinksLayer(),
+          ...makeZoneOdArrowLayers(),
+        ]});
+        // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
+        if (splitViewActive && overlay2) {
+          overlay2.setProps({ layers: [makeNetworkLayer2()].filter(Boolean) });
+        }
+      }
+
+
+    // ── 7. Dagdeelklok ──────────────────────────────────────────────────────
+    // Welk tijdvak is gekozen op de klok terwijl gepauzeerd ('etmaal'|'mrh'|'rest'|'erh');
+    // null = niet gepauzeerd / geen selectie-modus actief.
+    let simPausedSelection = null;
+    const SIM_DP_CYCLE = ['etmaal', 'mrh', 'rest', 'erh'];
+
+    // Onderdruk 'Image X could not be loaded'-waarschuwingen van OpenFreeMap's sprite-sheet
+    // Onderdruk 'Image X could not be loaded'-waarschuwingen van de sprite-sheet
+    // door ontbrekende afbeeldingen te vervangen door een transparante 1×1 placeholder.
+    map.on('styleimagemissing', (e) => {
+      if (map.hasImage(e.id)) return;
+      const empty = { width: 1, height: 1, data: new Uint8Array(4) };
+      map.addImage(e.id, empty);
+    });
+
+    function _onMapStyleLoad() {
+      if (typeof _tPost === 'number') {
+        console.log('[perf] routes-loaded → map style load / loader hide:',
+                    (performance.now() - _tPost).toFixed(0), 'ms');
+      }
+      hideLaadscherm();
+      _startFollowMode();
+
+      // Liberty 2D/3D-gebouwlagen altijd verbergen, meteen bij het laden van de
+      // stijl — niet pas zodra _tryAddBuildings() de pandendata heeft verwerkt.
+      // Anders flitsen de standaard 3D-gebouwen van de basiskaart kort op terwijl
+      // de pandendata nog wordt opgehaald/verrijkt. Ons eigen gekleurde grondvlak
+      // (buildings-fill, zie _tryAddBuildings) vervangt ze zodra het motief
+      // "Pand productie/attractie" ≠ 'uit' staat; tot die tijd blijft alles leeg.
+      try { if (map.getLayer('building'))    map.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+      try { if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+
+      if (_MAQUETTE) {
+        map.getStyle().layers
+          .filter(l => l.id.toLowerCase().includes('building'))
+          .forEach(l => {
+            try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
+          });
+        map.getStyle().layers
+          .filter(l => l.type === 'symbol' && l.layout?.['text-field'])
+          .forEach(l => {
+            try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (_) {}
+          });
+      }
+      _mapReady = true;
+      _tryAddBuildings();
+      // Wegnummer-schildjes (N346 e.d.) worden standaard erg vaak langs de weg
+      // herhaald. Vergroot symbol-spacing op de shield-symboollagen zodat ze
+      // veel minder vaak verschijnen.
+      try {
+        for (const l of map.getStyle().layers) {
+          if (l.type !== 'symbol') continue;
+          if (!/shield/i.test(l.id)) continue;
+          map.setLayoutProperty(l.id, 'symbol-spacing', 1200);
+        }
+      } catch (_) {}
+
+      // ── Satelliet-ondergrond ────────────────────────────────────────────────
+      // Verzamel Liberty fill/background layer IDs die we in satellietmodus verbergen.
+      // Lijnlagen (roads) en symboollagen (labels) blijven als overlay zichtbaar.
+      // Let op: _tryAddBuildings() hierboven heeft onze eigen 'buildings-*'-lagen
+      // (buildings-fill/buildings-selected) al toegevoegd aan de
+      // stijl — die moeten hier expliciet uitgesloten worden, anders trekt de
+      // generieke Liberty-toggle (_applyBasemapStyle) ze mee
+      // en verschijnt het grondvlak ook als 'Gebouw productie/attractie' = uit.
+      _libertyFillLayerIds = map.getStyle().layers
+        .filter(l => !l.id.startsWith('buildings'))
+        .filter(l => l.type === 'background' || l.type === 'fill' || l.type === 'raster')
+        .map(l => l.id);
+      // Alle Liberty layer IDs — verborgen in geen-kaart-modus (alleen zwart vlak).
+      _libertyAllLayerIds = map.getStyle().layers
+        .filter(l => !l.id.startsWith('buildings'))
+        .map(l => l.id);
+
+      // Voeg ESRI World Imagery raster-source toe als ondergrond
+      if (!map.getSource('esri-satellite')) {
+        map.addSource('esri-satellite', {
+          type:        'raster',
+          tiles:       ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize:    256,
+          maxzoom:     19,
+          attribution: '© Esri, i-cubed, USDA, USGS, AEX, GeoEye',
+        });
+      }
+      if (!map.getLayer('satellite-bg')) {
+        // Invoegen vóór de eerste Liberty-laag zodat alles er bovenop ligt
+        const firstLayerId = map.getStyle().layers[0]?.id;
+        map.addLayer({
+          id:     'satellite-bg',
+          type:   'raster',
+          source: 'esri-satellite',
+          layout: { visibility: 'none' },
+          paint:  { 'raster-opacity': 1 },
+        }, firstLayerId);
+      }
+
+      // Pas opgeslagen voorkeur toe (bv. als gebruiker eerder 'satellite', 'none' of 'white' had gekozen)
+      if (basemapStyle !== 'map') _applyBasemapStyle(basemapStyle);
+    }
+
+    map.on('load', _onMapStyleLoad);
+    // Als de 'load'-event al gevuurd is vóór registratie, direct uitvoeren.
+    // Gebruik _mapLoadFired i.p.v. map.isStyleLoaded(): addSource/addLayer (door
+    // initClosedLinksLayer hierboven) zetten isStyleLoaded() tijdelijk op false.
+    if (_mapLoadFired) _onMapStyleLoad();
+
+    // Zoom-event: auto-dichtheid wordt niet herberekend bij panning/zoomen
+    // zodat de verkeersafwikkeling niet wordt gereset.
+    // map.on('zoomend', ...) bewust weggelaten.
+
+    // ── 7b. Node-edit modus ─────────────────────────────────────────────────
+
+    let scenarioCounter  = 1;
+    let activeNodeFeature = null;  // feature dat de dialoog opende
+    let activeZoneExplodeFeature = null;  // feature dat de zone-explode-dialoog opende
+    let compareVisible   = false;
+    let compareData      = null;   // GeoJSON FeatureCollection van COMPARE-laag
+
+    // Helpers
+    const NODE_SOURCE = 'edit-nodes-src';
+    const NODE_LAYER  = 'edit-nodes-layer';
+    const LINK_SOURCE = 'edit-links-src';
+    const LINK_LAYER  = 'edit-links-layer';
+    const CMP_SOURCE  = 'compare-src';
+    const CMP_LAYER_INC = 'compare-inc';
+    const CMP_LAYER_RED = 'compare-red';
+    const CMP_LAYER_MAT = 'compare-mat';
+
+    // ── Polygon tekenlaag ──────────────────────────────────────────────────
+    const POLY_SOURCE     = 'poly-draw-src';
+    const POLY_FILL_LAYER = 'poly-draw-fill';
+    const POLY_LINE_LAYER = 'poly-draw-line';
+
+    const HL_SOURCE     = 'highlight-src';
+    const HL_LINE_LAYER = 'highlight-line';
+    const HL_POINT_LAYER= 'highlight-point';
+    const HL_ARROW_LAYER= 'highlight-arrow';
+    const HL_ARROW_ICON = 'hl-arrow';
+
+    // Nieuw-wegvak teken-lagen
+    const LINK_ADD_SOURCE    = 'link-add-src';
+    const LINK_ADD_LINE      = 'link-add-line';
+    const LINK_ADD_RUBBER    = 'link-add-rubber';
+    const LINK_ADD_DOTS      = 'link-add-dots';
+
+    let highlightedChangeIndex = null;
+
+    function addNodeLayer() {
+      initPolygonDrawLayers();
+      // 1. BOUNDARY + NODE zones (met productie/attractie-info), en STUDY/
+      //    INFLUENCE zones op hun centroid (nodig om ze te kunnen selecteren
+      //    voor productie/attractie-wijzigingen én voor "zone opsplitsen" —
+      //    BOUNDARY-zones hebben geen eigen geometrie om te splitsen en
+      //    worden daarom in de explode-dialoog zelf uitgesloten).
+      const zonePts = zoneFeaturesRaw
+        .filter(f => {
+          const cl = f.properties?.zoneClass;
+          return cl === 'BOUNDARY' || cl === 'NODE' || cl === 'STUDY' || cl === 'INFLUENCE';
+        })
+        .map(f => {
+          const p = f.properties;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) return null;
+          return {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: {
+              zoneId:     p.zoneId,
+              zoneClass:  p.zoneClass,
+              zoneName:   p.zoneName || p.zoneId,
+              production: p.production ?? null,
+              attraction: p.attraction ?? null,
+              isZone:     true,
+            }
+          };
+        })
+        .filter(Boolean);
+
+      // 2. Alle netwerk-knopen (begin/eindpunten van links) uit nodeCoords
+      const zoneNodeIds = new Set(zonePts.map(f => f.properties.zoneId));
+      const networkPts = [];
+      for (const [nodeId, coord] of nodeCoords) {
+        // Sla over als er al een zone-bolletje op hetzelfde nodeId staat
+        if (zoneNodeIds.has(String(nodeId))) continue;
+        networkPts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coord },
+          properties: {
+            zoneId:     String(nodeId),
+            zoneClass:  'NETWORK_NODE',
+            zoneName:   `node ${nodeId}`,
+            production: null,
+            attraction: null,
+            isZone:     false,
+          }
+        });
+      }
+
+      const pts = [...zonePts, ...networkPts];
+
+      if (!map.getSource(NODE_SOURCE)) {
+        map.addSource(NODE_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: pts } });
+        map.addLayer({
+          id: NODE_LAYER,
+          type: 'circle',
+          source: NODE_SOURCE,
+          paint: {
+            'circle-radius': [
+              'case', ['get', 'isZone'], 8, 5
+            ],
+            'circle-color': [
+              'case',
+              ['==', ['get', 'zoneClass'], 'BOUNDARY'],   '#ffb450',
+              ['==', ['get', 'zoneClass'], 'NODE'],       '#7ec8e3',
+              ['==', ['get', 'zoneClass'], 'STUDY'],      '#49a748',
+              ['==', ['get', 'zoneClass'], 'INFLUENCE'],  '#2f8f7a',
+              '#a0aec0'   // NETWORK_NODE
+            ],
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#0d1117',
+            'circle-opacity': ['case', ['get', 'isZone'], 0.9, 0.6],
+          }
+        });
+
+        map.on('click', NODE_LAYER, e => {
+          const f = e.features[0];
+          if (zoneExplodeActive) {
+            const cl = f.properties?.zoneClass;
+            if (cl !== 'STUDY' && cl !== 'INFLUENCE') return;  // alleen echte zones te exploderen
+            openZoneExplodeDialog(f, e.point);
+            e.originalEvent.stopPropagation();
+            return;
+          }
+          if (!nodeEditActive || nodeSelectMode !== 'click') return;
+          openNodeDialog(f, e.point);
+          e.originalEvent.stopPropagation();
+        });
+        map.on('mouseenter', NODE_LAYER, e => {
+          if (zoneExplodeActive) {
+            const cl = e.features[0]?.properties?.zoneClass;
+            map.getCanvas().style.cursor = (cl === 'STUDY' || cl === 'INFLUENCE') ? 'pointer' : '';
+            return;
+          }
+          if (nodeEditActive && nodeSelectMode === 'click') map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', NODE_LAYER, () => {
+          map.getCanvas().style.cursor = zoneExplodeActive ? '' :
+            (nodeEditActive && nodeSelectMode === 'polygon') ? 'crosshair' : '';
+        });
+      } else {
+        map.getSource(NODE_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+      }
+      map.setLayoutProperty(NODE_LAYER, 'visibility', 'visible');
+    }
+
+    function removeNodeLayer() {
+      if (map.getLayer(NODE_LAYER))
+        map.setLayoutProperty(NODE_LAYER, 'visibility', 'none');
+    }
+
+    // ── Link-edit laag ──────────────────────────────────────────────────────
+
+     function addLinkLayer()    { initPolygonDrawLayers(); updateOverlay(false); }
+    function removeLinkLayer() { updateOverlay(false); }
+
+    // ── Polygon tekenlogica ────────────────────────────────────────────────
+
+    /** Ray-casting point-in-polygon. verts = [[lon,lat],...] */
+    function pointInPolygon([px, py], verts) {
+      let inside = false;
+      for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+        const [xi, yi] = verts[i], [xj, yj] = verts[j];
+        if ((yi > py) !== (yj > py) &&
+            px < ((xj - xi) * (py - yi) / (yj - yi) + xi))
+          inside = !inside;
+      }
+      return inside;
+    }
+
+     /** Initialiseer MapLibre-lagen voor polygon tekenen (idempotent). */
+     function initPolygonDrawLayers() {
+       if (map.getSource(POLY_SOURCE)) return;
+       map.addSource(POLY_SOURCE, {
+         type: 'geojson',
+         data: { type: 'FeatureCollection', features: [] },
+       });
+       map.addLayer({
+         id: POLY_FILL_LAYER, type: 'fill', source: POLY_SOURCE,
+         filter: ['==', '$type', 'Polygon'],
+         paint: { 'fill-color': '#ffb450', 'fill-opacity': 0.12 },
+       });
+       map.addLayer({
+         id: POLY_LINE_LAYER, type: 'line', source: POLY_SOURCE,
+         paint: { 'line-color': '#ffb450', 'line-width': 2, 'line-dasharray': [5, 3] },
+       });
+        initHighlightLayers();
+         initClosedLinksLayer();
+         initSpeedSignLayer();
+       }
+
+      /** Teken een rechtswijzende rode pijlpunt als ImageData (voor OD-paar-highlight). */
+      function createArrowIcon(size = 48) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#e83333';
+        ctx.beginPath();
+        ctx.moveTo(size * 0.05, size * 0.12);
+        ctx.lineTo(size * 0.95, size * 0.5);
+        ctx.lineTo(size * 0.05, size * 0.88);
+        ctx.closePath();
+        ctx.fill();
+        return ctx.getImageData(0, 0, size, size);
+      }
+
+      /** Initialiseer MapLibre-lagen voor wijziging-highlight (idempotent). */
+      function initHighlightLayers() {
+        if (map.getSource(HL_SOURCE)) return;
+        if (!map.hasImage(HL_ARROW_ICON)) map.addImage(HL_ARROW_ICON, createArrowIcon(48), { pixelRatio: 2 });
+        map.addSource(HL_SOURCE, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        // Lijn-highlight (voor wegvakken en OD-paren): rode glow via gestapelde lijnen
+        map.addLayer({
+          id: HL_LINE_LAYER + '-glow', type: 'line', source: HL_SOURCE,
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': 'rgba(210, 30, 30, 0.45)',
+            'line-width': 18,
+            'line-blur': 6,
+          },
+        });
+        map.addLayer({
+          id: HL_LINE_LAYER, type: 'line', source: HL_SOURCE,
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': '#e83333',
+            'line-width': 5,
+            'line-opacity': 0.95,
+          },
+        });
+        // Richtingspijl op de highlight-lijn van een OD-paar (herkomst → bestemming)
+        map.addLayer({
+          id: HL_ARROW_LAYER, type: 'symbol', source: HL_SOURCE,
+          filter: ['all', ['==', '$type', 'LineString'], ['==', ['get', '_isOd'], true]],
+          layout: {
+            'icon-image': HL_ARROW_ICON,
+            'icon-size': 0.7,
+            'symbol-placement': 'line-center',
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+        });
+        // Punt-highlight (voor knopen): rode glow via gestapelde cirkels
+        map.addLayer({
+          id: HL_POINT_LAYER, type: 'circle', source: HL_SOURCE,
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': 18,
+            'circle-color': 'rgba(210, 30, 30, 0.18)',
+            'circle-blur': 0.7,
+            'circle-stroke-width': 3,
+            'circle-stroke-color': '#dc1e1e',
+            'circle-stroke-opacity': 0.95,
+          },
+        });
+      }
+
+    // ── Nieuw-wegvak teken-functies ───────────────────────────────────────────
+
+    /** Initialiseer MapLibre-lagen voor het intekenen van een nieuw wegvak (idempotent). */
+    function initLinkAddLayers() {
+      if (map.getSource(LINK_ADD_SOURCE)) return;
+      map.addSource(LINK_ADD_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      // Bevestigde lijn (groen)
+      map.addLayer({
+        id: LINK_ADD_LINE, type: 'line', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'line'],
+        paint: { 'line-color': '#6de0a0', 'line-width': 3, 'line-dasharray': [1, 0] },
+      });
+      // Rubberbanding (stippel, iets transparanter)
+      map.addLayer({
+        id: LINK_ADD_RUBBER, type: 'line', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'rubber'],
+        paint: { 'line-color': '#6de0a0', 'line-width': 2, 'line-dasharray': [4, 3], 'line-opacity': 0.6 },
+      });
+      // Vertices (punten)
+      map.addLayer({
+        id: LINK_ADD_DOTS, type: 'circle', source: LINK_ADD_SOURCE,
+        filter: ['==', ['get', 'kind'], 'dot'],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#6de0a0',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+    }
+
+    /** Verwijder teken-lagen en -source. */
+    function removeLinkAddLayers() {
+      [LINK_ADD_DOTS, LINK_ADD_RUBBER, LINK_ADD_LINE].forEach(id => {
+        if (map.getLayer(id)) map.removeLayer(id);
+      });
+      if (map.getSource(LINK_ADD_SOURCE)) map.removeSource(LINK_ADD_SOURCE);
+    }
+
+    /** Herrender de teken-preview op basis van linkAddVertices + _linkAddMouseCoord. */
+    function updateLinkAddPreview() {
+      if (!map.getSource(LINK_ADD_SOURCE)) return;
+      const features = [];
+      const verts = linkAddVertices;
+
+      // Bevestigde lijn
+      if (verts.length >= 2) {
+        features.push({ type: 'Feature', properties: { kind: 'line' },
+          geometry: { type: 'LineString', coordinates: verts } });
+      }
+      // Rubberbanding
+      if (verts.length >= 1 && _linkAddMouseCoord) {
+        features.push({ type: 'Feature', properties: { kind: 'rubber' },
+          geometry: { type: 'LineString', coordinates: [verts[verts.length - 1], _linkAddMouseCoord] } });
+      }
+      // Vertices als punten
+      verts.forEach(c => {
+        features.push({ type: 'Feature', properties: { kind: 'dot' },
+          geometry: { type: 'Point', coordinates: c } });
+      });
+
+      map.getSource(LINK_ADD_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Reset teken-state en clear de preview. */
+    function clearLinkAddDraw() {
+      linkAddVertices   = [];
+      _linkAddMouseCoord = null;
+      if (map.getSource(LINK_ADD_SOURCE))
+        map.getSource(LINK_ADD_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+    }
+
+    /** Haversine-afstand in meters tussen twee [lon,lat]-punten. */
+    function haversineM([lon1, lat1], [lon2, lat2]) {
+      const R = 6371000;
+      const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Totale lengte van linkAddVertices in meters. */
+    function linkAddLengthM() {
+      let len = 0;
+      for (let i = 1; i < linkAddVertices.length; i++)
+        len += haversineM(linkAddVertices[i-1], linkAddVertices[i]);
+      return Math.round(len);
+    }
+
+    /** Sluit de getekende lijn af en open het attribuut-dialoog. */
+    function finishLinkAddDraw() {
+      if (linkAddVertices.length < 2) return;
+      const lenM = linkAddLengthM();
+      document.getElementById('linkAddLengthDisplay').textContent =
+        T('linkAddLengthLabel', lenM.toLocaleString(T('numberLocale')));
+      // Defaults
+      document.getElementById('linkAddCapVal').value    = '900';
+      document.getElementById('linkAddSpeedVal').value  = '50';
+      document.getElementById('linkAddLanesVal').value  = '1';
+      document.getElementById('linkAddDialog').style.display = 'block';
+      // Verberg afrond-popup
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    }
+
+    /**
+     * MapLibre mousemove-handler voor rubberbanding.
+     * Wordt aan- en afgemeld bij activeren/deactiveren van linkAddActive.
+     */
+    function _onLinkAddMouseMove(e) {
+      if (!linkAddActive || linkAddVertices.length === 0) return;
+      _linkAddMouseCoord = [e.lngLat.lng, e.lngLat.lat];
+      updateLinkAddPreview();
+    }
+
+    /**
+     * MapLibre dblclick-handler: rondt de lijn af zonder extra punt.
+     */
+    function _onLinkAddDblClick(e) {
+      if (!linkAddActive) return;
+      e.preventDefault();
+      if (linkAddVertices.length >= 2) finishLinkAddDraw();
+    }
+
+    /**
+     * Maak een "verboden in te rijden"-bord als HTMLCanvasElement (64×64, pixelRatio 2→ 32 logisch px).
+     * Rood gevuld cirkel · wit kader-ring · witte horizontale balk.
+     */
+    function createNoEntryIcon(size = 64) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const cx = size / 2, r = size / 2 - 2;
+      // Rode achtergrond
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#cc1111'; ctx.fill();
+      // Witte rand-ring
+      ctx.beginPath(); ctx.arc(cx, cx, r - 3, 0, Math.PI * 2);
+      ctx.strokeStyle = 'white'; ctx.lineWidth = 4; ctx.stroke();
+      // Witte horizontale balk
+      const bw = r * 1.1, bh = r * 0.44;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx - bw / 2, cx - bh / 2, bw, bh, bh / 3);
+      else { ctx.rect(cx - bw / 2, cx - bh / 2, bw, bh); }
+      ctx.fillStyle = 'white'; ctx.fill();
+      // MapLibre verwacht ImageData (geen HTMLCanvasElement)
+      return ctx.getImageData(0, 0, size, size);
+    }
+
+    /**
+     * Maak een snelheidsbordje als ImageData (64×64) inclusief het getal.
+     * Tekent alles op canvas zodat er geen externe glyph-server nodig is.
+     */
+    function createSpeedSignIcon(speed, size = 64) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const cx = size / 2, r = size / 2 - 2;
+      // Witte achtergrond
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'white'; ctx.fill();
+      // Dikke rode buitenring
+      ctx.beginPath(); ctx.arc(cx, cx, r, 0, Math.PI * 2);
+      ctx.strokeStyle = '#cc1111'; ctx.lineWidth = 5; ctx.stroke();
+      // Dunne rode binnenring
+      ctx.beginPath(); ctx.arc(cx, cx, r - 7, 0, Math.PI * 2);
+      ctx.strokeStyle = '#cc1111'; ctx.lineWidth = 2; ctx.stroke();
+      // Snelheidsgetal
+      ctx.fillStyle = '#111111';
+      ctx.font = `bold ${Math.round(size * 0.30)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(speed), cx, cx);
+      return ctx.getImageData(0, 0, size, size);
+    }
+
+    /** Initialiseer MapLibre-lagen voor afgesloten wegvakken (idempotent). */
+    function initClosedLinksLayer() {
+      if (map.getSource(CLOSED_SOURCE)) return;
+      if (!map.hasImage(CLOSED_ICON))
+        map.addImage(CLOSED_ICON, createNoEntryIcon(64), { pixelRatio: 2 });
+      map.addSource(CLOSED_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: CLOSED_LAYER, type: 'symbol', source: CLOSED_SOURCE,
+        layout: {
+          'icon-image': CLOSED_ICON,
+          'icon-size': 1.0,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+      updateClosedLinksLayer();
+    }
+
+    /**
+     * Herbereken welke wegvakken capaciteit = 0 hebben (origineel of via pendingChanges)
+     * en zet het middenpunt ervan in CLOSED_SOURCE zodat het bord zichtbaar wordt.
+     */
+    function updateClosedLinksLayer() {
+      if (!map.getSource(CLOSED_SOURCE)) return;
+      const capOverride = new Map();
+      for (const ch of pendingChanges) {
+        if (ch._isLink) capOverride.set(String(ch.linkId), ch.capacity);
+      }
+      const pts = [];
+      for (const f of geojson.features) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = String(f.properties?.linkId ?? f.properties?.id ?? '');
+        const cap = capOverride.has(linkId)
+          ? capOverride.get(linkId)
+          : (f.properties?.capacity ?? 1);
+        if (cap !== 0) continue;
+        const coords = f.geometry.coordinates;
+        pts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords[Math.floor(coords.length / 2)] },
+          properties: {},
+        });
+      }
+      map.getSource(CLOSED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+    }
+
+    /** Initialiseer MapLibre-lagen voor snelheidsbordjes (idempotent). */
+    function initSpeedSignLayer() {
+      if (map.getSource(SPEED_SOURCE)) return;
+      map.addSource(SPEED_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: SPEED_LAYER, type: 'symbol', source: SPEED_SOURCE,
+        layout: {
+          'icon-image': ['concat', 'speed-sign-', ['to-string', ['get', 'speed']]],
+          'icon-size': 1.0,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+      updateSpeedSignLayer();
+    }
+
+    /**
+     * Herbereken welke wegvakken een snelheidsreductie hebben (pendingChanges met speed != null
+     * en capacity !== 0) en zet het middenpunt ervan in SPEED_SOURCE.
+     */
+    function updateSpeedSignLayer() {
+      if (!map.getSource(SPEED_SOURCE)) return;
+      const overrides = new Map();
+      for (const ch of pendingChanges) {
+        if (ch._isLink) overrides.set(String(ch.linkId), ch);
+      }
+      const pts = [];
+      for (const f of geojson.features) {
+        if (f.geometry?.type !== 'LineString') continue;
+        const linkId = String(f.properties?.linkId ?? f.properties?.id ?? '');
+        const ch = overrides.get(linkId);
+        if (!ch) continue;
+        if (ch.speed == null) continue;
+        if (ch.capacity === 0) continue;  // afgesloten: verbodsbord heeft voorrang
+        // Registreer icoon on-demand per unieke snelheidswaarde
+        const iconId = `speed-sign-${ch.speed}`;
+        if (!map.hasImage(iconId))
+          map.addImage(iconId, createSpeedSignIcon(ch.speed, 64), { pixelRatio: 2 });
+        const coords = f.geometry.coordinates;
+        pts.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords[Math.floor(coords.length / 2)] },
+          properties: { speed: ch.speed },
+        });
+      }
+      map.getSource(SPEED_SOURCE).setData({ type: 'FeatureCollection', features: pts });
+    }
+    function updatePolygonDraw() {
+      if (!map.getSource(POLY_SOURCE)) {
+        console.log('[poly] updatePolygonDraw: POLY_SOURCE bestaat nog niet');
+        return;
+      }
+      const v = polygonVertices;
+      if (!v.length) {
+        map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+      const features = [];
+      if (v.length >= 3)
+        features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...v, v[0]]] } });
+      if (v.length >= 2)
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: v } });
+      map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Wis polygon-vertices en teken-laag; verberg hulpknoppen. */
+    function clearPolygonDraw() {
+      polygonVertices = [];
+      polygonNodesInside = [];
+      updatePolygonDraw();
+      document.getElementById('polygonFinishBtn').style.display = 'none';
+      document.getElementById('polygonClearBtn').style.display  = 'none';
+    }
+
+    /**
+     * Sluit de getekende polygon af: zoek knopen binnen de polygon en
+     * open het aanpassingsdialoog.
+     */
+    function finishPolygon() {
+      if (polygonVertices.length < 3) return;
+
+      // 1. Zone-knopen (BOUNDARY + NODE) uit zoneFeaturesRaw
+      const zonePts = zoneFeaturesRaw
+        .filter(f => { const cl = f.properties?.zoneClass; return cl === 'BOUNDARY' || cl === 'NODE'; })
+        .map(f => {
+          const p = f.properties;
+          const lon = p.centroidLon ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (f.geometry?.type === 'Point' ? f.geometry.coordinates[1] : null);
+          if (lon == null || lat == null) return null;
+          return { zoneId: String(p.zoneId), zoneClass: p.zoneClass,
+                   zoneName: p.zoneName || String(p.zoneId), lon, lat };
+        })
+        .filter(Boolean);
+
+      // 2. Netwerk-knopen (grijze bolletjes) uit nodeCoords — zelfde logica als addNodeLayer
+      const zoneNodeIds = new Set(zonePts.map(pt => pt.zoneId));
+      const networkPts = [];
+      for (const [nodeId, coord] of nodeCoords) {
+        if (zoneNodeIds.has(String(nodeId))) continue;
+        networkPts.push({ zoneId: String(nodeId), zoneClass: 'NETWORK_NODE',
+                          zoneName: `node ${nodeId}`, lon: coord[0], lat: coord[1] });
+      }
+
+      const pts = [...zonePts, ...networkPts];
+      polygonNodesInside = pts.filter(pt => pointInPolygon([pt.lon, pt.lat], polygonVertices));
+
+      if (!polygonNodesInside.length) {
+        alert(T('polygonNoNodes'));
+        return;
+      }
+      openPolygonDialog();
+    }
+
+    /** Bereken de per-knoop-waarde (string) gegeven een totaalwaarde en n knopen. */
+    function calcPerNode(rawVal, n) {
+      if (!rawVal || n === 0) return null;
+      const s = rawVal.trim();
+      const isDelta = s.startsWith('+') || s.startsWith('-');
+      const num = parseFloat(s);
+      if (isNaN(num) || !isFinite(num)) return null;
+      const perNode = Math.round(num / n);
+      if (isDelta) return perNode >= 0 ? `+${perNode}` : String(perNode);
+      return String(perNode);
+    }
+
+    function openPolygonDialog() {
+      const n = polygonNodesInside.length;
+      document.getElementById('polygonNodeInfo').textContent = T('polygonNodeInfoLabel', n);
+      document.getElementById('polyProdVal').value = '';
+      document.getElementById('polyAttrVal').value = '';
+      document.getElementById('polygonPerNodeProd').textContent = '';
+      document.getElementById('polygonPerNodeAttr').textContent = '';
+      document.getElementById('polygonDialog').style.display    = 'block';
+      document.getElementById('nodeSelectPopup').style.display  = 'none';
+    }
+
+     function closePolygonDialog() {
+       document.getElementById('polygonDialog').style.display = 'none';
+       clearPolygonDraw();
+       if (nodeEditActive)
+         document.getElementById('nodeSelectPopup').style.display = 'block';
+     }
+
+    // ── Link polygon tekenlogica ───────────────────────────────────────────
+
+    /** Teken de huidige link polygon-vertices op de kaart (hergebruikt POLY_SOURCE). */
+    function updateLinkPolygonDraw() {
+      if (!map.getSource(POLY_SOURCE)) return;
+      const v = linkPolygonVertices;
+      if (!v.length) {
+        map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+      const features = [];
+      if (v.length >= 3)
+        features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...v, v[0]]] } });
+      if (v.length >= 2)
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: v } });
+      map.getSource(POLY_SOURCE).setData({ type: 'FeatureCollection', features });
+    }
+
+    /** Wis link polygon-vertices en teken-laag; verberg hulpknoppen. */
+    function clearLinkPolygonDraw() {
+      linkPolygonVertices  = [];
+      linkPolygonLinksInside = [];
+      updateLinkPolygonDraw();
+      document.getElementById('linkPolygonFinishBtn').style.display = 'none';
+      document.getElementById('linkPolygonClearBtn').style.display  = 'none';
+    }
+
+     /**
+      * Controleer of ALLE coördinaten van een link binnen de polygon liggen.
+      */
+     function linkFullyInPolygon(coords, poly) {
+       if (!coords || !coords.length) return false;
+       return coords.every(c => pointInPolygon(c, poly));
+     }
+
+     /**
+      * Sluit de getekende polygon af: zoek wegvakken die volledig
+      * binnen de polygon liggen en open het aanpassingsdialoog.
+      */
+     function finishLinkPolygon() {
+       if (linkPolygonVertices.length < 3) return;
+
+       linkPolygonLinksInside = geojson.features.filter(f => {
+         if (f.geometry?.type !== 'LineString') return false;
+         return linkFullyInPolygon(f.geometry.coordinates, linkPolygonVertices);
+       });
+
+      if (!linkPolygonLinksInside.length) {
+        alert(T('linkPolygonNoLinks'));
+        return;
+      }
+      openLinkPolygonDialog();
+    }
+
+    function openLinkPolygonDialog() {
+      const n = linkPolygonLinksInside.length;
+      document.getElementById('linkPolygonLinkInfo').textContent = T('linkPolygonLinkInfoLabel', n);
+      document.getElementById('linkPolyCapVal').value            = '';
+      document.getElementById('linkPolygonPerLinkCap').textContent = '';
+      document.querySelectorAll('.link-poly-speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkPolyCloseBtn').classList.remove('active');
+      document.getElementById('linkPolygonDialog').style.display  = 'block';
+      document.getElementById('linkSelectPopup').style.display    = 'none';
+    }
+
+    function closeLinkPolygonDialog() {
+      document.getElementById('linkPolygonDialog').style.display = 'none';
+      clearLinkPolygonDraw();
+      if (linkEditActive)
+        document.getElementById('linkSelectPopup').style.display = 'block';
+    }
+
+    /** Werk de gemiddelde capaciteit-preview bij terwijl de gebruiker typt. */
+    function updateLinkPolyCapDisplay() {
+      const raw = document.getElementById('linkPolyCapVal').value.trim();
+      const n   = linkPolygonLinksInside.length;
+      const hint = document.getElementById('linkPolygonPerLinkCap');
+      if (!raw || !n) { hint.textContent = ''; return; }
+      const isPct = raw.endsWith('%');
+      if (isPct) {
+        const factor = parseFloat(raw) / 100;
+        if (isNaN(factor) || !isFinite(factor)) { hint.textContent = ''; return; }
+        const avg = linkPolygonLinksInside.reduce((s, f) =>
+          s + (f.properties?.capacity ?? 0), 0) / n;
+        const avgAfter = Math.round(avg * factor);
+        hint.textContent = T('linkPolygonPerLinkLabel', avgAfter.toLocaleString(T('numberLocale')));
+      } else {
+        const cap = parseInt(raw);
+        if (isNaN(cap) || cap < 0) { hint.textContent = ''; return; }
+        hint.textContent = T('linkPolygonPerLinkLabel', cap.toLocaleString(T('numberLocale')));
+      }
+    }
+
+    /** Werk de "per knoop"-preview bij terwijl de gebruiker typt. */
+    function updatePolyPerNodeDisplay() {
+      const n  = polygonNodesInside.length;
+      const pp = calcPerNode(document.getElementById('polyProdVal').value, n);
+      const pa = calcPerNode(document.getElementById('polyAttrVal').value, n);
+      document.getElementById('polygonPerNodeProd').textContent = pp ? T('polygonPerNodeLabel', pp) : '';
+      document.getElementById('polygonPerNodeAttr').textContent = pa ? T('polygonPerNodeLabel', pa) : '';
+    }
+
+    // ── Node-dialoog ────────────────────────────────────────────────────────
+
+    function openNodeDialog(feature, mapPoint) {
+      activeNodeFeature = feature;
+      const p = feature.properties;
+      document.getElementById('nodeDialogTitle').textContent =
+        `${p.zoneClass}: ${p.zoneName || p.zoneId}`;
+
+      // Vul huidige waarden in (of leeg)
+      const existing = pendingChanges.find(c => c.zoneId === p.zoneId && !c._isZoneExplode);
+      document.getElementById('nodeProdVal').value = existing?.production ?? '';
+      document.getElementById('nodeAttrVal').value = existing?.attraction ?? '';
+
+      // Positioneer dialoog naast het klik-punt
+      const dlg = document.getElementById('nodeDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 280 > window.innerWidth)  x = mapPoint.x + rect.left - 280;
+      if (y + 220 > window.innerHeight) y = window.innerHeight - 240;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeNodeDialog() {
+      document.getElementById('nodeDialog').style.display = 'none';
+      activeNodeFeature = null;
+    }
+
+    // ── Zone-explode-dialoog ─────────────────────────────────────────────────
+
+    function openZoneExplodeDialog(feature, mapPoint) {
+      activeZoneExplodeFeature = feature;
+      const p = feature.properties;
+      document.getElementById('zoneExplodeDialogTitle').textContent =
+        `${T('zoneExplodeDialogDefault')}: ${p.zoneName || p.zoneId}`;
+
+      const existing = pendingChanges.find(c => c._isZoneExplode && c.zoneId === p.zoneId);
+      document.getElementById('zoneExplodeVal').value = existing?.explodeInto ?? '';
+
+      const dlg = document.getElementById('zoneExplodeDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 260 > window.innerWidth)  x = mapPoint.x + rect.left - 260;
+      if (y + 200 > window.innerHeight) y = window.innerHeight - 220;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeZoneExplodeDialog() {
+      document.getElementById('zoneExplodeDialog').style.display = 'none';
+      activeZoneExplodeFeature = null;
+    }
+
+    // ── Link-dialoog ─────────────────────────────────────────────────────────
+
+    let activeLinkFeature = null;
+    let activeLinkSpeed   = null;
+
+    function openLinkDialog(feature, mapPoint) {
+      activeLinkFeature = feature;
+      activeLinkSpeed   = null;
+      const p = feature.properties;
+      const linkId = p.linkId ?? p.id ?? '';
+      document.getElementById('linkDialogTitle').textContent =
+        p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId);
+
+      const existing   = pendingChanges.find(c => c.linkId != null && String(c.linkId) === String(linkId));
+      const currentCap = p.capacity ?? 0;
+      const step       = Math.max(50, Math.round(currentCap / 20 / 50) * 50) || 50;
+
+      const inp = document.getElementById('linkCapVal');
+      inp.min   = 0;
+      inp.max   = '';
+      inp.step  = step;
+      inp.value = existing?.capacity ?? currentCap;
+
+      document.querySelector('#linkDialog .field-hint').textContent = T('linkDialogCapUnit');
+
+      // Markeer actieve snelheidsknop op basis van bestaande wijziging of huidige snelheid
+      const currentCapForDialog = existing?.capacity ?? currentCap;
+      const isClosed  = currentCapForDialog === 0;
+      const activeSpeed = isClosed ? null : (existing?.speed ?? p.speed ?? null);
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        btn.classList.toggle('active',
+          !isClosed && activeSpeed != null && parseInt(btn.dataset.speed) === activeSpeed);
+      });
+      document.getElementById('linkCloseBtn').classList.toggle('active', isClosed);
+
+      const dlg  = document.getElementById('linkDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 260 > window.innerWidth)  x = mapPoint.x + rect.left - 260;
+      if (y + 260 > window.innerHeight) y = window.innerHeight - 280;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeLinkDialog() {
+      document.getElementById('linkDialog').style.display = 'none';
+      activeLinkFeature = null;
+    }
+
+    // ── Link flow-dialoog ────────────────────────────────────────────────────
+
+    let activeLinkFlowFeature = null;
+
+    function openLinkFlowDialog(feature, mapPoint) {
+      activeLinkFlowFeature = feature;
+      const p = feature.properties;
+      const linkId = p.linkId ?? p.id ?? '';
+      document.getElementById('linkFlowDialogTitle').textContent =
+        p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId);
+
+      const currentFlow = Math.round(p.flow24hrs ?? p.flow ?? 0);
+      document.getElementById('linkFlowCurrentDisplay').textContent =
+        T('linkFlowCurrentLabel', currentFlow.toLocaleString(T('numberLocale')));
+
+      const existing = pendingChanges.find(c => c._isLinkFlow && String(c.linkId) === String(linkId));
+      const inp = document.getElementById('linkFlowVal');
+      inp.value = existing?.flow ?? '';
+      inp.placeholder = T('linkFlowDialogPh');
+
+      const dlg = document.getElementById('linkFlowDialog');
+      dlg.style.display = 'block';
+      const rect = document.getElementById('map').getBoundingClientRect();
+      let x = mapPoint.x + rect.left + 16;
+      let y = mapPoint.y + rect.top  - 20;
+      if (x + 240 > window.innerWidth)  x = mapPoint.x + rect.left - 240;
+      if (y + 200 > window.innerHeight) y = window.innerHeight - 220;
+      dlg.style.left = x + 'px';
+      dlg.style.top  = y + 'px';
+    }
+
+    function closeLinkFlowDialog() {
+      document.getElementById('linkFlowDialog').style.display = 'none';
+      activeLinkFlowFeature = null;
+    }
+
+    function stepValue(inputId, delta) {
+      const inp = document.getElementById(inputId);
+      const raw = inp.value.trim();
+      if (!raw) { inp.value = (delta > 0 ? '+' : '') + delta; return; }
+      // Parse huidig getal (met optioneel teken)
+      const num = parseFloat(raw);
+      if (isNaN(num)) return;
+      const newVal = num + delta;
+      inp.value = (newVal >= 0 && raw.startsWith('+')) ? '+' + newVal
+                : String(newVal);
+    }
+
+    // Snelheid → capaciteit (vtg/u per rijstrook, middenwaarde per klasse)
+    const SPEED_TO_CAP = { 15: 300, 30: 500, 40: 700, 50: 900, 60: 1100, 70: 1300, 100: 1900, 120: 2100 };
+
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.onclick = () => {
+        const spd = parseInt(btn.dataset.speed);
+        const cap = SPEED_TO_CAP[spd] ?? 900;
+        activeLinkSpeed = spd;
+        const inp = document.getElementById('linkCapVal');
+        inp.value = cap;
+        inp.step  = 100;
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('linkCloseBtn').classList.remove('active');
+      };
+    });
+
+    document.getElementById('linkCloseBtn').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      inp.value = 0;
+      inp.step  = 50;
+      activeLinkSpeed = null;
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkCloseBtn').classList.add('active');
+    };
+
+    document.getElementById('nodeProdMinus').onclick = () => stepValue('nodeProdVal', -100);
+    document.getElementById('nodeProdPlus' ).onclick = () => stepValue('nodeProdVal', +100);
+    document.getElementById('nodeAttrMinus').onclick = () => stepValue('nodeAttrVal', -100);
+    document.getElementById('nodeAttrPlus' ).onclick = () => stepValue('nodeAttrVal', +100);
+    document.getElementById('zoneExplodeMinus').onclick = () => {
+      const inp = document.getElementById('zoneExplodeVal');
+      const cur = parseInt(inp.value, 10) || 2;
+      inp.value = Math.max(2, cur - 1);
+    };
+    document.getElementById('zoneExplodePlus' ).onclick = () => {
+      const inp = document.getElementById('zoneExplodeVal');
+      const cur = parseInt(inp.value, 10) || 1;
+      inp.value = Math.max(2, cur + 1);
+    };
+
+    document.getElementById('linkCapMinus').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      const step = parseInt(inp.step) || 50;
+      inp.value = Math.max(0, (parseInt(inp.value) || 0) - step);
+    };
+    document.getElementById('linkCapPlus').onclick = () => {
+      const inp = document.getElementById('linkCapVal');
+      const step = parseInt(inp.step) || 50;
+      inp.value = Math.max(0, (parseInt(inp.value) || 0) + step);
+    };
+
+    document.getElementById('linkFlowMinus').onclick = () => stepValue('linkFlowVal', -500);
+    document.getElementById('linkFlowPlus' ).onclick = () => stepValue('linkFlowVal', +500);
+
+    // ± knoppen nieuw-wegvak dialoog
+    document.getElementById('linkAddCapMinus').onclick  = () => { const i = document.getElementById('linkAddCapVal');   i.value = Math.max(0, (parseFloat(i.value)||0) - 100); };
+    document.getElementById('linkAddCapPlus' ).onclick  = () => { const i = document.getElementById('linkAddCapVal');   i.value = (parseFloat(i.value)||0) + 100; };
+    document.getElementById('linkAddSpeedMinus').onclick = () => { const i = document.getElementById('linkAddSpeedVal'); i.value = Math.max(1, (parseFloat(i.value)||0) - 10); };
+    document.getElementById('linkAddSpeedPlus' ).onclick = () => { const i = document.getElementById('linkAddSpeedVal'); i.value = (parseFloat(i.value)||0) + 10; };
+    document.getElementById('linkAddLanesMinus').onclick = () => { const i = document.getElementById('linkAddLanesVal'); i.value = Math.max(1, (parseInt(i.value)||1) - 1); };
+    document.getElementById('linkAddLanesPlus' ).onclick = () => { const i = document.getElementById('linkAddLanesVal'); i.value = (parseInt(i.value)||1) + 1; };
+
+    document.getElementById('linkFlowDialogCancel').onclick = closeLinkFlowDialog;
+
+    document.getElementById('linkFlowDialogOk').onclick = () => {
+      if (!activeLinkFlowFeature) return;
+      const p = activeLinkFlowFeature.properties;
+      const linkId = String(p.linkId ?? p.id ?? '');
+      const raw = document.getElementById('linkFlowVal').value.trim();
+      if (!raw) { closeLinkFlowDialog(); return; }
+      // Valideer: +getal, -getal of absoluut getal
+      if (!/^[+-]?\d+$/.test(raw)) return;
+      pendingChanges = pendingChanges.filter(c => !(c._isLinkFlow && String(c.linkId) === linkId));
+      pendingChanges.push({
+        linkId,
+        flow: raw,
+        _label:       p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+        _isLinkFlow:  true,
+      });
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+      closeLinkFlowDialog();
+    };
+
+    document.getElementById('linkDialogCancel').onclick = closeLinkDialog;
+
+    document.getElementById('linkDialogOk').onclick = () => {
+      if (!activeLinkFeature) return;
+      const p   = activeLinkFeature.properties;
+      const linkId = String(p.linkId ?? p.id ?? '');
+      const inp = document.getElementById('linkCapVal');
+      const raw = inp.value.trim();
+      const cap = parseInt(raw);
+      if (!raw || isNaN(cap) || cap < 0) { closeLinkDialog(); return; }
+
+      pendingChanges = pendingChanges.filter(c => c.linkId == null || String(c.linkId) !== linkId);
+      const entry = {
+        linkId,
+        capacity: cap,
+        _label:   p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+        _isLink:  true,
+      };
+      if (activeLinkSpeed != null) entry.speed = activeLinkSpeed;
+      pendingChanges.push(entry);
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+      closeLinkDialog();
+    };
+
+    document.getElementById('nodeDialogCancel').onclick = closeNodeDialog;
+
+    document.getElementById('nodeDialogOk').onclick = () => {
+      if (!activeNodeFeature) return;
+      const p    = activeNodeFeature.properties;
+      const prod = document.getElementById('nodeProdVal').value.trim();
+      const attr = document.getElementById('nodeAttrVal').value.trim();
+      const featureId = p.zoneId;
+
+      if (!prod && !attr) { closeNodeDialog(); return; }
+
+      // Verwijder eventuele bestaande wijziging voor dit id
+      pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== featureId);
+
+      const isNetworkNode = p.zoneClass === 'NETWORK_NODE';
+      const change = isNetworkNode ? { nodeId: p.zoneId } : { zoneId: p.zoneId };
+      if (prod) change.production = prod;
+      if (attr) change.attraction = attr;
+      change._label     = p.zoneName || p.zoneId;
+      change._zoneClass = p.zoneClass;
+      pendingChanges.push(change);
+
+       _setChangesPanelReadOnly(false);
+       renderChangesList();
+      closeNodeDialog();
+    };
+
+    document.getElementById('zoneExplodeDialogCancel').onclick = closeZoneExplodeDialog;
+
+    document.getElementById('zoneExplodeDialogOk').onclick = () => {
+      if (!activeZoneExplodeFeature) return;
+      const p = activeZoneExplodeFeature.properties;
+      const raw = document.getElementById('zoneExplodeVal').value.trim();
+      if (!raw) { closeZoneExplodeDialog(); return; }
+      const n = parseInt(raw, 10);
+      if (!Number.isInteger(n) || n < 2) { closeZoneExplodeDialog(); return; }
+
+      const featureId = p.zoneId;
+      // Verwijder eventuele bestaande wijziging voor dit id (zone-explode
+      // vervangt de zone volledig; combineren met een productie/attractie-
+      // wijziging op dezelfde zone is niet zinvol).
+      pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== featureId);
+      pendingChanges.push({
+        zoneId:         featureId,
+        explodeInto:    n,
+        _label:         p.zoneName || p.zoneId,
+        _zoneClass:     p.zoneClass,
+        _isZoneExplode: true,
+      });
+
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+      closeZoneExplodeDialog();
+    };
+
+    // ── Wijzigingenlijst ────────────────────────────────────────────────────
+
+     // ── Highlight vanuit wijzigingslijst ────────────────────────────────────
+
+      /** Zoek het centroid-coördinaat van een zone/knoop (zoneFeaturesRaw eerst, dan nodeCoords). */
+      function _zoneCentroidCoord(zoneId) {
+        let coord = null;
+        const zf = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(zoneId));
+        if (zf) {
+          const p = zf.properties;
+          const lon = p.centroidLon ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[0] : null);
+          const lat = p.centroidLat ?? (zf.geometry?.type === 'Point' ? zf.geometry.coordinates[1] : null);
+          if (lon != null) coord = [lon, lat];
+        }
+        if (!coord) coord = nodeCoords.get(Number(zoneId)) ?? nodeCoords.get(zoneId);
+        return coord;
+      }
+
+      function clearHighlight() {
+        highlightedChangeIndex = null;
+        if (map.getSource(HL_SOURCE))
+          map.getSource(HL_SOURCE).setData({ type: 'FeatureCollection', features: [] });
+        document.querySelectorAll('.change-item.highlighted')
+          .forEach(el => el.classList.remove('highlighted'));
+      }
+
+     /**
+      * Licht de kaartfeature op die hoort bij pendingChanges[idx].
+      * Tweede klik op hetzelfde item: highlight uitzetten.
+      */
+      function highlightChange(idx) {
+        if (highlightedChangeIndex === idx) { clearHighlight(); return; }
+        clearHighlight();
+        initHighlightLayers();  // lazy init
+        const c = pendingChanges[idx];
+        if (!c) return;
+
+        let geometry = null;
+        let center   = null;
+
+         if (c._isLink || c._isLinkFlow) {
+           // Geometrie ophalen uit linkGeomMap (sleutel kan getal of string zijn)
+           const coords = linkGeomMap.get(c.linkId) ?? linkGeomMap.get(Number(c.linkId));
+           if (coords && coords.length >= 2) {
+             geometry = { type: 'LineString', coordinates: coords };
+             // Vlieg naar het middenpunt van de lijn
+             const mid = Math.floor(coords.length / 2);
+             center = coords[mid];
+           }
+         } else if (c._isLinkAdd) {
+          // Getekende lijn
+          const coords = c.geometry?.coordinates;
+          if (coords && coords.length >= 2) {
+            geometry = { type: 'LineString', coordinates: coords };
+            center = coords[Math.floor(coords.length / 2)];
+          }
+        } else if (c._isOd) {
+          // OD-paar: pijl van herkomst- naar bestemmingscentroid
+          const fromCoord = _zoneCentroidCoord(c.fromZoneId);
+          const toCoord   = _zoneCentroidCoord(c.toZoneId);
+          if (fromCoord && toCoord) {
+            geometry = { type: 'LineString', coordinates: [fromCoord, toCoord] };
+            center   = [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2];
+          }
+        } else {
+         // Knoop: zoek eerst in zoneFeaturesRaw, dan in nodeCoords
+         const coord = _zoneCentroidCoord(c.zoneId ?? c.nodeId);
+         if (coord) {
+           geometry = { type: 'Point', coordinates: coord };
+           center   = coord;
+         }
+       }
+
+        if (!geometry) return;
+
+        map.getSource(HL_SOURCE).setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry, properties: { _isOd: !!c._isOd } }],
+        });
+
+         if (center)
+           map.easeTo({ center, speed: 1.2, essential: true });
+
+         highlightedChangeIndex = idx;
+       }
+
+      /**
+       * Highlight voor een historisch wijzigingsitem (al toegepast).
+       * Gebruikt dezelfde geometrie-opzoeking als highlightChange maar werkt
+       * direct met het wijzigings-object en het DOM-element (geen pendingChanges-index).
+       * Tweede klik op hetzelfde item: highlight uitzetten.
+       */
+      function _highlightHistChange(h, el) {
+        initHighlightLayers();          // lazy init: HL source/layers aanmaken als ze er nog niet zijn
+        const wasHighlighted = el.classList.contains('highlighted');
+        clearHighlight();
+        if (wasHighlighted) return;
+
+        let geometry = null;
+        let center   = null;
+
+        const isOdHist = h.fromZoneId != null && h.toZoneId != null;
+
+        if (isOdHist) {
+          // OD-paar: pijl van herkomst- naar bestemmingscentroid
+          const fromCoord = _zoneCentroidCoord(h.fromZoneId);
+          const toCoord   = _zoneCentroidCoord(h.toZoneId);
+          if (fromCoord && toCoord) {
+            geometry = { type: 'LineString', coordinates: [fromCoord, toCoord] };
+            center   = [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2];
+          }
+        } else if (h.linkId != null) {
+          const coords = linkGeomMap.get(h.linkId) ?? linkGeomMap.get(Number(h.linkId));
+          if (coords && coords.length >= 2) {
+            geometry = { type: 'LineString', coordinates: coords };
+            center   = coords[Math.floor(coords.length / 2)];
+          }
+        } else {
+          const coord = _zoneCentroidCoord(h.zoneId ?? h.nodeId);
+          if (coord) {
+            geometry = { type: 'Point', coordinates: coord };
+            center   = coord;
+          }
+        }
+
+        if (!geometry || !map.getSource(HL_SOURCE)) return;
+        map.getSource(HL_SOURCE).setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry, properties: { _isOd: isOdHist } }],
+        });
+        if (center) map.easeTo({ center, speed: 1.2, essential: true });
+        el.classList.add('highlighted');
+      }
+
+     // Zet het paneel in alleen-lezen modus (☰-knop) of normale modus.
+     // Bij on=true: fetch wijzigingsketen van server, toon paneel.
+     // Bij on=false: verberg historische items, herstel normale zichtbaarheidslogica.
+     async function _setChangesPanelReadOnly(on) {
+       _changesPanelReadOnly = on;
+       const panel = document.getElementById('changesPanel');
+       const btn   = document.getElementById('viewChangesBtn');
+       panel.classList.toggle('changesPanel--readonly', on);
+       if (btn) btn.classList.toggle('active', on);
+       if (on) {
+         panel.style.display = 'block';
+         try {
+           const res  = await fetch(`/collections/changes/items?areaId=${AREA_ID}`);
+           const data = await res.json();
+           _historicalChanges = data.features?.map(f => f.properties) ?? [];
+         } catch { _historicalChanges = []; }
+         renderChangesList();
+       } else {
+         _historicalChanges = [];
+         renderChangesList();
+       }
+     }
+
+     function renderChangesList() {
+      const panel = document.getElementById('changesPanel');
+      const list  = document.getElementById('changesList');
+      const count = document.getElementById('changesCount');
+
+      const wasHidden = panel.style.display === 'none' || panel.style.display === '';
+      panel.style.display = (pendingChanges.length || _changesPanelReadOnly) ? 'block' : 'none';
+
+      // Badge op ☰-knop bijwerken
+      const badge = document.getElementById('viewChangesBadge');
+      if (badge) badge.textContent = pendingChanges.length || '';
+
+      // Vul default scenario-naam in als het veld leeg is (of paneel net zichtbaar wordt)
+      const nameInput = document.getElementById('scenarioNameInput');
+      if (pendingChanges.length && (wasHidden || !nameInput.value.trim())) {
+        nameInput.value = `${networkName} (${scenarioCounter})`;
+      }
+      // Sync debug-vinkje met globale toestand
+      document.getElementById('adjustDebug').checked = !!window._debugMode;
+      count.textContent   = pendingChanges.length;
+      list.innerHTML = '';
+
+      // ── Sectiekop boven openstaande wijzigingen (alleen als er ook historische zijn) ──
+      if (_changesPanelReadOnly && pendingChanges.length && _historicalChanges.length) {
+        const sep = document.createElement('div');
+        sep.className   = 'change-section-header';
+        sep.textContent = T('changesPendingSection');
+        list.appendChild(sep);
+      }
+
+      pendingChanges.forEach((c, i) => {
+        const fmt = v => {
+          if (v == null) return null;
+          const s = String(v).trim();
+          if (s.startsWith('+') || s.startsWith('-')) return `Δ${s}`;
+          return `=${s}`;
+        };
+        const parts = [];
+        if (c._isLink) {
+          if (c.capacity === 0) {
+            parts.push(T('changeClosedLabel'));
+          } else {
+            parts.push(T('changeCapLabel', c.capacity.toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+            if (c.speed != null) parts.push(T('changeSpeedLabel', c.speed));
+          }
+        } else if (c._isLinkAdd) {
+          parts.push(T('changeNewLinkLabel', c.capacity, c.speed, c.lanes));
+        } else if (c._isLinkFlow) {
+          const raw = String(c.flow ?? '');
+          const display = raw.startsWith('+') || raw.startsWith('-') ? `Δ${raw}` : `=${raw}`;
+          parts.push(T('changeFlowLabel', display));
+        } else if (c._isOd) {
+          const loc  = T('numberLocale');
+          const prod = zoneFeaturesRaw.find(f => String(f.properties?.zoneId) === String(c.fromZoneId))?.properties?.production ?? 0;
+          const trips = (prod * c.tripFraction).toLocaleString(loc, { maximumFractionDigits: 1 });
+          parts.push(T('changeOdTripsLabel', trips));
+        } else if (c._isZoneExplode) {
+          parts.push(T('changeExplodeLabel', c.explodeInto));
+        } else {
+          if (c.production != null) parts.push(T('changeProdLabel', fmt(c.production)));
+          if (c.attraction != null) parts.push(T('changeAttrLabel', fmt(c.attraction)));
+        }
+
+        const item = document.createElement('div');
+        item.className = 'change-item' + (highlightedChangeIndex === i ? ' highlighted' : '');
+        item.innerHTML = `
+          <div class="change-item-label">
+            ${c._label || c.zoneId}
+            <span>${parts.join(' · ')}</span>
+          </div>
+          <button class="change-item-del" title="${T('changeItemDel')}">×</button>`;
+        item.querySelector('.change-item-del').onclick = e => {
+          e.stopPropagation();
+          if (highlightedChangeIndex === i) clearHighlight();
+          else if (highlightedChangeIndex > i) highlightedChangeIndex--;
+          pendingChanges.splice(i, 1);
+          renderChangesList();
+        };
+        item.onclick = () => highlightChange(i);
+        list.appendChild(item);
+      });
+
+      // ── Historische wijzigingen (van server, alleen in read-only modus) ───────
+      if (_changesPanelReadOnly) {
+        if (!pendingChanges.length && !_historicalChanges.length) {
+          // Lege staat
+          const empty = document.createElement('div');
+          empty.style.cssText = 'color:#5a6272;padding:10px 16px;font-size:12px';
+          empty.textContent   = T('noChanges');
+          list.appendChild(empty);
+        } else {
+          // Gegroepeerd per scenario (server stuurt oudste-eerst)
+          let lastAreaId = null;
+          for (const h of _historicalChanges) {
+            if (h.areaId !== lastAreaId) {
+              const sep = document.createElement('div');
+              sep.className   = 'change-section-header';
+              sep.textContent = h.scenarioName || h.areaId;
+              list.appendChild(sep);
+              lastAreaId = h.areaId;
+            }
+            const fmt = v => v == null ? null : (String(v).match(/^[+-]/) ? `Δ${v}` : `=${v}`);
+            const isOdHist = h.fromZoneId != null && h.toZoneId != null;
+            const parts = [];
+            if (isOdHist) {
+              const prod = h.originProduction ?? 0;
+              const frac = h.tripFraction    ?? 0;
+              const trips = (prod * frac).toLocaleString(T('numberLocale'), { maximumFractionDigits: 1 });
+              parts.push(T('changeOdTripsLabel', trips));
+            } else if (h.linkId != null) {
+              if (h.flow != null) {
+                const raw = String(h.flow);
+                const display = raw.startsWith('+') || raw.startsWith('-') ? `Δ${raw}` : `=${raw}`;
+                parts.push(T('changeFlowLabel', display));
+              } else if (h.capacity === 0) {
+                parts.push(T('changeClosedLabel'));
+              } else {
+                parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+              }
+            } else if (h.explodeInto != null) {
+              parts.push(T('changeExplodeLabel', h.explodeInto));
+            } else {
+              if (h.production != null) parts.push(T('changeProdLabel', fmt(h.production)));
+              if (h.attraction != null) parts.push(T('changeAttrLabel', fmt(h.attraction)));
+            }
+            const label = isOdHist                ? `OD ${h.fromZoneId} → ${h.toZoneId}`
+                        : h.linkId != null        ? T('changesHistLinkLabel', h.linkId)
+                        : h.nodeId != null        ? T('changesHistNodeLabel', h.nodeId)
+                        :                           T('changesHistZoneLabel', h.zoneId);
+            const item = document.createElement('div');
+            item.className = 'change-item change-item-hist';
+            item.innerHTML = `<div class="change-item-label">${label}<span>${parts.join(' · ')}</span></div>`;
+            item.onclick   = () => _highlightHistChange(h, item);
+            list.appendChild(item);
+          }
+        }
+      }
+
+      updateClosedLinksLayer();
+      updateSpeedSignLayer();
+    }
+
+    // ── Doorvoeren (adjust) ──────────────────────────────────────────────────
+
+    document.getElementById('applyChangesBtn').addEventListener('click', async () => {
+      if (!pendingChanges.length) return;
+      const btn    = document.getElementById('applyChangesBtn');
+      const status = document.getElementById('applyStatus');
+      btn.disabled = true;
+      status.style.display = 'block';
+      status.textContent   = T('applyStart');
+
+      // Verberg edit-schermpjes direct bij starten doorvoeren
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+      if (linkAddActive)  document.getElementById('linkAddBtn').click();
+
+      // Toon wacht-overlay over het netwerk
+      const overlay    = document.getElementById('calcOverlay');
+      const overlayMsg = document.getElementById('calcOverlayMsg');
+      overlay.style.display = 'flex';
+      overlayMsg.textContent = T('applyStart');
+
+      // Bouw changes-array op modus —
+      // MIXED: per modus één API-aanroep op basis van de link-modus in segments.
+      // Overige: één aanroep voor de gehele MODE.
+      const serializeChange = c => {
+        if (c._isLink) {
+          return c.speed != null ? { linkId: c.linkId, speed: c.speed }
+                                 : { linkId: c.linkId, capacity: c.capacity };
+        }
+        if (c._isLinkAdd) {
+          return { geometry: c.geometry, capacity: c.capacity, speed: c.speed, lanes: c.lanes };
+        }
+        if (c._isLinkFlow) {
+          return { linkId: c.linkId, flow: c.flow };
+        }
+        if (c._isOd) {
+          const obj = { fromZoneId: c.fromZoneId, toZoneId: c.toZoneId,
+                        tripFraction: c.tripFraction,
+                        originProduction: c.originProduction };
+          if (c.motifRatio) obj.motifRatio = c.motifRatio;
+          return obj;
+        }
+        if (c._isZoneExplode) {
+          return { zoneId: c.zoneId, explodeInto: c.explodeInto };
+        }
+        const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
+        if (c.production != null) obj.production = c.production;
+        if (c.attraction != null) obj.attraction = c.attraction;
+        return obj;
+      };
+
+      const scenarioName = document.getElementById('scenarioNameInput').value.trim()
+                        || `${networkName} (${scenarioCounter})`;
+
+      // Bouw job-wachtrij: één invoer per getroffen modus
+      let jobQueue;
+      if (MODE === 'MIXED') {
+        // Bouw linkId → modus-map vanuit de netwerksegmenten
+        const linkModeMap = {};
+        for (const seg of segments) {
+          const lid = String(seg.props.linkId ?? seg.props.id ?? '');
+          if (lid) linkModeMap[lid] = (seg.props.mode || 'CAR').toUpperCase();
+        }
+        const constituentModes = [...new Set(Object.values(linkModeMap))];
+        // Verdeel wijzigingen per modus; zone/knoop-wijzigingen gelden voor alle modi
+        const changesByMode = {};
+        for (const c of pendingChanges) {
+          const affected = c._isLink
+            ? [linkModeMap[String(c.linkId)] ?? 'CAR']
+            : constituentModes;
+          for (const m of affected) {
+            (changesByMode[m] = changesByMode[m] ?? []).push(c);
+          }
+        }
+        jobQueue = Object.entries(changesByMode)
+          .map(([m, mChanges]) => ({ mode: m, changes: mChanges.map(serializeChange) }));
+      } else {
+        jobQueue = [{ mode: MODE, changes: pendingChanges.map(serializeChange) }];
+      }
+
+      // Hulpfunctie: poll een job tot gereed; geeft job_id terug bij succes
+      const pollJobPromise = job_id => new Promise((resolve, reject) => {
+        const POLL_DELAYS = [10000, 5000, 3000, 2000];
+        let pollStep = 0;
+        const schedulePoll = () => setTimeout(doPoll,
+          pollStep < POLL_DELAYS.length ? POLL_DELAYS[pollStep++] : 1000);
+        const doPoll = async () => {
+          try {
+            const sj = await fetch(`/jobs/${job_id}`).then(r => r.json());
+            if (sj.status === 'running' || sj.status === 'accepted') {
+              status.textContent = overlayMsg.textContent = T('applyRunning');
+              schedulePoll();
+            } else if (sj.status === 'successful') {
+              resolve(job_id);
+            } else {
+              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
+              reject(new Error(errLines.length
+                ? errLines.join('\n')
+                : T('applyError', sj.returncode)));
+            }
+          } catch (e) { reject(e); }
+        };
+        schedulePoll();
+      });
+
+      status.style.display = 'block';
+      try {
+        let lastResults = null;
+        for (let qi = 0; qi < jobQueue.length; qi++) {
+          const { mode: jobMode, changes: jobChanges } = jobQueue[qi];
+          const effectiveSource = qi === 0 ? AREA_ID : lastResults.new_area_id;
+          const res = await fetch('/processes/adjust/execution', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inputs: {
+              area_id: effectiveSource,
+              mode: jobMode,
+              changes: jobChanges,
+              scenario_name: scenarioName,
+              debug: document.getElementById('adjustDebug').checked,
+            }}),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const { jobID: job_id } = await res.json();
+          status.textContent = overlayMsg.textContent = T('applyRunning');
+          await pollJobPromise(job_id);
+          lastResults = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+        }
+        btn.disabled = false;
+        overlay.style.display = 'none';
+        scenarioCounter++;
+        clearHighlight();
+        _setChangesPanelReadOnly(false);
+        pendingChanges = [];
+        document.getElementById('scenarioNameInput').value = '';
+        renderChangesList();
+        await loadAdjustedResult(lastResults.new_area_id, lastResults.compare_url);
+      } catch (err) {
+        status.style.color = '#ff6b6b';
+        status.textContent = overlayMsg.textContent = err?.message || T('applyFetchError', String(err));
+        btn.disabled = false;
+        overlay.style.display = 'none';
+      }
+    });
+
+    async function loadAdjustedResult(newAreaId, compareUrl) {
+      // Nieuw scenario binnenkomen: 3D-weergaveopties altijd terug op UIT,
+      // ongeacht wat er in het vorige scenario/sessie aanstond.
+      _resetSceneryDisplayDefaults();
+
+      // Herlaad netwerk, routes en zones in-place zonder de kaartpositie te wijzigen.
+      const mkUrl = (type) => {
+        const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+        const coll = collMap[type] || type.toLowerCase();
+        return `/collections/${coll}/items?areaId=${encodeURIComponent(newAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      };
+
+      // ── Netwerk ──────────────────────────────────────────────────────────
+      const newGeojson  = await fetch(mkUrl('NETWORK')).then(r => r.json());
+      const newFeatures = newGeojson.features.filter(
+        f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+      );
+      _networkFeatures = newFeatures; // highlight-lookup bijwerken
+      _setKaart2Network(newFeatures);
+
+      // Vervang segmenten in-place
+      const newFlows   = newFeatures.map(f => f.properties.flow);
+      const newMinFlow = Math.min(...newFlows);
+      const newRange   = (Math.max(...newFlows) - newMinFlow) || 1;
+      segments.length = 0;
+      newFeatures.forEach(f => segments.push({
+        coords:  f.geometry.coordinates,
+        length:  linkLengthM(f),
+        speedMs: f.properties.speed / 3.6,
+        flow:    f.properties.flow,
+        norm:    (f.properties.flow - newMinFlow) / newRange,
+        props:   f.properties,
+      }));
+
+      // Herbouw graph
+      linkGeomMap.clear(); linkSpeedMap.clear(); linkCapacityMap.clear();
+      nodeCoords.clear();  nodeLinkMap.clear();  adj.clear();  adjReverse.clear();
+      for (const f of newGeojson.features) {
+        const p = f.properties, c = f.geometry.coordinates;
+        if (!p.fromNode || !p.toNode || !c?.length) continue;
+        linkGeomMap.set(p.linkId,      c);
+        linkSpeedMap.set(p.linkId,     p.speed > 0 ? p.speed / 3.6 : 10);
+        linkCapacityMap.set(p.linkId,  p.capacity ?? 1800);
+        nodeCoords.set(p.fromNode, c[0]);
+        nodeCoords.set(p.toNode,   c[c.length - 1]);
+        nodeLinkMap.set(p.linkId,  { fromNode: p.fromNode, toNode: p.toNode });
+        if (!adj.has(p.fromNode)) adj.set(p.fromNode, []);
+        adj.get(p.fromNode).push({
+          toNode:   p.toNode,
+          linkId:   p.linkId,
+          length:   p.length || 1,
+          coords:   c,
+          speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+          linkMode: p.mode ? p.mode.toUpperCase() : null,
+        });
+        if (!adjReverse.has(p.toNode)) adjReverse.set(p.toNode, []);
+        adjReverse.get(p.toNode).push({
+          toNode:   p.fromNode,
+          linkId:   p.linkId,
+          length:   p.length || 1,
+          coords:   c,
+          speedMs:  p.speed > 0 ? p.speed / 3.6 : 10,
+          linkMode: p.mode ? p.mode.toUpperCase() : null,
+        });
+      }
+      // Vervang geojson.features met een nieuwe array zodat deck.gl de referentiewijziging detecteert
+      geojson.features = newGeojson.features;
+
+      rebuildLinkFlowMap();
+      dijkstraCache.clear();
+
+      // Titel updaten
+      const newName = newGeojson.properties?.name || newAreaId;
+      window._networkName = newName;
+      document.getElementById('networkTitle').textContent = T('networkTitle', newName);
+      // document.title = T('pageTitle', newName);
+
+      // ── Zones ────────────────────────────────────────────────────────────
+      try {
+        const zr = await fetch(mkUrl('ZONE'));
+        if (zr.ok) {
+          zoneFeaturesRaw = (await zr.json()).features || [];
+          zoneMap.clear();
+          for (const f of zoneFeaturesRaw) {
+            const p = f.properties;
+            if (p.zoneId) zoneMap.set(p.zoneId, {
+              from:     p.fromNodeProportions || {},
+              to:       p.toNodeProportions   || {},
+              boundary: p.zoneClass === 'BOUNDARY',
+            });
+          }
+        }
+      } catch (e) { console.warn('Zones herlaad mislukt:', e); }
+
+      // ── Routes ───────────────────────────────────────────────────────────
+      try {
+        routeList.length = 0;
+        if (MODE === 'MIXED') {
+          const mkModeUrl = m => mkUrl('ROUTES').replace(/mode=[^&]+/, `mode=${m}`);
+          const [carFc, bikeFc] = await Promise.all([
+            fetch(mkModeUrl('CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch(mkModeUrl('BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
+          ]);
+          _parseAndAddRoutes(carFc,  'CAR');
+          _parseAndAddRoutes(bikeFc, 'BIKE');
+        } else {
+          const rr = await fetch(mkUrl('ROUTES'));
+          if (rr.ok) _parseAndAddRoutes(await rr.json(), MODE);
+        }
+        totalRouteWeight = routeList.reduce((s, r) => s + r.weight, 0) || 1;
+        routeMode = routeList.length > 0;
+        buildLinkRouteMap();
+        calibrateRouteProductions();  // herkalibreren tegen vers geladen netwerk/routes
+        if (routeMode) {
+          document.getElementById('odEditBtn').style.display   = '';
+        }
+      } catch (e) { console.warn('Routes herlaad mislukt:', e); }
+
+      // ── Node-laag bijwerken als die actief is ─────────────────────────────
+      if (nodeEditActive) addNodeLayer();
+
+      // ── COMPARE ──────────────────────────────────────────────────────────
+      if (compareUrl) {
+        try {
+          const cr = await fetch(compareUrl);
+          if (cr.ok) {
+            compareData = await cr.json();
+            if (map.getSource(CMP_SOURCE)) {
+              map.getSource(CMP_SOURCE).setData(compareData);
+            } else {
+              addCompareLayer();
+            }
+            syncCompareOption(true);
+          }
+        } catch (e) { console.warn('COMPARE herlaad mislukt:', e); }
+      }
+
+      // ── Overlay en autos bijwerken ────────────────────────────────────────
+      // Stop bewerkingsmodus als die nog actief was
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+      deactivateWhatifRc();
+
+      updateLegend();
+      updateClosedLinksLayer();
+      updateSpeedSignLayer();
+      updateOverlay(true);
+
+      // AREA_ID bijwerken zodat vervolgacties (doorvoeren, adjust) het nieuwe gebied gebruiken
+      // Sla huidig gebied op als bronscenario voor ScenarioVergelijker vóór de update
+      splitViewSrcAreaId = AREA_ID;
+      if (splitViewActive) deactivateSplitView();
+      if (diffPlotActive) deactivateDiffPlot();
+      if (diffStackActive) deactivateDiffStack();
+      if (diffSmileyActive) deactivateDiffSmiley();
+      document.getElementById('splitViewBtn').style.display = '';
+      document.getElementById('diffPlotBtn').style.display  = '';
+      document.getElementById('diffStackBtn').style.display = '';
+      document.getElementById('diffSmileyBtn').style.display = '';
+      updateDiffButtonsState();
+      AREA_ID = newAreaId;
+      window.AREA_ID = AREA_ID;
+      _historicalChanges = [];   // invalideer bij scenario-advance
+
+      // URL bijwerken met pushState zodat de browser-history gevuld wordt
+      // en de gebruiker met Backspace (of de Terug-knop) terug kan navigeren.
+      const url = new URL(window.location.href);
+      url.searchParams.set('areaId', newAreaId);
+      window.history.pushState({ areaId: newAreaId }, '', url.toString());
+    }
+    // Stel de late-bound referentie in zodat de meekijkmodus deze functie kan aanroepen.
+    _followLoadFn = loadAdjustedResult;
+
+    // ── Browser-history: popstate (Terug-knop / Backspace) ──────────────────
+    window.addEventListener('popstate', async (evt) => {
+      const prevId = evt.state?.areaId || new URLSearchParams(window.location.search).get('areaId');
+      if (prevId && prevId !== AREA_ID) {
+        AREA_ID = prevId;
+        window.AREA_ID = AREA_ID;
+        _historicalChanges = [];
+        await loadAdjustedResult(prevId, null);
+      }
+    });
+
+    // Backspace → history.back(), maar niet als focus in een tekstveld zit
+    window.addEventListener('keydown', (evt) => {
+      if (evt.key !== 'Backspace') return;
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
+      evt.preventDefault();
+      history.back();
+    });
+
+    // ── COMPARE laag ────────────────────────────────────────────────────────
+
+    const compareUrlParam = new URLSearchParams(window.location.search).get('compareUrl');
+    if (compareUrlParam) {
+      fetch(decodeURIComponent(compareUrlParam))
+        .then(r => r.json())
+        .then(fc => {
+          compareData = fc;
+          syncCompareOption(true);
+          map.once('idle', () => addCompareLayer());
+        })
+        .catch(e => console.warn('COMPARE laden mislukt:', e));
+    } else {
+      // Controleer via /collections/areas/items of er al een COMPARE-bestand is voor dit gebied
+      fetch('/collections/areas/items').then(r => r.json()).then(data => data.features.map(f => f.properties)).then(areas => {
+        const area = areas.find(a => a.areaId === AREA_ID && a.mode === MODE);
+        if (area?.hasCompare) syncCompareOption(true);
+        if (area?.srcAreaId) {
+          splitViewSrcAreaId = area.srcAreaId;
+          document.getElementById('splitViewBtn').style.display = '';
+          document.getElementById('diffPlotBtn').style.display  = '';
+          document.getElementById('diffStackBtn').style.display = '';
+          document.getElementById('diffSmileyBtn').style.display = '';
+          updateDiffButtonsState();
+        }
+      }).catch(() => {});
+    }
+
+    function addCompareLayer() {
+      if (!compareData || map.getSource(CMP_SOURCE)) return;
+      map.addSource(CMP_SOURCE, { type: 'geojson', data: compareData });
+
+      map.addLayer({
+        id: CMP_LAYER_MAT, type: 'fill', source: CMP_SOURCE,
+        filter: ['==', ['get', 'matchType'], 'matched'],
+        paint: { 'fill-color': '#8a8a9a', 'fill-opacity': 0.55 },
+      });
+      map.addLayer({
+        id: CMP_LAYER_INC, type: 'fill', source: CMP_SOURCE,
+        filter: ['in', ['get', 'matchType'], ['literal', ['increase', 'added']]],
+        paint: { 'fill-color': '#64dc96', 'fill-opacity': 0.88 },
+      });
+      map.addLayer({
+        id: CMP_LAYER_RED, type: 'fill', source: CMP_SOURCE,
+        filter: ['in', ['get', 'matchType'], ['literal', ['reduction', 'removed']]],
+        paint: { 'fill-color': '#ff6b6b', 'fill-opacity': 0.88 },
+      });
+
+      [CMP_LAYER_MAT, CMP_LAYER_INC, CMP_LAYER_RED].forEach(id =>
+        map.setLayoutProperty(id, 'visibility', compareVisible ? 'visible' : 'none')
+      );
+    }
+
+    function setCompareVisibility(on) {
+      [CMP_LAYER_MAT, CMP_LAYER_INC, CMP_LAYER_RED].forEach(id => {
+        if (map.getLayer(id))
+          map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+      });
+    }
+
+    // ── Vergelijking-optie in dropdown in/uitschakelen ──────────────────────
+    function syncCompareOption(hasCompare) {
+      const opt = document.getElementById('compareOption');
+      opt.style.display = hasCompare ? '' : 'none';
+      // splitViewBtn tonen als er een bronscenario bekend is
+      document.getElementById('splitViewBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffPlotBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffStackBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      document.getElementById('diffSmileyBtn').style.display =
+        splitViewSrcAreaId ? '' : 'none';
+      updateDiffButtonsState();
+      // Als de huidige selectie 'compare' is maar er geen data meer is, reset
+      if (!hasCompare && colorMetric === 'compare') {
+        colorMetric = 'flow';
+        document.getElementById('colorMetric').value = 'flow';
+        compareVisible = false;
+        setCompareVisibility(false);
+        updateLegend();
+        updateOverlay(true);
+      }
+    }
+
+    // ── ScenarioVergelijker ──────────────────────────────────────────────────
+
+    const _mapContainer = document.getElementById('mapContainer');
+    const _mapSplitter  = document.getElementById('map-splitter');
+
+    async function activateSplitView() {
+      if (splitViewActive || !splitViewSrcAreaId) return;
+
+      const mkUrl2 = type => {
+        const collMap = { NETWORK: 'network', ROUTES: 'routes', ZONE: 'zones', COMPARE: 'comparison' };
+        const coll = collMap[type] || type.toLowerCase();
+        return `/collections/${coll}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      };
+
+      try {
+        // ── Laad origineel netwerk ──────────────────────────────────────────
+        const origGeoJson  = await fetch(mkUrl2('NETWORK')).then(r => r.json());
+        const origFeatures = origGeoJson.features.filter(
+          f => f.geometry?.type === 'LineString' && typeof f.properties?.flow === 'number'
+        );
+        const origFlows   = origFeatures.map(f => f.properties.flow);
+        const origMinFlow = Math.min(...origFlows);
+        const origRange   = (Math.max(...origFlows) - origMinFlow) || 1;
+        origSegments.length = 0;
+        origFeatures.forEach(f => origSegments.push({
+          coords:  f.geometry.coordinates,
+          length:  linkLengthM(f),
+          speedMs: f.properties.speed / 3.6,
+          flow:    f.properties.flow,
+          norm:    (f.properties.flow - origMinFlow) / origRange,
+          props:   f.properties,
+        }));
+        origGeojsonFeatures = origGeoJson.features;
+
+        // ── Activeer split-layout ──────────────────────────────────────────
+        splitViewActive = true;
+        _mapContainer.classList.add('split-mode');
+        map.getContainer().style.flexBasis = '';  // reset naar 50/50
+        map.resize();
+
+        // ── Maak rechterkaart aan ──────────────────────────────────────────
+        const cam = map.getCenter();
+        map2 = new maplibregl.Map({
+          container: 'map-orig',
+          style:     'https://tiles.openfreemap.org/styles/liberty',
+          center:    [cam.lng, cam.lat],
+          zoom:      map.getZoom(),
+          pitch:     map.getPitch(),
+          bearing:   map.getBearing(),
+          antialias: true,
+          maxPitch:  85,
+          attributionControl: { customAttribution: OSM_ATTRIBUTION },
+        });
+
+        map2.once('load', () => {
+          overlay2 = new MapboxOverlay({
+            interleaved: true,
+            layers: [makeNetworkLayer2()].filter(Boolean),
+            getTooltip: () => null,
+          });
+          map2.addControl(overlay2);
+
+          // Gebouwen uitschakelen op de rechterkaart (Liberty-lagen)
+          try { if (map2.getLayer('building-3d')) map2.setLayoutProperty('building-3d', 'visibility', 'none'); } catch (_) {}
+          try { if (map2.getLayer('building'))    map2.setLayoutProperty('building',    'visibility', 'none'); } catch (_) {}
+          // Zon/sky en achtergrond gelijkstellen aan linkerkaart
+          updateSunLight();
+          if (basemapStyle && basemapStyle !== 'map') _applyBasemapStyle(basemapStyle);
+        });
+
+        // ── Camera-sync ────────────────────────────────────────────────────
+        map.on('move', _syncMap1ToMap2);
+        map2.on('move', _syncMap2ToMap1);
+
+        // ── Bewerkingen uitschakelen ───────────────────────────────────────
+        // Stop actieve bewerkingsmodi eerst
+        if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+        if (linkEditActive) document.getElementById('linkEditBtn').click();
+        // Disable knoppen zodat ze niet opnieuw gestart kunnen worden
+        ['nodeEditBtn', 'linkEditBtn', 'applyChangesBtn'].forEach(id => {
+          document.getElementById(id).disabled = true;
+        });
+
+        // ── Cars verbergen (splitViewActive = true → visible: false) ───────
+        updateOverlay(true);
+
+        // Knop als actief markeren
+        document.getElementById('splitViewBtn').classList.add('active');
+
+      } catch (e) {
+        console.warn('ScenarioVergelijker activeren mislukt:', e);
+        splitViewActive = false;
+        _mapContainer.classList.remove('split-mode');
+        map.resize();
+      }
+    }
+
+    function deactivateSplitView() {
+      if (!splitViewActive) return;
+
+      // Overlay-modus opruimen
+      if (overlayMode) {
+        overlayMode = false;
+        document.getElementById('map-orig').style.clipPath = '';
+        _mapSplitter.style.left = '';
+        _mapContainer.classList.remove('overlay-mode');
+      }
+
+      // Camera-sync listeners verwijderen
+      map.off('move', _syncMap1ToMap2);
+      if (map2) map2.off('move', _syncMap2ToMap1);
+
+      // map2 afbreken
+      if (overlay2) { try { overlay2.finalize(); } catch (_) {} overlay2 = null; }
+      if (map2) { map2.remove(); map2 = null; }
+
+      // Originele data leegmaken
+      origSegments.length  = 0;
+      origGeojsonFeatures  = [];
+
+      // Layout terugzetten
+      map.getContainer().style.flexBasis = '';
+      _mapContainer.classList.remove('split-mode');
+      splitViewActive = false;
+      map.resize();
+
+      // Cars terug
+      updateOverlay(true);
+
+      // Bewerkingen weer beschikbaar stellen
+      ['nodeEditBtn', 'linkEditBtn', 'applyChangesBtn'].forEach(id => {
+        document.getElementById(id).disabled = false;
+      });
+
+      document.getElementById('splitViewBtn').classList.remove('active');
+    }
+
+    // ── Verschilplot — activeren/deactiveren ────────────────────────────────────
+
+    // Gedeelde berekening: vult diffByLinkId (berekend − bron), curValByLinkId
+    // (huidige metriekwaarde) en diffMaxOrigFlow, voor de actieve colorMetric.
+    // Geeft false terug als de metriek niet ondersteund wordt.
+    async function computeDiffData() {
+      if (!splitViewSrcAreaId) return false;
+      const metric = colorMetric;
+      if (!DIFF_SUPPORTED.has(metric)) return false;
+      diffMetric = metric;
+
+      // Zorg dat de afgeleide laag (geluid/emissie) voor het huidige gebied geladen is
+      const derivedKind = DERIVED_METRIC_KIND[metric];
+      if (derivedKind) {
+        try { await ensureDerivedLayer(derivedKind); } catch (e) { /* laat leeg */ }
+      }
+
+      // Haal bron-NETWORK op
+      const netUrl = `/collections/network/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+      const origGeoJson  = await fetch(netUrl).then(r => r.json());
+      const origFeatures = origGeoJson.features.filter(
+        f => f.geometry?.type === 'LineString' && f.properties?.linkId != null
+      );
+
+      // Haal bron-versie van de afgeleide laag op (geluid/emissie) indien nodig
+      let srcNoiseMap = null, srcEmisMap = null;
+      if (derivedKind) {
+        try {
+          const dUrl = `/collections/${derivedKind}/items?areaId=${encodeURIComponent(splitViewSrcAreaId)}&mode=${encodeURIComponent(MODE)}`;
+          const dFc  = await fetch(dUrl).then(r => r.ok ? r.json() : { features: [] });
+          const m = new Map();
+          for (const f of (dFc.features || [])) {
+            const p = f.properties || {};
+            if (p.linkId != null) m.set(p.linkId, p);
+          }
+          if (derivedKind === 'noise') srcNoiseMap = m; else srcEmisMap = m;
+        } catch (e) { /* bron-data ontbreekt → links zonder bronwaarde worden overgeslagen */ }
+      }
+
+      // Bouw map linkId → bron-metriekwaarde
+      const origValByLinkId = new Map();
+      let maxOrigVal = 0;
+      for (const f of origFeatures) {
+        const v = evalMetric(f.properties, metric, srcNoiseMap, srcEmisMap);
+        if (v == null || !isFinite(v)) continue;
+        origValByLinkId.set(f.properties.linkId, v);
+        if (v > maxOrigVal) maxOrigVal = v;
+      }
+      diffMaxOrigFlow = maxOrigVal || 1;
+
+      // Bereken verschil per linkId: berekend − bron (alleen als beide geldig)
+      diffByLinkId.clear();
+      curValByLinkId.clear();
+      let maxAbs = 0;
+      for (const seg of segments) {
+        const linkId  = seg.props.linkId;
+        const curVal  = evalMetric(seg.props, metric, noiseByLinkId, emisByLinkId);
+        if (curVal == null || !isFinite(curVal)) continue;
+        curValByLinkId.set(linkId, curVal);
+        const origVal = origValByLinkId.get(linkId);
+        if (origVal == null) continue;   // geen bronwaarde → geen betrouwbaar verschil
+        const d = curVal - origVal;
+        diffByLinkId.set(linkId, d);
+        if (Math.abs(d) > maxAbs) maxAbs = Math.abs(d);
+      }
+      diffMaxAbs = maxAbs || 1;
+      diffVersion++;   // forceer hertekening van de deck.gl-lagen
+      return true;
+    }
+
+    // Korte, vanzelf verdwijnende melding (voor verschilplot-beperkingen e.d.)
+    let _diffToastTimer = null;
+    function _diffToast(msg) {
+      let el = document.getElementById('_diffToast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = '_diffToast';
+        el.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);' +
+          'background:rgba(20,24,34,0.94);color:#e8ecf4;padding:8px 14px;border-radius:6px;' +
+          'font-size:12px;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.4);' +
+          'border:1px solid rgba(126,200,227,0.4);transition:opacity 0.3s;';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg;
+      el.style.opacity = '1';
+      clearTimeout(_diffToastTimer);
+      _diffToastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2600);
+    }
+
+    // Werk de knop-status (enabled/disabled + title) bij op basis van de actieve
+    // metriek en de aanwezigheid van een bronscenario.
+    function updateDiffButtonsState() {
+      const hasSrc     = !!splitViewSrcAreaId;
+      const supported  = DIFF_SUPPORTED.has(colorMetric);
+      const additive   = DIFF_ADDITIVE.has(colorMetric);
+      const plotBtn    = document.getElementById('diffPlotBtn');
+      const stackBtn   = document.getElementById('diffStackBtn');
+      const smileyBtn  = document.getElementById('diffSmileyBtn');
+      if (!plotBtn || !stackBtn) return;
+
+      const plotOk  = hasSrc && supported;
+      const stackOk = hasSrc && supported && additive;
+      plotBtn.disabled  = !plotOk;
+      stackBtn.disabled = !stackOk;
+      plotBtn.style.opacity  = plotOk  ? '' : '0.4';
+      stackBtn.style.opacity = stackOk ? '' : '0.4';
+      if (smileyBtn) {
+        smileyBtn.disabled = !plotOk;
+        smileyBtn.style.opacity = plotOk ? '' : '0.4';
+        smileyBtn.title = supported
+          ? 'Verschilplot met smileys (Δ ' + metricShortLabel(colorMetric) + ')'
+          : 'Verschilplot niet beschikbaar voor deze kaartlaag';
+      }
+      plotBtn.title  = supported
+        ? 'Verschilplot (Δ ' + metricShortLabel(colorMetric) + ')'
+        : 'Verschilplot niet beschikbaar voor deze kaartlaag';
+      stackBtn.title = !supported
+        ? 'Verschilplot niet beschikbaar voor deze kaartlaag'
+        : additive
+          ? 'Verschilplot met ongewijzigd deel (Δ ' + metricShortLabel(colorMetric) + ')'
+          : 'Gestapelde plot alleen voor optelbare grootheden (niet voor deze kaartlaag)';
+    }
+
+    /** Eenheid voor een metriek (voor tooltips/titels van de verschilplot). */
+    function metricUnit(metric) {
+      switch (metric) {
+        case 'occupancy': case 'occupancy_scaled':
+        case 'coverage':  case 'coverage_scaled': return '%';
+        case 'speed':        return 'km/h';
+        case 'noise_lden':
+        case 'noise_lnight': return 'dB(A)';
+        case 'emis_co2':
+        case 'emis_nox':
+        case 'emis_pm10':    return 'kg/km';
+        default:             return T('legendUnit');   // flow/capacity → vtg/u
+      }
+    }
+    function metricShortLabel(metric) { return metricUnit(metric); }
+    /** Label-key voor de actieve Snelheid-sub-laag (binaire / future metrics). */
+    function metricShortLabelKey(metric) {
+      const map = {
+        speed_crossings: 'legendSpeedCrossings', speed_cycle_crossings: 'legendSpeedCycleCrossings',
+        speed_intersections: 'legendSpeedIntersections', speed_yield: 'legendSpeedYield', speed_refuge: 'legendSpeedRefuge',
+        speed_from_right: 'legendSpeedFromRight', speed_left_turn: 'legendSpeedLeftTurn',
+        speed_oncoming: 'legendSpeedOncoming', speed_penalty_total: 'legendSpeedPenaltyTotal',
+        priority_roads: 'legendPriorityRoads',
+      };
+      return map[metric] || null;
+    }
+
+    /** Formatteer een metriekwaarde met passende afronding + eenheid. */
+    function fmtMetricVal(v, metric) {
+      if (v == null || !isFinite(v)) return '–';
+      const loc = T('numberLocale');
+      const u = metricUnit(metric);
+      const dec = (metric === 'noise_lden' || metric === 'noise_lnight') ? 1
+                : (metric && metric.startsWith('emis_')) ? 3
+                : (metric === 'occupancy' || metric === 'occupancy_scaled' ||
+                   metric === 'coverage'  || metric === 'coverage_scaled' ||
+                   metric === 'speed') ? 0 : 0;
+      const num = (dec > 0) ? Number(v.toFixed(dec)).toLocaleString(loc)
+                            : Math.round(v).toLocaleString(loc);
+      return num + ' ' + u;
+    }
+
+    /** Zorg dat actieve verschilplots verenigbaar zijn met de huidige metriek;
+     *  deactiveer + meld indien niet. Werk daarna de knop-status bij. */
+    function _ensureDiffCompatible() {
+      const okPlot  = DIFF_SUPPORTED.has(colorMetric);
+      const okStack = okPlot && DIFF_ADDITIVE.has(colorMetric);
+      if (diffPlotActive && !okPlot) {
+        deactivateDiffPlot();
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      if (diffStackActive && !okStack) {
+        deactivateDiffStack();
+        _diffToast(okPlot
+          ? 'De gestapelde plot werkt alleen voor optelbare grootheden.'
+          : 'Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      if (diffSmileyActive && !okPlot) {
+        deactivateDiffSmiley();
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+      }
+      updateDiffButtonsState();
+    }
+
+    async function activateDiffPlot() {
+      if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      // Zorg dat split-view / gestapelde plot niet tegelijk actief zijn
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffStack();
+
+      try {
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
+
+        diffPlotActive = true;
+        document.getElementById('diffPlotBtn').classList.add('active');
+        document.getElementById('legendDiff').style.display = '';
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Verschilplot activeren mislukt:', e);
+        diffPlotActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffPlot() {
+      if (!diffPlotActive) return;
+      diffPlotActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffPlotBtn').classList.remove('active');
+      document.getElementById('legendDiff').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
+    // ── Gestapelde verschilplot (grijze kern + gekleurde rand) ──────────────────
+    async function activateDiffStack() {
+      if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      if (!DIFF_ADDITIVE.has(colorMetric)) {
+        _diffToast('De gestapelde plot werkt alleen voor optelbare grootheden (bijv. intensiteit, emissies).');
+        return;
+      }
+      // Onderling exclusief met split-view en de gewone verschilplot
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffPlot();
+
+      try {
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
+
+        diffStackActive = true;
+        document.getElementById('diffStackBtn').classList.add('active');
+        document.getElementById('legendDiffStack').style.display = '';
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Gestapelde verschilplot activeren mislukt:', e);
+        diffStackActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffStack() {
+      if (!diffStackActive) return;
+      diffStackActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffStackBtn').classList.remove('active');
+      document.getElementById('legendDiffStack').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
+    // ── Smiley-verschilplot (blije/boze smiley per wegvak) ──────────────────────
+    async function activateDiffSmiley() {
+      if (!splitViewSrcAreaId) return;
+      if (!DIFF_SUPPORTED.has(colorMetric)) {
+        _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.');
+        return;
+      }
+      // Onderling exclusief met split-view en de andere verschilplots
+      if (splitViewActive) deactivateSplitView();
+      deactivateDiffPlot();
+      deactivateDiffStack();
+
+      try {
+        const ok = await computeDiffData();
+        if (!ok) { _diffToast('Verschilplot is niet beschikbaar voor deze kaartlaag.'); return; }
+
+        diffSmileyActive = true;
+        document.getElementById('diffSmileyBtn').classList.add('active');
+        document.getElementById('legendDiffSmiley').style.display = '';
+        _configureSmileyAbsSlider();
+        updateLegend();
+        updateOverlay(false);
+      } catch (e) {
+        console.warn('Smiley-verschilplot activeren mislukt:', e);
+        diffSmileyActive = false;
+        diffByLinkId.clear();
+      }
+    }
+
+    function deactivateDiffSmiley() {
+      if (!diffSmileyActive) return;
+      diffSmileyActive = false;
+      diffByLinkId.clear();
+      document.getElementById('diffSmileyBtn').classList.remove('active');
+      document.getElementById('legendDiffSmiley').style.display = 'none';
+      updateLegend();
+      updateOverlay(true);
+    }
+
+    function _syncMap1ToMap2() {
+      if (_mapSyncing || !map2) return;
+      _mapSyncing = true;
+      map2.jumpTo({ center: map.getCenter(), zoom: map.getZoom(),
+                    bearing: map.getBearing(), pitch: map.getPitch() });
+      _mapSyncing = false;
+    }
+
+    function _syncMap2ToMap1() {
+      if (_mapSyncing || !map2) return;
+      _mapSyncing = true;
+      map.jumpTo({ center: map2.getCenter(), zoom: map2.getZoom(),
+                   bearing: map2.getBearing(), pitch: map2.getPitch() });
+      _mapSyncing = false;
+    }
+
+    document.getElementById('splitViewBtn').addEventListener('click', () => {
+      if (splitViewActive) deactivateSplitView();
+      else { deactivateDiffPlot(); deactivateDiffStack(); deactivateDiffSmiley(); activateSplitView(); }
+    });
+
+    document.getElementById('diffPlotBtn').addEventListener('click', () => {
+      if (diffPlotActive) deactivateDiffPlot();
+      else activateDiffPlot();
+    });
+
+    document.getElementById('diffStackBtn').addEventListener('click', () => {
+      if (diffStackActive) deactivateDiffStack();
+      else activateDiffStack();
+    });
+
+    document.getElementById('diffSmileyBtn').addEventListener('click', () => {
+      if (diffSmileyActive) deactivateDiffSmiley();
+      else activateDiffSmiley();
+    });
+
+    // Drempel-slider(s): relatieve grens (%) of absolute grens (metriek-eenheden).
+    /** Stel het bereik/stap van de absolute slider in op basis van het grootste
+     *  voorkomende |verschil| (diffMaxAbs) en behoud de huidige waarde indien mogelijk. */
+    function _configureSmileyAbsSlider() {
+      const slider = document.getElementById('diffSmileyAbsSlider');
+      const label  = document.getElementById('diffSmileyAbsLabel');
+      if (!slider) return;
+      const maxAbs = diffMaxAbs > 0 ? diffMaxAbs : 1;
+      // Stap ~1/200 van het bereik, met een redelijke afronding
+      const rawStep = maxAbs / 200;
+      const mag  = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+      const step = Math.max(mag, 1e-6);
+      slider.max  = maxAbs;
+      slider.step = step;
+      // Clamp huidige absolute drempel binnen het nieuwe bereik
+      if (diffSmileyAbsThreshold > maxAbs) diffSmileyAbsThreshold = 0;
+      slider.value = diffSmileyAbsThreshold;
+      if (label) label.textContent = fmtMetricVal(diffSmileyAbsThreshold, diffMetric);
+    }
+
+    (() => {
+      const relSlider = document.getElementById('diffSmileyThresholdSlider');
+      const relLabel  = document.getElementById('diffSmileyThresholdLabel');
+      const absSlider = document.getElementById('diffSmileyAbsSlider');
+      const absLabel  = document.getElementById('diffSmileyAbsLabel');
+      const relRow    = document.getElementById('diffSmileyRelRow');
+      const absRow    = document.getElementById('diffSmileyAbsRow');
+
+      if (relSlider) relSlider.addEventListener('input', () => {
+        const pct = Number(relSlider.value);
+        diffSmileyThreshold = pct / 100;
+        if (relLabel) relLabel.textContent = pct + '%';
+        if (diffSmileyActive && diffSmileyMode === 'rel') updateOverlay(false);
+      });
+
+      if (absSlider) absSlider.addEventListener('input', () => {
+        diffSmileyAbsThreshold = Number(absSlider.value);
+        if (absLabel) absLabel.textContent = fmtMetricVal(diffSmileyAbsThreshold, diffMetric);
+        if (diffSmileyActive && diffSmileyMode === 'abs') updateOverlay(false);
+      });
+
+      document.querySelectorAll('input[name="diffSmileyMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          diffSmileyMode = radio.value;
+          if (relRow) relRow.style.display = (diffSmileyMode === 'rel') ? 'flex' : 'none';
+          if (absRow) absRow.style.display = (diffSmileyMode === 'abs') ? 'flex' : 'none';
+          if (diffSmileyMode === 'abs') _configureSmileyAbsSlider();
+          if (diffSmileyActive) updateOverlay(false);
+        });
+      });
+    })();
+
+    // ── Selected Link Analysis — knop ─────────────────────────────────────────
+    document.getElementById('purposeChartClose').addEventListener('click', () => {
+      document.getElementById('purposeChartPanel').style.display = 'none';
+    });
+
+    document.getElementById('selectedLinkBtn').addEventListener('click', () => {
+      deactivateWhatifRc();
+      selectedLinkActive = !selectedLinkActive;
+      selectedLinkId     = null;
+      hoveredLinkId      = null;
+      document.getElementById('selectedLinkBtn').classList.toggle('active', selectedLinkActive);
+      updateOverlay(true);
+      updatePurposeChart();   // verbergt het paneel omdat selectedLinkId nu null is
+    });
+
+    // ── What-if wegafsluiting — hulpfunctie & knop ───────────────────────────
+
+    function deactivateWhatifRc() {
+      if (!whatifRcActive) return;
+      whatifRcActive = false;
+      document.getElementById('whatifRcBtn').classList.remove('active');
+      document.getElementById('whatifRcPanel').style.display = 'none';
+      map.getCanvas().style.cursor = '';
+    }
+
+    function renderWhatifRcList() {
+      const list  = document.getElementById('whatifRcList');
+      const count = document.getElementById('whatifRcCount');
+      count.textContent = whatifRcLinks.size;
+      if (!whatifRcLinks.size) {
+        list.innerHTML = `<div class="whatif-rc-empty">${T('whatifRcNoLinks')}</div>`;
+        return;
+      }
+      list.innerHTML = '';
+      for (const [lid, label] of whatifRcLinks) {
+        const item = document.createElement('div');
+        item.className = 'whatif-rc-item';
+        const lbl = document.createElement('div');
+        lbl.className = 'whatif-rc-item-label';
+        lbl.textContent = label;
+        const del = document.createElement('button');
+        del.className = 'whatif-rc-item-del';
+        del.textContent = '\u00d7';
+        del.title = T('changeItemDel');
+        del.addEventListener('click', () => {
+          whatifRcLinks.delete(lid);
+          renderWhatifRcList();
+          updateOverlay(true);
+        });
+        item.appendChild(lbl);
+        item.appendChild(del);
+        list.appendChild(item);
+      }
+    }
+
+    async function runWhatifRoadClosure() {
+      const status = document.getElementById('whatifRcStatus');
+      if (!whatifRcLinks.size) {
+        status.style.display = 'block';
+        status.style.color   = '#ff6b6b';
+        status.textContent   = T('whatifRcNoLinks');
+        return;
+      }
+      const btn = document.getElementById('whatifRcRunBtn');
+      btn.disabled = true;
+      status.style.display = 'block';
+      status.style.color   = '#7ec8e3';
+      status.textContent   = T('whatifRcStart');
+
+      const direction    = document.getElementById('whatifRcDirSelect').value;
+      const scenarioName = document.getElementById('whatifRcNameInput').value.trim()
+                        || `${window._networkName} (what-if ${scenarioCounter})`;
+      const linkIds = [...whatifRcLinks.keys()].map(Number);
+
+      try {
+        const res = await fetch('/processes/whatif-road-closure/execution', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inputs: { area_id: AREA_ID, mode: MODE, selected_links: linkIds, direction, scenario_name: scenarioName } }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          status.style.color = '#ff6b6b';
+          status.textContent = txt;
+          btn.disabled = false;
+          return;
+        }
+        const { jobID: job_id } = await res.json();
+        status.textContent = T('whatifRcRunning');
+        const poll = setInterval(async () => {
+          try {
+            const sr = await fetch(`/jobs/${job_id}`);
+            const sj = await sr.json();
+            if (sj.status === 'running' || sj.status === 'accepted') {
+              status.textContent = T('whatifRcRunning');
+            } else if (sj.status === 'successful') {
+              status.textContent = T('whatifRcDone');
+            } else {
+              const errLines = (sj.log || []).filter(l => l.trim()).slice(-5);
+              status.style.color = '#ff6b6b';
+              status.textContent = errLines.length ? errLines.join('\n') : T('whatifRcError', sj.returncode);
+            }
+            if (sj.status === 'successful' || sj.status === 'failed') {
+              clearInterval(poll);
+              btn.disabled = false;
+              if (sj.status === 'successful') {
+                scenarioCounter++;
+                whatifRcLinks.clear();
+                renderWhatifRcList();
+                document.getElementById('whatifRcNameInput').value = '';
+                const results = await fetch(`/jobs/${job_id}/results`).then(r => r.json());
+                await loadAdjustedResult(results.new_area_id, null);
+              }
+            }
+          } catch (e) { /* poll-fout: volgende poging */ }
+        }, 1500);
+      } catch (err) {
+        status.style.color = '#ff6b6b';
+        status.textContent = T('whatifRcFetchError', err.message);
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('whatifRcBtn').addEventListener('click', () => {
+      // Deactiveer conflicterende modi
+      if (nodeEditActive)   document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)   document.getElementById('linkEditBtn').click();
+      if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
+      whatifRcActive = !whatifRcActive;
+      document.getElementById('whatifRcBtn').classList.toggle('active', whatifRcActive);
+      const panel = document.getElementById('whatifRcPanel');
+      if (whatifRcActive) {
+        panel.style.display = 'block';
+        renderWhatifRcList();
+      } else {
+        panel.style.display = 'none';
+      }
+      updateOverlay(true);
+    });
+
+    document.getElementById('whatifRcRunBtn').addEventListener('click', runWhatifRoadClosure);
+    document.getElementById('whatifRcClearBtn').addEventListener('click', () => {
+      whatifRcLinks.clear();
+      renderWhatifRcList();
+      updateOverlay(true);
+    });
+
+    // ── OD-paar aanpassen — knop en paneel ───────────────────────────────────
+    document.getElementById('odEditBtn').addEventListener('click', () => {
+      if (nodeEditActive)     document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)     document.getElementById('linkEditBtn').click();
+      if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
+      if (zoneExplodeActive)  document.getElementById('zoneExplodeBtn').click();
+      deactivateWhatifRc();
+
+      if (odEditActive) {
+        deactivateOdEdit();
+      } else {
+        odEditActive   = true;
+        odEditStep     = 'from';
+        odEditFromZone = null;
+        odEditToZone   = null;
+        window._odEditRouteData = null;
+        document.getElementById('odEditBtn').classList.add('active');
+        // Zones aanzetten als ze uit staan
+        if (zoneCentroidMode === 'off') {
+          document.getElementById('zoneCentroidSelect').value = 'production';
+          document.getElementById('zoneCentroidSelect').dispatchEvent(new Event('change'));
+        }
+        _odEditShowPanel();
+        updateOverlay(true);
+      }
+    });
+
+    document.getElementById('odEditClose').addEventListener('click', deactivateOdEdit);
+
+    document.getElementById('odEditSaveBtn').addEventListener('click', _odEditSave);
+
+    document.getElementById('odEditFields').addEventListener('input', e => {
+      if (e.target.classList.contains('ode-motif-pct')) _odEditCheckMotifSum();
+    });
+
+    // Herstart zone-keuze: klik op herkomst/bestemming-stap-vak
+    document.getElementById('odEditFromVal').closest('.ode-step').addEventListener('click', () => {
+      if (!odEditActive) return;
+      odEditFromZone = null;
+      odEditToZone   = null;
+      odEditStep     = 'from';
+      window._odEditRouteData = null;
+      _odEditUpdateStepDisplay();
+      updateOverlay(true);
+    });
+    document.getElementById('odEditToVal').closest('.ode-step').addEventListener('click', () => {
+      if (!odEditActive || !odEditFromZone) return;
+      odEditToZone  = null;
+      odEditStep    = 'to';
+      window._odEditRouteData = null;
+      _odEditUpdateStepDisplay();
+      updateOverlay(true);
+    });
+
+    // ── Splitter-drag ────────────────────────────────────────────────────────
+
+    function enterOverlayMode(x) {
+      overlayMode = true;
+      overlayX    = x;
+
+      // Flex-basis inline-stijlen resetten (worden overruled door overlay-mode CSS)
+      map.getContainer().style.flexBasis  = '';
+      if (map2) map2.getContainer().style.flexBasis = '';
+
+      // Layout overschakelen: beide kaarten gestapeld, full-screen
+      _mapContainer.classList.add('overlay-mode');
+
+      // Splitter als absolute lijn positioneren
+      _mapSplitter.style.left = x + 'px';
+
+      // map-orig (bronscenario, z-index 2) clippen: alles rechts van x zichtbaar
+      document.getElementById('map-orig').style.clipPath = `inset(0 0 0 ${x}px)`;
+
+      // Kaarten herformaten naar volledige breedte, camera uitlijnen
+      requestAnimationFrame(() => {
+        map.resize();
+        if (map2) {
+          map2.resize();
+          _mapSyncing = true;
+          map2.jumpTo({ center: map.getCenter(), zoom: map.getZoom(),
+                        bearing: map.getBearing(), pitch: map.getPitch() });
+          _mapSyncing = false;
+        }
+      });
+    }
+
+    _mapSplitter.addEventListener('mousedown', e => {
+      if (!splitViewActive) return;
+      _splitterDragging  = true;
+      _splitterStartX    = e.clientX;
+      if (!overlayMode) _splitterLeftBasis = map.getContainer().offsetWidth;
+      _mapSplitter.classList.add('dragging');
+      document.body.style.cursor     = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!_splitterDragging) return;
+
+      if (overlayMode) {
+        // Swipe-modus: verschuif de clip-lijn over de gestapelde kaarten
+        const rect = _mapContainer.getBoundingClientRect();
+        const x = Math.max(0, Math.min(_mapContainer.offsetWidth - _mapSplitter.offsetWidth,
+                    e.clientX - rect.left));
+        _mapSplitter.style.left = x + 'px';
+        document.getElementById('map-orig').style.clipPath = `inset(0 0 0 ${x}px)`;
+        overlayX = x;
+      } else {
+        // Split-modus: verander de breedte van de twee panelen
+        const splitterW = _mapSplitter.offsetWidth;
+        const total     = _mapContainer.offsetWidth - splitterW;
+        const newLeft   = Math.max(200, Math.min(total - 200,
+                            _splitterLeftBasis + (e.clientX - _splitterStartX)));
+        map.getContainer().style.flexBasis  = newLeft + 'px';
+        if (map2) map2.getContainer().style.flexBasis = (total - newLeft) + 'px';
+        map.resize();
+        if (map2) map2.resize();
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!_splitterDragging) return;
+      _splitterDragging = false;
+      _mapSplitter.classList.remove('dragging');
+      document.body.style.cursor     = '';
+      document.body.style.userSelect = '';
+
+      // Eerste drag in split-modus → overschakelen naar overlay/swipe-modus
+      if (splitViewActive && !overlayMode) {
+        enterOverlayMode(map.getContainer().offsetWidth);
+      }
+    });
+
+    // ── Node-edit knop ──────────────────────────────────────────────────────
+
+    document.getElementById('nodeEditBtn').addEventListener('click', () => {
+      // Zet link-edit, zone-explode en what-if uit als die actief waren
+      if (linkEditActive) document.getElementById('linkEditBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      deactivateWhatifRc();
+      nodeEditActive = !nodeEditActive;
+      document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
+      document.getElementById('nodeEditBtn').innerHTML = nodeEditActive ? '✕'
+        : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><polygon points="12,3 21,8.5 21,15.5 12,21 3,15.5 3,8.5"/></svg>';
+
+      if (nodeEditActive) {
+        updateOverlay(false);
+        map.once('idle', addNodeLayer);
+        // Toon selectiemodus popup; reset naar klik-modus
+        nodeSelectMode = 'click';
+        document.querySelector('input[name="nodeSelectMode"][value="click"]').checked = true;
+        document.getElementById('polygonHint').style.display       = 'none';
+        document.getElementById('polygonFinishBtn').style.display  = 'none';
+        document.getElementById('polygonClearBtn').style.display   = 'none';
+        document.getElementById('nodeSelectPopup').style.display   = 'block';
+      } else {
+        removeNodeLayer();
+        closeNodeDialog();
+        // Verberg popup en reset polygon
+        document.getElementById('nodeSelectPopup').style.display  = 'none';
+        document.getElementById('polygonDialog').style.display    = 'none';
+        clearPolygonDraw();
+        nodeSelectMode = 'click';
+        map.getCanvas().style.cursor = '';
+      }
+    });
+
+    // ── Zone-explode knop ───────────────────────────────────────────────────
+
+    document.getElementById('zoneExplodeBtn').addEventListener('click', () => {
+      // Zet alle andere aanpassing-tools uit als die actief waren
+      if (nodeEditActive)      document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)      document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive)  document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive)       document.getElementById('linkAddBtn').click();
+      if (odEditActive) document.getElementById('odEditBtn').click();
+      deactivateWhatifRc();
+      zoneExplodeActive = !zoneExplodeActive;
+      document.getElementById('zoneExplodeBtn').classList.toggle('active', zoneExplodeActive);
+      document.getElementById('zoneExplodeBtn').innerHTML = zoneExplodeActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 3h7.5v7.5H3z"/><path d="M13.5 3H21v7.5h-7.5z"/><path d="M3 13.5h18V21H3z"/></svg>';
+
+      if (zoneExplodeActive) {
+        updateOverlay(false);
+        map.once('idle', addNodeLayer);
+      } else {
+        removeNodeLayer();
+        closeZoneExplodeDialog();
+        map.getCanvas().style.cursor = '';
+      }
+    });
+
+    // ── Link-edit knop ──────────────────────────────────────────────────────
+
+    document.getElementById('linkEditBtn').addEventListener('click', () => {
+      // Zet node-edit, flow-edit, link-add, zone-explode en what-if uit als die actief waren
+      if (nodeEditActive) document.getElementById('nodeEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive) document.getElementById('linkAddBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      deactivateWhatifRc();
+      linkEditActive = !linkEditActive;
+      document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
+      document.getElementById('linkEditBtn').innerHTML =
+        linkEditActive ? '✕' : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" width="28" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h48l33 10h23"/><path d="M8 48h48l33-10h23"/><path d="M8 32h104" stroke-dasharray="5 5" stroke-width="1.5" opacity=".75"/></svg>';
+
+      if (linkEditActive) {
+        updateOverlay(false);
+        map.once('idle', addLinkLayer);
+        // Toon selectiemodus popup; reset naar klik-modus
+        linkSelectMode = 'click';
+        document.querySelector('input[name="linkSelectMode"][value="click"]').checked = true;
+        document.getElementById('linkPolygonHint').style.display       = 'none';
+        document.getElementById('linkPolygonFinishBtn').style.display  = 'none';
+        document.getElementById('linkPolygonClearBtn').style.display   = 'none';
+        document.getElementById('linkSelectPopup').style.display       = 'block';
+      } else {
+        removeLinkLayer();
+        closeLinkDialog();
+        // Verberg popup en reset polygon
+        document.getElementById('linkSelectPopup').style.display   = 'none';
+        document.getElementById('linkPolygonDialog').style.display = 'none';
+        clearLinkPolygonDraw();
+        linkSelectMode = 'click';
+        map.getCanvas().style.cursor = '';
+        updateOverlay(false);
+      }
+    });
+
+    // ── Link flow-edit knop ─────────────────────────────────────────────────
+
+    document.getElementById('linkFlowEditBtn').addEventListener('click', () => {
+      if (nodeEditActive)  document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)  document.getElementById('linkEditBtn').click();
+      if (linkAddActive)   document.getElementById('linkAddBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      deactivateWhatifRc();
+      linkFlowEditActive = !linkFlowEditActive;
+      document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
+      document.getElementById('linkFlowEditBtn').innerHTML =
+        linkFlowEditActive ? '✕'
+          : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 28h34M15 36h34"/><path d="M32 8v12M26 14h12M26 50h12"/></svg>';
+
+      if (linkFlowEditActive) {
+        updateOverlay(false);
+        map.once('idle', addLinkLayer);
+      } else {
+        removeLinkLayer();
+        closeLinkFlowDialog();
+        map.getCanvas().style.cursor = '';
+        updateOverlay(false);
+      }
+    });
+
+    // ── Nieuw wegvak toevoegen (linkAddBtn) ─────────────────────────────────
+
+    document.getElementById('linkAddBtn').addEventListener('click', () => {
+      if (nodeEditActive)    document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)    document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      deactivateWhatifRc();
+      linkAddActive = !linkAddActive;
+      document.getElementById('linkAddBtn').classList.toggle('active', linkAddActive);
+      document.getElementById('linkAddBtn').innerHTML = linkAddActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>';
+
+      if (linkAddActive) {
+        updateOverlay(false);
+        map.once('idle', () => {
+          initLinkAddLayers();
+          clearLinkAddDraw();
+        });
+        map.on('mousemove', _onLinkAddMouseMove);
+        map.on('dblclick',  _onLinkAddDblClick);
+        document.getElementById('linkAddFinishPopup').style.display = 'none';
+        document.getElementById('linkAddHintEl').style.display = 'block';
+      } else {
+        map.off('mousemove', _onLinkAddMouseMove);
+        map.off('dblclick',  _onLinkAddDblClick);
+        clearLinkAddDraw();
+        removeLinkAddLayers();
+        document.getElementById('linkAddFinishPopup').style.display = 'none';
+        document.getElementById('linkAddHintEl').style.display      = 'none';
+        document.getElementById('linkAddDialog').style.display      = 'none';
+        updateOverlay(false);
+      }
+    });
+
+    document.getElementById('linkAddFinishBtn').addEventListener('click', () => {
+      finishLinkAddDraw();
+    });
+    document.getElementById('linkAddClearBtn').addEventListener('click', () => {
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+    document.getElementById('linkAddDialogCancel').addEventListener('click', () => {
+      document.getElementById('linkAddDialog').style.display = 'none';
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+    document.getElementById('linkAddDialogOk').addEventListener('click', () => {
+      const cap   = parseFloat(document.getElementById('linkAddCapVal').value);
+      const speed = parseFloat(document.getElementById('linkAddSpeedVal').value);
+      const lanes = parseInt(document.getElementById('linkAddLanesVal').value) || 1;
+      if (isNaN(cap) || isNaN(speed) || linkAddVertices.length < 2) return;
+      const coords = [...linkAddVertices];
+      const lenM   = linkAddLengthM();
+      pendingChanges.push({
+        geometry: { type: 'LineString', coordinates: coords },
+        capacity: cap,
+        speed,
+        lanes,
+        _label:      T('linkAddChangeLabel', lenM.toLocaleString(T('numberLocale'))),
+        _isLinkAdd:  true,
+      });
+      renderChangesList();
+      document.getElementById('linkAddDialog').style.display = 'none';
+      clearLinkAddDraw();
+      document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+
+    // ── Polygon-selectiemodus handlers ──────────────────────────────────────
+
+    // Radiobutton: wissel tussen klik- en polygon-modus
+    document.querySelectorAll('input[name="nodeSelectMode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        nodeSelectMode = radio.value;
+        const isPoly = nodeSelectMode === 'polygon';
+        document.getElementById('polygonHint').style.display = isPoly ? 'block' : 'none';
+        if (!isPoly) clearPolygonDraw();
+        map.getCanvas().style.cursor = isPoly ? 'crosshair' : '';
+      });
+    });
+
+    // Cursor handhaving in polygon-modus (voorkomt overschrijving door deck.gl)
+    map.on('mousemove', () => {
+      if (nodeEditActive && nodeSelectMode === 'polygon')
+        map.getCanvas().style.cursor = 'crosshair';
+      if (linkEditActive && linkSelectMode === 'polygon')
+        map.getCanvas().style.cursor = 'crosshair';
+    });
+
+    // Polygon-klik: capture-fase listener op document.
+    // Fired vóór MapLibre én deck.gl, dus nooit te onderscheppen.
+    // e.target-check zorgt dat alleen kaart-klikken (niet UI-knoppen) hoekpunten toevoegen.
+    document.addEventListener('click', e => {
+      console.log('[poly] click capture — nodeEditActive:', nodeEditActive,
+        '| nodeSelectMode:', nodeSelectMode, '| target:', e.target?.tagName, e.target?.id || '');
+      if (!nodeEditActive || nodeSelectMode !== 'polygon') return;
+      const dlg = document.getElementById('polygonDialog');
+      if (dlg.style.display === 'block') { console.log('[poly] geblokkeerd: dialoog open'); return; }
+      if (e.target !== map.getCanvas()) { console.log('[poly] geblokkeerd: target is niet de kaart-canvas'); return; }
+      const rect = map.getContainer().getBoundingClientRect();
+      const lngLat = map.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      polygonVertices.push([lngLat.lng, lngLat.lat]);
+      console.log('[poly] hoekpunt toegevoegd:', lngLat, '| totaal:', polygonVertices.length);
+      updatePolygonDraw();
+      if (polygonVertices.length >= 1)
+        document.getElementById('polygonClearBtn').style.display  = 'block';
+      if (polygonVertices.length >= 3)
+        document.getElementById('polygonFinishBtn').style.display = 'block';
+      e.stopImmediatePropagation(); // voorkom dubbel-fire via MapLibre/deck.gl
+    }, true); // capture=true → fired als eerste
+
+    document.getElementById('polygonFinishBtn').addEventListener('click', finishPolygon);
+    document.getElementById('polygonClearBtn').addEventListener('click', clearPolygonDraw);
+
+    // Polygon-dialoog: +/- knoppen
+    document.getElementById('polyProdMinus').addEventListener('click', () => stepValue('polyProdVal', -100));
+    document.getElementById('polyProdPlus' ).addEventListener('click', () => stepValue('polyProdVal', +100));
+    document.getElementById('polyAttrMinus').addEventListener('click', () => stepValue('polyAttrVal', -100));
+    document.getElementById('polyAttrPlus' ).addEventListener('click', () => stepValue('polyAttrVal', +100));
+
+    // Live per-knoop preview
+    document.getElementById('polyProdVal').addEventListener('input', updatePolyPerNodeDisplay);
+    document.getElementById('polyAttrVal').addEventListener('input', updatePolyPerNodeDisplay);
+
+     document.getElementById('polygonDialogCancel').addEventListener('click', closePolygonDialog);
+
+     document.getElementById('polygonDialogOk').addEventListener('click', () => {
+       const n = polygonNodesInside.length;
+       if (!n) { closePolygonDialog(); return; }
+
+       const prodRaw = document.getElementById('polyProdVal').value.trim();
+       const attrRaw = document.getElementById('polyAttrVal').value.trim();
+       if (!prodRaw && !attrRaw) { closePolygonDialog(); return; }
+
+       const perProd = calcPerNode(prodRaw, n);
+       const perAttr = calcPerNode(attrRaw, n);
+       if (!perProd && !perAttr) { closePolygonDialog(); return; }
+
+        for (const node of polygonNodesInside) {
+          // Verwijder eventueel bestaande wijziging voor dit id
+          pendingChanges = pendingChanges.filter(c => (c.zoneId ?? c.nodeId) !== node.zoneId);
+          const isNetworkNode = node.zoneClass === 'NETWORK_NODE';
+          const change = isNetworkNode ? { nodeId: node.zoneId } : { zoneId: node.zoneId };
+          if (perProd) change.production = perProd;
+          if (perAttr) change.attraction = perAttr;
+          change._label     = node.zoneName;
+          change._zoneClass = node.zoneClass;
+           pendingChanges.push(change);
+        }
+       _setChangesPanelReadOnly(false);
+       renderChangesList();
+       closePolygonDialog();
+     });
+
+    // ── Link polygon-selectiemodus handlers ─────────────────────────────────
+
+    // Radiobutton: wissel tussen klik- en polygon-modus
+    document.querySelectorAll('input[name="linkSelectMode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        linkSelectMode = radio.value;
+        const isPoly = linkSelectMode === 'polygon';
+        document.getElementById('linkPolygonHint').style.display = isPoly ? 'block' : 'none';
+        if (!isPoly) clearLinkPolygonDraw();
+        map.getCanvas().style.cursor = isPoly ? 'crosshair' : '';
+      });
+    });
+
+    // Link polygon-klik: capture-fase listener op document.
+    document.addEventListener('click', e => {
+      if (!linkEditActive || linkSelectMode !== 'polygon') return;
+      const dlg = document.getElementById('linkPolygonDialog');
+      if (dlg.style.display === 'block') return;
+      if (e.target !== map.getCanvas()) return;
+      const rect = map.getContainer().getBoundingClientRect();
+      const lngLat = map.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      linkPolygonVertices.push([lngLat.lng, lngLat.lat]);
+      updateLinkPolygonDraw();
+      if (linkPolygonVertices.length >= 1)
+        document.getElementById('linkPolygonClearBtn').style.display  = 'block';
+      if (linkPolygonVertices.length >= 3)
+        document.getElementById('linkPolygonFinishBtn').style.display = 'block';
+      e.stopImmediatePropagation();
+    }, true);
+
+    document.getElementById('linkPolygonFinishBtn').addEventListener('click', finishLinkPolygon);
+    document.getElementById('linkPolygonClearBtn').addEventListener('click', clearLinkPolygonDraw);
+
+    // Link polygon-dialoog: +/- knoppen
+    document.getElementById('linkPolyCapMinus').addEventListener('click', () => {
+      const inp = document.getElementById('linkPolyCapVal');
+      const val = inp.value.trim();
+      if (val.endsWith('%')) {
+        const pct = parseFloat(val);
+        if (!isNaN(pct)) inp.value = Math.max(0, Math.round(pct - 10)) + '%';
+      } else {
+        inp.value = Math.max(0, (parseInt(val) || 0) - 100);
+      }
+      updateLinkPolyCapDisplay();
+    });
+    document.getElementById('linkPolyCapPlus').addEventListener('click', () => {
+      const inp = document.getElementById('linkPolyCapVal');
+      const val = inp.value.trim();
+      if (val.endsWith('%')) {
+        const pct = parseFloat(val);
+        if (!isNaN(pct)) inp.value = Math.min(200, Math.round(pct + 10)) + '%';
+      } else {
+        inp.value = (parseInt(val) || 0) + 100;
+      }
+      updateLinkPolyCapDisplay();
+    });
+
+    document.getElementById('linkPolyCapVal').addEventListener('input', updateLinkPolyCapDisplay);
+
+    // Snelheid-knoppen in het polygon-dialoog
+    document.querySelectorAll('.link-poly-speed-btn').forEach(btn => {
+      btn.onclick = () => {
+        const spd = parseInt(btn.dataset.speed);
+        const cap = SPEED_TO_CAP[spd] ?? 900;
+        document.getElementById('linkPolyCapVal').value = cap;
+        document.querySelectorAll('.link-poly-speed-btn').forEach(b =>
+          b.classList.toggle('active', b === btn));
+        document.getElementById('linkPolyCloseBtn').classList.remove('active');
+        updateLinkPolyCapDisplay();
+      };
+    });
+
+    document.getElementById('linkPolyCloseBtn').onclick = () => {
+      document.getElementById('linkPolyCapVal').value = 0;
+      document.querySelectorAll('.link-poly-speed-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('linkPolyCloseBtn').classList.add('active');
+      updateLinkPolyCapDisplay();
+    };
+
+    document.getElementById('linkPolygonDialogCancel').addEventListener('click', closeLinkPolygonDialog);
+
+     document.getElementById('linkPolygonDialogOk').addEventListener('click', () => {
+       const n = linkPolygonLinksInside.length;
+       if (!n) { closeLinkPolygonDialog(); return; }
+
+       const raw = document.getElementById('linkPolyCapVal').value.trim();
+       if (!raw) { closeLinkPolygonDialog(); return; }
+
+       const isPct = raw.endsWith('%');
+       let factor = null, absVal = null;
+       if (isPct) {
+         factor = parseFloat(raw) / 100;
+         if (isNaN(factor) || factor < 0) { closeLinkPolygonDialog(); return; }
+       } else {
+         absVal = parseInt(raw);
+         if (isNaN(absVal) || absVal < 0) { closeLinkPolygonDialog(); return; }
+       }
+
+       const activeSpeedBtn = document.querySelector('.link-poly-speed-btn.active');
+       const polySpeed = activeSpeedBtn ? parseInt(activeSpeedBtn.dataset.speed) : null;
+
+       for (const feature of linkPolygonLinksInside) {
+         const p = feature.properties;
+         const linkId = String(p.linkId ?? p.id ?? '');
+         const currentCap = p.capacity ?? 0;
+         const newCap = isPct ? Math.round(currentCap * factor) : absVal;
+         pendingChanges = pendingChanges.filter(c => c.linkId == null || String(c.linkId) !== linkId);
+         const entry = {
+           linkId,
+           capacity: newCap,
+           _label:  p.name ? T('linkDialogName', p.name) : T('linkDialogId', linkId),
+           _isLink: true,
+         };
+         if (polySpeed != null) entry.speed = polySpeed;
+         pendingChanges.push(entry);
+        }
+       _setChangesPanelReadOnly(false);
+       renderChangesList();
+       closeLinkPolygonDialog();
+     });
+
+    // ── 8. UI-handlers ──────────────────────────────────────────────────────
+
+    document.getElementById('colorMetric').addEventListener('change', async e => {
+      colorMetric = e.target.value;
+
+      // Deactiveer verschilplots die niet verenigbaar zijn met de nieuwe metriek
+      // (dekt ook de vroege returns hieronder voor safety/spectrum/compare).
+      _ensureDiffCompatible();
+
+      // ── Veiligheidsmodus (totaal of één KPI) ──────────────────────────
+      if (isSafetyMetric(colorMetric)) {
+        closeWegenscanPanel();
+        if (!wegenscanData) {
+          // Probeer te laden; als niet aanwezig: toon banner
+          try {
+            await loadWegenscanData();
+            setWegenscanBanner(false);
+          } catch (_) {
+            setWegenscanBanner(true, 'Nog geen veiligheidsdata voor dit gebied.');
+          }
+        }
+        updateLegend();
+        updateOverlay(true);
+        return;
+      }
+
+      // Wegenscan banner verbergen als andere metric gekozen wordt
+      setWegenscanBanner(false);
+      closeWegenscanPanel();
+
+      // ── Afgeleide lagen (geluid / emissie) ────────────────────────────────
+      // Haal de losse laag op en join op linkId vóór het (her)tekenen.
+      const derivedKind = DERIVED_METRIC_KIND[colorMetric];
+      if (derivedKind) {
+        try {
+          await ensureDerivedLayer(derivedKind);
+        } catch (err) {
+          console.warn(err);
+          colorMetric = 'flow';
+          document.getElementById('colorMetric').value = 'flow';
+          updateLegend();
+          updateOverlay(true);
+          return;
+        }
+      }
+
+      if (colorMetric === 'compare') {
+        // Laad COMPARE-bestand als nog niet aanwezig
+        if (!compareData) {
+          const url = `/collections/comparison/items?areaId=${AREA_ID}&mode=${MODE}`;
+          try {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(r.statusText);
+            compareData = await r.json();
+          } catch (err) {
+            console.warn('COMPARE laden mislukt:', err);
+            colorMetric = 'flow';
+            document.getElementById('colorMetric').value = 'flow';
+            updateLegend();
+            updateOverlay(true);
+            return;
+          }
+        }
+        compareVisible = true;
+        if (map.getSource(CMP_SOURCE)) {
+          map.getSource(CMP_SOURCE).setData(compareData);
+        } else {
+          addCompareLayer();
+        }
+        setCompareVisibility(true);
+      } else {
+        compareVisible = false;
+        setCompareVisibility(false);
+      }
+
+      // Spectrum: zet MapLibre-laag aan of bij
+      if (colorMetric === 'spectrum') {
+        updateSpectrumLayer();
+        updateLegend();
+        updateOverlay(true);
+        return;
+      }
+      // Spectrum was actief maar is nu uitgeschakeld: verwijder laag
+      _removeSpectrumLayer();
+
+      // Kruispunten-laag activeert een globale speedBump-fetch zodat drempels
+      // direct en volledig zichtbaar zijn, zonder te hoeven inzoomen.
+      if (colorMetric === 'speed_intersections') {
+        _loadSpeedBumpsForArea().then(() => {
+          rebuildSpeedLayers();
+          updateOverlay(true);
+        });
+      }
+
+      updateLegend();
+      updateDiffButtonsState();
+
+      // Als een verschilplot nog actief is, herbereken deze voor de nieuwe metriek.
+      if (diffPlotActive || diffStackActive || diffSmileyActive) {
+        await computeDiffData();
+        if (diffSmileyActive) _configureSmileyAbsSlider();
+        updateOverlay(false);
+      } else {
+        updateOverlay(true);
+      }
+    });
+
+    // (De tijdschaal-slider is vervangen door de analoge simulatieklok; zie verderop.)
+
+    // ── Wegenscan-knophandlers ────────────────────────────────────────────────
+
+    /** Start de wegenscan voor dit gebied (ook 'Opnieuw berekenen') en wacht op het resultaat. */
+    async function runWegenscan() {
+      const btn = document.getElementById('wegenscanRunBtn');
+      if (btn.disabled) return;
+      setWegenscanBanner(true, wegenscanData ? T('wsRerun') + '…' : null);
+      btn.disabled = true;
+      document.getElementById('wegenscanProgress').style.display = '';
+      document.getElementById('wegenscanProgress').textContent = 'Job aanmaken…';
+      try {
+        const r = await fetch('/processes/wegenscan/execution', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inputs: { area_id: AREA_ID, mode: MODE } }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const job = await r.json();
+        await pollWegenscanJob(job.jobID);
+      } catch (err) {
+        document.getElementById('wegenscanProgress').textContent = 'Fout: ' + err.message;
+        btn.disabled = false;
+      }
+    }
+    document.getElementById('wegenscanRunBtn').addEventListener('click', runWegenscan);
+    window.runWegenscan = runWegenscan;
+
+    document.getElementById('wegenscanPanelClose').addEventListener('click', () => {
+      closeWegenscanPanel();
+    });
+
+    // Maak openWegenscanPanel globaal beschikbaar (voor inline onclick in tooltip)
+    window.openWegenscanPanel = openWegenscanPanel;
+    window.wegenscanByLinkId  = wegenscanByLinkId;
+
+    document.getElementById('adjustDebug').addEventListener('change', e => {
+      window._debugMode = e.target.checked;
+      document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+      document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+      if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+    });
+
+    document.getElementById('viewChangesBtn').addEventListener('click', () => {
+      _setChangesPanelReadOnly(!_changesPanelReadOnly);
+    });
+
+     /** Lagen die een uurintensiteit tegen de uurcapaciteit zetten. */
+     const HOURLY_CAPACITY_METRICS = new Set(['occupancy', 'occupancy_scaled', 'coverage', 'coverage_scaled']);
+
+     /** Bij 'etmaal' (24 uur) zijn I/C en bezettingsgraad zinloos: radio's uitschakelen
+      *  en, als zo'n laag actief is, naar 'Geen' springen. */
+     function _syncHourlyCapacityLayers() {
+       const is24h = flowDaypart === 'etmaal';
+       document.querySelectorAll('input[name="lmpMetric"]').forEach(radio => {
+         if (!HOURLY_CAPACITY_METRICS.has(radio.value)) return;
+         radio.disabled = is24h;
+         radio.closest('label').title = is24h ? T('layerNotFor24h') : '';
+       });
+       if (is24h && HOURLY_CAPACITY_METRICS.has(colorMetric)) {
+         const select = document.getElementById('colorMetric');
+         select.value = 'none';
+         select.dispatchEvent(new Event('change'));
+       }
+     }
+
+     /** Voer alle nevenwerkingen van een dagdeel-wissel uit (kleur, auto's, hoogtes, …).
+      *  `flowDp` stuurt verkeersintensiteiten aan en kan tijdens pauze afwijken van `dp`
+      *  (incl. 'etmaal', dat `dp`/gebouwen zelf nooit aannemen — zie simPausedSelection). */
+     function applyDaypartSideEffects(dp, flowDp = dp) {
+       daypart = dp;
+       flowDaypart = flowDp;
+       document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === dp));
+       _syncHourlyCapacityLayers();
+       updateLegend();
+       rebuildLinkFlowMap();
+       calibrateRouteProductions();  // herkalibreren: F_L verandert per dagdeel
+       updateOverlay();
+       updateDebugPanel();
+       // Gebouwkleur (grondvlak) synchroniseren met het geselecteerde dagdeel.
+       // De color_${daypart}-eigenschap is door _applyBuildingDisplay al op grijs
+       // gezet voor alle dagdelen wanneer 'Gebouw productie/attractie' = uit staat,
+       // dus hier hoeft niet apart op de motief-status gecontroleerd te worden.
+       if (map.getLayer('buildings-fill')) {
+         map.setPaintProperty('buildings-fill', 'fill-color',
+           ['get', flowDaypart === 'etmaal' ? 'color_etmaal' : `color_${daypart}`]);
+       }
+       updateSunLight();
+       // Spectrum: update laag bij dagdeel-wissel
+       if (colorMetric === 'spectrum') {
+         updateSpectrumLayer();
+       }
+     }
+
+    // ── Modi aan/uit (auto/fiets/voetganger-lagen) ──────────────────────────
+    // Knoppen van modi die niet in het netwerk voorkomen worden verborgen.
+    // De netwerklaag filtert alleen in MIXED-modus op visibleModes (zie de
+    // GeoJsonLayer's "MODE !== 'MIXED' ? geojson.features : …filter(...)").
+    {
+      // Bepaal welke modi daadwerkelijk in het netwerk aanwezig zijn.
+      const networkModes = new Set(
+        segments.map(s => (s.props.mode ?? 'CAR').toUpperCase())
+      );
+      // Toon alleen de knopjes waarvan de modus in het netwerk zit;
+      // verberg de rest en verwijder ze ook uit visibleModes.
+      // Standaard staan alle modi UIT bij het binnenkomen van het scenario
+      // (ook al zijn ze in het netwerk aanwezig) — de gebruiker zet ze zelf aan.
+      document.querySelectorAll('.modeBtn').forEach(btn => {
+        const m = btn.dataset.mode;
+        btn.classList.remove('active');
+        visibleModes.delete(m);
+        btn.style.display = networkModes.has(m) ? '' : 'none';
+      });
+      updateOverlay(true);
+      updateLegend();
+      document.getElementById('modeBtns').style.display = 'flex';
+      document.getElementById('modeBtns').addEventListener('click', e => {
+        const btn = e.target.closest('.modeBtn');
+        if (!btn) return;
+        const m = btn.dataset.mode;
+        if (visibleModes.has(m)) {
+          visibleModes.delete(m);
+          btn.classList.remove('active');
+        } else {
+          visibleModes.add(m);
+          btn.classList.add('active');
+        }
+        updateOverlay(true);
+        updateLegend();
+      });
+    }
+
+      // ── Instellingen-paneel (gear-knop) ──────────────────────────────────────
+      (function () {
+        const settingsBtn   = document.getElementById('settingsBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+
+        function openSettings() {
+          // Synchroniseer paneel met huidige toestand
+          document.getElementById('spDebug').checked = !!window._debugMode;
+          const curLang = document.getElementById('langSelect').value;
+          const langRadio = settingsPanel.querySelector(`input[name="spLang"][value="${curLang}"]`);
+          if (langRadio) langRadio.checked = true;
+          const basemapRadio = settingsPanel.querySelector(`input[name="spBasemap"][value="${basemapStyle}"]`);
+          if (basemapRadio) basemapRadio.checked = true;
+          // Spectrum UUID-velden vanuit localStorage invullen
+          ['OS','AS','RD'].forEach(dp => {
+            const lEl = document.getElementById(`spSpectrumLayer${dp}`);
+            const mEl = document.getElementById(`spSpectrumMapping${dp}`);
+            if (lEl) lEl.value = localStorage.getItem(`spSpectrumLayer${dp}`)   || '';
+            if (mEl) mEl.value = localStorage.getItem(`spSpectrumMapping${dp}`) || '';
+          });
+          // Positioneer paneel onder de gear-knop (links-uitgelijnd, binnen viewport)
+          const r = settingsBtn.getBoundingClientRect();
+          settingsPanel.style.top  = (r.bottom + 4) + 'px';
+          settingsPanel.style.left = Math.min(r.left, window.innerWidth - 332) + 'px';
+          settingsPanel.classList.add('sp-visible');
+          settingsBtn.classList.add('active');
+        }
+
+        function closeSettings() {
+          // Lees nieuwe debug-instelling en pas toe als gewijzigd
+          const newDebug = document.getElementById('spDebug').checked;
+          if (newDebug !== !!window._debugMode) {
+            window._debugMode = newDebug;
+            document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+            document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+            const adj = document.getElementById('adjustDebug');
+            if (adj) adj.checked = window._debugMode;
+            if (window._debugMode && typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+          }
+          // Lees nieuwe taal en pas toe als gewijzigd
+          const newLang = settingsPanel.querySelector('input[name="spLang"]:checked')?.value;
+          if (newLang && newLang !== document.getElementById('langSelect').value) {
+            applyLang(newLang);
+            updateLegend();   // categorale legenda-labels opnieuw vertalen
+          }
+          // Lees nieuwe ondergrond-instelling en pas toe als gewijzigd
+          const newBasemap = settingsPanel.querySelector('input[name="spBasemap"]:checked')?.value;
+          if (newBasemap && newBasemap !== basemapStyle) {
+            _applyBasemapStyle(newBasemap);
+          }
+          // Sla Spectrum UUID-configuratie op in localStorage
+          let spectrumCfgChanged = false;
+          ['OS','AS','RD'].forEach(dp => {
+            const lVal = (document.getElementById(`spSpectrumLayer${dp}`)?.value   || '').trim();
+            const mVal = (document.getElementById(`spSpectrumMapping${dp}`)?.value || '').trim();
+            if (lVal !== (localStorage.getItem(`spSpectrumLayer${dp}`)   || '')) spectrumCfgChanged = true;
+            if (mVal !== (localStorage.getItem(`spSpectrumMapping${dp}`) || '')) spectrumCfgChanged = true;
+            localStorage.setItem(`spSpectrumLayer${dp}`,   lVal);
+            localStorage.setItem(`spSpectrumMapping${dp}`, mVal);
+          });
+          if (spectrumCfgChanged && colorMetric === 'spectrum') {
+            _removeSpectrumLayer();
+            updateSpectrumLayer();
+          }
+          settingsPanel.classList.remove('sp-visible');
+          settingsBtn.classList.remove('active');
+        }
+
+        settingsBtn.addEventListener('click', () => {
+          if (settingsPanel.classList.contains('sp-visible')) closeSettings();
+          else openSettings();
+        });
+        document.getElementById('spApply').addEventListener('click', closeSettings);
+      })();
+
+     document.getElementById('zoneCentroidSelect').addEventListener('change', e => {
+       zoneCentroidMode = e.target.value;
+       if (zoneCentroidMode === 'off') selectedZoneId = null;
+       highlightedOdZoneId = null;
+       updateOverlay(true);
+     });
+
+     document.getElementById('buildingPurpose').addEventListener('change', _applyBuildingDisplay);
+
+    // ── Analoge simulatieklok ─────────────────────────────────────────────────
+
+    // Standaard datum = vandaag
+    document.getElementById('fspDate').value = new Date().toISOString().split('T')[0];
+
+    let _simApplyTimer = null; // debounce-timer voor het toepassen van de flow-scaler
+    // ── Laad-indicator tijdens een dagdeel-/simulatie-overgang ──────────────────
+    // Tellertje i.p.v. boolean: applyFlowScaler-aanroepen kunnen overlappen
+    // (bv. snel doorklikken), dan moet de spinner pas verdwijnen na de laatste.
+    let _simClockBusyCount = 0;
+    // Minimale zichtbare duur voor de kaart-spinner: een (deels) gecachte backend-
+    // aanroep kan binnen enkele milliseconden terugkomen, dan knippert de overlay te
+    // snel om op te merken. Daarom blijft hij, eenmaal getoond, minstens dit lang staan.
+    const SIM_BUSY_OVERLAY_MIN_MS = 350;
+    let _simBusyOverlayShownAt = 0;
+    let _simBusyOverlayHideTimer = null;
+    function _setSimClockBusy(isBusy) {
+      _simClockBusyCount = Math.max(0, _simClockBusyCount + (isBusy ? 1 : -1));
+      const overlay = document.getElementById('simBusyOverlay');
+      if (!overlay) return;
+      if (_simClockBusyCount > 0) {
+        if (_simBusyOverlayHideTimer) { clearTimeout(_simBusyOverlayHideTimer); _simBusyOverlayHideTimer = null; }
+        if (!overlay.classList.contains('visible')) {
+          overlay.classList.add('visible');
+          _simBusyOverlayShownAt = performance.now();
+        }
+      } else {
+        const remaining = SIM_BUSY_OVERLAY_MIN_MS - (performance.now() - _simBusyOverlayShownAt);
+        if (remaining > 0) {
+          _simBusyOverlayHideTimer = setTimeout(() => {
+            overlay.classList.remove('visible');
+            _simBusyOverlayHideTimer = null;
+          }, remaining);
+        } else {
+          overlay.classList.remove('visible');
+        }
+      }
+    }
+
+    /** Geeft de browser een kans om te schilderen (de spinner zichtbaar te maken)
+     *  vóórdat zwaar synchroon werk het hoofdthread blokkeert. Eén rAF is niet
+     *  genoeg (die vuurt vóór het schilderen van dat frame); de tweede rAF
+     *  garandeert dat het schilderen van de eerste al heeft plaatsgevonden. */
+    function _yieldToPaint() {
+      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    /** Debounce: voorkomt overmatig fetch-verkeer bij snel doorklikken.
+     *  De spinner gaat al aan zodra de aanroep gepland wordt (bv. bij het aan-/
+     *  uitzetten van de simulatie), i.p.v. pas na afloop van de debounce-wachttijd. */
+    function scheduleSimApply() {
+      if (_simApplyTimer) { clearTimeout(_simApplyTimer); _setSimClockBusy(false); }
+      _setSimClockBusy(true);
+      return new Promise(resolve => {
+        _simApplyTimer = setTimeout(() => {
+          _setSimClockBusy(false);
+          applyFlowScaler().finally(resolve);
+        }, 300);
+      });
+    }
+
+    // ── Tijdvak-indicator op de gepauzeerde klok ────────────────────────────────
+    // Hoeken (0°=12 uur, met de klok mee) rond resp. 08:00 (mrh) en 17:00 (erh);
+    // 'rest' is alles buiten die twee spits-wedges, dus de rest van de volle cirkel
+    // in twee losse stukken (het korte stuk ertussen + het lange stuk eromheen);
+    // 'etmaal' is de volle cirkel.
+    const SIM_DP_ANGLES = { mrh: [220, 260], erh: [130, 170] };
+
+    function _simPolarPoint(deg, r) {
+      const rad = deg * Math.PI / 180;
+      return [50 + r * Math.sin(rad), 50 - r * Math.cos(rad)];
+    }
+
+    /** Teken de ronde-pijl-indicator (boog + pijlpunt) voor de huidige simPausedSelection. */
+    function _updateSimDpIndicator() {
+      const arc   = document.getElementById('simDpArc');
+      const arrow = document.getElementById('simDpArrow');
+      if (!simPausedSelection) return;
+      const R = 45;
+      let endDeg;
+      if (simPausedSelection === 'etmaal') {
+        const [x0, y0]     = _simPolarPoint(0, R);
+        const [x180, y180] = _simPolarPoint(180, R);
+        // Eén boogcommando kan geen volle 360° tekenen (start/eind vallen samen);
+        // daarom in twee 180°-stukken splitsen.
+        arc.setAttribute('d', `M${x0},${y0} A${R},${R} 0 0 1 ${x180},${y180} A${R},${R} 0 0 1 ${x0},${y0} Z`);
+        endDeg = 0; // geen echt 'leidend' uiteinde op een volle cirkel; vaste referentie boven.
+      } else if (simPausedSelection === 'rest') {
+        // Twee losse boogstukken: het korte stuk tussen het einde van de avondspits
+        // en het begin van de ochtendspits, en het lange stuk tussen het einde van
+        // de ochtendspits en het begin van de avondspits (via 0°/360° heen).
+        const segs = [
+          [SIM_DP_ANGLES.erh[1], SIM_DP_ANGLES.mrh[0]],
+          [SIM_DP_ANGLES.mrh[1], SIM_DP_ANGLES.erh[0] + 360],
+        ];
+        arc.setAttribute('d', segs.map(([startDeg, deg2]) => {
+          const [x1, y1] = _simPolarPoint(startDeg, R);
+          const [x2, y2] = _simPolarPoint(deg2, R);
+          const largeArc = (deg2 - startDeg) > 180 ? 1 : 0;
+          return `M${x1},${y1} A${R},${R} 0 ${largeArc} 1 ${x2},${y2}`;
+        }).join(' '));
+        endDeg = segs[0][1]; // pijlpunt bij het begin van de ochtendspits, zoals voorheen
+      } else {
+        const [startDeg, deg2] = SIM_DP_ANGLES[simPausedSelection];
+        endDeg = deg2;
+        const [x1, y1] = _simPolarPoint(startDeg, R);
+        const [x2, y2] = _simPolarPoint(deg2, R);
+        const largeArc = (deg2 - startDeg) > 180 ? 1 : 0;
+        arc.setAttribute('d', `M${x1},${y1} A${R},${R} 0 ${largeArc} 1 ${x2},${y2}`);
+      }
+      // Pijlpuntje: getekend wijzend naar +x (= tangentieel "met de klok mee" op 0°),
+      // dus positioneren (translate) vóórdat om het middelpunt geroteerd wordt.
+      arrow.setAttribute('transform', `rotate(${endDeg} 50 50) translate(50 ${50 - R})`);
+    }
+
+    /** Pas de gekozen gepauzeerde tijdvak-selectie toe: label, boog, gebouwen (altijd 'rest') en flows. */
+    function _applySimPausedSelection() {
+      document.getElementById('simClockTimeText').textContent = {
+        etmaal: T('dpLabelEtmaal'), mrh: T('dpLabelMrh'), rest: T('dpLabelRest'), erh: T('dpLabelErh'),
+      }[simPausedSelection];
+      document.getElementById('simClockModeBtn').textContent = '>';
+      let _pendingApply;
+      if (simPausedSelection === 'mrh') {
+        document.getElementById('fspHour').value = 8;
+        applyDaypartSideEffects('rest', 'mrh');
+        _pendingApply = scheduleSimApply();
+      } else if (simPausedSelection === 'erh') {
+        document.getElementById('fspHour').value = 17;
+        applyDaypartSideEffects('rest', 'erh');
+        _pendingApply = scheduleSimApply();
+      } else if (simPausedSelection === 'rest') {
+        applyDaypartSideEffects('rest', 'rest');
+        _pendingApply = applyFlowScaler({ omitDate: true });
+      } else { // 'etmaal'
+        applyDaypartSideEffects('rest', 'etmaal');
+        _pendingApply = applyFlowScaler({ omitDate: true });
+      }
+      // Taartpunten alsnog highlighten voor mrh/erh (applyDaypartSideEffects zet dit
+      // terug op 'rest', wat geen van beide taartpunten matcht).
+      document.querySelectorAll('.dpBtn').forEach(b => b.classList.toggle('active', b.dataset.dp === simPausedSelection));
+      _updateSimDpIndicator();
+      return _pendingApply;
+    }
+
+    /** Dagdeelstand: tijdvak-indicator tonen, standaard op '24 uur'. */
+    function _enterSimPaused() {
+      simPausedSelection = 'etmaal';
+      document.getElementById('simClockSvg').classList.add('sim-clock-paused');
+      return _applySimPausedSelection();
+    }
+
+
+    // De klok staat altijd in de dagdeelstand (24 uur / ochtendspits / restdag /
+    // avondspits), beginnend op 24 uur. Datum en reisdoel zijn niet te wijzigen.
+    document.getElementById('fspDate').disabled = true;
+    document.getElementById('fspPurpose').disabled = true;
+    _enterSimPaused();
+
+    // Klik op het knopje in het tijdsblokje: doorloopt de dagdeel-cyclus
+    // (24 uur → ochtendspits → restdag → avondspits → …).
+    document.getElementById('simClockModeBtn').addEventListener('click', async () => {
+      if (_simClockBusyCount > 0) return; // vorige overgang nog bezig
+      // Zelfde redenering als bij het afspeel-vinkje: de spinner moet al staan
+      // vóór het (mogelijk zware) synchrone werk in _applySimPausedSelection,
+      // niet pas zodra die zelf scheduleSimApply/applyFlowScaler bereikt.
+      // Eerst laten schilderen, pas dán dat werk starten.
+      _setSimClockBusy(true);
+      await _yieldToPaint();
+      try {
+        const idx = SIM_DP_CYCLE.indexOf(simPausedSelection);
+        simPausedSelection = SIM_DP_CYCLE[(idx + 1) % SIM_DP_CYCLE.length];
+        await _applySimPausedSelection();
+      } finally {
+        _setSimClockBusy(false);
+      }
+    });
+
+    // Datum-, temperatuur-, weer- en reisdoel-wijzigingen passen de simulatie direct toe.
+    document.getElementById('fspDate').addEventListener('change', () => {
+      if (simPausedSelection === 'mrh' || simPausedSelection === 'erh') scheduleSimApply();
+    });
+    document.getElementById('fspPurpose').addEventListener('change', scheduleSimApply);
+
+    function _wireOptButtonGroup(containerIds, hiddenSelectId) {
+      const btns = containerIds.flatMap(id => Array.from(document.querySelectorAll(`#${id} .sim-opt-btn`)));
+      btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          btns.forEach(b => b.classList.toggle('active', b === btn));
+          document.getElementById(hiddenSelectId).value = btn.dataset.val;
+          scheduleSimApply();
+        });
+      });
+    }
+    _wireOptButtonGroup(['simTempBtns'], 'fspTemp');
+    _wireOptButtonGroup(['simWeatherBtns'], 'fspWeather');
+
+    /** Vraag de backend om geschaalde flows en patch de in-memory segmenten.
+     *  `omitDate`: sla de datum/uur-parameter over zodat de backend het ongeschaalde
+     *  etmaaltotaal teruggeeft (gebruikt door de 'restdag'/'24 uur'-selectie tijdens pauze). */
+    async function applyFlowScaler({ omitDate = false } = {}) {
+      const dateVal    = document.getElementById('fspDate').value || null;
+      const hour       = String(document.getElementById('fspHour').value).padStart(2, '0');
+      const dateTime   = (!omitDate && dateVal) ? `${dateVal}T${hour}:00:00` : null;
+      // GMT Analyzer heeft geen UI om temperature/weather/purpose te wijzigen
+      // (zie de verborgen sim-row-blokken hierboven) — #fspTemp/#fspWeather
+      // staan daarom altijd vast op hun standaardwaarde (Medium/cloudy) en
+      // #fspPurpose blijft leeg (= geen motief-filter). De backend accepteert
+      // deze drie nog gewoon; alleen de UI om ze te veranderen is hier weg.
+      const tempVal    = document.getElementById('fspTemp').value;
+      const weatherVal = document.getElementById('fspWeather').value;
+      const purposeVal = document.getElementById('fspPurpose').value || null;
+      // Regio uit netwerk-properties — fallback naar 'midden'
+      const regioVal   = geojson.properties?.regio || 'midden';
+
+      _setSimClockBusy(true);
+      try {
+        const _fspParams = new URLSearchParams({
+          areaId:      AREA_ID,
+          mode:        MODE,
+          temperature: tempVal,
+          weather:     weatherVal,
+          regio:       regioVal,
+        });
+        if (dateTime)   _fspParams.set('date', dateTime);
+        if (purposeVal) _fspParams.set('purpose', purposeVal);
+        const resp = await fetch(`/collections/flows/items?${_fspParams}`);
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }));
+          throw new Error(err.error || resp.statusText);
+        }
+
+        const scaled = await resp.json();  // GeoJSON FeatureCollection
+
+        // ── Sla originele waarden op (alleen de eerste keer) ────────────────
+        if (!_fspOriginal) {
+          _fspOriginal = new Map();
+          for (const seg of segments) {
+            const p = seg.props;
+            _fspOriginal.set(String(p.linkId), {
+              flow:            p.flow,
+              flow24hrs:       p.flow24hrs,
+              flowsPerDaypart: p.flowsPerDaypart
+                ? { mrh: p.flowsPerDaypart.mrh, erh: p.flowsPerDaypart.erh, rest: p.flowsPerDaypart.rest }
+                : null,
+            });
+          }
+        }
+
+        // ── Bouw een linkId-opzoekkaart van de geschaalde features ──────────
+        const scaledMap = new Map();
+        for (const f of (scaled.features || [])) {
+          if (f.properties?.linkId != null) {
+            scaledMap.set(String(f.properties.linkId), f.properties);
+          }
+        }
+
+        // ── Patch de segmenten ──────────────────────────────────────────────
+        const temporal = (scaled.features?.[0]?.properties?.flowTemporalUnit ?? 24);
+        for (const seg of segments) {
+          const sp = scaledMap.get(String(seg.props.linkId));
+          if (!sp) continue;
+          const scaledFlow = sp.flow ?? 0;
+          seg.props.flow      = scaledFlow;
+          seg.props.flow24hrs = sp.flow24hrs ?? scaledFlow;
+          if (temporal === 1) {
+            // Specifieke datum/tijd → zelfde waarde voor alle dagdelen
+            seg.props.flowsPerDaypart = { mrh: scaledFlow, erh: scaledFlow, rest: scaledFlow };
+          } else {
+            // Geen datum → 24u-totaal; dpFlowOf verdeelt via DP_FRACTION
+            seg.props.flowsPerDaypart = null;
+          }
+        }
+
+        rebuildLinkFlowMap();
+
+        // Herbereken max-flow na schaling voor legenda en kleurschaal
+        let fspMax = 0;
+        for (const seg of segments) {
+          const v = dpFlowOf(seg.props);
+          if (v > fspMax) fspMax = v;
+        }
+        _fspMaxFlow = fspMax || 1;
+
+        // Versieteller omhoog → deck.gl updateTriggers vuren
+        _fspVersion++;
+
+        // Actief-label voor tooltip
+        _fspActiveLabel = dateTime ? `${dateVal} ${hour}:00` : T('fspTitleValue');
+        updateSunLight();
+
+        updateLegend();
+        updateOverlay();
+
+      } catch (err) {
+        console.error('[flow-scaler] toepassen mislukt:', err);
+      } finally {
+        _setSimClockBusy(false);
+      }
+    }
+
+  })().catch(err => {
+    console.error('[init] Kritieke fout bij laden:', err);
+    setLoaderMsg(`\u26a0 ${err.message}`);
+    const el = document.getElementById('loaderMsg');
+    if (el) el.style.cssText += ';color:#ff6b6b;white-space:pre-wrap;max-width:480px';
+  });
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function setLoaderMsg(msg) {
+    document.getElementById('loaderMsg').textContent = msg;
+  }
+
+  // Initialiseer het linker menu-paneel zodra de app klaar is
+  initLeftMenuPanel();
+
+  function hideLaadscherm() {
+    const el = document.getElementById('loader');
+    if (!el) return;
+    el.classList.add('fade');
+    setTimeout(() => el.remove(), 700);
+  }
+
+  // ── Globale debug-toggle ────────────────────────────────────────────────────
+  // window._debugMode is de gedeelde schakelaar voor zowel de wizard (prepare-pipeline)
+  // als het hoofd-paneel (simulatiestatistieken). De handler zit buiten de async IIFE
+  // zodat hij ook werkt als er nog geen gebied geladen is.
+  window._debugMode = false;
+  document.getElementById('debugBtn').addEventListener('click', () => {
+    window._debugMode = !window._debugMode;
+    document.getElementById('debugBtn').classList.toggle('active', window._debugMode);
+    document.getElementById('debugPanel').classList.toggle('visible', window._debugMode);
+    // Als de hoofdkaart al geladen is, direct het paneel verversen
+    if (typeof window._updateDebugPanel === 'function') window._updateDebugPanel();
+  });
+
