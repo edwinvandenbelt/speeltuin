@@ -735,7 +735,7 @@
       width: auto;
       margin: 2px 0 4px 0;
       background: #ffffff;
-      border: 1px solid #dd7a00;
+      border: 1px solid var(--ga-rood);
       border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
       overflow: hidden;
@@ -743,7 +743,7 @@
     #changesPanelHeader {
       padding: 12px 16px 10px;
       border-bottom: 1px solid var(--ga-lijn);
-      font-size: 12px; color: #dd7a00; font-weight: 600; letter-spacing: 0.3px;
+      font-size: 12px; color: var(--ga-rood); font-weight: 600; letter-spacing: 0.3px;
       display: flex; justify-content: space-between; align-items: center;
     }
     #changesList {
@@ -778,15 +778,15 @@
       padding: 6px 9px; font-size: 12px; font-family: var(--ga-font), sans-serif;
       margin-bottom: 8px; box-sizing: border-box;
     }
-    #scenarioNameInput:focus { outline: none; border-color: #dd7a00; }
+    #scenarioNameInput:focus { outline: none; border-color: var(--ga-rood); }
     #applyChangesBtn {
       width: 100%; padding: 8px 0; border-radius: var(--ga-radius);
-      background: #dd7a00; color: #ffffff;
-      border: 1px solid #dd7a00;
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
       letter-spacing: 0.3px; transition: background 0.15s;
     }
-    #applyChangesBtn:hover { background: #c96800; }
+    #applyChangesBtn:hover { background: var(--ga-rood-donker); }
     #applyChangesBtn:disabled { opacity: 0.4; cursor: not-allowed; }
     #applyStatus { font-size: 11px; color: var(--ga-rood); margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
     #adjustDebugLabel {
@@ -816,7 +816,7 @@
     .tb-badge {
       position: absolute; top: 3px; right: 2px;
       min-width: 13px; height: 13px; padding: 0 2px;
-      background: #dd7a00; color: #ffffff;
+      background: var(--ga-rood); color: #ffffff;
       border-radius: 50%; font-size: 8px; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
       pointer-events: none; line-height: 1;
@@ -1067,7 +1067,7 @@
     }
     #nodeSelectPopup h4 {
       margin: 0 0 10px;
-      font-size: 11px; color: #dd7a00; font-weight: 600;
+      font-size: 11px; color: var(--ga-rood); font-weight: 600;
       letter-spacing: 0.5px; text-transform: uppercase;
     }
     .nsm-option {
@@ -1075,8 +1075,8 @@
       padding: 5px 0; cursor: pointer;
       font-size: 12px; color: var(--ga-tekst);
     }
-    .nsm-option:hover { color: #dd7a00; }
-    .nsm-option input[type=radio] { accent-color: #dd7a00; cursor: pointer; flex-shrink: 0; }
+    .nsm-option:hover { color: var(--ga-rood); }
+    .nsm-option input[type=radio] { accent-color: var(--ga-rood); cursor: pointer; flex-shrink: 0; }
     #polygonHint {
       display: none;
       font-size: 10px; color: var(--ga-tekst-2);
@@ -1092,10 +1092,10 @@
       margin-top: 5px; transition: background 0.15s;
     }
     #polygonFinishBtn {
-      background: #dd7a00; color: #ffffff;
-      border: 1px solid #dd7a00;
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
     }
-    #polygonFinishBtn:hover { background: #c96800; }
+    #polygonFinishBtn:hover { background: var(--ga-rood-donker); }
     #polygonClearBtn {
       background: #ffffff; color: var(--ga-tekst);
       border: 1px solid var(--ga-lijn);
@@ -1118,7 +1118,7 @@
       font-size: 13px; color: var(--ga-rood); margin-bottom: 8px;
       padding-bottom: 8px; border-bottom: 1px solid var(--ga-lijn);
     }
-    #polygonNodeInfo { font-size: 11px; color: #dd7a00; margin-bottom: 12px; }
+    #polygonNodeInfo { font-size: 11px; color: var(--ga-rood); margin-bottom: 12px; }
     .poly-per-node {
       font-size: 10px; color: var(--ga-tekst-2); margin-top: 2px; min-height: 14px;
     }
@@ -1145,7 +1145,7 @@
     }
     #linkSelectPopup h4 {
       margin: 0 0 10px;
-      font-size: 11px; color: #dd7a00; font-weight: 600;
+      font-size: 11px; color: var(--ga-rood); font-weight: 600;
       letter-spacing: 0.5px; text-transform: uppercase;
     }
     .lsm-option {
@@ -1153,8 +1153,8 @@
       padding: 5px 0; cursor: pointer;
       font-size: 12px; color: var(--ga-tekst);
     }
-    .lsm-option:hover { color: #dd7a00; }
-    .lsm-option input[type=radio] { accent-color: #dd7a00; cursor: pointer; flex-shrink: 0; }
+    .lsm-option:hover { color: var(--ga-rood); }
+    .lsm-option input[type=radio] { accent-color: var(--ga-rood); cursor: pointer; flex-shrink: 0; }
     #linkPolygonHint {
       display: none;
       font-size: 10px; color: var(--ga-tekst-2);
@@ -1170,10 +1170,10 @@
       margin-top: 5px; transition: background 0.15s;
     }
     #linkPolygonFinishBtn {
-      background: #dd7a00; color: #ffffff;
-      border: 1px solid #dd7a00;
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
     }
-    #linkPolygonFinishBtn:hover { background: #c96800; }
+    #linkPolygonFinishBtn:hover { background: var(--ga-rood-donker); }
     #linkPolygonClearBtn {
       background: #ffffff; color: var(--ga-tekst);
       border: 1px solid var(--ga-lijn);
@@ -1196,7 +1196,7 @@
       font-size: 13px; color: var(--ga-rood); margin-bottom: 8px;
       padding-bottom: 8px; border-bottom: 1px solid var(--ga-lijn);
     }
-    #linkPolygonLinkInfo { font-size: 11px; color: #dd7a00; margin-bottom: 12px; }
+    #linkPolygonLinkInfo { font-size: 11px; color: var(--ga-rood); margin-bottom: 12px; }
     .link-poly-per-link {
       font-size: 10px; color: var(--ga-tekst-2); margin-top: 2px; min-height: 14px;
     }

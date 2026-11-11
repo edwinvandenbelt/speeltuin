@@ -1335,11 +1335,11 @@
       homeMap.addSource(HOME_BBOX_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       homeMap.addLayer({
         id: HOME_BBOX_LAYER, type: 'fill', source: HOME_BBOX_SOURCE,
-        paint: { 'fill-color': '#00a5ab', 'fill-opacity': 0.15 },
+        paint: { 'fill-color': '#DE0058', 'fill-opacity': 0.15 },
       });
       homeMap.addLayer({
         id: HOME_BBOX_LAYER + '-outline', type: 'line', source: HOME_BBOX_SOURCE,
-        paint: { 'line-color': '#00a5ab', 'line-width': 2 },
+        paint: { 'line-color': '#DE0058', 'line-width': 2 },
       });
     });
 
@@ -1441,7 +1441,7 @@
               cursor:pointer;transition:background .15s,color .15s`;
             menuBtn.onmouseenter = () => {
               menuBtn.style.background = 'rgba(0,165,171,0.08)';
-              menuBtn.style.color      = '#00a5ab';
+              menuBtn.style.color      = 'var(--ga-rood)';
             };
             menuBtn.onmouseleave = () => {
               menuBtn.style.background = 'transparent';
@@ -1617,7 +1617,7 @@
                 arrowBtn.textContent    = wasCollapsed ? '▼' : '▶';
                 arrowBtn.style.color    = '#6a757c';
               };
-              arrowBtn.onmouseenter = () => arrowBtn.style.color = '#00a5ab';
+              arrowBtn.onmouseenter = () => arrowBtn.style.color = 'var(--ga-rood)';
               arrowBtn.onmouseleave = () => arrowBtn.style.color = '#6a757c';
             }
 
@@ -1631,7 +1631,7 @@
         const newBtn = document.createElement('button');
         newBtn.textContent = T('newAreaBtn');
         newBtn.style.cssText = `
-          background:transparent;color:#00a5ab;
+          background:transparent;color:var(--ga-rood);
           border:1px dashed rgba(0,165,171,0.4);
           border-radius:7px;padding:10px 16px;font-size:14px;cursor:pointer;
           transition:background .15s;width:100%;margin-top:6px`;
@@ -3433,7 +3433,7 @@
 
       if (!rows.length) return '';
       return `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
-        <div style="color:#00a5ab;font-size:11px;margin-bottom:3px">${T('calcTitle')}</div>
+        <div style="color:var(--ga-rood);font-size:11px;margin-bottom:3px">${T('calcTitle')}</div>
         <table style="border-collapse:collapse;font-size:12px;width:100%">${rows.join('')}</table>
       </div>`;
     }
@@ -4068,11 +4068,11 @@
           const osmLink = p.osm_id
             ? `<div style="margin-top:6px;border-top:1px solid rgba(0,165,171,0.15);padding-top:6px">
                 <a href="https://www.openstreetmap.org/way/${p.osm_id}" target="_blank"
-                   style="color:#00a5ab;font-size:11px">OSM way/${p.osm_id} ↗</a>
+                   style="color:var(--ga-rood);font-size:11px">OSM way/${p.osm_id} ↗</a>
                </div>` : '';
 
           _bTip.innerHTML = `
-            <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">${typeLabel}</div>
+            <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">${typeLabel}</div>
             ${zoneName ? `<div><span style="color:#6a757c">${T('tooltipBuildingZone')}: </span><b>${zoneName}</b></div>` : ''}
             <div><span style="color:#6a757c">${T('tooltipBuildingHeight')}: </span><b>${heightM}</b></div>
             ${dirHtml}
@@ -5560,7 +5560,7 @@
         </div>`;
       }).join('');
       return `<details open style="margin-bottom:16px">
-        <summary style="cursor:pointer;color:#00a5ab;font-weight:700;margin-bottom:4px" data-i18n="wsInputs">${T('wsInputs')}</summary>
+        <summary style="cursor:pointer;color:var(--ga-rood);font-weight:700;margin-bottom:4px" data-i18n="wsInputs">${T('wsInputs')}</summary>
         <div style="color:#8892aa;font-size:12px;margin-bottom:6px" data-i18n="wsInputsHint">${T('wsInputsHint')}</div>
         ${rows}
       </details>`;
@@ -6318,7 +6318,7 @@
       const contextLabel = _fspActiveLabel ?? dpLabels[flowDaypart];
       const contextKey   = _fspActiveLabel ? T('fspTitle') : T('tooltipDaypart');
       _segTip.innerHTML = `
-        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">
           ${T('tooltipSegment', p.linkId)}
         </div>
         <div><span style="color:#6a757c">${contextKey}: </span><b>${contextLabel}</b></div>
@@ -6373,7 +6373,7 @@
             <span style="color:#6a757c">Veiligheid: </span>
             <b style="color:${kpiColor(wsProps.generic_safety)}">${wsProps.generic_safety}</b>
             ${isSafetyMetric(colorMetric)
-              ? `<span style="color:#00a5ab;margin-left:6px;cursor:pointer" onclick="openWegenscanPanel(wegenscanByLinkId.get('${p.linkId}'))">→ details</span>`
+              ? `<span style="color:var(--ga-rood);margin-left:6px;cursor:pointer" onclick="openWegenscanPanel(wegenscanByLinkId.get('${p.linkId}'))">→ details</span>`
               : ''}
           </div>`;
         })()}
@@ -6814,7 +6814,7 @@
         ? (diff > 0 ? '+' : '') + fmtMetricVal(diff, diffMetric)
         : '–';
       _segTip.innerHTML = `
-        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">
           ${T('tooltipSegment', linkId)}
         </div>
         <div><span style="color:#6a757c">Oud: </span><b>${fmtMetricVal(oldVal, diffMetric)}</b></div>
@@ -7932,10 +7932,10 @@
       const fromName  = isProduction ? selName : cpName;
       const toName    = isProduction ? cpName  : selName;
       const pathNote  = d.hasPath
-        ? `<span style="color:#3ecf5f">Ja (${d.routeCount} route${d.routeCount === 1 ? '' : 's'})</span>`
-        : `<span style="color:#e83333">Nee — geen wegvak-geometrie gevonden</span>`;
+        ? `<span style="color:var(--ga-rood)">Ja (${d.routeCount} route${d.routeCount === 1 ? '' : 's'})</span>`
+        : `<span style="color:var(--ga-fout)">Nee — geen wegvak-geometrie gevonden</span>`;
       _segTip.innerHTML = `
-        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">OD-verbinding</div>
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">OD-verbinding</div>
         <div><span style="color:#6a757c">Herkomst: </span><b>${fromName}</b></div>
         <div><span style="color:#6a757c">Bestemming: </span><b>${toName}</b></div>
         <div><span style="color:#6a757c">Flow (dagdeel): </span><b>${d.flow.toFixed(0)} ${T('tooltipFlowUnit')}</b></div>
@@ -7988,7 +7988,7 @@
           const zFeat = zoneFeaturesRaw.find(f => f.properties?.zoneId === d.zoneId);
           const zName = zFeat?.properties?.zoneName || zFeat?.properties?.name || String(d.zoneId);
           _segTip.innerHTML = `
-            <div style="color:#28dc5a;font-weight:600;margin-bottom:6px">Voedingslink</div>
+            <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">Voedingslink</div>
             <div><span style="color:#6a757c">Zone: </span><b>${zName}</b></div>
             <div><span style="color:#6a757c">Richting: </span><b>${zoneCentroidMode === 'production' ? 'productie (zone → netwerk)' : 'attractie (netwerk → zone)'}</b></div>
           `;
@@ -8016,7 +8016,7 @@
       const totalFlow = linkFlowMap.get(d.linkId) ?? linkFlowMap.get(Number(d.linkId)) ?? 0;
       const share = totalFlow > 0 ? Math.min(100, (d.flow / totalFlow) * 100) : null;
       _segTip.innerHTML = `
-        <div style="color:#00a5ab;font-weight:600;margin-bottom:6px">
+        <div style="color:var(--ga-rood);font-weight:600;margin-bottom:6px">
           ${T('tooltipSegment', d.linkId)}
         </div>
         <div><span style="color:#6a757c">${isProduction ? 'Herkomstzone' : 'Bestemmingszone'}: </span><b>${zName}</b></div>
