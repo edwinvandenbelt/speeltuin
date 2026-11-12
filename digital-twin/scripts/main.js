@@ -141,6 +141,10 @@
   // ── Vertalingen ───────────────────────────────────────────────────────────
   const TRANSLATIONS = {
     NL: {
+      // Kopbalk
+      navKaart:'Kaart', headerContact:'Contact',
+      blockSimulatie:'Simulatie', blockAanpassingen:'Aanpassingen', blockAnalyse:'Analyse',
+      blockNetwerk:'Netwerk', blockPandWeergave:'Pand weergave', block3DWeergave:'3D weergave',
       // Toolbar
       homeTitle:'Terug naar overzicht',
       fillLlLabel:'LL', fillLlTitle:'Initiële vulling: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initiële vulling: Linkdichtheid',
@@ -415,6 +419,9 @@
       numberLocale:'nl',
     },
     EN: {
+      navKaart:'Map', headerContact:'Contact',
+      blockSimulatie:'Simulation', blockAanpassingen:'Modifications', blockAnalyse:'Analysis',
+      blockNetwerk:'Network', blockPandWeergave:'Building display', block3DWeergave:'3D display',
       homeTitle:'Back to overview',
       fillLlLabel:'LL', fillLlTitle:'Initial fill: Little\'s Law', fillLdLabel:'LD', fillLdTitle:'Initial fill: Link density',
       fillCbLabel:'CB', fillCbTitle:'Initial fill: Capacity occupancy',
@@ -675,6 +682,9 @@
       numberLocale:'en-GB',
     },
     FI: {
+      navKaart:'Kartta', headerContact:'Yhteystiedot',
+      blockSimulatie:'Simulaatio', blockAanpassingen:'Muokkaukset', blockAnalyse:'Analyysi',
+      blockNetwerk:'Verkko', blockPandWeergave:'Rakennusnäkymä', block3DWeergave:'3D-näkymä',
       homeTitle:'Takaisin yleiskatsaukseen',
       fillLlLabel:'LL', fillLlTitle:'Alkutäyttö: Littlen laki', fillLdLabel:'LD', fillLdTitle:'Alkutäyttö: Linkkitiheys',
       fillCbLabel:'CB', fillCbTitle:'Alkutäyttö: Kapasiteetin käyttöaste',
@@ -904,6 +914,13 @@
     const langSel = document.getElementById('langSelect');
     if (langSel) langSel.value = lang;
 
+    // NL|EN|FI-wissel in de kopbalk synchroniseren
+    document.querySelectorAll('#headerLangGroup [data-lang]').forEach(btn =>
+      btn.setAttribute('aria-pressed', String(btn.dataset.lang === lang)));
+
+    // Versie-/Contact-tekst (tools-meta.js) mee laten vertalen, indien geladen
+    if (typeof gaRenderToolInfo === 'function') gaRenderToolInfo();
+
     // data-i18n → textContent
     document.querySelectorAll('[data-i18n]').forEach(el =>
       el.textContent = T(el.dataset.i18n));
@@ -939,6 +956,12 @@
       // document.title = T('pageTitle', window._networkName);
     }
   }
+
+  // NL|EN|FI-wissel in de kopbalk: klik past direct de bestaande taal-logica toe
+  document.getElementById('headerLangGroup')?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-lang]');
+    if (btn && btn.getAttribute('aria-pressed') !== 'true') applyLang(btn.dataset.lang);
+  });
 
   // Pas taal direct toe op statische DOM-elementen
   applyLang(currentLang);

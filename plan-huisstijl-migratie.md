@@ -63,7 +63,16 @@ Vastgestelde beslissingen (met opdrachtgever afgestemd):
 - [x] **Fase 8 — tweetaligheid (analyzer):** NL\|EN\|FI zichtbaar en werkend in de kopbalk (hergebruikt bestaande i18n-systeem), plus een beperkte dekkingssweep (5 zijpaneel-sectietitels alsnog vertaald). Geverifieerd.
 - [x] **Fase 9 — versie & contact (analyzer):** `scripts/tools-meta.js` met echte gegevens (Edwin van den Belt, Business developer, evdbelt@dat.nl), versieknop + Contact-dropdown in de kopbalk, volledig vertaald (NL/EN/FI). Geverifieerd.
 - [~] **Fase 10 — achtergrondkaarten (analyzer):** OVERGESLAGEN op verzoek van de gebruiker (2026-11-11). PDOK-opties worden niet toegevoegd; bestaande OpenFreeMap/Esri-achtergronden blijven ongewijzigd.
-- [ ] **Fase 11 — herhalen voor digital-twin:** fase 1–9 (10 overgeslagen, tenzij later alsnog gewenst) toepassen op digital-twin, met hergebruik van de patronen/lessen uit analyzer; gedeelde `common/js`-wijzigingen niet dubbel doen.
+- [x] **Fase 11 — herhalen voor digital-twin (2026-11-11/12):** fase 1–9 toegepast, exact hetzelfde pad als analyzer, op uitdrukkelijk verzoek van de gebruiker. Maquette-functionaliteit (fysieke schaalmodel-opstelling, `maquette-calibration.js`/`maquette-monitor.js`) bewust volledig buiten beschouwing gelaten — gebruiker overweegt dit naar een aparte applicatie te verplaatsen. Fase 10 ook hier overgeslagen. Alle fases geverifieerd:
+  - Fase 1 (ontvlechten): `styles/main.css`/`scripts/main.js` uitgesplitst.
+  - Fase 2 (fundament): `styles/goudappel-web.css` + sprite + Open Sans.
+  - Fase 3 (kopbalk): `ga-header` gebouwd, oude `#leftMenuHeader`-strip verwijderd.
+  - Fase 4 (kleurwissel): standaardmapping + oranje/groen→rood in de bewerk-workflow meteen meegenomen (lessen uit analyzer's nasleep-correctie). Tussentijds gevonden en gefixt: een inline SVG-klokwijzer (`#simClockHand`, `stroke="#00a5ab"`) die buiten de CSS/JS-sweep viel, plus een bijbehorende volledige inline-kleuren-check van `index.html`.
+  - Fase 5 (zijpaneel): `.lmp-block`-restyle + schuif-tab-restyle, geen tabbalk. (Digital-twin heeft geen geneste `.lmp-network-block`-variant zoals analyzer.)
+  - Fase 6 (iconen): `#toolbar` ook hier dood bevestigd; 15 icoon-knoppen omgezet naar de GA-sprite (geen `measureSetBtn`/📦 aanwezig in dit tool, verder gelijk aan analyzer).
+  - Fase 7 (componenten): dialoog-schaduw/radius-token + volledige radius-sweep + `.tb-badge`-cirkel-fix.
+  - Fase 8 (tweetaligheid): NL\|EN\|FI zichtbaar in de kopbalk; 6 sectietitels (Simulatie/Aanpassingen/Analyse/Netwerk/Pand weergave/3D weergave) + "Kaart"-link alsnog vertaald (incl. een gevonden-en-gefixte "navKaart"-tekstbug).
+  - Fase 9 (versie & contact): `scripts/tools-meta.js` met dezelfde contactpersoon (Edwin van den Belt), versie "2026.11.12".
 
 ## Verificatie
 

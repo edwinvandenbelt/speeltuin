@@ -73,10 +73,24 @@
     <a class="ga-header__logo" href="./" aria-label="Home"><svg class="ga-logo" viewBox="0 0 182 32" role="img" aria-label="Goudappel"><use href="#ga-logo"/></svg></a>
     <div class="ga-header__tool">
       <span class="ga-header__title" id="networkTitle">GMT Digital Twin</span>
+      <button class="ga-header__version" id="versionBtn" type="button">v1.0.0</button>
     </div>
     <nav class="ga-nav" aria-label="Hoofdmenu">
-      <a href="#" aria-current="page">Kaart</a>
+      <a href="#" aria-current="page" data-i18n="navKaart">Kaart</a>
     </nav>
+    <div class="ga-header__meta">
+      <div class="ga-dropdown ga-contact">
+        <button class="ga-header__link" type="button" aria-expanded="false" aria-haspopup="true" data-ga-dropdown><span data-i18n="headerContact">Contact</span> <svg class="ga-icon" aria-hidden="true"><use href="#ga-i-chevron-down"/></svg></button>
+        <div class="ga-dropdown__menu" id="gaContact" role="menu" hidden></div>
+      </div>
+      <div class="ga-lang" role="group" aria-label="Taal / Language" id="headerLangGroup">
+        <button type="button" data-lang="NL" aria-pressed="true" title="Nederlands">NL</button>
+        <span class="ga-lang__sep" aria-hidden="true">|</span>
+        <button type="button" data-lang="EN" aria-pressed="false" title="English">EN</button>
+        <span class="ga-lang__sep" aria-hidden="true">|</span>
+        <button type="button" data-lang="FI" aria-pressed="false" title="Suomi">FI</button>
+      </div>
+    </div>
     <div class="ga-header__actions">
       <button class="ga-tool ga-tool--icon ga-tool--ghost" id="settingsBtn" type="button" aria-label="Instellingen" data-tip="Instellingen" data-i18n-title="settingsTitle" title="Instellingen">
         <svg class="ga-icon" aria-hidden="true"><use href="#ga-i-settings"/></svg>
@@ -321,7 +335,7 @@
         <!-- ── Simulatie-paneel ──────────────────────────────────────────────────── -->
       <div class="lmp-block" data-block="simulation">
         <div class="lmp-block-header" id="simBlockHeader">
-          <span>Simulatie</span>
+          <span data-i18n="blockSimulatie">Simulatie</span>
           <label class="sim-play-toggle" data-i18n-title="pauseTitle" title="Simulatie afspelen/pauzeren" onclick="event.stopPropagation()">
             <input type="checkbox" id="simPlayCheckbox"/>
           </label>
@@ -444,7 +458,7 @@
       <!-- ── Aanpassingen-paneel ──────────────────────────────────────────────────── -->
       <div class="lmp-block collapsed" data-block="tools">
         <div class="lmp-block-header">
-          <span>Aanpassingen</span>
+          <span data-i18n="blockAanpassingen">Aanpassingen</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body" id="editPanelBody">
@@ -550,7 +564,7 @@
       <!-- ── Analyse-paneel (selected link + scenario-vergelijker) ────────────── -->
       <div class="lmp-block collapsed" data-block="analysis">
         <div class="lmp-block-header">
-          <span>Analyse</span>
+          <span data-i18n="blockAnalyse">Analyse</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body" id="analysisPanelBody">
@@ -574,7 +588,7 @@
 
       <div class="lmp-block collapsed" data-block="network">
         <div class="lmp-block-header">
-          <span>Netwerk</span>
+          <span data-i18n="blockNetwerk">Netwerk</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
@@ -614,7 +628,7 @@
 
       <div class="lmp-block collapsed" data-block="buildingView">
         <div class="lmp-block-header">
-          <span>Pand weergave</span>
+          <span data-i18n="blockPandWeergave">Pand weergave</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
@@ -632,7 +646,7 @@
 
       <div class="lmp-block collapsed" data-block="trafficObjectView">
         <div class="lmp-block-header">
-          <span>3D weergave</span>
+          <span data-i18n="block3DWeergave">3D weergave</span>
           <span class="lmp-block-arrow">▾</span>
         </div>
         <div class="lmp-block-body">
@@ -784,13 +798,13 @@
       background:rgba(222,0,88,0.15);color:var(--ga-rood);
       border:1px solid rgba(222,0,88,0.4);border-radius:var(--ga-radius);
       padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer">
-      &#10003; <span data-i18n="linkAddFinishBtn">Lijn afronden</span>
+      <svg class="ga-icon" aria-hidden="true"><use href="#ga-i-check"/></svg> <span data-i18n="linkAddFinishBtn">Lijn afronden</span>
     </button>
     <button id="linkAddClearBtn" style="
       background:transparent;color:var(--ga-tekst-2);
       border:1px solid rgba(35,41,49,0.1);border-radius:var(--ga-radius);
       padding:7px 10px;font-size:12px;cursor:pointer">
-      &#10005; <span data-i18n="linkAddClearBtn">Wis lijn</span>
+      <svg class="ga-icon" aria-hidden="true"><use href="#ga-i-close"/></svg> <span data-i18n="linkAddClearBtn">Wis lijn</span>
     </button>
   </div>
 
@@ -846,9 +860,9 @@
         <span class="field-hint" data-i18n="linkPolygonDialogCapHint">800 = absoluut&nbsp;|&nbsp;80% = factor</span>
       </label>
       <div class="node-field-row">
-        <button id="linkPolyCapMinus">&#8722;</button>
+        <button id="linkPolyCapMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
         <input type="text" id="linkPolyCapVal" placeholder="800 of 80%"/>
-        <button id="linkPolyCapPlus">+</button>
+        <button id="linkPolyCapPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
       </div>
       <div id="linkPolygonPerLinkCap" class="link-poly-per-link"></div>
     </div>
@@ -880,17 +894,17 @@
     <div class="node-field">
       <label><span data-i18n="nodeDialogProd">Productie</span> <span class="field-hint" data-i18n="nodeDialogProdHint">+300 = delta &nbsp;|&nbsp; 1200 = absoluut (≥0)</span></label>
       <div class="node-field-row">
-        <button id="nodeProdMinus">−</button>
+        <button id="nodeProdMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
         <input type="text" id="nodeProdVal" placeholder="+300 of 1200" data-i18n-ph="nodeDialogProdPh"/>
-        <button id="nodeProdPlus">+</button>
+        <button id="nodeProdPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
       </div>
     </div>
     <div class="node-field">
       <label><span data-i18n="nodeDialogAttr">Attractie</span> <span class="field-hint" data-i18n="nodeDialogAttrHint">+300 = delta &nbsp;|&nbsp; 800 = absoluut (≥0)</span></label>
       <div class="node-field-row">
-        <button id="nodeAttrMinus">−</button>
+        <button id="nodeAttrMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
         <input type="text" id="nodeAttrVal" placeholder="+300 of 800" data-i18n-ph="nodeDialogAttrPh"/>
-        <button id="nodeAttrPlus">+</button>
+        <button id="nodeAttrPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
       </div>
     </div>
     <div class="node-dialog-btns">
@@ -909,9 +923,9 @@
         <span class="field-hint" data-i18n="polygonDialogProdHint">+300 = delta&nbsp;|&nbsp;1200 = absoluut</span>
       </label>
       <div class="node-field-row">
-        <button id="polyProdMinus">&#8722;</button>
+        <button id="polyProdMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
         <input type="text" id="polyProdVal" data-i18n-ph="nodeDialogProdPh" placeholder="+300 of 1200"/>
-        <button id="polyProdPlus">+</button>
+        <button id="polyProdPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
       </div>
       <div id="polygonPerNodeProd" class="poly-per-node"></div>
     </div>
@@ -921,9 +935,9 @@
         <span class="field-hint" data-i18n="polygonDialogAttrHint">+300 = delta&nbsp;|&nbsp;800 = absoluut</span>
       </label>
       <div class="node-field-row">
-        <button id="polyAttrMinus">&#8722;</button>
+        <button id="polyAttrMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
         <input type="text" id="polyAttrVal" data-i18n-ph="nodeDialogAttrPh" placeholder="+300 of 800"/>
-        <button id="polyAttrPlus">+</button>
+        <button id="polyAttrPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
       </div>
       <div id="polygonPerNodeAttr" class="poly-per-node"></div>
     </div>
@@ -960,7 +974,7 @@
   <div id="odEditPanel">
     <div id="odEditHeader">
       <span data-i18n="odEditTitle">OD-paar aanpassen</span>
-      <button id="odEditClose" title="Sluiten">&#10005;</button>
+      <button id="odEditClose" title="Sluiten"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-close"/></svg></button>
     </div>
     <div id="odEditBody">
       <!-- Stap 1: herkomstzone -->
@@ -1000,7 +1014,7 @@
       <span id="purposeChartSubtitle" style="display:none;font-size:10px;opacity:.7;margin-left:4px"></span>
       <span id="purposeChartEstTag" style="display:none;font-size:10px;opacity:.65;margin-left:4px"
             data-i18n="purposeChartEstimated">(geschat)</span>
-      <button id="purposeChartClose" title="Sluiten">&#10005;</button>
+      <button id="purposeChartClose" title="Sluiten"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-close"/></svg></button>
     </div>
     <div id="purposeChartBody">
       <svg id="purposeChartSvg" width="130" height="130" viewBox="0 0 130 130"></svg>
@@ -1011,6 +1025,7 @@
   </div>
 
 
+  <script src="scripts/tools-meta.js"></script>
   <script src="scripts/main.js"></script>
   <div id="segmentTooltip" style="
     display:none; position:fixed; z-index:9998; pointer-events:none;
@@ -1058,8 +1073,8 @@
         <div id="wegenscanPanelLinkId" style="color:var(--ga-tekst-2);font-size:12px"></div>
       </div>
       <button id="wegenscanPanelClose" style="
-        background:none;border:none;color:var(--ga-rood);font-size:18px;cursor:pointer;line-height:1
-      " title="Sluiten">✕</button>
+        background:none;border:none;color:var(--ga-rood);cursor:pointer;line-height:1
+      " title="Sluiten"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-close"/></svg></button>
     </div>
     <div id="wegenscanPanelScore" style="
       margin-bottom:16px;padding:10px 14px;border-radius:var(--ga-radius);

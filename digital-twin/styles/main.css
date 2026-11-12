@@ -20,7 +20,7 @@
       content: ''; display: block;
       width: 2px; height: 40px;
       background: rgba(0,165,171,0.35);
-      border-radius: 2px;
+      border-radius: var(--ga-radius);
     }
     /* Badges boven elke kaart */
     .map-badge {
@@ -28,7 +28,7 @@
       background: rgba(255,255,255,0.85); color: var(--ga-rood);
       font-family: var(--ga-font), system-ui, sans-serif;
       font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
-      padding: 4px 10px; border-radius: 5px;
+      padding: 4px 10px; border-radius: var(--ga-radius);
       border: 1px solid rgba(0,165,171,0.25);
       pointer-events: none; display: none;
     }
@@ -63,11 +63,10 @@
       background: #ffffff;
       color: var(--ga-tekst);
       padding: 6px 8px;
-      border-radius: 10px;
+      border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
       font-size: 13px;
       border: 1px solid var(--ga-lijn);
-      backdrop-filter: blur(10px);
       box-shadow: 0 4px 18px rgba(35,41,49,0.10);
       white-space: nowrap;
     }
@@ -91,7 +90,7 @@
     }
     .tb-btn {
       width: 30px; height: 30px;
-      border-radius: 6px;
+      border-radius: var(--ga-radius);
       border: 1px solid var(--ga-lijn);
       background: transparent;
       color: var(--ga-tekst-2);
@@ -105,14 +104,14 @@
     .tb-btn:hover { background: var(--ga-vlak); color: var(--ga-tekst-2); }
     .tb-btn.active { background: var(--ga-rood); color: #ffffff; border-color: var(--ga-rood); }
     /* Tekstknoppen (tbtn) - voor navigatie items zoals "Netwerk", "Scenario" */
-    .tbtn { border: 0; background: transparent; color: var(--ga-tekst-2); font-size: 13px; padding: 7px 12px; border-radius: 7px; cursor: pointer; font-weight: 600; }
+    .tbtn { border: 0; background: transparent; color: var(--ga-tekst-2); font-size: 13px; padding: 7px 12px; border-radius: var(--ga-radius); cursor: pointer; font-weight: 600; }
     .tbtn:hover { background: var(--ga-vlak); }
     .tbtn.active { background: var(--ga-rood); color: #fff; }
     .tbtn.ghost { border: 1px solid var(--ga-lijn); }
     .tb-select {
       height: 30px;
       background: #ffffff; color: var(--ga-tekst);
-      border: 1px solid var(--ga-lijn); border-radius: 6px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       padding: 0 8px; font-size: 12px; cursor: pointer;
       font-family: var(--ga-font), system-ui, sans-serif;
       flex-shrink: 0;
@@ -137,14 +136,14 @@
     .sim-clock-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
     .sim-time-box {
       height: 26px; font-size: 11px; font-weight: 600; padding: 0 4px 0 6px; border: 1px solid var(--ga-lijn);
-      border-radius: 6px; color: var(--ga-tekst); font-variant-numeric: tabular-nums;
+      border-radius: var(--ga-radius); color: var(--ga-tekst); font-variant-numeric: tabular-nums;
       display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff;
       box-sizing: border-box;
     }
     #simClockTimeText { flex: 1 1 auto; text-align: center; }
     .sim-clock-mode-btn {
       flex: 0 0 auto; height: 18px; min-width: 20px; padding: 0 4px; margin: 0;
-      border: 1px solid var(--ga-lijn); border-radius: 4px; background: var(--ga-uit); color: var(--ga-tekst-2);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); background: var(--ga-uit); color: var(--ga-tekst-2);
       font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer;
       font-family: inherit; box-sizing: border-box;
     }
@@ -153,12 +152,12 @@
     .sim-time-nav-row .sim-time-box { flex: 1 1 auto; min-width: 0; }
     .sim-clock-nav-btn {
       flex: 0 0 auto; height: 26px; min-width: 20px; padding: 0 4px; margin: 0;
-      border: 1px solid var(--ga-lijn); border-radius: 4px; background: var(--ga-uit); color: var(--ga-tekst-2);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); background: var(--ga-uit); color: var(--ga-tekst-2);
       font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer;
       font-family: inherit; box-sizing: border-box;
     }
     .sim-clock-nav-btn:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
-    .sim-date-input { height: 26px; font-size: 11px; padding: 0 6px; border: 1px solid var(--ga-lijn); border-radius: 6px; color: var(--ga-tekst); box-sizing: border-box; }
+    .sim-date-input { height: 26px; font-size: 11px; padding: 0 6px; border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); color: var(--ga-tekst); box-sizing: border-box; }
     .sim-row.sim-labeled-row { align-items: center; gap: 8px; }
     .sim-subrow-label {
       font-size: 11px; color: var(--ga-tekst-2); flex: 0 0 80px; white-space: nowrap;
@@ -224,27 +223,31 @@
       display: flex; flex-direction: column; gap: 10px;
     }
     .lmp-block {
-      border: none;
-      border-radius: 14px;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
       overflow: hidden;
       background: #ffffff;
-      box-shadow: 0 1px 4px rgba(35,41,49,0.06);
       flex-shrink: 0;
     }
     .lmp-block-header {
       display: flex; align-items: center; gap: 10px;
-      padding: 12px 14px;
+      padding: 9px 12px;
       cursor: pointer; user-select: none;
-      font-size: 14px; font-weight: 600; color: var(--ga-tekst);
-      background: #ffffff;
+      font-size: 15px; font-weight: 600; color: var(--ga-tekst);
+      background: var(--ga-vlak);
+      transition: color var(--ga-snel);
     }
-    .lmp-block-header:hover { background: var(--ga-vlak); }
+    .lmp-block-header:hover { color: var(--ga-rood-donker); }
+    .lmp-block:not(.collapsed) .lmp-block-header {
+      box-shadow: inset 3px 0 0 var(--ga-rood);
+      border-bottom: 1px solid var(--ga-lijn);
+    }
     .lmp-block-arrow { margin-left: auto; font-size: 11px; color: var(--ga-tekst-2); transition: transform 0.2s; }
     .lmp-block.collapsed .lmp-block-arrow { transform: rotate(-90deg); }
     .lmp-block-body {
-      padding: 0 14px 14px 14px;
+      padding: 10px 12px 14px;
       display: flex; flex-direction: column; gap: 4px;
-      font-size: 13px; color: var(--ga-tekst-2);
+      font-size: 14px; color: var(--ga-tekst-2);
     }
     .lmp-block.collapsed .lmp-block-body { display: none; }
     .lmp-radio-row {
@@ -297,17 +300,17 @@
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
       border-left: none;
-      border-radius: 0 8px 8px 0;
+      border-radius: 0 var(--ga-radius) var(--ga-radius) 0;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer;
       color: var(--ga-tekst-2);
       z-index: 21;
-      box-shadow: 2px 2px 8px rgba(35,41,49,0.10);
-      transition: left 0.25s ease, color 0.15s;
+      box-shadow: var(--ga-schaduw-zwevend);
+      transition: left 0.25s ease, color var(--ga-snel);
     }
     #leftMenuPanel.collapsed ~ #leftMenuPanelToggle,
     #leftMenuPanelToggle.collapsed { left: 0; }
-    #leftMenuPanelToggle:hover { color: var(--ga-rood); }
+    #leftMenuPanelToggle:hover { color: var(--ga-rood-donker); }
     #leftMenuPanelToggle .lmp-toggle-arrow { font-size: 12px; transition: transform 0.25s; }
     #leftMenuPanelToggle.collapsed .lmp-toggle-arrow { transform: rotate(180deg); }
 
@@ -333,13 +336,13 @@
       flex-shrink: 0;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       padding: 10px 14px;
       font-family: var(--ga-font), system-ui, sans-serif;
       box-shadow: 0 1px 4px rgba(35,41,49,0.06);
     }
     .legend-bar {
-      width: 100%; height: 7px; border-radius: 4px;
+      width: 100%; height: 7px; border-radius: var(--ga-radius);
       margin-bottom: 3px;
     }
     .legend-labels {
@@ -381,7 +384,7 @@
     }
     #newPanel input, #newPanel select {
       background: #ffffff; color: var(--ga-tekst);
-      border: 1px solid var(--ga-lijn); border-radius: 6px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       padding: 7px 10px; font-size: 13px;
     }
     #newPanel input::placeholder { color: var(--ga-lijn); }
@@ -408,12 +411,12 @@
     }
     #bboxDisplay {
       font-size: 11px; color: var(--ga-tekst-2); font-family: monospace;
-      background: var(--ga-vlak); border-radius: 6px; padding: 8px 10px;
+      background: var(--ga-vlak); border-radius: var(--ga-radius); padding: 8px 10px;
       line-height: 1.7;
     }
     #newMap { flex: 1; }
     .new-btn {
-      padding: 9px 14px; border-radius: 7px; font-size: 13px; cursor: pointer;
+      padding: 9px 14px; border-radius: var(--ga-radius); font-size: 13px; cursor: pointer;
       border: 1px solid var(--ga-rood);
       background: var(--ga-rood); color: #ffffff;
       transition: background .15s;
@@ -428,7 +431,7 @@
       display: none; flex-direction: column; gap: 8px;
     }
     #newProgressBar {
-      height: 6px; border-radius: 3px;
+      height: 6px; border-radius: var(--ga-radius);
       background: rgba(0,165,171,0.15);
       overflow: hidden;
     }
@@ -443,7 +446,7 @@
     }
     #newLog {
       font-size: 11px; font-family: monospace; color: var(--ga-tekst-2);
-      background: #ffffff; border: 1px solid var(--ga-lijn); border-radius: 6px; padding: 8px 10px;
+      background: #ffffff; border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); padding: 8px 10px;
       max-height: 160px; overflow-y: auto; white-space: pre-wrap;
     }
 
@@ -528,12 +531,11 @@
       z-index: 50;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       padding: 18px 20px;
       width: 260px;
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
     }
     #gmtUploadDialog {
       display: none;
@@ -544,12 +546,11 @@
       z-index: 10000;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       padding: 18px 20px;
       width: 300px;
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
     }
     #gmtUploadDialog h3 {
       font-size: 13px; color: var(--ga-rood); margin-bottom: 14px;
@@ -575,12 +576,11 @@
       z-index: 10000;
       background: #ffffff;
       border: 1px solid var(--ga-rood);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       padding: 18px 20px;
       width: 280px;
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
     }
     #linkAddDialog h3 {
       font-size: 13px; color: var(--ga-rood); margin-bottom: 10px;
@@ -612,7 +612,7 @@
     }
     #linkDialogCancel:hover, #linkFlowDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
      .speed-btn, .link-poly-speed-btn {
-       padding: 3px 7px; font-size: 11px; border-radius: 4px; cursor: pointer;
+       padding: 3px 7px; font-size: 11px; border-radius: var(--ga-radius); cursor: pointer;
        background: rgba(35,41,49,0.07); color: var(--ga-tekst);
        border: 1px solid rgba(35,41,49,0.15);
      }
@@ -620,7 +620,7 @@
       .speed-btn.active, .link-poly-speed-btn.active { background: rgba(0,165,171,0.30); color: var(--ga-rood); border-color: rgba(0,165,171,0.6); }
       /* Afsluitingsknop (verboden in te rijden) */
       .link-close-btn {
-        padding: 4px 6px; border-radius: 4px; cursor: pointer; line-height: 0;
+        padding: 4px 6px; border-radius: var(--ga-radius); cursor: pointer; line-height: 0;
         background: rgba(230,51,18,0.12); color: var(--ga-fout);
         border: 1px solid rgba(230,51,18,0.28);
       }
@@ -633,11 +633,11 @@
     .node-field-row { display: flex; align-items: center; gap: 6px; }
     .node-field-row input {
       flex: 1; background: #ffffff; color: var(--ga-tekst);
-      border: 1px solid var(--ga-lijn); border-radius: 6px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       padding: 6px 8px; font-size: 13px; font-family: var(--ga-font), sans-serif;
     }
     .node-field-row button {
-      width: 28px; height: 28px; border-radius: 6px;
+      width: 28px; height: 28px; border-radius: var(--ga-radius);
       background: transparent; color: var(--ga-rood);
       border: 1px solid var(--ga-lijn);
       font-size: 16px; cursor: pointer; line-height: 1;
@@ -646,7 +646,7 @@
     .node-field-row button:hover { background: var(--ga-vlak); }
     .node-dialog-btns { display: flex; gap: 8px; margin-top: 14px; }
     .node-dialog-btns button {
-      flex: 1; padding: 7px 0; border-radius: 7px;
+      flex: 1; padding: 7px 0; border-radius: var(--ga-radius);
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
       transition: background 0.15s;
     }
@@ -668,7 +668,7 @@
       margin: 2px 0 4px 0;
       background: #ffffff;
       border: 1px solid var(--ga-rood);
-      border-radius: 10px;
+      border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
       overflow: hidden;
     }
@@ -696,7 +696,7 @@
     .change-item-label { flex: 1; line-height: 1.4; }
     .change-item-label span { color: var(--ga-tekst-2); font-size: 11px; display: block; }
     .change-item-del {
-      width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0;
+      width: 22px; height: 22px; border-radius: var(--ga-radius); flex-shrink: 0;
       background: transparent; color: var(--ga-tekst-2);
       border: 1px solid var(--ga-lijn);
       font-size: 13px; cursor: pointer; line-height: 1;
@@ -706,13 +706,13 @@
     #changesPanelFooter { padding: 10px 16px; border-top: 1px solid var(--ga-lijn); }
     #scenarioNameInput {
       width: 100%; background: var(--ga-vlak); color: var(--ga-tekst);
-      border: 1px solid var(--ga-lijn); border-radius: 6px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       padding: 6px 9px; font-size: 12px; font-family: var(--ga-font), sans-serif;
       margin-bottom: 8px; box-sizing: border-box;
     }
     #scenarioNameInput:focus { outline: none; border-color: var(--ga-rood); }
     #applyChangesBtn {
-      width: 100%; padding: 8px 0; border-radius: 7px;
+      width: 100%; padding: 8px 0; border-radius: var(--ga-radius);
       background: var(--ga-rood); color: #ffffff;
       border: 1px solid var(--ga-rood);
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
@@ -749,7 +749,7 @@
       position: absolute; top: 3px; right: 2px;
       min-width: 13px; height: 13px; padding: 0 2px;
       background: var(--ga-rood); color: #ffffff;
-      border-radius: 7px; font-size: 8px; font-weight: 700;
+      border-radius: 50%; font-size: 8px; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
       pointer-events: none; line-height: 1;
     }
@@ -764,10 +764,9 @@
       width: 360px;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
       overflow: hidden;
     }
     #purposeChartHeader {
@@ -809,10 +808,9 @@
       width: 300px;
       background: #ffffff;
       border: 1px solid var(--ga-fout);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
       overflow: hidden;
     }
     #whatifRcPanelHeader {
@@ -834,7 +832,7 @@
     .whatif-rc-item:last-child { border-bottom: none; }
     .whatif-rc-item-label { flex: 1; line-height: 1.4; }
     .whatif-rc-item-del {
-      width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0;
+      width: 22px; height: 22px; border-radius: var(--ga-radius); flex-shrink: 0;
       background: transparent; color: var(--ga-tekst-2);
       border: 1px solid var(--ga-lijn);
       font-size: 13px; cursor: pointer; line-height: 1;
@@ -853,19 +851,19 @@
     #whatifRcDirLabel { font-size: 12px; color: var(--ga-tekst-2); white-space: nowrap; }
     #whatifRcDirSelect {
       flex: 1; background: var(--ga-vlak); color: var(--ga-tekst);
-      border: 1px solid var(--ga-lijn); border-radius: 6px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       padding: 5px 8px; font-size: 12px; font-family: var(--ga-font), sans-serif;
     }
     #whatifRcDirSelect:focus { outline: none; border-color: var(--ga-fout); }
     #whatifRcNameInput {
       width: 100%; background: var(--ga-vlak); color: var(--ga-tekst);
-      border: 1px solid var(--ga-lijn); border-radius: 6px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       padding: 6px 9px; font-size: 12px; font-family: var(--ga-font), sans-serif;
       margin-bottom: 8px; box-sizing: border-box;
     }
     #whatifRcNameInput:focus { outline: none; border-color: var(--ga-fout); }
     #whatifRcRunBtn {
-      width: 100%; padding: 8px 0; border-radius: 7px;
+      width: 100%; padding: 8px 0; border-radius: var(--ga-radius);
       background: var(--ga-fout); color: #ffffff;
       border: 1px solid var(--ga-fout);
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
@@ -875,7 +873,7 @@
     #whatifRcRunBtn:hover { background: #d42a0e; }
     #whatifRcRunBtn:disabled { opacity: 0.4; cursor: not-allowed; }
     #whatifRcClearBtn {
-      width: 100%; padding: 6px 0; border-radius: 7px;
+      width: 100%; padding: 6px 0; border-radius: var(--ga-radius);
       background: var(--ga-vlak); color: var(--ga-tekst);
       border: 1px solid var(--ga-lijn);
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
@@ -901,11 +899,10 @@
       overflow-y: auto;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
       font-size: 12px; color: var(--ga-tekst);
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
     }
     #odEditHeader {
       padding: 12px 16px 10px;
@@ -922,7 +919,7 @@
     #odEditBody { padding: 12px 16px; }
     .ode-step {
       margin-bottom: 10px; padding: 8px 10px;
-      border-radius: 8px; background: var(--ga-vlak);
+      border-radius: var(--ga-radius); background: var(--ga-vlak);
       border: 1px solid var(--ga-lijn);
     }
     .ode-step-label { font-size: 10px; color: var(--ga-tekst-2); text-transform: uppercase; letter-spacing:.4px; margin-bottom:4px; }
@@ -940,7 +937,7 @@
     .ode-field-input {
       width: 88px; padding: 3px 7px;
       background: #ffffff;
-      border: 1px solid var(--ga-lijn); border-radius:5px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       color: var(--ga-tekst); font-size:12px; text-align:right;
     }
     .ode-field-input:focus { outline:none; border-color: var(--ga-rood); }
@@ -954,7 +951,7 @@
     .ode-motif-pct  {
       width:60px; padding:2px 6px;
       background:#ffffff;
-      border:1px solid var(--ga-lijn); border-radius:5px;
+      border:1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       color:var(--ga-tekst); font-size:12px; text-align:right;
     }
     .ode-motif-pct:focus { outline:none; border-color:var(--ga-rood); }
@@ -964,7 +961,7 @@
     #odEditSaveBtn {
       width:100%; padding:7px 0; margin-top:6px;
       background:var(--ga-rood); border:1px solid var(--ga-rood);
-      border-radius:7px; color:#ffffff; font-size:12px; font-weight:600;
+      border-radius: var(--ga-radius); color:#ffffff; font-size:12px; font-weight:600;
       cursor:pointer; transition:background .15s;
     }
     #odEditSaveBtn:hover    { background:var(--ga-rood-donker); }
@@ -976,7 +973,7 @@
       margin-top: 8px;
       width: 100%;
       padding: 7px 0;
-      border-radius: 7px;
+      border-radius: var(--ga-radius);
       font-size: 12px;
       font-family: var(--ga-font), system-ui, sans-serif;
       cursor: pointer;
@@ -995,7 +992,7 @@
       display: none;
       background: var(--ga-vlak);
       border: 1px solid var(--ga-lijn);
-      border-radius: 10px;
+      border-radius: var(--ga-radius);
       padding: 10px 12px; width: auto;
       margin: 2px 0 4px 0;
       font-family: var(--ga-font), system-ui, sans-serif;
@@ -1017,11 +1014,11 @@
       font-size: 10px; color: var(--ga-tekst-2);
       margin-top: 8px; line-height: 1.5;
       padding: 6px 8px;
-      background: #ffffff; border-radius: 6px;
+      background: #ffffff; border-radius: var(--ga-radius);
     }
     .poly-ctrl-btn {
       display: none; width: 100%;
-      padding: 6px 0; border-radius: 6px;
+      padding: 6px 0; border-radius: var(--ga-radius);
       font-size: 11px; cursor: pointer;
       font-family: var(--ga-font), sans-serif;
       margin-top: 5px; transition: background 0.15s;
@@ -1044,11 +1041,10 @@
       z-index: 51;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       padding: 18px 20px; width: 260px;
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
     }
     #polygonDialog h3 {
       font-size: 13px; color: var(--ga-rood); margin-bottom: 8px;
@@ -1074,7 +1070,7 @@
       display: none;
       background: var(--ga-vlak);
       border: 1px solid var(--ga-lijn);
-      border-radius: 10px;
+      border-radius: var(--ga-radius);
       padding: 10px 12px; width: auto;
       margin: 2px 0 4px 0;
       font-family: var(--ga-font), system-ui, sans-serif;
@@ -1096,11 +1092,11 @@
       font-size: 10px; color: var(--ga-tekst-2);
       margin-top: 8px; line-height: 1.5;
       padding: 6px 8px;
-      background: #ffffff; border-radius: 6px;
+      background: #ffffff; border-radius: var(--ga-radius);
     }
     .link-poly-ctrl-btn {
       display: none; width: 100%;
-      padding: 6px 0; border-radius: 6px;
+      padding: 6px 0; border-radius: var(--ga-radius);
       font-size: 11px; cursor: pointer;
       font-family: var(--ga-font), sans-serif;
       margin-top: 5px; transition: background 0.15s;
@@ -1123,11 +1119,10 @@
       z-index: 51;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       padding: 18px 20px; width: 260px;
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
     }
     #linkPolygonDialog h3 {
       font-size: 13px; color: var(--ga-rood); margin-bottom: 8px;
@@ -1154,7 +1149,7 @@
       z-index: 25;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 10px;
+      border-radius: var(--ga-radius);
       box-shadow: 0 4px 24px rgba(35,41,49,0.12);
       min-width: 170px;
       backdrop-filter: blur(6px);
@@ -1168,7 +1163,7 @@
       font-family: var(--ga-font), system-ui, sans-serif;
       letter-spacing: 0.3px;
       border-bottom: 1px solid var(--ga-lijn);
-      border-radius: 10px 10px 0 0;
+      border-radius: var(--ga-radius) var(--ga-radius) 0 0;
     }
     #simPanelHeader:active { cursor: grabbing; }
     #simPanelCollapseBtn {
@@ -1190,7 +1185,7 @@
       z-index: 25;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 10px;
+      border-radius: var(--ga-radius);
       box-shadow: 0 4px 24px rgba(35,41,49,0.12);
       min-width: 170px;
       backdrop-filter: blur(6px);
@@ -1203,7 +1198,7 @@
       font-family: var(--ga-font), system-ui, sans-serif;
       letter-spacing: 0.3px;
       border-bottom: 1px solid var(--ga-lijn);
-      border-radius: 10px 10px 0 0;
+      border-radius: var(--ga-radius) var(--ga-radius) 0 0;
     }
     #editPanelHeader:active { cursor: grabbing; }
     #editPanelCollapseBtn {
@@ -1226,10 +1221,9 @@
       width: 300px;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
       overflow: hidden;
     }
     #flowScalerPanel.fsp-visible { display: block; }
@@ -1243,17 +1237,16 @@
       width: 320px;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
+      border-radius: var(--ga-radius);
       font-family: var(--ga-font), system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      box-shadow: var(--ga-schaduw-zwevend);
       overflow: hidden;
     }
     #settingsPanel.sp-visible { display: block; }
     .sp-text {
       background: var(--ga-vlak);
       border: 1px solid var(--ga-lijn);
-      border-radius: 4px;
+      border-radius: var(--ga-radius);
       color: var(--ga-tekst-2);
       padding: 2px 5px;
       font-size: 10px;
@@ -1285,7 +1278,7 @@
     .fsp-input, .fsp-select {
       flex: 1; min-width: 0;
       background: var(--ga-vlak); color: var(--ga-tekst);
-      border: 1px solid var(--ga-lijn); border-radius: 6px;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
       padding: 5px 7px; font-size: 11px;
       font-family: var(--ga-font), system-ui, sans-serif;
       appearance: none; -webkit-appearance: none;
@@ -1311,7 +1304,7 @@
       display: flex; gap: 8px; margin-top: 12px;
     }
     #fspApply {
-      flex: 1; padding: 7px 0; border-radius: 7px;
+      flex: 1; padding: 7px 0; border-radius: var(--ga-radius);
       background: var(--ga-rood); color: #ffffff;
       border: 1px solid var(--ga-rood);
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), system-ui, sans-serif;
@@ -1320,7 +1313,7 @@
     #fspApply:hover:not(:disabled) { background: var(--ga-rood-donker); }
     #fspApply:disabled { opacity: 0.4; cursor: not-allowed; }
     #fspReset {
-      flex: 1; padding: 7px 0; border-radius: 7px;
+      flex: 1; padding: 7px 0; border-radius: var(--ga-radius);
       background: var(--ga-vlak); color: var(--ga-tekst);
       border: 1px solid var(--ga-lijn);
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), system-ui, sans-serif;
@@ -1354,7 +1347,7 @@
       background: var(--ga-rood);
       color: #ffffff;
       border: 1px solid var(--ga-rood);
-      border-radius: 7px;
+      border-radius: var(--ga-radius);
       font-size: 12px; font-weight: 600; cursor: pointer;
       transition: background 0.15s;
     }
@@ -1376,7 +1369,7 @@
     #debugPanel {      position: absolute; top: 56px; right: 16px; z-index: 10;
       background: rgba(255,255,255,0.93);
       border: 1px solid rgba(221,122,0,0.3);
-      border-radius: 8px;
+      border-radius: var(--ga-radius);
       padding: 10px 14px;
       font-family: var(--ga-font), system-ui, monospace;
       font-size: 11px; color: var(--ga-tekst-2);
@@ -1403,9 +1396,8 @@
       width: 290px;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(35,41,49,0.12);
-      backdrop-filter: blur(10px);
+      border-radius: var(--ga-radius);
+      box-shadow: var(--ga-schaduw-zwevend);
       overflow: hidden;
     }
     #counterPanel.cp-visible { display: block; }
@@ -1429,7 +1421,7 @@
     .cp-counter {
       background: var(--ga-vlak);
       border: 1px solid var(--ga-lijn);
-      border-radius: 8px; margin-bottom: 6px; overflow: hidden;
+      border-radius: var(--ga-radius); margin-bottom: 6px; overflow: hidden;
     }
     .cp-counter-head {
       display: flex; align-items: center; gap: 4px;
@@ -1438,7 +1430,7 @@
       font-size: 11px; color: var(--ga-rood); font-weight: 600;
     }
     .cp-counter-head .cp-link-label { flex: 1; }
-    .cp-ctrl { background: none; border: none; cursor: pointer; padding: 1px 4px; line-height: 1; border-radius: 3px; font-size: 12px; }
+    .cp-ctrl { background: none; border: none; cursor: pointer; padding: 1px 4px; line-height: 1; border-radius: var(--ga-radius); font-size: 12px; }
     .cp-ctrl.cp-reset { color: rgba(0,165,171,0.5); border: 1px solid rgba(0,165,171,0.2); font-size: 11px; }
     .cp-ctrl.cp-reset:hover { background: rgba(0,165,171,0.12); color: var(--ga-rood); }
     .cp-ctrl.cp-remove { color: rgba(35,41,49,0.3); font-size: 14px; }
