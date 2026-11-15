@@ -1,7 +1,8 @@
 """
 Detection tracking and stability filtering module.
-Tracks black objects across frames to ensure they are stationary before registering as valid detections.
-Prevents false positives from moving blocks or transient shadows.
+Tracks ArUco objectmarkers across frames to ensure they are stationary
+before registering as valid detections.
+Prevents false positives from moving markers or transient misreads.
 """
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -12,12 +13,17 @@ from utils.geometry_utils import bbox_iou
 # Tracks missing for more than this many consecutive frames are discarded
 _MAX_MISSING_FRAMES = 10
 # Smoothing factor (EMA) for the displayed position/outline of a track: the
-# weight given to the new, raw sample. Each frame re-fits the contour from
-# scratch, so even a perfectly still block wobbles a few pixels frame to
+# weight given to the new, raw sample. Each frame re-fits the corners from
+# scratch, so even a perfectly still marker wobbles a few pixels frame to
 # frame - a lower value damps that wobble more but reacts slower to real
 # movement. Deliberately separate from `recent_min_overlap`/stability below,
 # which keeps using the raw bboxes so genuine movement is never masked.
 _SMOOTHING_ALPHA = 0.3
+# Starting value for the fallback sequential-ID space (detections without a
+# `marker_id`, not expected with ArUco input). Offset well above any real
+# ArUco ID so it can never collide with a track keyed by `marker_id` directly
+# (see `match_detection`/`_create_new_track`).
+_FALLBACK_ID_START = 1_000_000
 
 
 def _ema_point(prev: Tuple[float, float], new: Tuple[float, float], alpha: float) -> Tuple[float, float]:
@@ -45,6 +51,10 @@ class Track:
     id: int
     first_seen_frame: int
     last_frame_number: int
+    # The ArUco marker ID this track represents, or None for the
+    # fallback/defensive distance-matched path (no marker_id on input).
+    # Equal to `id` whenever a marker_id is present.
+    marker_id: Optional[int] = None
     frames_seen: int = 1
     last_center: Tuple[float, float] = (0.0, 0.0)
     last_bbox: List[float] = field(default_factory=list)
@@ -87,11 +97,28 @@ class DetectionTracker:
         self.max_allowed_distance = max_allowed_distance
 
         self.tracked_objects: Dict[int, Track] = {}
-        self.next_id = 0
+        self.next_id = _FALLBACK_ID_START
         self.frame_count = 0
 
-    def match_detection(self, detection_center, detection_bbox) -> Optional[int]:
-        """Return the ID of the closest unmatched track, or None."""
+    def match_detection(self, detection: Dict[str, Any]) -> Optional[int]:
+        """Return the ID of the matching unmatched track, or None.
+
+        Primary match is exact, on `marker_id`: each objectmarker type is
+        only ever active once at a time (see aruco_marker_actions.py), so
+        the ArUco ID doubles as the track identity - no distance heuristic
+        needed, and no ambiguity if two markers momentarily pass close to
+        each other. Falls back to nearest-center matching only when
+        `marker_id` is absent, which ArucoMarkerDetector never produces -
+        purely defensive for non-ArUco callers.
+        """
+        marker_id = detection.get('marker_id')
+        if marker_id is not None:
+            track = self.tracked_objects.get(marker_id)
+            if track is not None and not track.matched_this_frame:
+                return marker_id
+            return None
+
+        detection_center = detection['center']
         best_match = None
         best_distance = float('inf')
 
@@ -127,7 +154,7 @@ class DetectionTracker:
         matched_indices = set()
 
         for det_idx, detection in enumerate(detections):
-            matching_id = self.match_detection(detection['center'], detection['bbox'])
+            matching_id = self.match_detection(detection)
             if matching_id is not None:
                 stable = self._update_existing_track(matching_id, detection)
                 if stable:
@@ -184,15 +211,25 @@ class DetectionTracker:
         return None
 
     def _create_new_track(self, detection: Dict[str, Any]) -> None:
-        """Register a detection as a new track."""
-        obj_id = self.next_id
-        self.next_id += 1
+        """Register a detection as a new track.
+
+        The track is keyed by `marker_id` directly when present, so the
+        ArUco ID is the track identity; only the defensive no-marker_id path
+        falls back to a sequential ID (see `_FALLBACK_ID_START`).
+        """
+        marker_id = detection.get('marker_id')
+        if marker_id is not None:
+            obj_id = marker_id
+        else:
+            obj_id = self.next_id
+            self.next_id += 1
         detection['track_id'] = obj_id
         detection['smoothed_center'] = detection['center']
         detection['smoothed_bbox'] = list(detection['bbox'])
         detection['smoothed_polygon'] = detection.get('polygon')
         self.tracked_objects[obj_id] = Track(
             id=obj_id,
+            marker_id=marker_id,
             first_seen_frame=self.frame_count,
             last_frame_number=self.frame_count,
             last_center=detection['center'],

@@ -2,15 +2,16 @@
  * maquette-monitor.js — laat zien wat de camera ziet, en waar.
  *
  * Achtergrond: de camera kijkt bijna altijd ruimer dan de beamer projecteert.
- * Een zwart vlak dat de camera oppikt kán dus best buiten het geprojecteerde
+ * Een objectmarker die de camera oppikt kán dus best buiten het geprojecteerde
  * gebied liggen. De calibratie rekent zo'n punt netjes door naar een
- * kaartpositie, maar die ligt dan buiten de kaart — en dan wordt er een wegvak
- * afgesloten dat je niet eens ziet. Precies dat verwarrende gedrag maakt deze
- * module zichtbaar:
+ * kaartpositie, maar die ligt dan buiten de kaart — en dan wordt er een
+ * bewerking toegepast die je niet eens ziet. Precies dat verwarrende gedrag
+ * maakt deze module zichtbaar:
  *
  *   • de omtrek van het **camerabeeld** op de kaart (wat de camera bestrijkt);
- *   • een **rood kader** om elk gedetecteerd zwart vlak;
- *   • ligt zo'n vlak buiten beeld, dan een **pijl langs de rand** die ernaar wijst;
+ *   • een **rood kader** om elke gedetecteerde objectmarker, met zijn label
+ *     (de bewerking, zie aruco_marker_actions.py) erboven;
+ *   • ligt zo'n marker buiten beeld, dan een **pijl langs de rand** die ernaar wijst;
  *   • en een **meldingenbalk** die zegt wat er gesignaleerd is, en of het binnen
  *     het geprojecteerde gebied valt.
  *
@@ -145,7 +146,7 @@
     map.addSource(SRC_DETECTIONS, {
       type: 'geojson', data: { type: 'FeatureCollection', features: [] },
     });
-    // Rood kader om elk gedetecteerd zwart vlak.
+    // Rood kader om elke gedetecteerde objectmarker.
     map.addLayer({
       id: 'maquette-detections-fill',
       type: 'fill',
@@ -190,6 +191,27 @@
         'circle-stroke-color': '#ffffff',
       },
     });
+    // Label van de bewerking (zie aruco_marker_actions.py), zodat je op de
+    // kaart meteen ziet wélke objectmarker dit is, niet alleen dát er een
+    // rood kader staat.
+    map.addLayer({
+      id: 'maquette-detections-label',
+      type: 'symbol',
+      source: SRC_DETECTIONS,
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['has', 'label']],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 13,
+        'text-offset': [0, -1.4],
+        'text-anchor': 'bottom',
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+      },
+      paint: {
+        'text-color': '#ff3b3b',
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+      },
+    });
   }
 
   function ringFeature(points, props) {
@@ -223,10 +245,12 @@
         features.push(ringFeature(d.outline, { in_range: inRange }));
       }
       if (typeof d.lon === 'number' && typeof d.lat === 'number') {
+        const props = { in_range: inRange };
+        if (d.label) props.label = d.label;
         features.push({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [d.lon, d.lat] },
-          properties: { in_range: inRange },
+          properties: props,
         });
       }
     });
@@ -338,7 +362,7 @@
     }
     const dets = state.detections;
     if (dets.length === 0) {
-      setNotice('', 'Camera kijkt mee', 'Geen zwart vlak in beeld.');
+      setNotice('', 'Camera kijkt mee', 'Geen objectmarker in beeld.');
       return;
     }
     const inside = dets.filter(d => d.in_range !== false);
@@ -346,25 +370,27 @@
 
     if (inside.length > 0) {
       const d = inside[0];
+      const what = d.label ? `"${d.label}"` : 'Objectmarker';
       setNotice(
         'ok',
-        `Zwart vlak gesignaleerd — binnen het geprojecteerde gebied`,
-        `${dets.length} vlak(ken) in beeld. Camerapixel (${d.px}, ${d.py}).` +
-        (outside.length ? `  ${outside.length} vlak(ken) vallen erbuiten.` : ''),
+        `${what} actief — binnen het geprojecteerde gebied`,
+        `${dets.length} marker(s) in beeld. Camerapixel (${d.px}, ${d.py}).` +
+        (outside.length ? `  ${outside.length} marker(s) vallen erbuiten.` : ''),
       );
       return;
     }
 
     const d = outside[0];
+    const what = d.label ? `"${d.label}"` : 'Objectmarker';
     const where = (typeof d.u === 'number')
       ? `  Positie in het geprojecteerde vlak: ${d.u.toFixed(2)}, ${d.v.toFixed(2)} ` +
         `(binnen = 0 tot 1).`
       : '';
     setNotice(
       'warn',
-      `Zwart vlak BUITEN het geprojecteerde gebied — genegeerd`,
+      `${what} BUITEN het geprojecteerde gebied — genegeerd`,
       `De camera ziet ruimer dan de beamer projecteert. Er wordt niets ` +
-      `afgesloten. Camerapixel (${d.px}, ${d.py}).${where}`,
+      `aangepast. Camerapixel (${d.px}, ${d.py}).${where}`,
     );
   }
 

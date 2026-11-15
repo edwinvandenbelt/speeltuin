@@ -2,10 +2,16 @@
 maquette_camera.py — Fysieke maquette koppeling via camera-detectie
 ====================================================================
 
-Detecteert een zwart blokje op de maquette en sluit de dichtstbijzijnde weg
-af via de adjust-pipeline zodra de tracker (tracking.py) het blokje als
-stabiel (ruisvrij) herkent binnen het geprojecteerde gebied — zonder verdere
-wachttijd: de aanpassing-call volgt dan direct.
+Detecteert ArUco-objectmarkers op de maquette en past het netwerk aan via de
+adjust-pipeline. Elke marker-ID staat voor precies één vaste bewerking (zie
+`aruco_marker_actions.py` — wegvak afsluiten, 30 km/u, of +100 productie).
+Zodra de tracker (tracking.py) een marker als stabiel (ruisvrij) herkent
+binnen het geprojecteerde gebied, komt zijn bewerking in de actieve set;
+haal je de marker weg, dan vervalt hij weer uit die set. Bij elke wijziging
+wordt de **volledige actuele set** in één keer doorgerekend vanaf het vaste
+basis-area_id van de sessie — nooit een keten van opeenvolgende deltas, dus
+een verwijderde marker maakt zijn eigen bewerking altijd ongedaan zonder de
+andere te raken. Het script blijft draaien tot je het met Ctrl+C stopt.
 
 Dit script **calibreert niet zelf**. De camera staat doorgaans schuin boven de
 maquette, zodat het beeld perspectivisch vervormd is. Die vervorming wordt in de
@@ -18,20 +24,23 @@ Die calibratie legt ook het **werkgebied** vast: de vierhoek in het camerabeeld
 die de maquette voorstelt: de vierhoek die je bij het calibreren hebt aangewezen.
 Alleen dat stuk wordt uitgesneden en aan de detector gevoerd (zie `_roi_polygon`
 / `_apply_roi`). Wat de camera daarbuiten ziet — tafelrand, vloer, muur, de
-gebruiker — is donker en zou anders meedingen naar de titel "zwart blokje".
+gebruiker — hoort niet bij de maquette en zou anders meedingen naar een
+objectmarker-detectie.
 
 Pas op met het onderscheid tussen die aangewezen vierhoek en het *geprojecteerde
-vlak*: de markers liggen met hun inzet binnen de projectie, dus het geprojecteerde
-vlak is groter (bij 6% inzet 1,3x, bij 25% ruim 4x in oppervlak). Het werkgebied
-is standaard de aangewezen vierhoek; `--mask-region projection` neemt de hele
-projectie.
+vlak*: de **calibratiemarkers** (de vier punten die de beamer tijdens het
+calibreren projecteert, niet te verwarren met de fysieke objectmarkers hier)
+liggen met hun inzet binnen de projectie, dus het geprojecteerde vlak is groter
+(bij 6% inzet 1,3x, bij 25% ruim 4x in oppervlak). Het werkgebied is standaard
+de aangewezen vierhoek; `--mask-region projection` neemt de hele projectie.
 
-Het "blokje" is in de praktijk een mobieltje op zo'n 1,2-1,5 m van de camera, en
-dus een fors vlak: 3.000 tot 27.000 px², afhankelijk van resolutie en afstand.
-Er is daarom geen bovengrens aan de objectgrootte. De ondergrens wordt als
-*percentage van het gecalibreerde vlak* opgegeven (`--min-object-area`) en niet
-in pixels, omdat pixels met resolutie en afstand meeschalen en een percentage
-niet — zie `_area_thresholds`.
+Een objectmarker is een afgedrukte ArUco-tag (zie `generate_aruco_markers.py`),
+dus een vlak van vaste, bekende afmeting — hoe groot dat er in beeld uitziet
+hangt wel af van resolutie en afstand tot de camera. Er is daarom geen
+bovengrens aan de objectgrootte. De ondergrens wordt als *percentage van het
+gecalibreerde vlak* opgegeven (`--min-object-area`) en niet in pixels, omdat
+pixels met resolutie en afstand meeschalen en een percentage niet — zie
+`_area_thresholds`.
 
 Twee standen:
 
@@ -49,6 +58,8 @@ Gebruik:
 
 Bij ``--camera-id -1`` (virtuele modus) is er geen camera: de browser post dan
 zijn cursorpositie, inclusief de ge-unprojecte lon/lat, naar /maquette/cursor.
+Deze modus simuleert één blokje, geen objectmarkers; de ArUco-koppeling
+hierboven geldt alleen voor de fysieke camera.
 
 Afhankelijkheden (naast standaard-bibliotheek en opencv/shapely/requests):
     detection.py + tracking.py, vendored (gekopieerd, niet een extern pad) in
@@ -95,15 +106,18 @@ if str(_KIEN_DIR) not in sys.path:
     sys.path.insert(0, str(_KIEN_DIR))
 
 import config  # noqa: E402  (kien-camera-maquette/config.py, voor drempelwaarden in logging)
-from detection import BlackObjectDetector  # noqa: E402
+from detection import ArucoMarkerDetector  # noqa: E402
 from tracking import DetectionTracker  # noqa: E402
 
 # Coördinaten- en calibratiewiskunde staat in een eigen module zonder
 # afhankelijkheden, zodat ze zonder camera-opstelling te testen is.
 from maquette_calibration import load_calibration  # noqa: E402
 
+# Vaste koppeling marker-ID -> bewerking; zie het bestand zelf voor de tabel.
+from aruco_marker_actions import MARKER_ACTIONS, known_marker_ids  # noqa: E402
+
 # ---------------------------------------------------------------------------
-# Network laden en dichtstbijzijnde link vinden
+# Network/zones laden en dichtstbijzijnde link/zone vinden
 # ---------------------------------------------------------------------------
 
 
@@ -118,6 +132,21 @@ def load_network_features(server_url: str, area_id: str, mode: str) -> list:
     resp.raise_for_status()
     features = resp.json().get("features", [])
     print(f"[camera] {len(features)} features geladen.")
+    return features
+
+
+def load_zone_features(server_url: str, area_id: str, mode: str) -> list:
+    """
+    Haal alle zone-features op van de server (voor de productie-objectmarker).
+    Geeft een lijst van GeoJSON Feature-dicts terug; zelfde endpointpatroon
+    als `load_network_features`, zie `apiUrl()` in scripts/main.js.
+    """
+    url = f"{server_url}/collections/zones/items?areaId={area_id}&mode={mode}"
+    print(f"[camera] Zones laden van {url} …")
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
+    features = resp.json().get("features", [])
+    print(f"[camera] {len(features)} zones geladen.")
     return features
 
 
@@ -182,9 +211,40 @@ def find_nearest_link(lon: float, lat: float, features: list) -> list[int] | Non
     return directions if directions else None
 
 
-def post_adjust(server_url: str, area_id: str, mode: str, link_ids: list[int]) -> str:
+def find_nearest_zone(lon: float, lat: float, zone_features: list) -> "str | int | None":
     """
-    Sluit de opgegeven link-richtingen af via de adjust-API.
+    Geef de `zoneId` van de dichtstbijzijnde zone terug, of None als er geen
+    zones zijn (of geen Shapely). Analoog aan `find_nearest_link`, maar zonder
+    richting-logica: een zone heeft geen rijrichtingen.
+    """
+    try:
+        from shapely.geometry import Point, shape
+    except ImportError:
+        print("[camera] FOUT: shapely niet geïnstalleerd. `pip install shapely`")
+        return None
+
+    pt = Point(lon, lat)
+    best_id: "str | int | None" = None
+    best_dist = float("inf")
+
+    for feat in zone_features:
+        try:
+            geom = shape(feat["geometry"])
+            dist = pt.distance(geom)
+            if dist < best_dist:
+                zone_id = feat.get("properties", {}).get("zoneId")
+                if zone_id is not None:
+                    best_dist = dist
+                    best_id = zone_id
+        except Exception:
+            continue
+
+    return best_id
+
+
+def post_adjust(server_url: str, area_id: str, mode: str, changes: "list[dict]") -> str:
+    """
+    Dien een volledige set netwerkwijzigingen in via de adjust-API.
     Geeft de jobID terug.
     """
     url = f"{server_url}/processes/adjust/execution"
@@ -192,7 +252,7 @@ def post_adjust(server_url: str, area_id: str, mode: str, link_ids: list[int]) -
         "inputs": {
             "area_id": area_id,
             "mode": mode,
-            "changes": [{"linkId": lid, "capacity": 0} for lid in link_ids],
+            "changes": changes,
         }
     }
     resp = requests.post(url, json=payload, timeout=30)
@@ -227,88 +287,116 @@ def poll_job(server_url: str, job_id: str, timeout: float = 300.0) -> dict:
 
 class _AdjustRunner:
     """
-    Voert adjust-aanroepen sequentieel uit in een achtergrondthread
-    zodat de camera-loop niet blokkeert.
+    Voert adjust-aanroepen uit in een achtergrondthread zodat de camera-loop
+    niet blokkeert, en bewaakt dat er nooit twee tegelijk lopen.
+
+    Elke aanroep dient de **volledige actuele set** objectmarker-bewerkingen
+    in, vanaf het vaste basis-area_id van de sessie (`_base_area_id`) — nooit
+    een keten van deltas op elkaar. Wordt `submit()` aangeroepen terwijl er al
+    een job loopt, dan onthoudt dit de nieuwste gewenste set ("laatste wint",
+    zelfde patroon als `_DetectionSender`/`_PreviewPublisher` hieronder) en
+    start die meteen na afloop van de lopende job.
+
+    `_display_area_id` is apart: dat is het laatst berekende scenario, voor
+    weergave op de kaart (heartbeat/detecties) — niet de bron voor de
+    volgende indiening.
     """
 
     def __init__(self, server_url: str, mode: str):
         self.server_url = server_url
         self.mode = mode
         self._area_id_lock = threading.Lock()
-        self._current_area_id: str = ""
+        self._base_area_id: str = ""
+        self._display_area_id: str = ""
+        self._state_lock = threading.Lock()
         self._busy = threading.Event()
+        self._pending: "tuple[list[dict], object, object] | None" = None
 
     def set_initial_area_id(self, area_id: str) -> None:
         with self._area_id_lock:
-            self._current_area_id = area_id
+            self._base_area_id = area_id
+            self._display_area_id = area_id
 
     def get_area_id(self) -> str:
+        """Area_id voor weergave (heartbeat/detecties): het laatst berekende scenario."""
         with self._area_id_lock:
-            return self._current_area_id
+            return self._display_area_id
 
     def is_busy(self) -> bool:
         return self._busy.is_set()
 
-    def trigger(self, link_ids: list[int], on_started=None, on_done=None) -> None:
-        """Start de adjust in een daemon-thread."""
-        area_id = self.get_area_id()
+    def submit(self, changes: "list[dict]", on_started=None, on_done=None) -> None:
+        """Dien `changes` in als de volledige huidige set bewerkingen.
+
+        Loopt er al een job, dan wordt dit de nieuwste gewenste set en start
+        er direct na afloop daarvan een nieuwe job mee.
+        """
+        with self._state_lock:
+            if self._busy.is_set():
+                self._pending = (changes, on_started, on_done)
+                return
+            self._busy.set()
+        self._start(changes, on_started, on_done)
+
+    def _start(self, changes: "list[dict]", on_started, on_done) -> None:
+        with self._area_id_lock:
+            base_area_id = self._base_area_id
         t = threading.Thread(
-            target=self._run, args=(area_id, link_ids, on_started, on_done), daemon=True
+            target=self._run, args=(base_area_id, changes, on_started, on_done), daemon=True
         )
         t.start()
 
-    def _run(self, area_id: str, link_ids: list[int], on_started, on_done) -> None:
-        self._busy.set()
+    def _run(self, base_area_id: str, changes: "list[dict]", on_started, on_done) -> None:
         job_id = None
         try:
-            print(f"[camera] POST adjust: area={area_id} links={link_ids}")
-            job_id = post_adjust(self.server_url, area_id, self.mode, link_ids)
+            print(f"[camera] POST adjust: area={base_area_id} changes={changes}")
+            job_id = post_adjust(self.server_url, base_area_id, self.mode, changes)
             print(f"[camera] Job gestart: {job_id}")
         except Exception as exc:
             print(f"[camera] Fout bij starten van adjust: {exc}")
         finally:
-            # Ongeacht succes/falen van de POST: de aanroeper (camera-lus) mag nu
-            # al verder, bv. om de camera uit te schakelen, zonder op de
-            # uitkomst van de berekening te wachten.
+            # Ongeacht succes/falen van de POST: de aanroeper mag nu al
+            # verder, zonder op de uitkomst van de berekening te wachten.
             if on_started:
                 try:
                     on_started()
                 except Exception:
                     pass
-        if job_id is None:
-            self._busy.clear()
-            if on_done:
-                try:
-                    on_done()
-                except Exception:
-                    pass
-            return
-        try:
-            job = poll_job(self.server_url, job_id)
-            if job["status"] == "successful":
-                # GET /jobs/{id} geeft geen _results terug (bewust gestript);
-                # haal de resultaten op via het aparte /results-endpoint.
-                results_resp = requests.get(
-                    f"{self.server_url}/jobs/{job_id}/results", timeout=10
-                )
-                results_resp.raise_for_status()
-                results = results_resp.json()
-                new_area_id = results.get("new_area_id", area_id)
-                with self._area_id_lock:
-                    self._current_area_id = new_area_id
-                print(f"[camera] Weg afgesloten. Nieuw area_id: {new_area_id}")
-            else:
-                log = "\n".join(job.get("log", [])[-5:])
-                print(f"[camera] Adjust mislukt (job {job_id}):\n{log}")
-        except Exception as exc:
-            print(f"[camera] Fout bij adjust: {exc}")
-        finally:
-            self._busy.clear()
-            if on_done:
-                try:
-                    on_done()
-                except Exception:
-                    pass
+        if job_id is not None:
+            try:
+                job = poll_job(self.server_url, job_id)
+                if job["status"] == "successful":
+                    # GET /jobs/{id} geeft geen _results terug (bewust gestript);
+                    # haal de resultaten op via het aparte /results-endpoint.
+                    results_resp = requests.get(
+                        f"{self.server_url}/jobs/{job_id}/results", timeout=10
+                    )
+                    results_resp.raise_for_status()
+                    results = results_resp.json()
+                    new_area_id = results.get("new_area_id", base_area_id)
+                    with self._area_id_lock:
+                        self._display_area_id = new_area_id
+                    print(f"[camera] Bewerkingen bijgewerkt. Nieuw area_id: {new_area_id}")
+                else:
+                    log = "\n".join(job.get("log", [])[-5:])
+                    print(f"[camera] Adjust mislukt (job {job_id}):\n{log}")
+            except Exception as exc:
+                print(f"[camera] Fout bij adjust: {exc}")
+        if on_done:
+            try:
+                on_done()
+            except Exception:
+                pass
+
+        # Is er tijdens deze job een nieuwere gewenste set binnengekomen, dien
+        # die dan nu in - nooit meer dan één job tegelijk.
+        with self._state_lock:
+            pending = self._pending
+            self._pending = None
+            if pending is None:
+                self._busy.clear()
+        if pending is not None:
+            self._start(*pending)
 
 
 # ---------------------------------------------------------------------------
@@ -332,18 +420,18 @@ def _send_heartbeat(server_url: str, area_id: str, active: bool) -> None:
 
 _PREVIEW_DELAY = 2.0  # seconden tussen oplichten en starten van de berekening
 
-# Hoe vaak de gevonden zwarte vlakken naar de browser gaan. 5x per seconde is
-# vloeiend genoeg om een blokje te volgen en belast de server nauwelijks.
+# Hoe vaak de gevonden objectmarkers naar de browser gaan. 5x per seconde is
+# vloeiend genoeg om een marker te volgen en belast de server nauwelijks.
 _DETECTIONS_INTERVAL = 0.2
 
 
 class _DetectionSender:
-    """Stuurt de gevonden zwarte vlakken naar de browser, buiten de framelus om.
+    """Stuurt de gevonden objectmarkers naar de browser, buiten de framelus om.
 
     Hiermee kun je op de kaart zien wát de camera ziet en wáár ze denkt dat het
-    ligt — zonder dat er iets wordt afgesloten. Dat is het enige middel om een
-    scheve calibratie te herkennen: ligt het vlak op de kaart ergens anders dan
-    het blokje op de maquette, dan klopt de calibratie niet.
+    ligt — zonder dat er iets wordt aangepast. Dat is het enige middel om een
+    scheve calibratie te herkennen: ligt de marker op de kaart ergens anders
+    dan op de maquette, dan klopt de calibratie niet.
 
     Eén slot met "laatste wint", net als bij de preview-beelden: een trage of
     even bezette server mag de detectie nooit laten haperen.
@@ -600,7 +688,10 @@ def _run_virtual(
                     _send_preview(server_url, runner.get_area_id(), link_ids)
                     time.sleep(_PREVIEW_DELAY)
                     _adjust_started = threading.Event()
-                    runner.trigger(link_ids, on_started=_adjust_started.set)
+                    runner.submit(
+                        [{"linkId": lid, "capacity": 0} for lid in link_ids],
+                        on_started=_adjust_started.set,
+                    )
                     _adjust_started.wait()
                     print(
                         "[camera] Berekening gestart - camera wordt nu al uitgeschakeld. "
@@ -744,19 +835,13 @@ def _open_camera(camera_id: int, width: int, height: int):
 # ---------------------------------------------------------------------------
 #
 # De camera ziet meer dan de maquette: tafelrand, vloer, muur, kabels, de
-# gebruiker. Dat is allemaal donker en de detector zoekt nu juist naar donkere
-# vlakken. Zonder uitsnede concurreert de halve kamer met het blokje.
+# gebruiker. Daar hoort geen objectmarker gevonden te worden, en het scheelt
+# de ArUco-detector onnodig werk op pixels die toch nooit meetellen.
 #
 # De calibratie kent de omtrek van het geprojecteerde vlak in camerapixels
 # (`projection_polygon`). Alles daarbuiten wordt vóór de detectie vervangen door
-# de gemiddelde kleur van wat er binnen ligt.
-#
-# Waarom die gemiddelde kleur, en niet zwart of wit: de detector bepaalt
-# "donkerder dan de omgeving" met een sterk vervaagde kopie van het beeld als
-# achtergrond (GaussianBlur, sigma 51). Een harde zwarte rand zou langs de hele
-# omtrek een schijnbaar donker gebied opleveren, een harde witte rand zou de
-# binnenkant net langs de rand donker laten lijken. Een neutrale vulling laat de
-# achtergrondschatting vlak doorlopen, zodat de rand zelf niets oplevert.
+# de gemiddelde kleur van wat er binnen ligt — een vlakke vulling zonder
+# randen of patroon, zodat de uitsnede zelf nooit als marker wordt gelezen.
 
 
 def _roi_polygon(
@@ -824,23 +909,24 @@ def _apply_roi(frame, mask):
 
 
 # ---------------------------------------------------------------------------
-# Objectgrootte: hoe klein mag een zwart vlak zijn om nog te tellen
+# Objectgrootte: hoe klein mag een objectmarker zijn om nog te tellen
 # ---------------------------------------------------------------------------
 #
-# Alleen een ondergrens, om ruis en losse schaduwrandjes te weren. Een bovengrens
-# is er niet: het object is een mobieltje, geen blokje, en hoe groot het in beeld
-# staat hangt volledig af van resolutie en afstand.
+# Alleen een ondergrens, om ruis en losse foutdetecties te weren. Een
+# bovengrens is er niet: een objectmarker is een afgedrukte ArUco-tag van
+# vaste fysieke afmeting (zie generate_aruco_markers.py --size-mm), maar hoe
+# groot die in beeld staat hangt volledig af van resolutie en afstand tot de
+# camera.
 #
 # Die ondergrens in vaste pixels uitdrukken is een slechte maat, om dezelfde
-# reden: een mobieltje van 15x7,5 cm beslaat op 1,2 m bij 1920 px ruim
-# 26.000 px², op 1,5 m bij 1280 px nog maar 7.500 px². Als *fractie van het
-# gecalibreerde vlak* is dat getal wél stabiel — object en geprojecteerd vlak
-# schalen samen mee — en komt een mobieltje consequent rond 0,5-5% uit.
+# reden: dezelfde marker beslaat bij een andere resolutie of afstand een ander
+# aantal pixels. Als *fractie van het gecalibreerde vlak* is dat getal wél
+# stabiel — marker en geprojecteerd vlak schalen samen mee.
 
-# Alleen een ondergrens, laag genoeg om ruis en losse schaduwrandjes te weren.
-# Er is bewust géén bovengrens: hoe groot het zwarte vlak is doet er niet toe.
-# Wat te groot is om het object te zijn valt af op de uitsnede
-# (ROI_MIN_BLOCK_COVERAGE) of op de vierhoek-fit, niet op een getal — een
+# Alleen een ondergrens, laag genoeg om ruis en losse foutdetecties te weren.
+# Er is bewust géén bovengrens: hoe groot de marker is doet er niet toe. Wat
+# te groot is om de marker te zijn valt af op de uitsnede
+# (ROI_MIN_MARKER_COVERAGE) of op de ArUco-fit zelf, niet op een getal — een
 # plafond kostte eerder juist de detectie die we zochten.
 _DEFAULT_MIN_OBJECT_AREA_PCT = 0.1
 
@@ -872,6 +958,12 @@ def _format_area_range(min_area: float, max_area: float) -> str:
 # Niet vaker dan dit een samenvatting van afgewezen vlakken tonen.
 _REJECT_LOG_INTERVAL = 3.0
 
+# Pas een gewijzigde set objectmarker-bewerkingen indienen nadat ze dit lang
+# ongewijzigd is gebleven. Voorkomt een nieuwe adjust-aanroep per frame zodra
+# een marker een stukje schuift; de tracker filtert ruis al uit, dit is puur
+# een extra marge tegen te gretig herindienen.
+_RECOMPUTE_DEBOUNCE = 1.0
+
 
 def _is_reportable_rejection(evaluation: dict) -> bool:
     """Is deze afwijzing het melden waard?
@@ -888,7 +980,7 @@ def _log_rejections(evaluations: list, min_area: float, max_area: float) -> None
     """Vertel waaróm er niets gevonden is.
 
     Zonder dit is een verkeerde drempel onzichtbaar: de detector zwijgt even
-    hard bij "niets in beeld" als bij "het mobieltje is vier keer te groot
+    hard bij "niets in beeld" als bij "de marker is vier keer te groot
     bevonden". De reden en het gemeten oppervlak maken dat verschil zichtbaar.
     """
     rejected = [e for e in evaluations if _is_reportable_rejection(e)]
@@ -901,17 +993,15 @@ def _log_rejections(evaluations: list, min_area: float, max_area: float) -> None
     for reason, items in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
         biggest = max(items, key=lambda it: float(it.get("raw_area", 0.0)))
         detail = f"grootste {float(biggest.get('raw_area', 0.0)):.0f} px²"
-        # Bij "not_absolutely_black" is het oppervlak vaak al goed (het
-        # mobieltje is wél gevonden als lokaal donkere vlek) - de absolute
-        # helderheid/verzadiging is dan de blokkerende factor. Zonder deze
-        # getallen erbij is dat verschil onzichtbaar in de log.
-        if reason == "not_absolutely_black":
-            detail += (
-                f", mean_v={float(biggest.get('mean_v', 0.0)):.0f} "
-                f"(drempel {config.BLACK_OBJECT_VALUE_THRESHOLD}), "
-                f"mean_s={float(biggest.get('mean_s', 0.0)):.0f} "
-                f"(drempel {config.BLACK_OBJECT_SAT_THRESHOLD})"
+        # Bij "unknown_marker_id" is er wél een geldige ArUco-marker gevonden,
+        # alleen niet een met een gedefinieerde bewerking - de gezien ID's
+        # tonen meteen of het om het verkeerde dictionary, een beschadigde tag
+        # of gewoon een verkeerd geprinte marker gaat.
+        if reason == "unknown_marker_id":
+            seen_ids = sorted(
+                {it.get("marker_id") for it in items if it.get("marker_id") is not None}
             )
+            detail += f", gezien ID's {seen_ids} (verwacht: {sorted(known_marker_ids())})"
         parts.append(f"{reason}x{len(items)} ({detail})")
     print(
         f"[camera] Niets geaccepteerd; toegestaan "
@@ -923,7 +1013,7 @@ def _with_smoothed_position(det: dict) -> dict:
     """Vervang center/bbox/polygon door de gladgestreken (EMA) variant van de
     tracker, voor weergave op de kaart.
 
-    De rauwe per-frame fit wiebelt een paar pixels, ook als het blokje
+    De rauwe per-frame fit wiebelt een paar pixels, ook als de marker
     doodstil ligt - zonder dit sprong het getekende vlak op de kaart elk
     frame een beetje mee. De stabiliteitsbepaling in `tracking.py` blijft wel
     op de rauwe posities rekenen, dus echte beweging wordt hier niet
@@ -942,13 +1032,17 @@ def _with_smoothed_position(det: dict) -> dict:
 def _detection_report(det: dict, anchor: str, to_wgs84, calibration=None) -> dict:
     """Vertaal één detectie naar iets dat de browser kan tekenen.
 
-    Naast het ankerpunt (waarop de wegvak-keuze wordt gebaseerd) gaat ook de
-    omtrek mee, plus de positie binnen het geprojecteerde vlak. Zie je op de
-    kaart een vlak van de verkeerde grootte of op de verkeerde plek staan, dan
-    weet je meteen of het aan de detectie of aan de calibratie ligt.
+    Naast het ankerpunt (waarop de doel-keuze wordt gebaseerd) gaat ook de
+    omtrek mee, plus de positie binnen het geprojecteerde vlak, het
+    marker-ID en het bijbehorende label (zie `aruco_marker_actions.py`) zodat
+    de kaart kan tonen wélke bewerking actief is. Zie je op de kaart een vlak
+    van de verkeerde grootte of op de verkeerde plek staan, dan weet je
+    meteen of het aan de detectie of aan de calibratie ligt.
     """
     ax, ay = _detection_point(det, anchor)
     lon, lat = to_wgs84(ax, ay)
+    marker_id = det.get("marker_id")
+    action_def = MARKER_ACTIONS.get(marker_id)
     report = {
         "lon": lon,
         "lat": lat,
@@ -956,6 +1050,8 @@ def _detection_report(det: dict, anchor: str, to_wgs84, calibration=None) -> dic
         "py": round(ay, 1),
         "area": det.get("area"),
         "track_id": det.get("track_id"),
+        "marker_id": marker_id,
+        "label": action_def["label"] if action_def else None,
         "in_range": True,
     }
     bbox = det.get("bbox")
@@ -976,11 +1072,12 @@ def _detection_report(det: dict, anchor: str, to_wgs84, calibration=None) -> dic
 def _detection_point(det: dict, anchor: str) -> tuple[float, float]:
     """Het punt van een detectie dat als positie op de maquette telt.
 
-    `center` is het zwaartepunt van het silhouet en ligt dus op ongeveer halve
-    blokhoogte. Bij een schuin opgestelde camera valt dat punt naast de
-    voetafdruk van het blokje: de verschuiving is ruwweg (h/2)*tan(kijkhoek).
-    `bottom` gebruikt het midden van de onderrand, dat wel op het grondvlak
-    ligt - de homografie is immers voor het grondvlak bepaald.
+    `center` is het zwaartepunt van de marker en ligt dus op ongeveer halve
+    hoogte van het object waarop hij gemonteerd is. Bij een schuin opgestelde
+    camera valt dat punt naast de voetafdruk: de verschuiving is ruwweg
+    (h/2)*tan(kijkhoek). `bottom` gebruikt het midden van de onderrand, dat
+    wel op het grondvlak ligt - de homografie is immers voor het grondvlak
+    bepaald.
     """
     if anchor == "bottom":
         bbox = det.get("bbox")
@@ -988,6 +1085,40 @@ def _detection_point(det: dict, anchor: str) -> tuple[float, float]:
             return (float(bbox[0]) + float(bbox[2])) * 0.5, float(bbox[3])
     cx, cy = det["center"]
     return float(cx), float(cy)
+
+
+def _build_marker_changes(
+    action_def: dict, lon: float, lat: float, features: list, zone_features: list
+) -> "list[dict] | None":
+    """Bouw de change-dict(s) voor één actieve objectmarker.
+
+    Meestal is dat één dict; bij een link met beide rijrichtingen zijn het er
+    twee (zelfde signed-linkId-conventie als `find_nearest_link`: +id en -id
+    zijn losse change-items). Geeft None als er geen doel (link/zone) in de
+    buurt gevonden is.
+    """
+    action = action_def["action"]
+    params = action_def.get("params", {})
+
+    if action == "close_link":
+        link_ids = find_nearest_link(lon, lat, features)
+        if link_ids is None:
+            return None
+        return [{"linkId": lid, "capacity": 0} for lid in link_ids]
+
+    if action == "set_speed":
+        link_ids = find_nearest_link(lon, lat, features)
+        if link_ids is None:
+            return None
+        return [{"linkId": lid, "speed": params["speed"]} for lid in link_ids]
+
+    if action == "add_production":
+        zone_id = find_nearest_zone(lon, lat, zone_features)
+        if zone_id is None:
+            return None
+        return [{"zoneId": zone_id, "production": params["delta"]}]
+
+    raise ValueError(f"Onbekende actie in MARKER_ACTIONS: {action!r}")
 
 
 def run(
@@ -1007,11 +1138,15 @@ def run(
     min_area: "float | None" = None,
     max_area: "float | None" = None,
 ) -> None:
-    # --- Netwerk laden (voor de road-lookup) ---
+    # --- Netwerk + zones laden (voor de link/zone-lookup per objectmarker) ---
     features = load_network_features(server_url, area_id, mode)
     if not features:
         print("[camera] FOUT: geen features geladen. Controleer area_id en mode.")
         sys.exit(1)
+    # Alleen de "+100 productie"-marker heeft zones nodig; een gebied zonder
+    # zones mag de camera verder gewoon starten (de andere twee bewerkingen
+    # werken dan nog steeds).
+    zone_features = load_zone_features(server_url, area_id, mode)
 
     # --- Adjust-runner (gedeeld door beide modi) ---
     runner = _AdjustRunner(server_url=server_url, mode=mode)
@@ -1120,13 +1255,13 @@ def run(
 
         # --- Detector / tracker ---
         # De vierhoek gaat óók als detection_area mee: het masker houdt de
-        # omgeving buiten beeld, deze controle gooit blobs weg die nog over de
-        # rand heen steken (config.ROI_MIN_BLOCK_COVERAGE).
-        detector = BlackObjectDetector(detection_area=roi_polygon)
+        # omgeving buiten beeld, deze controle gooit markers weg die nog over
+        # de rand heen steken (config.ROI_MIN_MARKER_COVERAGE).
+        detector = ArucoMarkerDetector(detection_area=roi_polygon)
         # overlap_threshold is een IoU-fractie (niet een pixel-afstand): elke van
         # de laatste `stability_frames` detecties moet minstens dit aandeel met de
         # vorige overlappen. Een pixel-drempel brak hier regelmatig doordat
-        # autootjes net het vlak in/uit reden en het contour van het mobieltje
+        # autootjes net het vlak in/uit reden en het contour van de marker
         # daardoor iets van vorm/grootte veranderde, zonder dat het echt bewoog.
         tracker = DetectionTracker(
             stability_frames=5, overlap_threshold=0.75, max_allowed_distance=80
@@ -1144,14 +1279,20 @@ def run(
             if hasattr(calibration, "projection_corners_wgs84")
             else None
         )
-        # link_ids die al zijn afgesloten in deze sessie (geen heractivatie)
-        triggered_links: set[int] = set()
-        cooldown_until: float = 0.0
+        # Doorlopende staat van de actieve objectmarker-bewerkingen (zie
+        # _build_marker_changes/_RECOMPUTE_DEBOUNCE hieronder): welke set nu
+        # zou moeten gelden, welke set daadwerkelijk ingediend is, en sinds
+        # wanneer de gewenste set ongewijzigd is (voor de debounce).
+        pending_desired: "dict[int, list[dict]] | None" = None
+        pending_since: float = 0.0
+        last_submitted: "dict[int, list[dict]]" = {}
 
         print(
             f"[camera] Detectie gestart. Stabiliteit wordt bepaald door de tracker "
-            f"(tracking.py); een stabiele detectie binnen het geprojecteerde gebied "
-            f"sluit direct af. Cooldown {cooldown_seconds}s."
+            f"(tracking.py); zodra een objectmarker stabiel binnen het "
+            f"geprojecteerde gebied staat, komt zijn bewerking in de actieve set "
+            f"en wordt die (na {_RECOMPUTE_DEBOUNCE:g}s debounce) doorgerekend. "
+            f"Haal je de marker weg, dan vervalt zijn bewerking weer."
         )
         print("[camera] Druk op Ctrl+C om te stoppen.")
 
@@ -1166,12 +1307,13 @@ def run(
 
             # --- Detectie + tracking, uitsluitend op het gecalibreerde vlak ---
             frame_roi = _apply_roi(frame, roi_mask) if roi_mask is not None else frame
-            # `analyze_…` levert dezelfde detecties als `detect_black_objects`,
-            # plus de afgewezen contouren met hun reden. Dat kost niets extra —
-            # detect_black_objects filtert precies deze lijst — en maakt een
-            # verkeerd afgestelde drempel meteen zichtbaar.
-            evaluations = detector.analyze_black_object_contours(
-                frame_roi, min_area=area_min, max_area=area_max
+            # `analyze_…` levert dezelfde detecties als `detect_markers`, plus
+            # de afgewezen kandidaten met hun reden. Dat kost niets extra —
+            # detect_markers filtert precies deze lijst — en maakt een
+            # verkeerd afgestelde drempel of een verkeerd geprinte marker
+            # meteen zichtbaar.
+            evaluations = detector.analyze_marker_contours(
+                frame_roi, min_area=area_min, max_area=area_max, known_ids=known_marker_ids()
             )
             detections = [
                 e["detection"]
@@ -1186,7 +1328,7 @@ def run(
 
             # --- Alles wat de camera ziet naar de kaart sturen ---
             # Bewust alle tracks, niet alleen de stabiele: je wilt ook zien
-            # wanneer de camera iets ánders zwart vindt dan jouw blokje. Dit
+            # wanneer de camera een marker ziet die (nog) niet stabiel is. Dit
             # zijn de tracker's eigen tracks (incl. die net deze frame niet
             # opnieuw gevonden zijn, tot _MAX_MISSING_FRAMES) in plaats van de
             # rauwe per-frame detecties: elke contourfit wiebelt een paar
@@ -1207,68 +1349,65 @@ def run(
                     camera_view=camera_view,
                 )
 
-            # --- Trigger-check ---
-            # Geen eigen wachttijd meer hier: een detectie is pas een `stable_det`
-            # nadat tracker.update() (tracking.py) ruis al heeft uitgefilterd
-            # (STABILITY_FRAMES opeenvolgende, overlappende detecties). Zodra zo'n
-            # detectie binnen het geprojecteerde gebied valt, volgt de
-            # aanpassing-call meteen — geen extra stabilisatie- of preview-vertraging.
-            in_cooldown = now < cooldown_until
-            adjust_busy = runner.is_busy()
-
+            # --- Objectmarkers: gewenste bewerkingen opbouwen ---
+            # Elke stabiele, binnen-de-projectie-liggende marker levert zijn
+            # eigen change-dict(s) op (MARKER_ACTIONS). Geen eigen wachttijd
+            # hier: een detectie is pas een `stable_det` nadat tracker.update()
+            # (tracking.py) ruis al heeft uitgefilterd.
+            desired: "dict[int, list[dict]]" = {}
             for det in stable_dets:
-                if in_cooldown or adjust_busy:
-                    if in_cooldown:
-                        remaining = cooldown_until - now
-                        print(f"[camera] Cooldown actief, nog {remaining:.0f}s")
-                    continue
+                marker_id = det.get("marker_id")
+                action_def = MARKER_ACTIONS.get(marker_id)
+                if action_def is None:
+                    continue  # zou niet moeten gebeuren: de detector filtert al op known_ids
 
-                # Pixel → WGS84
                 cx, cy = _detection_point(det, anchor)
 
-                # De camera ziet méér dan de beamer projecteert. Ligt het blokje
+                # De camera ziet méér dan de beamer projecteert. Ligt de marker
                 # buiten dat vlak, dan staat er geen kaart onder en zou
-                # find_nearest_link een wegvak kiezen dat niet eens in beeld is.
+                # find_nearest_link/_zone een doel kiezen dat niet eens in beeld is.
                 if not calibration.is_in_projection(cx, cy):
                     uv = calibration.pixel_to_screen(cx, cy)
                     where = f"  (positie in het vlak: {uv[0]:.2f}, {uv[1]:.2f})" if uv else ""
                     print(
-                        f"[camera] Blokje op px=({cx:.0f},{cy:.0f}) ligt BUITEN het "
-                        f"geprojecteerde gebied - genegeerd.{where}"
+                        f"[camera] Marker #{marker_id} op px=({cx:.0f},{cy:.0f}) ligt "
+                        f"BUITEN het geprojecteerde gebied - genegeerd.{where}"
                     )
                     continue
 
                 lon, lat = _to_wgs84(cx, cy)
-
-                # Dichtstbijzijnde link
-                link_ids = find_nearest_link(lon, lat, features)
-                if link_ids is None:
-                    print("[camera] Geen link gevonden nabij blokje.")
-                    continue
-
-                if any(lid in triggered_links for lid in link_ids):
+                marker_changes = _build_marker_changes(action_def, lon, lat, features, zone_features)
+                if marker_changes is None:
                     print(
-                        f"[camera] Links {link_ids} al eerder afgesloten, overgeslagen."
+                        f"[camera] Geen doel gevonden voor marker #{marker_id} "
+                        f"({action_def['label']})."
                     )
                     continue
+                desired[marker_id] = marker_changes
 
-                # Direct oplichten + afsluiten — geen wachttijd: deze detectie is
-                # stabiel (tracker) én binnen het geprojecteerde gebied.
-                print(
-                    f"[camera] Blokje gedetecteerd binnen het geprojecteerde gebied op "
-                    f"({lon:.6f}, {lat:.6f}) → links {link_ids} direct oplichten en afsluiten."
-                )
-                triggered_links.update(link_ids)
-                cooldown_until = now + cooldown_seconds
-                _send_preview(server_url, runner.get_area_id(), link_ids)
-                _adjust_started = threading.Event()
-                runner.trigger(link_ids, on_started=_adjust_started.set)
-                _adjust_started.wait()
-                print(
-                    "[camera] Berekening gestart — camera wordt nu al uitgeschakeld. "
-                    "Zet 'm handmatig weer aan voor een volgende meting."
-                )
-                return
+            # --- Debounce + indienen van de volledige actuele set ---
+            if desired != pending_desired:
+                pending_desired = desired
+                pending_since = now
+
+            if (
+                pending_desired is not None
+                and pending_desired != last_submitted
+                and now - pending_since >= _RECOMPUTE_DEBOUNCE
+            ):
+                last_submitted = pending_desired
+                changes = [c for marker_changes in pending_desired.values() for c in marker_changes]
+                if pending_desired:
+                    active = ", ".join(
+                        f"#{mid} {MARKER_ACTIONS[mid]['label']}" for mid in pending_desired
+                    )
+                    print(f"[camera] Objectmarkers actief: {active} → indienen …")
+                else:
+                    print("[camera] Geen objectmarkers meer actief — alles terug naar origineel.")
+                preview_link_ids = [c["linkId"] for c in changes if "linkId" in c]
+                if preview_link_ids:
+                    _send_preview(server_url, runner.get_area_id(), preview_link_ids)
+                runner.submit(changes)
 
             # --- Optioneel: debug-video ---
             if show_video:
@@ -1283,8 +1422,8 @@ def run(
                         (255, 224, 0),
                         2,
                     )
-                # Afgewezen contouren grijs, met reden en oppervlak. Zo zie je
-                # meteen of het mobieltje wél gevonden maar afgekeurd is. Wat
+                # Afgewezen kandidaten grijs, met reden en oppervlak. Zo zie je
+                # meteen of een marker wél gevonden maar afgekeurd is. Wat
                 # buiten de uitsnede ligt blijft weg: dat telt niet mee en hoort
                 # dus ook niet in het beeld dat laat zien wát meetelt.
                 for item in evaluations:
@@ -1344,7 +1483,7 @@ def run(
 
 def _parse_args():
     p = argparse.ArgumentParser(
-        description="Maquette camera - detecteert zwart blokje en sluit wegvak af."
+        description="Maquette camera - detecteert ArUco-objectmarkers en past het netwerk aan."
     )
     p.add_argument(
         "--server",
@@ -1372,8 +1511,8 @@ def _parse_args():
         default=3.0,
         help="Seconden stilstand voordat weg wordt afgesloten — geldt alleen voor "
         "de virtuele cursor-modus (--camera-id -1). Bij een fysieke camera bepaalt "
-        "de tracker (tracking.py) zelf wanneer een blokje stabiel is; de "
-        "aanpassing-call volgt dan direct, zonder deze wachttijd (default: 3.0)",
+        "de tracker (tracking.py) zelf wanneer een objectmarker stabiel is; de "
+        "indiening volgt dan na een korte debounce, zonder deze wachttijd (default: 3.0)",
     )
     p.add_argument(
         "--cooldown",
@@ -1438,8 +1577,8 @@ def _parse_args():
         "--anchor",
         choices=("center", "bottom"),
         default="center",
-        help="Welk punt van het blokje telt als positie: 'center' is het "
-        "zwaartepunt van het silhouet, 'bottom' het midden van de onderrand. "
+        help="Welk punt van de objectmarker telt als positie: 'center' is het "
+        "zwaartepunt van de marker, 'bottom' het midden van de onderrand. "
         "Bij een schuin opgestelde camera ligt alleen 'bottom' op het grondvlak "
         "waarvoor de calibratie geldt (default: center)",
     )

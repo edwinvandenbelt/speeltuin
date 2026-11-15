@@ -42,6 +42,10 @@ mapbox-vector-tile>=1.2
 # Maquette-camera: beeldherkenning van het fysieke schaalmodel
 opencv-python==4.13.0.92
 
+# Maquette-objectmarkers: printbare ArUco-markervellen samenstellen
+# (generate_aruco_markers.py)
+Pillow>=10
+
 # Lokale OSM-extracten: snelle PBF-backend in gmt_shared en uitsneden van
 # Geofabrik-extracten per bbox (gmt_shared.geofabrik.local_pbf_for_bbox, vanaf gmt_shared 0.5.5)
 osmium>=4.0
