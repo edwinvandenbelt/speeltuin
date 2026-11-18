@@ -3192,6 +3192,9 @@ def _execute_prepare(inputs: dict):
                 400,
                 f"Ongeldige zoneMethod: {zone_method!r}. Toegestaan: fetch, aggregated",
             )
+        # run_pipeline() kent de wizard-waarde "fetch" niet; die methodiek heet
+        # daar "spectrum" (zie prepare_core.run_pipeline, param zone_source).
+        zone_source = "spectrum" if zone_method == "fetch" else zone_method
         study_fallback = str(inputs.get("studyFallback", "centroid")).strip() or "centroid"
         try:
             zones_studiegebied = int(inputs.get("zonesStudiegebied", 20))
@@ -3203,16 +3206,16 @@ def _execute_prepare(inputs: dict):
                 "Ongeldige numerieke zone-parameter "
                 "(zonesStudiegebied/zonesTotaal/zoneSearchRadiusM)",
             )
-        if "zone_method" in _pipeline_params:
-            kwargs["zone_method"] = zone_method
+        if "zone_source" in _pipeline_params:
+            kwargs["zone_source"] = zone_source
         if "study_fallback" in _pipeline_params:
             kwargs["study_fallback"] = study_fallback
-        if "zones_studiegebied" in _pipeline_params:
-            kwargs["zones_studiegebied"] = zones_studiegebied
-        if "zones_totaal" in _pipeline_params:
-            kwargs["zones_totaal"] = zones_totaal
-        if "zone_search_radius_m" in _pipeline_params:
-            kwargs["zone_search_radius_m"] = zone_search_radius_m
+        if "agg_zones_studiegebied" in _pipeline_params:
+            kwargs["agg_zones_studiegebied"] = zones_studiegebied
+        if "agg_zones_totaal" in _pipeline_params:
+            kwargs["agg_zones_totaal"] = zones_totaal
+        if "agg_search_radius_m" in _pipeline_params:
+            kwargs["agg_search_radius_m"] = zone_search_radius_m
 
         with _jobs_lock:
             _jobs[job_id] = {
