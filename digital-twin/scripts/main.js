@@ -5135,12 +5135,163 @@
     const _BAG3D_NL_BBOX = [3.2, 50.7, 7.3, 53.6];
     const _BAG3D_MIN_ZOOM    = 13;   // daaronder geen nieuwe tegels ophalen
     const _BAG3D_CONCURRENCY = 6;    // tegels zijn ~1–3 MB elk
-    // Kleur per vlak-klasse: gevel, schuin dak (pannen), plat dak (bitumen/grind).
-    // deck.gl 8.9 overschrijft vertex-'colors' van een mesh, dus één laag per klasse.
-    const _BAG3D_COLORS = [[236, 226, 210], [172, 94, 70], [156, 153, 148]];
+    // #19: kleur van gevel/schuin-dak/plat-dak per pand. Voorkeur: expliciete
+    // kleuren uít de 3D BAG-tegel zelf — properties wallColor/roofColorPitched/
+    // roofColorFlat ('#rrggbb'), bedoeld om straks door de bag-panden-fetcher
+    // vastgelegd (en zo persistent, per pand handmatig aan te passen in het
+    // brondata-bestand) te worden. Ontbreken die (huidige tegels, of nog niet
+    // door de fetcher verwerkt), dan valt _b3FallbackColors terug op een palet
+    // per bouwperiode. _b3ResolveColors brengt beide samen. Dezelfde terugval-
+    // logica staat (bewust 1-op-1 hetzelfde) in Python in
+    // digital-twin/bag_panden_colors.py, voor die fetcher.
+    const _BAG3D_DEFAULT_COLORS = [[236, 226, 210], [172, 94, 70], [156, 153, 148]];
+    // Eén of meer kleurvarianten per bouwperiode (gevel, schuin dak, plat dak);
+    // latere jaren hebben er meer, zoals er in de praktijk ook meer materiaal-/
+    // kleurkeuze was. Welke variant een pand zonder explicite kleur krijgt wordt
+    // met _b3Hash(pand-id) geloot (zie _b3FallbackColors), zodat het willekeurig
+    // oogt maar bij elke herlading hetzelfde pand treft.
+    const _BAG3D_PERIODS = [
+      { before: 1800, colors: [                                                       // 17e/18e eeuw: donkere baksteen/pannen
+          [[ 96,  52,  44], [ 72,  38,  32], [ 92,  90,  86]],
+          [[ 84,  46,  40], [ 60,  40,  34], [ 88,  86,  82]],
+        ] },
+      { before: 1906, colors: [                                                       // 19e eeuw: lichte stuc, donker houtwerk
+          [[222, 210, 188], [ 98,  70,  56], [122, 120, 114]],
+          [[206, 196, 176], [ 70,  58,  50], [118, 116, 110]],
+        ] },
+      { before: 1945, colors: [                                                       // jaren '20-'30: warme rode/oranje baksteen
+          [[152,  72,  52], [168,  88,  64], [140, 136, 130]],
+          [[128,  64,  48], [140,  78,  58], [134, 130, 124]],
+        ] },
+      { before: 1970, colors: [                                                       // wederopbouw jaren '50-'60: gele baksteen/beton
+          [[198, 190, 166], [150, 128, 104], [150, 148, 144]],
+          [[172, 170, 164], [132, 118, 100], [146, 144, 140]],
+        ] },
+      { before: 1990, colors: [                                                       // jaren '70-'80: experimenteel, maar geen blauw
+          [[112,  80,  56], [ 96,  68,  48], [112, 110, 106]],
+          [[188, 150,  58], [168,  96,  40], [104,  98,  90]],                        // gele klinkers, bruin-oranje dak
+          [[134,  54,  44], [104,  44,  38], [100,  98,  94]],
+        ] },
+      { before: Infinity, colors: [                                                   // 1990-heden: veel materiaal-/kleurkeuze
+          [[220, 220, 218], [ 72,  72,  76], [ 70,  68,  66]],
+          [[196, 196, 198], [130, 130, 132], [128, 128, 130]],
+          [[ 64,  64,  66], [ 48,  48,  50], [ 60,  60,  62]],
+          [[150, 118,  86], [100,  76,  54], [ 92,  90,  86]],
+        ] },
+    ];
+    /** Periode-index (1..N) in _BAG3D_PERIODS voor een bouwjaar, of 0 als onbekend/geen bruikbaar jaartal. */
+    function _b3PeriodIdx(year) {
+      if (!(year > 1000 && year < 2100)) return 0;
+      for (let i = 0; i < _BAG3D_PERIODS.length; i++) if (year < _BAG3D_PERIODS[i].before) return i + 1;
+      return _BAG3D_PERIODS.length;
+    }
+    /** FNV-1a-achtige stringhash (32-bits, >>>0), alleen om deterministisch te 'loten'. */
+    function _b3Hash(str) {
+      let h = 2166136261;
+      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    }
+    // RGB-afstand waaronder gevel- en dakkleur als "vrijwel gelijk" gelden, en
+    // de factor waarmee een dakkleur dan donkerder wordt gemaakt ("een paar
+    // tinten donkerder"). Moet gelijk blijven aan gmt_network_enrichment.bag_fetcher
+    // (_SIMILAR_COLOR_DISTANCE / _DARKEN_FACTOR), zodat panden die de fetcher
+    // al heeft verwerkt er hetzelfde uitzien als panden die nog op deze
+    // fallback draaien.
+    const _BAG3D_SIMILAR_COLOR_DISTANCE = 15;
+    const _BAG3D_DARKEN_FACTOR = 0.75;
+    function _b3Distance(a, b) {
+      return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0));
+    }
+    function _b3Darken(rgb) {
+      return rgb.map(c => Math.max(0, Math.round(c * _BAG3D_DARKEN_FACTOR)));
+    }
+    /** Maak `roof` een paar tinten donkerder als die vrijwel gelijk is aan `wall`. */
+    function _b3AdjustRoof(wall, roof) {
+      return _b3Distance(wall, roof) < _BAG3D_SIMILAR_COLOR_DISTANCE ? _b3Darken(roof) : roof;
+    }
+    /** Terugval [gevel, schuin dak, plat dak] voor een pand zonder explicite
+     *  kleur: periode-palet op basis van `year`, variant geloot op `id`. Een
+     *  dakkleur die vrijwel niet te onderscheiden zou zijn van de gevelkleur
+     *  wordt automatisch donkerder gemaakt (zie _b3AdjustRoof). */
+    function _b3FallbackColors(year, id) {
+      const periodIdx = _b3PeriodIdx(year);
+      if (periodIdx === 0) return _BAG3D_DEFAULT_COLORS;
+      const variants = _BAG3D_PERIODS[periodIdx - 1].colors;
+      const [wall, pitched, flat] = variants[_b3Hash(String(id)) % variants.length];
+      return [wall, _b3AdjustRoof(wall, pitched), _b3AdjustRoof(wall, flat)];
+    }
+    /** '#rrggbb' → [r,g,b], of null bij een ontbrekende/ongeldige waarde. */
+    function _b3HexToRgb(hex) {
+      if (typeof hex !== 'string') return null;
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+      if (!m) return null;
+      const n = parseInt(m[1], 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    /** Kleuren [gevel, schuin dak, plat dak] voor één pand: gebruikt een
+     *  wallColor/roofColorPitched/roofColorFlat uit de tegel zodra die (geldig)
+     *  aanwezig is, per veld afzonderlijk, en vult de rest aan met
+     *  _b3FallbackColors — zo blijven handmatig gezette kleuren (straks in het
+     *  bag-panden-bestand) intact, ook als niet alle drie zijn ingevuld. */
+    function _b3ResolveColors({ wallColor, roofColorPitched, roofColorFlat, bouwjaar, id }) {
+      const fallback = _b3FallbackColors(bouwjaar, id);
+      return [
+        _b3HexToRgb(wallColor) || fallback[0],
+        _b3HexToRgb(roofColorPitched) || fallback[1],
+        _b3HexToRgb(roofColorFlat) || fallback[2],
+      ];
+    }
+    // Lightweight dakpannen-motiefje voor schuine daken: een fijne helderheids-
+    // ribbel per dakpannenrij (elke _BAG3D_TILE_ROW_H meter, bij benadering de
+    // rijhoogte) plus een lichte verspringing per pan binnen de rij (als
+    // baksteenverband). Puur procedureel uit de lokale ENU-positie — geen
+    // textuur/UV's nodig (die zitten niet in de 3D BAG-tegels).
+    //
+    // Dit MOET in de fragment-shader (per pixel) gebeuren, niet gebakken in
+    // per-vertex kleuren: een 3D BAG-dakvlak heeft maar een handvol hoekpunten,
+    // dus een patroon dat per vertex wordt berekend en daarna lineair
+    // geïnterpoleerd levert hooguit een vage gradient op — geen zichtbare
+    // rijen (eerder geprobeerd, vandaar deze subclass i.p.v. een 'colors'-
+    // attribuut op de mesh). Door de periodieke functie ná de interpolatie van
+    // de ruwe positie toe te passen (via DECKGL_FILTER_COLOR) ontstaan wél de
+    // vele rijen/panden, ook op een grof getesselleerd dakvlak.
+    const _BAG3D_TILE_ROW_H = 0.33;   // m, hoogte van één dakpannenrij
+    const _BAG3D_TILE_W     = 0.30;   // m, breedte van één dakpan in een rij
+    class _Bag3dRoofTileLayer extends SimpleMeshLayer {
+      getShaders() {
+        const shaders = super.getShaders();
+        const inject = shaders.inject || {};
+        return {
+          ...shaders,
+          inject: {
+            ...inject,
+            // 'positions' is de ruwe (pre-transform) vertex-attribuut — exact de
+            // lokale ENU-meters die we in _b3BuildTile hebben meegegeven.
+            'vs:#decl':     `${inject['vs:#decl'] || ''}\nout vec3 vLocalPos;\n`,
+            'vs:#main-end': `${inject['vs:#main-end'] || ''}\nvLocalPos = positions;\n`,
+            'fs:#decl':     `${inject['fs:#decl'] || ''}\nin vec3 vLocalPos;\n`,
+            'fs:DECKGL_FILTER_COLOR': `${inject['fs:DECKGL_FILTER_COLOR'] || ''}
+{
+  float rowH  = ${_BAG3D_TILE_ROW_H.toFixed(3)};
+  float tileW = ${_BAG3D_TILE_W.toFixed(3)};
+  float rowPhase  = fract(vLocalPos.z / rowH);
+  float rowEdge   = min(rowPhase, 1.0 - rowPhase);        // 0 bij de rijnaad, 0.5 midden in de rij
+  float rowShade  = 0.86 + 0.14 * min(1.0, rowEdge * 6.0);
+  float rowIdx    = floor(vLocalPos.z / rowH);
+  float colOffset = mod(rowIdx, 2.0) * (tileW * 0.5);     // verspringing per rij, als baksteenverband
+  float colPhase  = fract((vLocalPos.x + vLocalPos.y + colOffset) / tileW);
+  float colEdge   = min(colPhase, 1.0 - colPhase);
+  float colShade  = 0.93 + 0.07 * min(1.0, colEdge * 8.0);
+  color.rgb *= rowShade * colShade;
+}
+`,
+          },
+        };
+      }
+    }
     let _bag3dState   = 'idle';   // idle | indexing | ready | unavailable
     let _bag3dIndex   = [];       // [{ url, bounds, center, status: todo|loading|done|failed }]
-    let _bag3dTiles   = [];       // { id, origin:[lon,lat], meshes:[3], features:[…], born }
+    let _bag3dTiles   = [];       // { id, origin:[lon,lat], meshes:[{k, color, mesh}, …], features:[…], born }
     let _bag3dPanden  = 0;        // aantal getoonde panden (na STUDY-filter)
     let _bag3dBusy    = 0;        // aantal tegels dat nu geladen wordt
     let _bag3dFailed  = 0;        // aantal mislukte tegels
@@ -5206,22 +5357,27 @@
       if (!_bag3dActive() || !_bag3dTiles.length) return [];
       const now    = performance.now();
       const tint   = _b3SunTint();
-      const colors = _BAG3D_COLORS.map(c => c.map((v, i) => Math.round(v * tint[i])));
+      const tinted = c => c.map((v, i) => Math.round(v * tint[i]));
       return _bag3dTiles.flatMap(t => {
         const g = _growFactor(t.born, now);
-        return t.meshes.map((mesh, k) => mesh && new SimpleMeshLayer({
-          id:          `bag3d-${t.id}-${k}`,
-          data:        t.data,
-          mesh,
-          getPosition: d => [d.origin[0], d.origin[1], 0],
-          // Functie + updateTrigger: een constante getScale wordt in deck.gl 8.9
-          // niet opnieuw in instanceModelMatrix verwerkt (bleef op de beginschaal).
-          getScale:    () => [1, 1, g],
-          updateTriggers: { getScale: g },
-          getColor:    colors[k],
-          material:    { ambient: 0.5, diffuse: 0.6, shininess: 8, specularColor: [25, 25, 25] },
-          pickable:    false,
-        })).filter(Boolean);
+        return t.meshes.map(({ k, color, mesh }, i) => {
+          // Schuine daken (k===1) krijgen het dakpannen-motiefje (fragment-shader
+          // injectie, zie _Bag3dRoofTileLayer); gevels en platte daken niet.
+          const LayerClass = k === 1 ? _Bag3dRoofTileLayer : SimpleMeshLayer;
+          return new LayerClass({
+            id:          `bag3d-${t.id}-${i}`,
+            data:        t.data,
+            mesh,
+            getPosition: d => [d.origin[0], d.origin[1], 0],
+            // Functie + updateTrigger: een constante getScale wordt in deck.gl 8.9
+            // niet opnieuw in instanceModelMatrix verwerkt (bleef op de beginschaal).
+            getScale:    () => [1, 1, g],
+            updateTriggers: { getScale: g },
+            getColor:    tinted(color),
+            material:    { ambient: 0.5, diffuse: 0.6, shininess: 8, specularColor: [25, 25, 25] },
+            pickable:    false,
+          });
+        });
       });
     }
 
@@ -5326,6 +5482,7 @@
           return Array.from({ length: tbl.count }, (_, i) => td.decode(vals.subarray(offs[i], offs[i + 1])));
         }
         if (cls.componentType === 'FLOAT32') return new Float32Array(vals.slice().buffer, 0, tbl.count);
+        if (cls.componentType === 'INT32')   return new Int32Array(vals.slice().buffer, 0, tbl.count);
         return null;
       };
       return { json, read, prop };
@@ -5379,23 +5536,49 @@
       const kept = fb.map(b => isFinite(b[0]) &&
         keep(lon0 + (b[0] + b[2]) / 2 / mPerDegLon, lat0 + (b[1] + b[3]) / 2 / mPerDegLat));
 
-      // Driehoeken per klasse (gevel / schuin dak / plat dak) op basis van de normaal.
-      const nTri = I.length / 3, cls = new Uint8Array(nTri), cnt = [0, 0, 0];
+      // #19: kleuren [gevel, schuin dak, plat dak] per pand — expliciet uit de
+      // tegel (bag-panden-fetcher) met terugval op het periode-palet; zie
+      // _b3ResolveColors hierboven.
+      const bouwjaar = prop('oorspronkelijkbouwjaar');
+      const ids = prop('identificatie') || [];
+      const wallColorProp       = prop('wallColor');
+      const roofColorPitchedProp = prop('roofColorPitched');
+      const roofColorFlatProp   = prop('roofColorFlat');
+      const colorsOf = new Array(nFeat);
+      for (let i = 0; i < nFeat; i++) {
+        colorsOf[i] = _b3ResolveColors({
+          wallColor:        wallColorProp?.[i],
+          roofColorPitched: roofColorPitchedProp?.[i],
+          roofColorFlat:    roofColorFlatProp?.[i],
+          bouwjaar:         bouwjaar ? bouwjaar[i] : 0,
+          id:               ids[i] ?? i,
+        });
+      }
+
+      // Driehoeken per (klasse × daadwerkelijke kleur) groeperen — meestal maar
+      // een handvol unieke combinaties (het periode-palet), tenzij de fetcher
+      // per pand afwijkende kleuren heeft vastgelegd. Eén doorloop, direct in
+      // een Map i.p.v. een vooraf vastgelegd aantal emmers.
+      const nTri = I.length / 3;
+      const slotTris = new Map();   // "k:r,g,b" → { k, color, tris: number[] }
       for (let t = 0; t < nTri; t++) {
-        const a = I[t*3], b = I[t*3+1], c = I[t*3+2];
-        if (!kept[F[a] | 0]) { cls[t] = 255; continue; }
+        const a = I[t*3], f = F[a] | 0;
+        if (!kept[f]) continue;
+        const b = I[t*3+1], c = I[t*3+2];
         const nu = (nor[a*3+2] + nor[b*3+2] + nor[c*3+2]) / 3;
         const k = nu > 0.97 ? 2 : nu > 0.2 ? 1 : 0;
-        cls[t] = k; cnt[k]++;
+        const color = colorsOf[f][k];
+        const key = `${k}:${color}`;
+        let bucket = slotTris.get(key);
+        if (!bucket) slotTris.set(key, bucket = { k, color, tris: [] });
+        bucket.tris.push(t);
       }
       const remap = new Int32Array(nv);
-      const meshes = [0, 1, 2].map(k => {
-        if (!cnt[k]) return null;
+      const meshes = Array.from(slotTris.values(), ({ k, color, tris }) => {
         remap.fill(-1);
-        const idx = new Uint32Array(cnt[k] * 3);
+        const idx = new Uint32Array(tris.length * 3);
         let nvk = 0, io = 0;
-        for (let t = 0; t < nTri; t++) {
-          if (cls[t] !== k) continue;
+        for (const t of tris) {
           for (let j = 0; j < 3; j++) {
             const v = I[t*3+j];
             if (remap[v] < 0) remap[v] = nvk++;
@@ -5408,15 +5591,17 @@
           p[r*3] = pos[v*3]; p[r*3+1] = pos[v*3+1]; p[r*3+2] = pos[v*3+2];
           n[r*3] = nor[v*3]; n[r*3+1] = nor[v*3+1]; n[r*3+2] = nor[v*3+2];
         }
-        return { attributes: { positions: { value: p, size: 3 }, normals: { value: n, size: 3 } },
-                 indices: { value: idx, size: 1 } };
+        // k gaat mee naar makeBag3dLayers, dat op klasse 1 (schuin dak) de
+        // _Bag3dRoofTileLayer-subclass met het dakpannen-motiefje kiest.
+        return { k, color, mesh: { attributes: { positions: { value: p, size: 3 }, normals: { value: n, size: 3 } },
+                                    indices: { value: idx, size: 1 } } };
       });
 
-      const ids = prop('identificatie') || [], dak = prop('b3_dak_type') || [];
+      const dak = prop('b3_dak_type') || [];
       const hNok = prop('b3_h_nok'), hMv = prop('b3_h_maaiveld');
       const features = [];
       for (let i = 0; i < nFeat; i++) {
-        if (kept[i]) features.push({ id: ids[i], dak: dak[i], hNok: hNok?.[i], hMv: hMv?.[i] });
+        if (kept[i]) features.push({ id: ids[i], dak: dak[i], hNok: hNok?.[i], hMv: hMv?.[i], bj: bouwjaar?.[i] });
       }
       const tile = { id: url.split('/').slice(-3).join('-').replace('.glb', ''), origin: [lon0, lat0], meshes, features };
       tile.data = [tile];   // vaste data-array: geen attribuut-herberekening per updateOverlay()

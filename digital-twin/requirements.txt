@@ -6,7 +6,7 @@
 gmt_shared-0.5.5-py3-none-any.whl
 gmt_network_core-0.5.3-py3-none-any.whl
 gmt_routing-0.5.2-py3-none-any.whl
-gmt_network_enrichment-0.6.4-py3-none-any.whl
+gmt_network_enrichment-0.6.6-py3-none-any.whl
 gmt_zone_core-0.5.3-py3-none-any.whl
 gmt_utils-0.5.0-py3-none-any.whl
 gmt_calculation_lib-0.5.10-py3-none-any.whl
