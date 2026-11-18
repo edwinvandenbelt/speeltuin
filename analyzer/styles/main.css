@@ -184,6 +184,19 @@
     #leftMenuPanel.visible { display: flex; }
     #leftMenuPanel.collapsed { margin-left: -300px; }
 
+    /* ── Resize-handle op het openingsscherm (gebiedskeuze) ──────────────── */
+    .lmp-resize-handle {
+      position: absolute;
+      top: 0; right: 0;
+      width: 6px; height: 100%;
+      cursor: col-resize;
+      z-index: 21;
+      background: transparent;
+      transition: background 0.15s;
+    }
+    .lmp-resize-handle:hover,
+    .lmp-resize-handle.dragging { background: rgba(0,165,171,0.35); }
+
     /* ── Groene kop bovenin een menu-paneel (linker paneel + wizard) ───── */
     .lmp-header {
       flex-shrink: 0;

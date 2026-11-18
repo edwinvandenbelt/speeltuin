@@ -141,6 +141,8 @@
       changeItemDel:'Verwijder',
       noChanges:'Geen wijzigingen', viewChangesBtnTitle:'Wijzigingen bekijken',
       changesPendingSection:'Openstaand',
+      tooltipChangesLabel:'Wijzigingen', tooltipMoreChanges: n => `+${n} meer`,
+      tooltipChangesLoading:'Wijzigingen laden…',
       changesHistLinkLabel: id => `Wegvak ${id}`, changesHistNodeLabel: id => `Knoop ${id}`,
       changesHistZoneLabel: id => `Zone ${id}`,
       // Polygon-selectie
@@ -438,6 +440,8 @@
       changeItemDel:'Delete',
       noChanges:'No changes', viewChangesBtnTitle:'View changes',
       changesPendingSection:'Pending',
+      tooltipChangesLabel:'Changes', tooltipMoreChanges: n => `+${n} more`,
+      tooltipChangesLoading:'Loading changes…',
       changesHistLinkLabel: id => `Link ${id}`, changesHistNodeLabel: id => `Node ${id}`,
       changesHistZoneLabel: id => `Zone ${id}`,
       // Polygon selection
@@ -703,6 +707,8 @@
       changeItemDel:'Poista',
       noChanges:'Ei muutoksia', viewChangesBtnTitle:'Näytä muutokset',
       changesPendingSection:'Odottaa',
+      tooltipChangesLabel:'Muutokset', tooltipMoreChanges: n => `+${n} lisää`,
+      tooltipChangesLoading:'Ladataan muutoksia…',
       changesHistLinkLabel: id => `Kaari ${id}`, changesHistNodeLabel: id => `Solmu ${id}`,
       changesHistZoneLabel: id => `Vyöhyke ${id}`,
       // Monikulmio-valinta
@@ -1294,7 +1300,6 @@
     const homePanel = document.getElementById('leftMenuPanel');
     homePanel.classList.add('visible');
     const homeToggle = document.getElementById('leftMenuPanelToggle');
-    if (homeToggle) homeToggle.style.display = 'none';
     const homeSettingsBtn = document.getElementById('settingsBtn');
     if (homeSettingsBtn) homeSettingsBtn.style.display = 'none';
     const homeLegendStrip = document.getElementById('legendStrip');
@@ -1310,6 +1315,176 @@
           <p id="areaError" style="display:none;color:#e63312;font-size:13px;margin-top:16px;text-align:center"></p>
         </div>
       </div>`;
+
+    // ── Resize-handle: paneelbreedte aanpasbaar maken (naar links/rechts) ────
+    const PANEL_WIDTH_KEY = 'homeAreaPanelWidth';
+    const PANEL_MIN_WIDTH = 260;
+    const PANEL_MAX_WIDTH = 640;
+    const savedPanelWidth = parseInt(localStorage.getItem(PANEL_WIDTH_KEY), 10);
+    let homePanelWidth = (savedPanelWidth >= PANEL_MIN_WIDTH && savedPanelWidth <= PANEL_MAX_WIDTH)
+      ? savedPanelWidth : 300;
+    homePanel.style.width = homePanelWidth + 'px';
+
+    // Toggle-tab volgt de (resizebare) paneelbreedte i.p.v. de vaste 300px uit de CSS.
+    function _syncHomeTogglePos() {
+      if (!homeToggle) return;
+      homeToggle.style.left = (homePanel.classList.contains('collapsed') ? 0 : homePanelWidth) + 'px';
+    }
+
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'lmp-resize-handle';
+    homePanel.appendChild(resizeHandle);
+    resizeHandle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      resizeHandle.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+      const onMove = (ev) => {
+        homePanelWidth = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, ev.clientX));
+        homePanel.style.width = homePanelWidth + 'px';
+        _syncHomeTogglePos();
+      };
+      const onUp = () => {
+        resizeHandle.classList.remove('dragging');
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        localStorage.setItem(PANEL_WIDTH_KEY, homePanelWidth);
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // ── In-/uitklappen van het paneel (zelfde slider-tab als in het hoofdscherm) ──
+    if (homeToggle) {
+      homeToggle.style.display = '';
+      const savedHomeCollapsed = localStorage.getItem('homeAreaPanelCollapsed') === '1';
+      const applyHomeCollapsed = (collapsed) => {
+        homePanel.classList.toggle('collapsed', collapsed);
+        homeToggle.classList.toggle('collapsed', collapsed);
+        homePanel.style.marginLeft = collapsed ? `-${homePanelWidth}px` : '0';
+        homeToggle.title = collapsed ? 'Menu uitklappen' : 'Menu inklappen';
+        resizeHandle.style.display = collapsed ? 'none' : '';
+        _syncHomeTogglePos();
+      };
+      applyHomeCollapsed(savedHomeCollapsed);
+      homeToggle.onclick = () => {
+        const collapsed = !homePanel.classList.contains('collapsed');
+        applyHomeCollapsed(collapsed);
+        localStorage.setItem('homeAreaPanelCollapsed', collapsed ? '1' : '0');
+      };
+    }
+
+    // ── Tooltip: volledige naam + samenvatting wijzigingen (sub-scenario's) ──
+    const scenarioTooltip = document.createElement('div');
+    scenarioTooltip.style.cssText = `
+      position:fixed;display:none;z-index:1000;max-width:320px;
+      background:#ffffff;color:#232931;border:1px solid #e3e6ea;
+      border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.5;
+      box-shadow:0 4px 16px rgba(35,41,49,0.18);pointer-events:none;`;
+    document.body.appendChild(scenarioTooltip);
+
+    function _fmtChangeVal(v) {
+      return v == null ? null : (String(v).match(/^[+-]/) ? `Δ${v}` : `=${v}`);
+    }
+    function _summarizeChange(h) {
+      const isOd = h.fromZoneId != null && h.toZoneId != null;
+      const parts = [];
+      if (isOd) {
+        const prod  = h.originProduction ?? 0;
+        const frac  = h.tripFraction ?? 0;
+        const trips = (prod * frac).toLocaleString(T('numberLocale'), { maximumFractionDigits: 1 });
+        parts.push(T('changeOdTripsLabel', trips));
+      } else if (h.linkId != null) {
+        if (h.flow != null) {
+          const raw = String(h.flow);
+          parts.push(T('changeFlowLabel', raw.match(/^[+-]/) ? `Δ${raw}` : `=${raw}`));
+        } else if (h.capacity === 0) {
+          parts.push(T('changeClosedLabel'));
+        } else {
+          parts.push(T('changeCapLabel', Number(h.capacity).toLocaleString(T('numberLocale')), T('linkDialogCapUnit')));
+        }
+      } else {
+        if (h.production != null) parts.push(T('changeProdLabel', _fmtChangeVal(h.production)));
+        if (h.attraction != null) parts.push(T('changeAttrLabel', _fmtChangeVal(h.attraction)));
+      }
+      const label = isOd ? `OD ${h.fromZoneId} → ${h.toZoneId}`
+                  : h.linkId != null ? T('changesHistLinkLabel', h.linkId)
+                  : h.nodeId != null ? T('changesHistNodeLabel', h.nodeId)
+                  :                    T('changesHistZoneLabel', h.zoneId);
+      return `${label}: ${parts.join(' · ')}`;
+    }
+
+    const _changesSummaryCache = new Map();
+    function _getOwnChangesSummary(area) {
+      if (_changesSummaryCache.has(area.areaId)) return _changesSummaryCache.get(area.areaId);
+      const p = fetch(`/collections/changes/items?areaId=${encodeURIComponent(area.areaId)}`)
+        .then(r => r.json())
+        .then(data => (data.features || [])
+          .map(f => f.properties)
+          .filter(h => h.areaId === area.areaId)
+          .map(_summarizeChange))
+        .catch(() => []);
+      _changesSummaryCache.set(area.areaId, p);
+      return p;
+    }
+
+    let _tooltipToken = 0;
+    function showScenarioTooltip(area, anchorEl) {
+      const token = ++_tooltipToken;
+      const rect      = anchorEl.getBoundingClientRect();
+      const panelRect = homePanel.getBoundingClientRect();
+      scenarioTooltip.innerHTML = `<div style="font-weight:600;margin-bottom:4px">${area.name} — ${area.mode}</div>`;
+      scenarioTooltip.style.display = 'block';
+      scenarioTooltip.style.left = (panelRect.right + 10) + 'px';
+      scenarioTooltip.style.top  = Math.min(rect.top, window.innerHeight - 40) + 'px';
+
+      if (!area.srcAreaId) return; // basisscenario: geen wijzigingen t.o.v. een bron
+
+      const loading = document.createElement('div');
+      loading.style.cssText = 'color:#6a757c;font-style:italic';
+      loading.textContent = T('tooltipChangesLoading');
+      scenarioTooltip.appendChild(loading);
+
+      _getOwnChangesSummary(area).then(lines => {
+        if (token !== _tooltipToken || scenarioTooltip.style.display === 'none') return;
+        loading.remove();
+        const MAX = 6;
+        const title = document.createElement('div');
+        title.style.cssText = 'font-weight:600;margin-bottom:2px';
+        title.textContent = `${T('tooltipChangesLabel')}:`;
+        scenarioTooltip.appendChild(title);
+        if (!lines.length) {
+          const empty = document.createElement('div');
+          empty.style.color = '#6a757c';
+          empty.textContent = T('noChanges');
+          scenarioTooltip.appendChild(empty);
+        } else {
+          const ul = document.createElement('ul');
+          ul.style.cssText = 'margin:0;padding-left:16px';
+          lines.slice(0, MAX).forEach(line => {
+            const li = document.createElement('li');
+            li.textContent = line;
+            ul.appendChild(li);
+          });
+          scenarioTooltip.appendChild(ul);
+          if (lines.length > MAX) {
+            const more = document.createElement('div');
+            more.style.cssText = 'color:#6a757c;margin-top:2px';
+            more.textContent = T('tooltipMoreChanges', lines.length - MAX);
+            scenarioTooltip.appendChild(more);
+          }
+        }
+        // Na toevoegen van de wijzigingen kan de tooltip buiten beeld vallen: top corrigeren.
+        const h = scenarioTooltip.getBoundingClientRect().height;
+        scenarioTooltip.style.top = Math.min(rect.top, window.innerHeight - h - 10) + 'px';
+      });
+    }
+    function hideScenarioTooltip() {
+      _tooltipToken++;
+      scenarioTooltip.style.display = 'none';
+    }
 
     // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
     const homeMap = new maplibregl.Map({
@@ -1423,8 +1598,12 @@
                   { padding: 60, duration: 500 }
                 );
               }
+              showScenarioTooltip(area, btn);
             };
-            btn.onmouseleave = () => btn.style.background = '#ffffff';
+            btn.onmouseleave = () => {
+              btn.style.background = '#ffffff';
+              hideScenarioTooltip();
+            };
             btn.onclick = () => {
               window.location.href =
                 `/?areaId=${encodeURIComponent(area.areaId)}&mode=${encodeURIComponent(area.mode)}`;
