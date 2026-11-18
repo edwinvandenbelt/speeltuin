@@ -1286,6 +1286,7 @@ def run(
         pending_desired: "dict[int, list[dict]] | None" = None
         pending_since: float = 0.0
         last_submitted: "dict[int, list[dict]]" = {}
+        calc_paused = False  # loopt er al een adjust-job? dan detectie even stil
 
         print(
             f"[camera] Detectie gestart. Stabiliteit wordt bepaald door de tracker "
@@ -1302,6 +1303,20 @@ def run(
                 print("[camera] Frame lezen mislukt, opnieuw proberen …")
                 time.sleep(0.1)
                 continue
+
+            # --- Berekening al aan de gang? Dan detectie overslaan voor dit frame. ---
+            # Het frame wordt nog wel gelezen (hierboven), zodat de camerabuffer
+            # niet oploopt; alleen de analyse/tracking/indiening pauzeert. Zo kan
+            # er nooit een nieuwe set bewerkingen bovenop een lopende job komen.
+            if runner.is_busy():
+                if not calc_paused:
+                    calc_paused = True
+                    print("[camera] Berekening loopt - detectie gepauzeerd tot de uitkomst binnen is.")
+                time.sleep(0.05)
+                continue
+            if calc_paused:
+                calc_paused = False
+                print("[camera] Berekening klaar - detectie hervat.")
 
             now = time.time()
 
