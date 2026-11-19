@@ -20,6 +20,9 @@
  *          'bikePath', polygonen); geldt voor alle kaarten.
  *      window.MontrealBasemap.setSidewalksVisible(bool)
  *        → stoepen/fietspaden aan of uit (alleen zichtbaar in Montréal-modus).
+ *      window.MontrealBasemap.setSeason(map, month)
+ *        → kleurt het gras/de begroeiing naar het seizoen van `month` (1–12);
+ *          herfst = de oorspronkelijke paletkleur.
  */
 (function () {
   'use strict';
@@ -32,6 +35,34 @@
              sidewalk:'#515d63', kerb:'#3a434a', shore:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
              railBed:'#2c3238', railTie:'#3a3530', rail:'#7a838c', bikePath:'#4a3433' },
   };
+
+  // Seizoenskleuren voor het gras ('mtl-green-land'/'mtl-parks') en de
+  // begroeiing ('mtl-woodland') — 'herfst' is de bestaande (hierboven
+  // gedefinieerde) kleur, dus niet apart herhaald.
+  const _GRASS_SEASON_COLORS = {
+    spring: { green: '#a9d37a', forest: '#9cc073' }, // fris voorjaarsgroen
+    summer: { green: '#8fb662', forest: '#84ab5d' }, // iets donkerder dan het voorjaar
+    winter: { green: '#c2a855', forest: '#b79a52' }, // geel-bruin-groenig
+  };
+  function _seasonOfMonth(month) {
+    if (month >= 3 && month <= 5)  return 'spring';
+    if (month >= 6 && month <= 8)  return 'summer';
+    if (month >= 9 && month <= 11) return 'autumn';
+    return 'winter';
+  }
+  /** Past de gras-/begroeiingskleur van de Montréal-ondergrond aan op het
+   *  seizoen van `month` (1–12); herfst = de oorspronkelijke paletkleur. */
+  function setSeason(m, month) {
+    if (!m) return;
+    const season = _seasonOfMonth(month);
+    const colors = season === 'autumn'
+      ? { green: _MTL_PALETTES.day.green, forest: _MTL_PALETTES.day.forest }
+      : _GRASS_SEASON_COLORS[season];
+    for (const id of ['mtl-green-land', 'mtl-parks']) {
+      if (m.getLayer(id)) { try { m.setPaintProperty(id, 'fill-color', colors.green); } catch (_) {} }
+    }
+    if (m.getLayer('mtl-woodland')) { try { m.setPaintProperty('mtl-woodland', 'fill-color', colors.forest); } catch (_) {} }
+  }
 
   // roadSrc: source voor de transportation-lagen (mtl-ofm-roads, met de
   // netwerk-properties), of de OFM-source zelf als dat niet lukt.
@@ -651,5 +682,5 @@
   }
 
   window.MontrealBasemap = { palettes: _MTL_PALETTES, ensure, setVisible, hiddenBaseLayerIds, setNetwork,
-    setSidewalks, setSidewalksVisible, surfaceClass: _surfaceClass };
+    setSidewalks, setSidewalksVisible, surfaceClass: _surfaceClass, setSeason };
 })();

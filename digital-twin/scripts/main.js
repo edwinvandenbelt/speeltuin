@@ -3319,24 +3319,60 @@
         + Math.round(ab + (bb - ab) * t).toString(16).padStart(2, '0');
     }
 
+    // ── Weer-demping ─────────────────────────────────────────────────────
+    // 'sunny' laat de zonnestand ongemoeid; 'cloudy'/'rainy' ontzadigen de
+    // lucht-/lichtkleuren richting hun eigen helderheid (wolkengrijs i.p.v.
+    // een vast grijs — zo blijft een bewolkte/regenachtige nacht nog steeds
+    // donkerder dan een heldere nacht) en dempen vervolgens de helderheid
+    // zelf (regen sterker dan bewolkt). Werkt zowel overdag als 's nachts.
+    const _WEATHER_DAMPING = {
+      sunny:  { desaturate: 0,    darken: 1    },
+      cloudy: { desaturate: 0.35, darken: 0.82 },
+      rainy:  { desaturate: 0.6,  darken: 0.6  },
+    };
+    /** Ontzadigt (richting eigen luma) en verdonkert een hex-kleur. */
+    function _darkenHex(hex, desaturate, darken) {
+      const h = s => parseInt(s, 16);
+      let r = h(hex.slice(1, 3)), g = h(hex.slice(3, 5)), b = h(hex.slice(5, 7));
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      r += (luma - r) * desaturate;
+      g += (luma - g) * desaturate;
+      b += (luma - b) * desaturate;
+      const clamp = v => Math.round(Math.max(0, Math.min(255, v * darken)));
+      return '#' + [r, g, b].map(v => clamp(v).toString(16).padStart(2, '0')).join('');
+    }
+    function _applyWeatherDamping(sun, weather) {
+      const d = _WEATHER_DAMPING[weather] || _WEATHER_DAMPING.sunny;
+      if (!d.desaturate && d.darken === 1) return sun;
+      return {
+        ...sun,
+        intensity:    sun.intensity * d.darken,
+        lightColor:   _darkenHex(sun.lightColor,   d.desaturate, d.darken),
+        skyColor:     _darkenHex(sun.skyColor,     d.desaturate, d.darken),
+        horizonColor: _darkenHex(sun.horizonColor, d.desaturate, d.darken),
+        fogColor:     _darkenHex(sun.fogColor,     d.desaturate, d.darken),
+      };
+    }
+
     /**
      * Berekent zonpositie en lichtkleur voor Rotterdam (lat 51.9°N).
-     * @param {number} month  – maand 1–12
-     * @param {number} hour   – uur 0–23
+     * @param {number} month    – maand 1–12
+     * @param {number} hour     – uur 0–23
+     * @param {string} [weather] – 'sunny' | 'cloudy' | 'rainy' (zie _WEATHER_DAMPING)
      * @returns {{ azimuthal, polar, intensity, lightColor, isDay, skyColor, horizonColor, fogColor }}
      */
-    function _getSunState(month, hour) {
+    function _getSunState(month, hour, weather) {
       const entry = _daylightData.find(d => d.month === month)
                  || { sunrise_hour: 7, sunset_hour: 19 };
       const sr = entry.sunrise_hour, ss = entry.sunset_hour;
       const isDay = hour >= sr && hour < ss;
 
       if (!isDay) {
-        return {
+        return _applyWeatherDamping({
           azimuthal: 180, polar: 92, intensity: 0.06,
           lightColor: '#1a2840', isDay: false,
           skyColor: '#050a14', horizonColor: '#0c1828', fogColor: '#091220',
-        };
+        }, weather);
       }
 
       // Fractie van de dag: 0 = zonsopgang, 0.5 = middag, 1 = zonsondergang
@@ -3362,7 +3398,10 @@
       const horizonColor = t < 0.15 ? _lerpHex('#e05520', '#c8dff0', t / 0.15) : '#c8dff0';
       const fogColor     = t < 0.15 ? _lerpHex('#c04420', '#d8e8f0', t / 0.15) : '#d8e8f0';
 
-      return { azimuthal, polar, intensity, lightColor, isDay: true, skyColor, horizonColor, fogColor };
+      return _applyWeatherDamping(
+        { azimuthal, polar, intensity, lightColor, isDay: true, skyColor, horizonColor, fogColor },
+        weather
+      );
     }
 
     /**
@@ -3390,11 +3429,15 @@
         : new Date().getMonth() + 1;
 
       _sunMonth = month;
-      const sun = _getSunState(month, hour);
+      const weather = document.getElementById('fspWeather').value;
+      const sun = _getSunState(month, hour, weather);
       _sunIsDay = sun.isDay;
       _applyGroundNightTint(_sunIsDay);
       _sunState = sun;
       window.AnimatedWater?.setSun(sun);
+      // Gras/begroeiing van de Montréal-ondergrond ('Kaart 2') meekleuren met het seizoen.
+      window.MontrealBasemap?.setSeason(map, month);
+      if (map2) window.MontrealBasemap?.setSeason(map2, month);
       // 3D BAG-panden kleuren mee met de zon (zie _b3SunTint); vroeg in de
       // init bestaan de BAG-variabelen nog niet → try.
       try { if (_bag3dActive()) _bag3dRefreshOverlay(); } catch (_) {}
@@ -4789,6 +4832,7 @@
         try {
           if (isMtl) {
             window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
+            window.MontrealBasemap.setSeason(m, _sunMonth || (new Date().getMonth() + 1));
             // Bewegend water boven 'mtl-water' (common/js/animated-water.js);
             // tekent alleen zolang 'mtl-water' zichtbaar is.
             try { window.AnimatedWater?.ensure(m); } catch (e) { console.warn('Bewegend water:', e); }
@@ -8063,6 +8107,132 @@
         material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
       }));
       return layers;
+    }
+
+    // ── Weer-decals op de weg: plassen (regen) / sneeuwvlekken (winterse kou) ──
+    // Puntenwolk langs alle netwerksegmenten, eenmalig opgebouwd met dezelfde
+    // haversine-interpolatie als voor auto's (interpolatePosition/segmentLengthCached),
+    // inclusief de kompasrichting van het wegvak ter plaatse — de vlekken liggen zo
+    // in de lengterichting van de weg. Een deterministische hash per link+index
+    // bepaalt welke steekpunten een plas/sneeuwvlek krijgen (en de afmetingen ervan),
+    // zodat de selectie stabiel blijft tussen hertekeningen i.p.v. bij elke call
+    // opnieuw te loten.
+    let _roadDecalPoints   = null;  // [{ pos:[lon,lat], bearing, hPuddle, hSnow, hSize }]
+    let _roadDecalSegCount = -1;    // laatst gecachte segments.length, voor goedkope invalidatie
+    function _hashUnit(str) {
+      let h = 2166136261;
+      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return (h >>> 0) / 4294967296;
+    }
+    const _ROAD_DECAL_SPACING_M = 35; // steekpunt-interval langs elk wegvak
+    function _ensureRoadDecalPoints() {
+      if (_roadDecalPoints !== null && _roadDecalSegCount === segments.length) return;
+      const pts = [];
+      for (const seg of segments) {
+        const coords = seg.coords;
+        if (!coords || coords.length < 2) continue;
+        const total = segmentLengthCached(coords);
+        if (!(total > 0)) continue;
+        const linkId = seg.props?.linkId ?? '';
+        const n = Math.max(1, Math.round(total / _ROAD_DECAL_SPACING_M));
+        for (let i = 0; i < n; i++) {
+          const key = `${linkId}:${i}`;
+          const [lon, lat, bearing] = interpolatePosition(coords, (i + 0.5) / n, total);
+          pts.push({
+            pos:     [lon, lat],
+            bearing,
+            hPuddle: _hashUnit(key + ':p'),
+            hSnow:   _hashUnit(key + ':s'),
+            hSize:   _hashUnit(key + ':r'),
+          });
+        }
+      }
+      _roadDecalPoints   = pts;
+      _roadDecalSegCount = segments.length;
+    }
+    const _PUDDLE_DENSITY = 0.05; // aandeel steekpunten met een plas ("hier en der")
+    const _SNOW_DENSITY   = 0.12; // sneeuw mag royaler liggen dan plassen
+
+    /** Lengte/breedte (m) van één plas/sneeuwvlek — klein, passend op de weg. */
+    function _getDecalSize(d) {
+      const lengthM = 0.45 + d.hSize * 0.9;                  // 0.45–1.35 m
+      const widthM  = lengthM * (0.32 + ((d.hSize * 7) % 1) * 0.16); // ~1/3–1/2 van de lengte
+      return { lengthM, widthM };
+    }
+
+    /** Bouwt een "puntige ovaal" (lens-/blaadjesvorm — gebogen zijkanten, maar
+     *  spits toelopend aan de twee uiteinden, nooit hoekig) rond `center`, met de
+     *  lange as langs `bearingDeg` (kompasrichting 0=N/90=O) — zo ligt de vlek in
+     *  de lengterichting van de weg. */
+    function _pointedOvalRing(center, bearingDeg, lengthM, widthM) {
+      const lat         = center[1];
+      const mPerDegLon  = 111320 * Math.cos(lat * Math.PI / 180);
+      const mPerDegLat  = 111320;
+      const rad         = bearingDeg * Math.PI / 180;
+      const alongX = Math.sin(rad), alongY = Math.cos(rad);   // lengte-as (langs de weg)
+      const acrossX = Math.cos(rad), acrossY = -Math.sin(rad); // breedte-as (haaks erop)
+      const halfLen = lengthM / 2, halfWid = widthM / 2;
+      const N = 7;      // steekpunten per helft (exclusief de 2 tippen)
+      const POW = 1.35; // < 2 ⇒ zichtbare punt i.p.v. een afgeronde ellips-tip
+      const half = t => halfWid * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(t), POW)), 1 / POW);
+      const local = [];
+      for (let i = 0; i <= N; i++) { const t = -1 + (2 * i) / N; local.push([t * halfLen,  half(t)]); }
+      for (let i = N - 1; i >= 1; i--) { const t = -1 + (2 * i) / N; local.push([t * halfLen, -half(t)]); }
+      return local.map(([alongM, acrossM]) => {
+        const dx = alongX * alongM + acrossX * acrossM;
+        const dy = alongY * alongM + acrossY * acrossM;
+        return [center[0] + dx / mPerDegLon, center[1] + dy / mPerDegLat];
+      });
+    }
+
+    // Vulkleur van de plassen = exact de kleur van de rivieren/wateroppervlakken
+    // in de actieve basemap-stijl ('water'-laag), zodat plasjes en rivieren
+    // hetzelfde "water" voorstellen. Eenmalig opgevraagd en gecachet.
+    let _waterFillRgb = null;
+    function _getWaterFillRgb() {
+      if (_waterFillRgb) return _waterFillRgb;
+      try {
+        const c = map.getPaintProperty('water', 'fill-color');
+        const m = typeof c === 'string' && c.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+        if (m) _waterFillRgb = [Number(m[1]), Number(m[2]), Number(m[3])];
+      } catch (_) {}
+      return _waterFillRgb || [158, 189, 255]; // fallback: standaard Liberty-waterkleur
+    }
+
+    /** Plassen bij regen — tenzij het winter is én de temperatuur laag staat:
+     *  regen in de winter bij vorst is sneeuw, geen plassen. Bij zon/bewolkt
+     *  blijft de weg altijd droog, ongeacht seizoen/temperatuur. */
+    function makeWeatherRoadDecalLayers() {
+      if (document.getElementById('fspWeather')?.value !== 'rainy') return [];
+      const isWinter = _vegSeasonOfMonth(_sunMonth || (new Date().getMonth() + 1)) === 'winter';
+      const isSnowy  = isWinter && document.getElementById('fspTemp')?.value === 'Low';
+      _ensureRoadDecalPoints();
+      if (!_roadDecalPoints.length) return [];
+
+      if (isSnowy) {
+        const pts = _roadDecalPoints.filter(p => p.hSnow < _SNOW_DENSITY);
+        if (!pts.length) return [];
+        return [new PolygonLayer({
+          id:           'weather-snow',
+          data:         pts,
+          getPolygon:   d => { const { lengthM, widthM } = _getDecalSize(d); return _pointedOvalRing(d.pos, d.bearing, lengthM, widthM); },
+          getFillColor: [248, 250, 252, 225],
+          stroked:      false,
+          pickable:     false,
+        })];
+      }
+
+      const pts = _roadDecalPoints.filter(p => p.hPuddle < _PUDDLE_DENSITY);
+      if (!pts.length) return [];
+      const [wr, wg, wb] = _getWaterFillRgb(); // zelfde vulkleur als de rivieren
+      return [new PolygonLayer({
+        id:           'weather-puddles',
+        data:         pts,
+        getPolygon:   d => { const { lengthM, widthM } = _getDecalSize(d); return _pointedOvalRing(d.pos, d.bearing, lengthM, widthM); },
+        getFillColor: [wr, wg, wb, 235],
+        stroked:      false,
+        pickable:     false,
+      })];
     }
 
     // Laad-indicatoren (Drempels/Bomen e.a.) blijven minstens dit lang zichtbaar
@@ -14263,6 +14433,7 @@
           ...makeHeightAssetLayers(),
           ...makeFurnitureLayers(),
           ...makeVegetationTreeLayers(),
+          ...makeWeatherRoadDecalLayers(),
           ...makeBag3dLayers(),
           makeEditSignLayer(),
         ]});
@@ -18439,18 +18610,21 @@
     document.getElementById('fspDate').addEventListener('change', () => { updateSunLight(); scheduleSimApply(); });
     document.getElementById('fspPurpose').addEventListener('change', scheduleSimApply);
 
-    function _wireOptButtonGroup(containerIds, hiddenSelectId) {
+    function _wireOptButtonGroup(containerIds, hiddenSelectId, onChange) {
       const btns = containerIds.flatMap(id => Array.from(document.querySelectorAll(`#${id} .sim-opt-btn`)));
       btns.forEach(btn => {
         btn.addEventListener('click', () => {
           btns.forEach(b => b.classList.toggle('active', b === btn));
           document.getElementById(hiddenSelectId).value = btn.dataset.val;
+          onChange?.();
           scheduleSimApply();
         });
       });
     }
     _wireOptButtonGroup(['simTempBtns'], 'fspTemp');
-    _wireOptButtonGroup(['simWeatherBtns'], 'fspWeather');
+    // Weer beïnvloedt naast de verkeersflow (backend) ook direct de kaart-
+    // belichting/hemelkleur (zie _WEATHER_DAMPING in _getSunState).
+    _wireOptButtonGroup(['simWeatherBtns'], 'fspWeather', updateSunLight);
 
     // Simulatielus: elke 10 seconden schuift de wijzer een stukje op (1 simulatie-uur per echte minuut).
     setInterval(() => {
