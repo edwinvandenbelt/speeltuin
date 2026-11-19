@@ -938,6 +938,18 @@
     catch (e) { console.warn('Montréal-netwerkwegen:', e); }
   }
 
+  // BGT-stoepen en -fietspaden (Kaart 2, geldt voor alle kaarten). Eenmalig
+  // per gebied, niet gekoppeld aan de viewport; faalt stil zonder BGT-assets.
+  // Zichtbaarheid volgt uitsluitend de Kaart 2-keuze (geen eigen checkbox,
+  // zie MontrealBasemap.setSidewalksVisible — standaard aan).
+  function _loadKaart2Sidewalks(areaId) {
+    if (!areaId) return;
+    fetch(`/collections/traffic_assets/items?areaId=${encodeURIComponent(areaId)}&assetType=sidewalk,bikePath&simplify=0.1`)
+      .then(r => r.ok ? r.json() : null)
+      .then(fc => { if (Array.isArray(fc?.features)) window.MontrealBasemap?.setSidewalks(fc.features); })
+      .catch(e => console.warn('Montréal-stoepen/fietspaden:', e));
+  }
+
   // Vlag-parameters soepel lezen: ?x=true, ?x=1, ?x=yes en ?x tellen allemaal.
   // Een typfout als ?maquette=1 schakelde anders stilzwijgend de hele
   // maquette-stand uit, zonder dat er iets zichtbaar misging.
@@ -3001,6 +3013,7 @@
      );
      _networkFeatures = features; // beschikbaar stellen voor maquette highlight
      _setKaart2Network(features);
+     _loadKaart2Sidewalks(AREA_ID);
 
     const flowValues = features.map(f => f.properties.flow);
     const minFlow    = Math.min(...flowValues);

@@ -3377,6 +3377,7 @@
     let map2            = null;  // idem — referenced in updateSunLight() and _applyBasemapStyle()
     let _sunIsDay       = true;  // idem — laatst berekende dag/nacht-status (updateSunLight)
     let _sunState       = null;  // idem — laatst berekende zonnestand (o.a. 3D BAG-kleuren)
+    let _sunMonth       = null;  // idem — laatst gelezen simulatiemaand (updateSunLight), voor seizoenskleuring vegetatie
     function updateSunLight() {
       if (!map || !map.isStyleLoaded()) return;
 
@@ -3388,6 +3389,7 @@
         ? new Date(dateVal + 'T12:00:00').getMonth() + 1
         : new Date().getMonth() + 1;
 
+      _sunMonth = month;
       const sun = _getSunState(month, hour);
       _sunIsDay = sun.isDay;
       _applyGroundNightTint(_sunIsDay);
@@ -3598,6 +3600,15 @@
      // van deze links (geldt voor alle kaarten, ook als ze later laden).
      try { window.MontrealBasemap?.setNetwork(_kaart2NetworkFeatures()); }
      catch (e) { console.warn('Montréal-netwerkwegen:', e); }
+     // BGT-stoepen en -fietspaden (geldt voor alle kaarten, zie setSidewalks hierboven).
+     // Eenmalig per gebied, niet gekoppeld aan de viewport; faalt stil als het
+     // gebied geen BGT-assets heeft (dan blijft de laag leeg).
+     if (AREA_ID) {
+       fetch(`/collections/traffic_assets/items?areaId=${encodeURIComponent(AREA_ID)}&assetType=sidewalk,bikePath&simplify=0.1`)
+         .then(r => r.ok ? r.json() : null)
+         .then(fc => { if (Array.isArray(fc?.features)) window.MontrealBasemap?.setSidewalks(fc.features); })
+         .catch(e => console.warn('Montréal-stoepen/fietspaden:', e));
+     }
 
     const flowValues = features.map(f => f.properties.flow);
     const minFlow    = Math.min(...flowValues);
@@ -7695,6 +7706,31 @@
     const _VEG_AREA_TREE_H       = { forest: [5, 10], wood: [4, 8] };  // [min,max] m
     const _VEG_MAX_AREA_TREES    = 3000;
 
+    // Seizoenskleuring loofbomen (naaldbomen blijven het hele jaar groen —
+    // dat is nu juist het verschil tussen loof- en naaldbomen). Seizoen volgt
+    // de maand van de simulatieklok (_sunMonth, bijgewerkt door updateSunLight()).
+    function _vegSeasonOfMonth(month) {
+      if (month >= 3 && month <= 5)  return 'spring';
+      if (month >= 6 && month <= 8)  return 'summer';
+      if (month >= 9 && month <= 11) return 'autumn';
+      return 'winter';
+    }
+    const _VEG_CANOPY_SUMMER = [64, 118, 52, 255];    // huidig zomergroen
+    const _VEG_CANOPY_SPRING = [148, 196, 88, 255];   // frisser, lichter voorjaarsgeel-groen
+    // Herfst: per boom gevarieerd (geel/oranje/roodbruin) via de bestaande yaw-hash,
+    // zodat de kronen niet allemaal exact dezelfde tint hebben.
+    const _VEG_CANOPY_AUTUMN = [
+      [205, 168, 56, 255],   // geel
+      [196, 122, 40, 255],   // oranje
+      [150, 78, 46, 255],    // roodbruin
+    ];
+    const _VEG_CANOPY_WINTER = [90, 82, 70, 255];     // kale twijgen (takkleur i.p.v. blad)
+    const _VEG_WINTER_CANOPY_SCALE = 0.5;             // kale kroon: dunner dan vol blad
+    function _vegAutumnColor(seed01) {
+      const i = Math.min(_VEG_CANOPY_AUTUMN.length - 1, Math.floor(seed01 * _VEG_CANOPY_AUTUMN.length));
+      return _VEG_CANOPY_AUTUMN[i];
+    }
+
     // ── Procedurele mesh-onderdelen (Z = omhoog, basis op z=0) ──────────────
     function _vegCylZ(radius, h, z0, seg = 8) {
       const pos = [], nor = [], uv = [], idx = [];
@@ -7988,12 +8024,13 @@
       if (!allTrees.length) return layers;
       const broad  = allTrees.filter(t => !t.needle);
       const needle = allTrees.filter(t => t.needle);
-      const shared = (id, data) => ({
+      const season = _vegSeasonOfMonth(_sunMonth || (new Date().getMonth() + 1));
+      const shared = (id, data, scaleMul = 1) => ({
         id, data,
         getPosition:    d => d.position,
         getOrientation: d => [0, d.yaw, 0],
-        getScale:       d => { const s = d.scale * _growFactor(d.born, now); return [s, s, s]; },
-        updateTriggers: { getScale: _growTick },
+        getScale:       d => { const s = d.scale * _growFactor(d.born, now) * scaleMul; return [s, s, s]; },
+        updateTriggers: { getScale: `${_growTick}:${scaleMul}` },
         sizeScale:      1,
         pickable:       false,
       });
@@ -8004,12 +8041,21 @@
         getColor: [96, 70, 44, 255],
         material: { ambient: 0.6, diffuse: 0.7, shininess: 10, specularColor: [20, 20, 20] },
       }));
-      if (broad.length) layers.push(new SimpleMeshLayer({
-        ...shared('veg-canopy-broad', broad),
-        mesh:     _vegBroadMesh,
-        getColor: [64, 118, 52, 255],
-        material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
-      }));
+      // Loofbomen: kroonkleur volgt het seizoen (naaldbomen blijven groen, zie onder).
+      // Winter → kale, dunnere twijgkroon i.p.v. vol blad.
+      if (broad.length) {
+        const broadShared = shared('veg-canopy-broad', broad, season === 'winter' ? _VEG_WINTER_CANOPY_SCALE : 1);
+        layers.push(new SimpleMeshLayer({
+          ...broadShared,
+          mesh:     _vegBroadMesh,
+          getColor: season === 'autumn' ? (d => _vegAutumnColor(d.yaw / 360))
+                   : season === 'spring' ? _VEG_CANOPY_SPRING
+                   : season === 'winter' ? _VEG_CANOPY_WINTER
+                   : _VEG_CANOPY_SUMMER,
+          updateTriggers: { ...broadShared.updateTriggers, getColor: season },
+          material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
+        }));
+      }
       if (needle.length) layers.push(new SimpleMeshLayer({
         ...shared('veg-canopy-needle', needle),
         mesh:     _vegNeedleMesh,

@@ -26,10 +26,10 @@
 
   const _MTL_PALETTES = {
     day:   { land:'#e6e9dc', water:'#8fc7ca', green:'#b8c99e', forest:'#acbf97', road:'#c9cec5',
-             sidewalk:'#c3c3c3', kerb:'#a3a3a3', shore:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
+             sidewalk:'#ddd3b8', kerb:'#b3a98c', shore:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
              railBed:'#bdb5aa', railTie:'#8c8073', rail:'#5b6066', bikePath:'#d9a596' },
     night: { land:'#111c29', water:'#081321', green:'#162b29', forest:'#142522', road:'#26313b',
-             sidewalk:'#3c454a', kerb:'#2e353a', shore:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
+             sidewalk:'#515d63', kerb:'#3a434a', shore:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
              railBed:'#2c3238', railTie:'#3a3530', rail:'#7a838c', bikePath:'#4a3433' },
   };
 
