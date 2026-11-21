@@ -2634,6 +2634,7 @@
   const PARK_MIN_S   = 120;    // minimale parkeertijd (sec)
   // Aandeel initieel geparkeerde auto's per dagdeel
   const PARK_RATIOS  = { mrh: 0.50, erh: 0.15, rest: 0.35 };
+  const PARK_MAX_SPEED_MS = 50 / 3.6;  // auto's parkeren alleen op links ≤50 km/u
 
   /** Box-Muller transform: normaalverdeeld getal met gegeven gemiddelde en std */
   function normalRandom(mean, std) {
@@ -3127,7 +3128,7 @@
   const visibleModes = new Set(['CAR', 'BIKE', 'PEDESTRIAN']);
 
   // OD-productie: voor elk OD-paar een set van paden gewogen op route.weight
-  let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary,canPark}]}
+  let odGroups = new Map();        // key: "fromZoneId→toZoneId" → {totalFlow, paths:[{path,route,isBoundary}]}
   let lastProductionT      = 0;   // performance.now()/1000 van laatste productie-cyclus
   let lastProductionSpawns = 0;   // aantal gespawnde auto's in de laatste productie-cyclus
   let lastAttractionCount  = 0;   // aantal aangekomen (verdwenen) auto's in de laatste seconde
@@ -10767,23 +10768,87 @@
 
     /**
      * Initiële offset [0, 1) op een bestaand pad, gewogen naar flow×length per link.
+     * Met `maxSpeedMs` worden links sneller dan die grens uitgesloten; retourneert dan
+     * `null` als geen enkele link van het pad geschikt is (bv. een zuivere snelwegroute).
      */
-    function weightedOffsetOnPath(path) {
-      // Gewichten per link: flow × length
-      const linkWeights = path.links.map(l => Math.max(0, (l.flow || 0) * l.length));
-      const totalW = linkWeights.reduce((s, w) => s + w, 0);
-
-      let offset;
-      if (totalW > 0) {
-        // Kies een link proportioneel aan flow×length
-        const li = weightedSample(linkWeights);
-        // Kies een random positie binnen die link
-        const linkStart = path.boundaries[li] / path.length;
-        const linkEnd   = path.boundaries[li + 1] / path.length;
-        offset = linkStart + Math.random() * (linkEnd - linkStart);
-      } else {
-        offset = Math.random();
+    function weightedOffsetOnPath(path, maxSpeedMs = Infinity) {
+      const eligible = [];
+      const weights  = [];
+      for (let i = 0; i < path.links.length; i++) {
+        const l = path.links[i];
+        if (l.speedMs > maxSpeedMs) continue;
+        eligible.push(i);
+        weights.push(Math.max(0, (l.flow || 0) * l.length));
       }
+      if (!eligible.length) return null;
+
+      const totalW = weights.reduce((s, w) => s + w, 0);
+      // Kies een link proportioneel aan flow×length (of uniform als er geen flow bekend is)
+      const li = totalW > 0
+        ? eligible[weightedSample(weights)]
+        : eligible[Math.floor(Math.random() * eligible.length)];
+      const linkStart = path.boundaries[li] / path.length;
+      const linkEnd   = path.boundaries[li + 1] / path.length;
+      const offset    = linkStart + Math.random() * (linkEnd - linkStart);
+      return Math.min(Math.max(offset, 0), 0.999);
+    }
+
+    /**
+     * Motief met het hoogste aandeel in route.motifRatio, of null als die ontbreekt.
+     */
+    function _dominantMotif(route) {
+      if (!route.motifRatio) return null;
+      let best = null, bestV = -1;
+      for (const [m, v] of Object.entries(route.motifRatio)) {
+        if (v > bestV) { best = m; bestV = v; }
+      }
+      return best;
+    }
+
+    /**
+     * Eindbias voor het parkeren van een auto op deze route tijdens het huidige dagdeel:
+     * >1 bevoordeelt het herkomst-eind (offset≈0), <1 het bestemmings-eind (offset≈1).
+     * Alleen het motief 'work' krijgt een richtingsvoorkeur (ochtendspits: nog niet
+     * vertrokken naar werk, dus bij huis; avondspits: nog aan het werk, dus bij werk).
+     * Overige motieven/dagdelen: neutraal (symmetrische U-vorm, zie weightedParkOffsetOnPath).
+     */
+    function _parkEndBiasFor(route, daypart) {
+      const motif = _dominantMotif(route);
+      if (motif === 'work' && daypart === 'mrh') return 2.0;
+      if (motif === 'work' && daypart === 'erh') return 0.5;
+      return 1.0;
+    }
+
+    /**
+     * Parkeer-offset voor de LL-vulmethode: bevoordeelt beide routeuiteinden boven het
+     * midden (U-vorm — een geparkeerde auto staat te wachten vóór vertrek of ná aankomst,
+     * niet ergens halverwege), getild naar het meest plausibele eind op basis van
+     * motief + huidig dagdeel. Retourneert `null` als geen enkele link ≤50 km/u is.
+     */
+    function weightedParkOffsetOnPath(rp) {
+      const path = rp.path;
+      const bias = _parkEndBiasFor(rp.route, flowDaypart);
+      const eligible = [];
+      const weights  = [];
+      for (let i = 0; i < path.links.length; i++) {
+        const l = path.links[i];
+        if (l.speedMs > PARK_MAX_SPEED_MS) continue;
+        const mid          = (path.boundaries[i] + path.boundaries[i + 1]) / 2 / path.length;
+        const endProximity = 1 + 2 * Math.abs(2 * mid - 1);   // 3 aan de uiteinden, 1 in het midden
+        const dirWeight    = mid < 0.5 ? bias : (1 / bias);
+        eligible.push(i);
+        weights.push(Math.max(0, (l.flow || 0) * l.length) * endProximity * dirWeight
+                     || endProximity * dirWeight);
+      }
+      if (!eligible.length) return null;
+
+      const totalW = weights.reduce((s, w) => s + w, 0);
+      const li = totalW > 0
+        ? eligible[weightedSample(weights)]
+        : eligible[Math.floor(Math.random() * eligible.length)];
+      const linkStart = path.boundaries[li] / path.length;
+      const linkEnd   = path.boundaries[li + 1] / path.length;
+      const offset    = linkStart + Math.random() * (linkEnd - linkStart);
       return Math.min(Math.max(offset, 0), 0.999);
     }
 
@@ -10794,10 +10859,10 @@
      * krijgt maar een klein deel ooit een auto; vooraf alle paden met samengevoegde
      * geometrie bouwen bevroor de pagina tientallen seconden (Deventer: 66 K routes).
      */
-    function _makeRoutePath(route, isBoundary, canPark) {
+    function _makeRoutePath(route, isBoundary) {
       let linkObjs = null, path = null;
       return {
-        route, isBoundary, canPark,
+        route, isBoundary,
         approachCount: 0,
         // Link-objecten uit het volledige linkpad (voedingslinks al gefilterd in _parseAndAddRoutes)
         get allLinkObjs() {
@@ -10837,27 +10902,26 @@
         const _bT0 = performance.now();
         let _bLinks = 0;
 
-        // Stap 1: verzamel de route-paden. Alleen lengte en beginsnelheid worden hier
-        // bepaald; het pad zelf wordt lazy gebouwd (zie _makeRoutePath).
+        // Stap 1: verzamel de route-paden. Alleen lengte wordt hier bepaald; het pad zelf
+        // wordt lazy gebouwd (zie _makeRoutePath). Parkeerbaarheid is per-link (niet
+        // per-route) relevant en wordt pas bij plaatsing bepaald (zie weightedOffsetOnPath).
         const routePaths = [];  // _makeRoutePath-objecten
         for (const route of routeList) {
           if (route.weight < minWeight) continue;
           if (!visibleModes.has(route.vehicleMode ?? MODE)) continue;
 
-          let length = 0, nLinks = 0, firstSpeedMs = 10;
+          let length = 0, nLinks = 0;
           for (const id of route.linkIds) {
             const coords = linkGeomMap.get(id);
             if (!coords) continue;
-            if (nLinks++ === 0) firstSpeedMs = linkSpeedMap.get(id) ?? 10;
+            nLinks++;
             length += segmentLengthCached(coords);
           }
           if (!nLinks || length < 30) continue;
           _bLinks += nLinks;
 
           const isBoundary = false;
-          // Fietsen parkeren niet in de digital twin: alleen onderweg zichtbaar.
-          const canPark    = firstSpeedMs <= (50 / 3.6) && (route.vehicleMode ?? MODE) !== 'BIKE';
-          routePaths.push(_makeRoutePath(route, isBoundary, canPark));
+          routePaths.push(_makeRoutePath(route, isBoundary));
         }
 
         const _bT1 = performance.now();
@@ -10939,7 +11003,8 @@
               // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
               const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
               const offset      = Math.min(posInMetres / rp.path.length, 0.999);
-              const isParked    = rp.canPark && Math.random() < parkRatio;
+              const linkCanPark = speedMs <= PARK_MAX_SPEED_MS && (rp.route.vehicleMode ?? MODE) !== 'BIKE';
+              const isParked    = linkCanPark && Math.random() < parkRatio;
               const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
@@ -10952,7 +11017,6 @@
                 vehicleMode:   rp.route.vehicleMode ?? MODE,
                 state:         isParked ? 'parked' : 'moving',
                 departAt,
-                canPark:   rp.canPark,
                 noRespawn: true,
                 pendingPath,
                 spawnRate:  null,
@@ -11003,7 +11067,8 @@
               // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
               const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
               const offset      = Math.min(posInMetres / rp.path.length, 0.999);
-              const isParked    = rp.canPark && Math.random() < parkRatio;
+              const linkCanPark = speedMs <= PARK_MAX_SPEED_MS && (rp.route.vehicleMode ?? MODE) !== 'BIKE';
+              const isParked    = linkCanPark && Math.random() < parkRatio;
               const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
               list.push({
@@ -11016,7 +11081,6 @@
                 vehicleMode:   rp.route.vehicleMode ?? MODE,
                 state:         isParked ? 'parked' : 'moving',
                 departAt,
-                canPark:   rp.canPark,
                 noRespawn: true,
                 pendingPath,
                 spawnRate:  null,
@@ -11074,11 +11138,20 @@
           for (const rp of routePaths) {
             const count = rp.count;
 
-            for (let i = 0; i < count; i++) {
-              const isParked = rp.canPark && Math.random() < parkRatio;
+            const isBike = (rp.route.vehicleMode ?? MODE) === 'BIKE';
 
-              // Gewogen startpositie (ook voor geparkeerde auto's — verspreid over de route)
-              const offset = weightedOffsetOnPath(rp.path);
+            for (let i = 0; i < count; i++) {
+              // Parkeerpositie eerst proberen te vinden (alleen op links ≤50 km/u, met
+              // bias naar de routeuiteinden en — voor woon-werkverkeer — naar het meest
+              // plausibele eind voor dit dagdeel). Lukt dat niet (bv. zuivere
+              // snelwegroute), dan blijft de auto rijdend met een gewone, ongefilterde
+              // startpositie.
+              let isParked = false, offset = null;
+              if (!isBike && Math.random() < parkRatio) {
+                const parkOffset = weightedParkOffsetOnPath(rp);
+                if (parkOffset != null) { isParked = true; offset = parkOffset; }
+              }
+              if (offset == null) offset = weightedOffsetOnPath(rp.path);
 
               const pendingPath = null;
 
@@ -11098,7 +11171,6 @@
                 vehicleMode:   rp.route.vehicleMode ?? MODE,
                 state:         isParked ? 'parked' : 'moving',
                 departAt,
-                canPark:   rp.canPark,
                 noRespawn: true,              // warmup-auto: verdwijnt bij aankomst, productie spawnt nieuwe
                 pendingPath,
                 spawnRate:  null,             // niet meer gebruikt (noRespawn=true)
@@ -11145,7 +11217,6 @@
               vehicleMode:   segVehicleMode,
               state:    'spawning',
               departAt,
-              canPark:  false,     // geen parkeren in segment-modus
               spawnDelay,
               pendingPath:        null,
               waitingAtNode:      null,
@@ -11194,7 +11265,6 @@
         vehicleMode: vm,
         state:     'moving',
         departAt:  0,
-        canPark:   rp.canPark,
         noRespawn: true,
         pendingPath,
         spawnRate:  null,
@@ -14510,8 +14580,12 @@
               // Productie- / warmup-auto: bij aankomst bestemming verdwijnen
               car.state = 'done';
               attractionAccum++;
-            } else if (car.canPark) {
-              // Herhalende stadsweg-auto: parkeer aan het einde en wacht voor volgende rit
+            } else if (car.path.links?.length
+                       && car.path.links[car.path.links.length - 1].speedMs <= PARK_MAX_SPEED_MS
+                       && car.vehicleMode !== 'BIKE') {
+              // Herhalende stadsweg-auto: parkeer aan het einde (laatste link ≤50 km/u) en
+              // wacht voor volgende rit. Herberekend uit car.path (niet een gecachete vlag),
+              // zodat dit ook na route-chaining (pendingPath) klopt.
               car.offset   = 0.99;
               car.speed    = 0;
               car.state    = 'parked';
