@@ -7325,7 +7325,11 @@
     }
 
     // Voet-/fietspad-ribbons als platte lijnen op wegniveau. Worden ONDER de
-    // netwerk-visualisatie getekend (staan vóór makeNetworkLayer in de overlay).
+    // netwerk-visualisatie getekend (staan vóór makeNetworkLayer in de overlay),
+    // en — via beforeId, als die laag bestaat — ook onder de 'NWB wegen'-laag
+    // (mtl-road-edge e.v.) van de Montréal-ondergrond geïnterleaved, zodat de
+    // NWB-wegen er net als de BGT-stoep-/fietspadvlakken (montreal-basemap.js)
+    // overheen liggen. Kleuren komen uit diezelfde Montréal-palette.
     function makePathRibbonLayers() {
       if (!_trafficAssetsVisible || !_trafficAssetCategories.paths) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
@@ -7347,9 +7351,16 @@
       const elevatedPath = (f, h) => lineOf(f).map(c => [c[0], c[1], h]);
       const hoverPath = info => { _taHover = info.object ? { props: info.object.properties || {}, lngLat: info.coordinate } : null; };
       const layers = [];
+      const _mtlPal = window.MontrealBasemap?.palettes?.day;
+      const _sidewalkRgb = (_mtlPal && _b3HexToRgb(_mtlPal.sidewalk)) || [176, 178, 182];
+      const _bikepathRgb = (_mtlPal && _b3HexToRgb(_mtlPal.bikePath)) || [178, 76, 60];
+      const _nwbBeforeId = map.getLayer('mtl-road-edge') ? 'mtl-road-edge' : undefined;
 
-      // Voetpaden: dunne platte grijze/bruine ribbon op wegniveau. Kleur naar
-      // verharding (onverhard = bruin, verhard = licht grijs).
+      // Voetpaden: dunne platte ribbon op wegniveau, zelfde grijs als de BGT-
+      // stoepvlakken (mtl-sidewalk-fill); onverharde paden blijven bruin (geen
+      // patroon/grijs, dat geldt alleen voor verharde stoepen). Een echt
+      // tegelpatroon (zoals de fill-pattern van mtl-sidewalk-fill) is op een
+      // deck.gl-lijnribbon niet haalbaar, dus dit blijft bij de vlakke kleur.
       const _footFeats = _taFootPathFeatures.filter(okLine);
       if (_footFeats.length) {
         const unpaved = new Set(['dirt', 'ground', 'earth', 'unpaved', 'grass', 'sand', 'gravel', 'fine_gravel', 'compacted']);
@@ -7360,16 +7371,17 @@
           getWidth:      f => Math.max(0.8, parseFloat((f.properties || {}).width) || 1.2),
           widthMinPixels: 1,
           getColor:      f => unpaved.has(((f.properties || {}).surface || '').toLowerCase())
-                           ? [150, 120, 84, 220] : [176, 178, 182, 220],
+                           ? [150, 120, 84, 220] : [..._sidewalkRgb, 220],
           capRounded:    true,
           jointRounded:  true,
           getPath:       f => elevatedPath(f, 0.04),
           pickable:      true,
           onHover:       hoverPath,
+          beforeId:      _nwbBeforeId,
         }));
       }
 
-      // Fietspaden: platte roodbruine ribbon op wegniveau (herkenbare fietspad-kleur).
+      // Fietspaden: zelfde roodbruine fietspadkleur als mtl-bikepath-fill.
       const _cycleFeats = _taCyclePathFeatures.filter(okLine);
       if (_cycleFeats.length) {
         layers.push(new PathLayer({
@@ -7378,12 +7390,13 @@
           widthUnits:    'meters',
           getWidth:      f => Math.max(1.2, parseFloat((f.properties || {}).width) || 1.8),
           widthMinPixels: 1.5,
-          getColor:      [178, 76, 60, 225],
+          getColor:      [..._bikepathRgb, 225],
           capRounded:    true,
           jointRounded:  true,
           getPath:       f => elevatedPath(f, 0.045),
           pickable:      true,
           onHover:       hoverPath,
+          beforeId:      _nwbBeforeId,
         }));
       }
       return layers;
@@ -10246,7 +10259,7 @@
     // calibrateRouteProductions() gebeurt pas in _loadRoutesInBackground() hierboven,
     // zodra routeList daadwerkelijk gevuld is (hier zou het nog altijd een no-op zijn).
     let widthScale = false;
-    let colorMetric = 'flow';
+    let colorMetric = 'none';
     let cars      = [];
     let carData   = [];
 
