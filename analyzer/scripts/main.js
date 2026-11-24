@@ -4057,12 +4057,13 @@
         // attractie'-radio's (zie _applyBuildingDisplay), niet door de
         // achtergrondkeuze.
         // Montréal-modus: alle Liberty-lagen behalve de labels (symbol) uit;
-        // de 'mtl-*'-lagen tekenen de ondergrond.
+        // de 'mtl-*'-lagen tekenen de ondergrond. POI-iconen (speeltuin, park,
+        // parkeerplaats, info...) horen daar niet bij, zie hiddenBaseLayerIds.
         if (_libertyAllLayerIds) {
-          const types = new Map(m.getStyle().layers.map(l => [l.id, l.type]));
+          const mtlHidden = isMtl ? window.MontrealBasemap.hiddenBaseLayerIds(m) : null;
           for (const id of _libertyAllLayerIds) {
             if (id === 'building' || id === 'building-3d' || id.startsWith('buildings')) continue;
-            const show = !hideMap && (!isMtl || types.get(id) === 'symbol');
+            const show = !hideMap && !(mtlHidden && mtlHidden.has(id));
             try { m.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none'); } catch (_) {}
           }
         }
@@ -9068,7 +9069,9 @@
 
       // ── Satelliet-ondergrond ────────────────────────────────────────────────
       // Verzamel Liberty fill/background layer IDs die we in satellietmodus verbergen.
-      // Lijnlagen (roads) en symboollagen (labels) blijven als overlay zichtbaar.
+      // Lijnlagen (roads) en symboollagen (labels) blijven als overlay zichtbaar,
+      // behalve de POI-iconen (source-layer 'poi': speeltuin, park, parkeerplaats,
+      // info...), die als losse symbooltjes over de luchtfoto niets toevoegen.
       // Let op: _tryAddBuildings() hierboven heeft onze eigen 'buildings-*'-lagen
       // (buildings-fill/buildings-selected) al toegevoegd aan de
       // stijl — die moeten hier expliciet uitgesloten worden, anders trekt de
@@ -9076,7 +9079,8 @@
       // en verschijnt het grondvlak ook als 'Gebouw productie/attractie' = uit.
       _libertyFillLayerIds = map.getStyle().layers
         .filter(l => !l.id.startsWith('buildings'))
-        .filter(l => l.type === 'background' || l.type === 'fill' || l.type === 'raster')
+        .filter(l => l.type === 'background' || l.type === 'fill' || l.type === 'raster'
+          || (l.type === 'symbol' && l['source-layer'] === 'poi'))
         .map(l => l.id);
       // Alle Liberty layer IDs — verborgen in geen-kaart-modus (alleen zwart vlak).
       _libertyAllLayerIds = map.getStyle().layers

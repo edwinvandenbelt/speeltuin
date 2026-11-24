@@ -213,13 +213,16 @@
 
   // Ids van de Liberty-ondergrondlagen die in Montréal-modus uit moeten:
   // achtergrond + alle niet-label-lagen op de OpenFreeMap-source. Eigen lagen
-  // (andere sources) en labels (symbol) blijven dus ongemoeid.
+  // (andere sources) en labels (symbol) blijven dus ongemoeid, behalve de
+  // POI-iconen (source-layer 'poi': speeltuin, park, parkeerplaats, info...),
+  // die als losse symbooltjes over een andere ondergrond niets toevoegen.
   function hiddenBaseLayerIds(m) {
     const style = m.getStyle();
     const src = _vectorSource(style);
     return new Set(style.layers
       .filter(l => !l.id.startsWith('mtl-'))
-      .filter(l => l.type === 'background' || (l.source === src && l.type !== 'symbol'))
+      .filter(l => l.type === 'background'
+        || (l.source === src && (l.type !== 'symbol' || l['source-layer'] === 'poi')))
       .map(l => l.id));
   }
 
