@@ -1,0 +1,1520 @@
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--ga-vlak); }
+    /* ── Kaart-container (enkelvoudig / split-view) ──────────────────── */
+    #mapContainer { display: flex; width: 100vw; height: calc(100vh - var(--ga-header-h)); overflow: hidden; }
+    #map          { flex: 1 1 50%; min-width: 200px; height: 100%; }
+    #map-orig     { flex: 1 1 50%; min-width: 200px; height: 100%; display: none; }
+    #map-splitter {
+      flex: 0 0 6px; display: none; cursor: col-resize; height: 100%;
+      background: var(--ga-vlak);
+      border-left:  1px solid rgba(0,120,212,0.8);
+      border-right: 1px solid rgba(0,120,212,0.8);
+      transition: background 0.15s;
+      position: relative; z-index: 5;
+    }
+    #map-splitter:hover, #map-splitter.dragging { background: var(--ga-rood); }
+    .split-mode #map-orig     { display: block; }
+    .split-mode #map-splitter { display: flex; align-items: center; justify-content: center; }
+    /* Grip-icoon op de splitter */
+    #map-splitter::after {
+      content: ''; display: block;
+      width: 2px; height: 40px;
+      background: rgba(0,120,212,0.35);
+      border-radius: var(--ga-radius);
+    }
+    /* Badges boven elke kaart */
+    .map-badge {
+      position: absolute; top: 10px; z-index: 20;
+      background: rgba(255,255,255,0.85); color: var(--ga-rood);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+      padding: 4px 10px; border-radius: var(--ga-radius);
+      border: 1px solid rgba(0,120,212,0.25);
+      pointer-events: none; display: none;
+    }
+    .split-mode .map-badge { display: block; }
+    #badge-left  { left: 8px; }
+    #badge-right { right: 8px; }
+
+    /* ── Overlay (swipe) modus — kaarten gestapeld, map-orig geclipped ─── */
+    /* Beide maps volledig over elkaar, splitter als absolute lijn            */
+    #mapContainer.overlay-mode { position: relative; display: block; }
+    #mapContainer.overlay-mode #map,
+    #mapContainer.overlay-mode #map-orig {
+      position: absolute !important;
+      left: 0; top: 0;
+      width: 100% !important; height: 100%;
+      flex: none; min-width: 0;
+    }
+    #mapContainer.overlay-mode #map-orig { z-index: 2; }
+    #mapContainer.overlay-mode #map-splitter {
+      display: flex; position: absolute;
+      top: 0; height: 100%; width: 6px;
+      flex: none; align-items: center; justify-content: center;
+      z-index: 5;
+      /* left wordt inline gezet via JS */
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────────────────── */
+    #toolbar {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      z-index: 10;
+      display: flex; align-items: center; gap: 3px;
+      background: #ffffff;
+      color: var(--ga-tekst);
+      padding: 6px 8px;
+      border-radius: var(--ga-radius);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      font-size: 13px;
+      border: 1px solid var(--ga-lijn);
+      box-shadow: 0 4px 18px rgba(35,41,49,0.10);
+      white-space: nowrap;
+    }
+    .tb-title {
+      font-size: 11px; color: var(--ga-tekst-2);
+      padding: 0 4px;
+      max-width: 180px;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .tb-sep {
+      width: 1px; height: 22px;
+      background: var(--ga-lijn);
+      margin: 0 3px; flex-shrink: 0;
+    }
+    .tb-icon-group {
+      display: flex; align-items: center; gap: 3px; flex-shrink: 0;
+    }
+    .tb-icon {
+      font-size: 15px; line-height: 1;
+      cursor: default; user-select: none; flex-shrink: 0;
+    }
+    .tb-btn {
+      width: 30px; height: 30px;
+      border-radius: var(--ga-radius);
+      border: 1px solid var(--ga-lijn);
+      background: transparent;
+      color: var(--ga-tekst-2);
+      font-size: 13px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .tb-btn:hover { background: var(--ga-vlak); color: var(--ga-tekst-2); }
+    .tb-btn.active { background: var(--ga-rood); color: #ffffff; border-color: var(--ga-rood); }
+    /* Tekstknoppen (tbtn) - voor navigatie items zoals "Netwerk", "Scenario" */
+    .tbtn { border: 0; background: transparent; color: var(--ga-tekst-2); font-size: 13px; padding: 7px 12px; border-radius: var(--ga-radius); cursor: pointer; font-weight: 600; }
+    .tbtn:hover { background: var(--ga-vlak); }
+    .tbtn.active { background: var(--ga-rood); color: #fff; }
+    .tbtn.ghost { border: 1px solid var(--ga-lijn); }
+    .tb-select {
+      height: 30px;
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      padding: 0 8px; font-size: 12px; cursor: pointer;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      flex-shrink: 0;
+    }
+    .tb-scale { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .tb-scale-lbl { font-size: 11px; color: var(--ga-tekst-2); white-space: nowrap; }
+    .tb-scale-lbl b { color: var(--ga-tekst); font-weight: 600; }
+    #timeScale { width: 70px; accent-color: var(--ga-rood); cursor: pointer; }
+    .sim-play-toggle {
+      margin-left: auto; display: flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 400; color: var(--ga-tekst-2); cursor: pointer;
+    }
+    .sim-play-toggle input { accent-color: var(--ga-rood); cursor: pointer; margin: 0; }
+    #simBlockHeader .lmp-block-arrow { margin-left: 0; }
+    /* ── Analoge simulatieklok ────────────────────────────────────────────── */
+    .sim-clock-row { display: flex; align-items: center; gap: 8px; }
+    .sim-clock {
+      flex: 0 0 80px; display: flex; align-items: center; justify-content: center;
+      cursor: grab; touch-action: none; user-select: none;
+    }
+    .sim-clock:active { cursor: grabbing; }
+    .sim-clock-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
+    .sim-time-box {
+      height: 26px; font-size: 11px; font-weight: 600; padding: 0 4px 0 6px; border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius); color: var(--ga-tekst); font-variant-numeric: tabular-nums;
+      display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff;
+      box-sizing: border-box;
+    }
+    #simClockTimeText { flex: 1 1 auto; text-align: center; }
+    .sim-clock-mode-btn {
+      flex: 0 0 auto; height: 18px; min-width: 20px; padding: 0 4px; margin: 0;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); background: var(--ga-uit); color: var(--ga-tekst-2);
+      font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer;
+      font-family: inherit; box-sizing: border-box;
+    }
+    .sim-clock-mode-btn:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+    .sim-time-nav-row { display: flex; align-items: center; gap: 4px; }
+    .sim-time-nav-row .sim-time-box { flex: 1 1 auto; min-width: 0; }
+    .sim-clock-nav-btn {
+      flex: 0 0 auto; height: 26px; min-width: 20px; padding: 0 4px; margin: 0;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); background: var(--ga-uit); color: var(--ga-tekst-2);
+      font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer;
+      font-family: inherit; box-sizing: border-box;
+    }
+    .sim-clock-nav-btn:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+    .sim-date-input { height: 26px; font-size: 11px; padding: 0 6px; border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); color: var(--ga-tekst); box-sizing: border-box; }
+    .sim-row.sim-labeled-row { align-items: center; gap: 8px; }
+    .sim-subrow-label {
+      font-size: 11px; color: var(--ga-tekst-2); flex: 0 0 80px; white-space: nowrap;
+    }
+    .sim-btn-group { display: flex; gap: 0; flex: 1 1 auto; min-width: 0; }
+    .sim-opt-btn {
+      flex: 1 1 0; width: auto; min-width: 0; height: 28px; padding: 0;
+      border: 1px solid var(--ga-lijn); border-left-width: 0; border-radius: 0; background: #fff; color: var(--ga-tekst);
+      font-size: 14px; line-height: 1; cursor: pointer; font-family: var(--ga-font), system-ui, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .sim-btn-group .sim-opt-btn:first-child { border-left-width: 1px; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+    .sim-btn-group .sim-opt-btn:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+    .sim-opt-btn:hover { background: var(--ga-vlak); }
+    .sim-opt-btn.active { background: var(--ga-rood); color: #fff; border-color: var(--ga-rood); position: relative; z-index: 1; }
+    /* .tb-add { border-color: #49a748; color: #49a748; background: transparent; }
+    .tb-add:hover { background: var(--ga-vlak) !important; color: #49a748 !important; border-color: #49a748 !important; }
+    .tb-add.active { background: #49a748 !important; color: #ffffff !important; border-color: #49a748 !important; } */
+    .lang-select { min-width: 70px; padding: 0 4px; font-size: 12px; }
+
+    /* ── Linker menu-paneel (alleen zichtbaar met areaId) ──────────────── */
+    #leftMenuPanel {
+      position: absolute;
+      left: 0; top: var(--ga-header-h);
+      width: 300px; height: calc(100% - var(--ga-header-h));
+      background: var(--ga-vlak);
+      border-right: 1px solid var(--ga-lijn);
+      box-shadow: 4px 0 18px rgba(35,41,49,0.08);
+      z-index: 20;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      transition: margin-left 0.25s ease;
+    }
+    #leftMenuPanel.visible { display: flex; }
+    #leftMenuPanel.collapsed { margin-left: -300px; }
+
+    /* ── Resize-handle op het openingsscherm (gebiedskeuze) ──────────────── */
+    .lmp-resize-handle {
+      position: absolute;
+      top: 0; right: 0;
+      width: 6px; height: 100%;
+      cursor: col-resize;
+      z-index: 21;
+      background: transparent;
+      transition: background 0.15s;
+    }
+    .lmp-resize-handle:hover,
+    .lmp-resize-handle.dragging { background: rgba(0,120,212,0.35); }
+
+    /* ── Groene kop bovenin het linker menu-paneel ────────────────────── */
+    #leftMenuHeader {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      background: var(--ga-rood);
+      color: #ffffff;
+    }
+    #leftMenuHeader .tb-btn {
+      border-color: rgba(255,255,255,0.35);
+      background: rgba(255,255,255,0.12);
+      color: #ffffff;
+    }
+    #leftMenuHeader .tb-btn:hover { background: rgba(255,255,255,0.25); color: #ffffff; }
+    #leftMenuHeader .lmp-header-title {
+      flex: 1;
+      font-size: 14px; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .lmp-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .lmp-block {
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      overflow: hidden;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+    .lmp-block-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px;
+      cursor: pointer; user-select: none;
+      font-size: 15px; font-weight: 600; color: var(--ga-tekst);
+      background: var(--ga-vlak);
+      transition: color var(--ga-snel);
+    }
+    .lmp-block-header:hover { color: var(--ga-rood-donker); }
+    .lmp-block:not(.collapsed) .lmp-block-header {
+      box-shadow: inset 3px 0 0 var(--ga-rood);
+      border-bottom: 1px solid var(--ga-lijn);
+    }
+    .lmp-block-arrow { margin-left: auto; font-size: 11px; color: var(--ga-tekst-2); transition: transform 0.2s; }
+    .lmp-block.collapsed .lmp-block-arrow { transform: rotate(-90deg); }
+    .lmp-block-body {
+      padding: 10px 12px 14px;
+      display: flex; flex-direction: column; gap: 4px;
+      font-size: 14px; color: var(--ga-tekst-2);
+    }
+    .lmp-block.collapsed .lmp-block-body { display: none; }
+    .lmp-radio-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 4px;
+      cursor: pointer;
+      font-size: 13px; color: var(--ga-tekst);
+    }
+    .lmp-radio-row input[type=radio] {
+      width: 16px; height: 16px; margin: 0;
+      accent-color: var(--ga-rood); cursor: pointer;
+    }
+    .lmp-radio-row input[type=checkbox] {
+      width: 16px; height: 16px; margin: 0;
+      accent-color: var(--ga-rood); cursor: pointer;
+    }
+    /* Kleine inline laad-indicator naast een checkbox terwijl de bijbehorende
+       data (traffic assets / vegetatie) wordt opgehaald. */
+    .lmp-asset-spinner {
+      display: none;
+      width: 11px; height: 11px;
+      border: 2px solid rgba(0,120,212,0.2);
+      border-top-color: var(--ga-rood);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex: none;
+    }
+    .lmp-asset-spinner.visible { display: inline-block; }
+    /* Aantal opgehaalde objecten tussen haakjes achter een checkbox in het
+       '3D weergave'-blok (verkeersobjecten / bomen). */
+    .lmp-asset-count { color: var(--ga-tekst-2); }
+    /* Totaal bekend, maar onder de minimale zoom wordt (nog) niets getekend. */
+    .lmp-asset-count.lmp-asset-count-dim { opacity: 0.55; font-style: italic; }
+
+    /* Statusregel onder 'Pand weergave': laat zien of panden nog opgehaald
+       moeten worden, al onderweg zijn, of beschikbaar zijn. */
+    .lmp-buildings-status {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 6px; padding-top: 8px;
+      border-top: 1px solid rgba(35,41,49,0.08);
+      font-size: 12px; color: var(--ga-tekst-2);
+    }
+
+    /* ── Slider-tab om paneel in/uit te klappen ───────────────────────── */
+    #leftMenuPanelToggle {
+      position: absolute;
+      left: 300px; top: calc(50% + (var(--ga-header-h) / 2));
+      transform: translateY(-50%);
+      width: 20px; height: 44px;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-left: none;
+      border-radius: 0 var(--ga-radius) var(--ga-radius) 0;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      color: var(--ga-tekst-2);
+      z-index: 21;
+      box-shadow: var(--ga-schaduw-zwevend);
+      transition: left 0.25s ease, color var(--ga-snel);
+    }
+    #leftMenuPanel.collapsed ~ #leftMenuPanelToggle,
+    #leftMenuPanelToggle.collapsed { left: 0; }
+    #leftMenuPanelToggle:hover { color: var(--ga-rood-donker); }
+    #leftMenuPanelToggle .lmp-toggle-arrow { font-size: 12px; transition: transform 0.25s; }
+    #leftMenuPanelToggle.collapsed .lmp-toggle-arrow { transform: rotate(180deg); }
+
+    .mdc-checkbox .mdc-checkbox__native-control
+    {
+        position: absolute;
+        margin: 0;
+        padding: 0;
+        opacity: 0;
+        cursor: inherit;
+        z-index: 1;
+        width: var(--mat-checkbox-state-layer-size, 40px);
+        height: var(--mat-checkbox-state-layer-size, 40px);
+        top: calc((var(--mat-checkbox-state-layer-size, 40px) - var(--mat-checkbox-state-layer-size, 40px)) / 2);
+        right: calc((var(--mat-checkbox-state-layer-size, 40px) - var(--mat-checkbox-state-layer-size, 40px)) / 2);
+        left: calc((var(--mat-checkbox-state-layer-size, 40px) - var(--mat-checkbox-state-layer-size, 40px)) / 2);
+    }
+
+    /* ── Legend strip ────────────────────────────────────────────────– */
+    #legendStrip {
+      position: static;
+      margin: 0 12px 12px 12px;
+      flex-shrink: 0;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 10px 14px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: 0 1px 4px rgba(35,41,49,0.06);
+    }
+    .legend-bar {
+      width: 100%; height: 7px; border-radius: var(--ga-radius);
+      margin-bottom: 3px;
+    }
+    .legend-labels {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: var(--ga-tekst-2);
+    }
+    #carCountStrip {
+      margin-top: 5px;
+      padding-top: 4px;
+      border-top: 1px solid rgba(35,41,49,0.07);
+      font-size: 10px;
+      color: var(--ga-rood);
+      text-align: center;
+      min-height: 0;
+    }
+    #carCountStrip:empty { display: none; }
+
+    /* ── Nieuw-scherm ─────────────────────────────────────────────────── */
+    #newScreen {
+      display: none; position: fixed; inset: 0; z-index: 150;
+      background: var(--ga-vlak);
+      flex-direction: row;
+    }
+    #newScreen.visible { display: flex; }
+    #newPanel {
+      width: 360px; min-width: 320px;
+      background: #ffffff;
+      border-right: 1px solid var(--ga-lijn);
+      display: flex; flex-direction: column;
+      padding: 24px 20px; gap: 16px;
+      font-family: var(--ga-font), sans-serif;
+      overflow-y: auto;
+    }
+    #newPanel h2 { margin: 0; color: var(--ga-rood); font-size: 16px; }
+    #newPanel label {
+      display: flex; flex-direction: column; gap: 5px;
+      font-size: 12px; color: var(--ga-tekst-2);
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    #newPanel input, #newPanel select {
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      padding: 7px 10px; font-size: 13px;
+    }
+    #newPanel input::placeholder { color: var(--ga-lijn); }
+    .new-mode-group {
+      display: flex; flex-direction: column; gap: 6px;
+      font-size: 12px; color: var(--ga-tekst-2);
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    #newModes { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
+    .new-mode-check {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--ga-tekst); text-transform: none; letter-spacing: 0;
+      cursor: pointer;
+    }
+    .new-mode-check input[type=checkbox] {
+      width: 14px; height: 14px; margin: 0;
+      accent-color: var(--ga-rood); cursor: pointer;
+    }
+    .new-mode-check:has(input:disabled) {
+      color: var(--ga-placeholder); cursor: default;
+    }
+    .new-mode-check input[type=checkbox]:disabled {
+      cursor: default;
+    }
+    #bboxDisplay {
+      font-size: 11px; color: var(--ga-tekst-2); font-family: monospace;
+      background: var(--ga-vlak); border-radius: var(--ga-radius); padding: 8px 10px;
+      line-height: 1.7;
+    }
+    #newMap { flex: 1; }
+    .new-btn {
+      padding: 9px 14px; border-radius: var(--ga-radius); font-size: 13px; cursor: pointer;
+      border: 1px solid var(--ga-rood);
+      background: var(--ga-rood); color: #ffffff;
+      transition: background .15s;
+    }
+    .new-btn:hover { background: var(--ga-rood-donker); }
+    .new-btn.secondary {
+      background: #ffffff; color: var(--ga-tekst);
+      border-color: var(--ga-lijn);
+    }
+    .new-btn.secondary:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+    #newProgress {
+      display: none; flex-direction: column; gap: 8px;
+    }
+    #newProgressBar {
+      height: 6px; border-radius: var(--ga-radius);
+      background: rgba(0,120,212,0.15);
+      overflow: hidden;
+    }
+    #newProgressFill {
+      height: 100%; width: 0%;
+      background: var(--ga-rood);
+      transition: width .3s;
+      animation: progressPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes progressPulse {
+      0%,100% { opacity: 1; } 50% { opacity: .5; }
+    }
+    #newLog {
+      font-size: 11px; font-family: monospace; color: var(--ga-tekst-2);
+      background: #ffffff; border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius); padding: 8px 10px;
+      max-height: 160px; overflow-y: auto; white-space: pre-wrap;
+    }
+
+    /* ── Laadscherm ───────────────────────────────────────────────────── */
+    #loader {
+      position: absolute; inset: 0; z-index: 100;
+      background: var(--ga-vlak);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px;
+      overflow-y: auto;
+      padding: 24px 0;
+      transition: opacity 0.6s;
+    }
+    #loader.fade { opacity: 0; pointer-events: none; }
+    #loader p { color: var(--ga-tekst-2); font-size: 14px; font-family: var(--ga-font), sans-serif; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(0,120,212,0.15);
+      border-top-color: var(--ga-rood);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin-svg { animation: spin 1s linear infinite; transform-origin: center; }
+    #calcOverlay {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(13, 17, 23, 0.82);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px;
+    }
+    #calcOverlay p { color: var(--ga-rood); font-size: 14px; font-family: var(--ga-font), sans-serif; }
+    /* Laad-indicator over de kaart tijdens een dagdeel-/simulatie-overgang op de
+       achtergrond (klok-klik, AM/PM-knop, afspelen/pauzeren) — niet-blokkerend,
+       alleen zichtbaar rechts van het linker menu-paneel. */
+    #simBusyOverlay {
+      position: fixed; top: var(--ga-header-h); left: 300px; right: 0; bottom: 0; z-index: 15;
+      display: none; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    #simBusyOverlay.visible { display: flex; }
+    #simBusyOverlay .spinner-chip {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: transparent; box-shadow: none;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Edit-modus knoppen ───────────────────────────────────────────── */
+    .edit-btn {
+      border-color: 1px solid var(--ga-lijn);
+      background: transparent !important;
+      color:1px solid var(--ga-lijn)
+    }
+    .edit-btn:hover { background: var(--ga-rood-licht) !important; }
+    .edit-btn.active {
+      background: var(--ga-rood) !important;
+      border-color: var(--ga-rood)  !important;
+      color: #ffffff !important;
+    }
+    /* Groepeer de aanpassing-modusknoppen dicht tegen elkaar (segmented control,
+       vergelijkbaar met de temperatuur-/weerknoppen). */
+    .edit-btn-group { display: flex; gap: 0; flex-shrink: 0; }
+    .edit-btn-group .edit-btn {
+      border-radius: 0; border-left-width: 0;
+    }
+    .edit-btn-group .edit-btn:first-child {
+      border-left-width: 1px; border-top-left-radius: 6px; border-bottom-left-radius: 6px;
+    }
+    .edit-btn-group .edit-btn:last-child {
+      border-top-right-radius: 6px; border-bottom-right-radius: 6px;
+    }
+    .edit-btn-group .edit-btn.active { position: relative; z-index: 1; }
+
+    /* ── Node-dialoog ─────────────────────────────────────────────────── */
+    #nodeDialog, #linkDialog, #linkFlowDialog {
+      display: none;
+      position: absolute;
+      z-index: 50;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 18px 20px;
+      width: 260px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+    }
+    #gmtUploadDialog {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10000;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 18px 20px;
+      width: 300px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+    }
+    #gmtUploadDialog h3 {
+      font-size: 13px; color: var(--ga-rood); margin-bottom: 14px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--ga-lijn);
+    }
+    #gmtUploadDialogOk {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #gmtUploadDialogOk:hover { background: var(--ga-rood-donker); }
+    #gmtUploadDialogCancel {
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #gmtUploadDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+
+    /* ── Nieuw wegvak attribuut-dialoog ──────────────────────────────── */
+    #linkAddDialog {
+      display: none;
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10000;
+      background: #ffffff;
+      border: 1px solid var(--ga-rood);
+      border-radius: var(--ga-radius);
+      padding: 18px 20px;
+      width: 280px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+    }
+    #linkAddDialog h3 {
+      font-size: 13px; color: var(--ga-rood); margin-bottom: 10px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--ga-lijn);
+    }
+    #linkAddDialogOk {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #linkAddDialogOk:hover { background: var(--ga-rood-donker); }
+    #linkAddDialogCancel {
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #linkAddDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+
+    #nodeDialog h3, #linkDialog h3, #linkFlowDialog h3 {
+      font-size: 13px; color: var(--ga-rood); margin-bottom: 14px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--ga-lijn);
+    }
+    #linkDialogOk, #linkFlowDialogOk {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #linkDialogOk:hover, #linkFlowDialogOk:hover { background: var(--ga-rood-donker); }
+    #linkDialogCancel, #linkFlowDialogCancel {
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #linkDialogCancel:hover, #linkFlowDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+     .speed-btn, .link-poly-speed-btn {
+       padding: 3px 7px; font-size: 11px; border-radius: var(--ga-radius); cursor: pointer;
+       background: rgba(35,41,49,0.07); color: var(--ga-tekst);
+       border: 1px solid rgba(35,41,49,0.15);
+     }
+     .speed-btn:hover, .link-poly-speed-btn:hover  { background: rgba(0,120,212,0.18); color: var(--ga-rood); }
+      .speed-btn.active, .link-poly-speed-btn.active { background: rgba(0,120,212,0.30); color: var(--ga-rood); border-color: rgba(0,120,212,0.6); }
+      /* Afsluitingsknop (verboden in te rijden) */
+      .link-close-btn {
+        padding: 4px 6px; border-radius: var(--ga-radius); cursor: pointer; line-height: 0;
+        background: rgba(230,51,18,0.12); color: var(--ga-fout);
+        border: 1px solid rgba(230,51,18,0.28);
+      }
+      .link-close-btn:hover  { background: rgba(230,51,18,0.27); border-color: rgba(230,51,18,0.55); }
+      .link-close-btn.active { background: rgba(230,51,18,0.45); border-color: rgba(230,51,18,0.85);
+                                box-shadow: 0 0 7px rgba(230,51,18,0.45); }
+    .node-field { margin-bottom: 12px; }
+    .node-field label { font-size: 11px; color: var(--ga-tekst-2); display: block; margin-bottom: 4px; }
+    .field-hint { font-size: 10px; color: var(--ga-lijn); font-weight: 400; }
+    .node-field-row { display: flex; align-items: center; gap: 6px; }
+    .node-field-row input {
+      flex: 1; background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      padding: 6px 8px; font-size: 13px; font-family: var(--ga-font), sans-serif;
+    }
+    .node-field-row button {
+      width: 28px; height: 28px; border-radius: var(--ga-radius);
+      background: transparent; color: var(--ga-rood);
+      border: 1px solid var(--ga-lijn);
+      font-size: 16px; cursor: pointer; line-height: 1;
+      transition: background 0.15s;
+    }
+    .node-field-row button:hover { background: var(--ga-vlak); }
+    .node-dialog-btns { display: flex; gap: 8px; margin-top: 14px; }
+    .node-dialog-btns button {
+      flex: 1; padding: 7px 0; border-radius: var(--ga-radius);
+      font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
+      transition: background 0.15s;
+    }
+    #nodeDialogOk {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #nodeDialogOk:hover { background: var(--ga-rood-donker); }
+    #nodeDialogCancel {
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #nodeDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+
+    /* ── Wijzigingenlijst (inline sub-paneel onder de aanpassing-knoppen) ──── */
+    #changesPanel {
+      display: none;
+      width: auto;
+      margin: 2px 0 4px 0;
+      background: #ffffff;
+      border: 1px solid var(--ga-rood);
+      border-radius: var(--ga-radius);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      overflow: hidden;
+    }
+    #changesPanelHeader {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--ga-lijn);
+      font-size: 12px; color: var(--ga-rood); font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #changesList {
+      max-height: 220px; overflow-y: auto;
+      padding: 6px 0;
+    }
+    .change-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 16px;
+      font-size: 12px; color: var(--ga-tekst);
+      border-bottom: 1px solid var(--ga-lijn);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .change-item:hover { background: var(--ga-vlak); }
+    .change-item.highlighted { background: rgba(221,122,0,0.08); }
+    .change-item:last-child { border-bottom: none; }
+    .change-item-label { flex: 1; line-height: 1.4; }
+    .change-item-label span { color: var(--ga-tekst-2); font-size: 11px; display: block; }
+    .change-item-del {
+      width: 22px; height: 22px; border-radius: var(--ga-radius); flex-shrink: 0;
+      background: transparent; color: var(--ga-tekst-2);
+      border: 1px solid var(--ga-lijn);
+      font-size: 13px; cursor: pointer; line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+    .change-item-del:hover { background: rgba(230,51,18,0.15); color: var(--ga-fout); border-color: rgba(230,51,18,0.3); }
+    #changesPanelFooter { padding: 10px 16px; border-top: 1px solid var(--ga-lijn); }
+    #scenarioNameInput {
+      width: 100%; background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      padding: 6px 9px; font-size: 12px; font-family: var(--ga-font), sans-serif;
+      margin-bottom: 8px; box-sizing: border-box;
+    }
+    #scenarioNameInput:focus { outline: none; border-color: var(--ga-rood); }
+    #applyChangesBtn {
+      width: 100%; padding: 8px 0; border-radius: var(--ga-radius);
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+      font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
+      letter-spacing: 0.3px; transition: background 0.15s;
+    }
+    #applyChangesBtn:hover { background: var(--ga-rood-donker); }
+    #applyChangesBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #applyStatus { font-size: 11px; color: var(--ga-rood); margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
+    #adjustDebugLabel {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 11px; color: var(--ga-tekst-2); cursor: pointer;
+      margin-bottom: 8px;
+    }
+
+    /* ── Read-only view (toolbar ☰-knop): footer + delete-knoppen verbergen ── */
+    .changesPanel--readonly #changesPanelFooter { display: none; }
+    .changesPanel--readonly .change-item-del    { display: none; }
+
+    /* ── Sectiekop in de wijzigingenlijst (scenario-naam / openstaand) ──────── */
+    .change-section-header {
+      padding: 4px 16px 3px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+      color: var(--ga-tekst-2); text-transform: uppercase;
+      border-top: 1px solid rgba(35,41,49,0.06);
+    }
+    .change-section-header:first-child { border-top: none; }
+
+    /* ── Historische wijziging (al toegepast, lichtere opmaak) ──────────────── */
+    .change-item-hist { opacity: 0.72; }
+    .change-item-hist:hover { background: rgba(35,41,49,0.04); }
+
+    /* ── Badge op toolbar-knop (wijzigingsteller) ────────────────────────────── */
+    .tb-badge {
+      position: absolute; top: 3px; right: 2px;
+      min-width: 13px; height: 13px; padding: 0 2px;
+      background: var(--ga-rood); color: #ffffff;
+      border-radius: 50%; font-size: 8px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; line-height: 1;
+    }
+    .tb-badge:empty { display: none; }
+
+    /* ── Motiefverdeling paneel ───────────────────────────────────────── */
+    #purposeChartPanel {
+      display: none;
+      position: absolute;
+      bottom: 24px; right: 340px;
+      z-index: 20;
+      width: 360px;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+      overflow: hidden;
+    }
+    #purposeChartHeader {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--ga-lijn);
+      font-size: 12px; color: var(--ga-rood); font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #purposeChartClose {
+      background: transparent; border: none; color: var(--ga-tekst-2);
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      transition: color 0.15s;
+    }
+    #purposeChartClose:hover { color: var(--ga-tekst); }
+    #purposeChartBody {
+      padding: 12px 14px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    #purposeChartSvg { flex-shrink: 0; }
+    #purposeChartLegend {
+      flex: 1; display: flex; flex-direction: column; gap: 4px;
+    }
+    .pcl-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--ga-tekst);
+    }
+    .pcl-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    }
+    .pcl-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .pcl-pct { color: var(--ga-tekst-2); font-size: 10px; flex-shrink: 0; }
+
+    /* ── What-if wegafsluiting panel ─────────────────────────────────── */
+    #whatifRcPanel {
+      display: none;
+      position: absolute;
+      bottom: 24px; right: 24px;
+      z-index: 20;
+      width: 300px;
+      background: #ffffff;
+      border: 1px solid var(--ga-fout);
+      border-radius: var(--ga-radius);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+      overflow: hidden;
+    }
+    #whatifRcPanelHeader {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--ga-lijn);
+      font-size: 12px; color: var(--ga-fout); font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #whatifRcList {
+      max-height: 180px; overflow-y: auto;
+      padding: 6px 0;
+    }
+    .whatif-rc-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 16px;
+      font-size: 12px; color: var(--ga-tekst);
+      border-bottom: 1px solid var(--ga-lijn);
+    }
+    .whatif-rc-item:last-child { border-bottom: none; }
+    .whatif-rc-item-label { flex: 1; line-height: 1.4; }
+    .whatif-rc-item-del {
+      width: 22px; height: 22px; border-radius: var(--ga-radius); flex-shrink: 0;
+      background: transparent; color: var(--ga-tekst-2);
+      border: 1px solid var(--ga-lijn);
+      font-size: 13px; cursor: pointer; line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+    .whatif-rc-item-del:hover { background: rgba(230,51,18,0.15); color: var(--ga-fout); border-color: rgba(230,51,18,0.3); }
+    .whatif-rc-empty {
+      padding: 10px 16px;
+      font-size: 12px; color: var(--ga-tekst-2); font-style: italic;
+    }
+    #whatifRcFooter { padding: 10px 16px; border-top: 1px solid var(--ga-lijn); }
+    #whatifRcDirRow {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 8px;
+    }
+    #whatifRcDirLabel { font-size: 12px; color: var(--ga-tekst-2); white-space: nowrap; }
+    #whatifRcDirSelect {
+      flex: 1; background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      padding: 5px 8px; font-size: 12px; font-family: var(--ga-font), sans-serif;
+    }
+    #whatifRcDirSelect:focus { outline: none; border-color: var(--ga-fout); }
+    #whatifRcNameInput {
+      width: 100%; background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      padding: 6px 9px; font-size: 12px; font-family: var(--ga-font), sans-serif;
+      margin-bottom: 8px; box-sizing: border-box;
+    }
+    #whatifRcNameInput:focus { outline: none; border-color: var(--ga-fout); }
+    #whatifRcRunBtn {
+      width: 100%; padding: 8px 0; border-radius: var(--ga-radius);
+      background: var(--ga-fout); color: #ffffff;
+      border: 1px solid var(--ga-fout);
+      font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
+      letter-spacing: 0.3px; transition: background 0.15s;
+      margin-bottom: 6px;
+    }
+    #whatifRcRunBtn:hover { background: #d42a0e; }
+    #whatifRcRunBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #whatifRcClearBtn {
+      width: 100%; padding: 6px 0; border-radius: var(--ga-radius);
+      background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+      font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
+      transition: background 0.15s, color 0.15s;
+    }
+    #whatifRcClearBtn:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+    #whatifRcStatus { font-size: 11px; color: var(--ga-rood); margin-top: 6px; display: none; white-space: pre-wrap; line-height: 1.4; }
+    /* Rode gloedkleur voor active what-if-knop */
+    #whatifRcBtn:hover { color: var(--ga-fout) !important; }
+    #whatifRcBtn.active { background: var(--ga-fout) !important; color: #ffffff !important; border-color: var(--ga-fout) !important; }
+    /* OD-paar aanpassen knop */
+    #odEditBtn:hover  { color: var(--ga-rood) !important; }
+    #odEditBtn.active { background: var(--ga-rood) !important; color: #ffffff !important; border-color: var(--ga-rood) !important; }
+
+    /* ── OD-edit paneel ─────────────────────────────────────────────────── */
+    #odEditPanel {
+      display: none;
+      position: absolute;
+      top: 56px; right: 24px;
+      z-index: 20;
+      width: 320px;
+      max-height: calc(100vh - 80px);
+      overflow-y: auto;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      font-size: 12px; color: var(--ga-tekst);
+      box-shadow: var(--ga-schaduw-zwevend);
+    }
+    #odEditHeader {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--ga-lijn);
+      font-size: 12px; color: var(--ga-rood); font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center; gap:6px;
+    }
+    #odEditHeader span { flex:1; }
+    #odEditClose {
+      background: none; border: none; cursor: pointer;
+      color: var(--ga-tekst-2); font-size: 14px; padding: 0 2px; line-height:1;
+    }
+    #odEditClose:hover { color: var(--ga-fout); }
+    #odEditBody { padding: 12px 16px; }
+    .ode-step {
+      margin-bottom: 10px; padding: 8px 10px;
+      border-radius: var(--ga-radius); background: var(--ga-vlak);
+      border: 1px solid var(--ga-lijn);
+    }
+    .ode-step-label { font-size: 10px; color: var(--ga-tekst-2); text-transform: uppercase; letter-spacing:.4px; margin-bottom:4px; }
+    .ode-step-value { font-size: 12px; color: var(--ga-tekst); font-weight: 500; min-height:16px; }
+    .ode-step-value.waiting { color:var(--ga-tekst-2); font-style:italic; }
+    .ode-section-title {
+      font-size: 10px; color: var(--ga-tekst-2); text-transform: uppercase;
+      letter-spacing:.4px; margin: 12px 0 6px;
+    }
+    .ode-field-row {
+      display: flex; align-items: center; gap:8px;
+      margin-bottom: 6px;
+    }
+    .ode-field-label { flex:1; color:var(--ga-tekst-2); font-size:11px; }
+    .ode-field-input {
+      width: 88px; padding: 3px 7px;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      color: var(--ga-tekst); font-size:12px; text-align:right;
+    }
+    .ode-field-input:focus { outline:none; border-color: var(--ga-rood); }
+    .ode-motif-grid {
+      display: grid; grid-template-columns: 1fr auto auto;
+      gap: 4px 8px; align-items: center;
+      margin-bottom:8px;
+    }
+    .ode-motif-key  { color:var(--ga-tekst-2); font-size:11px; }
+    .ode-motif-dot  { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .ode-motif-pct  {
+      width:60px; padding:2px 6px;
+      background:#ffffff;
+      border:1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      color:var(--ga-tekst); font-size:12px; text-align:right;
+    }
+    .ode-motif-pct:focus { outline:none; border-color:var(--ga-rood); }
+    .ode-motif-sum { font-size:10px; margin-bottom:8px; }
+    .ode-motif-sum.ok   { color:#49a748; }
+    .ode-motif-sum.bad  { color:var(--ga-fout); }
+    #odEditSaveBtn {
+      width:100%; padding:7px 0; margin-top:6px;
+      background:var(--ga-rood); border:1px solid var(--ga-rood);
+      border-radius: var(--ga-radius); color:#ffffff; font-size:12px; font-weight:600;
+      cursor:pointer; transition:background .15s;
+    }
+    #odEditSaveBtn:hover    { background:var(--ga-rood-donker); }
+    #odEditSaveBtn:disabled { opacity:.4; cursor:not-allowed; }
+    #odEditRouteInfo { font-size:11px; color:var(--ga-tekst-2); margin-bottom:8px; line-height:1.5; }
+
+    /* ── COMPARE laag-toggle ──────────────────────────────────────────── */
+    .compare-btn {
+      margin-top: 8px;
+      width: 100%;
+      padding: 7px 0;
+      border-radius: var(--ga-radius);
+      font-size: 12px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: background 0.15s;
+      border: 1px solid var(--ga-rood);
+      background: transparent;
+      color: var(--ga-rood);
+      display: none;
+    }
+    .compare-btn:hover { background: var(--ga-vlak); }
+    .compare-btn.active { background: var(--ga-rood); border-color: var(--ga-rood); color: #ffffff; }
+
+    /* ── Node-selectiemodus sub-paneel (inline onder de aanpassing-knoppen) ── */
+    #nodeSelectPopup {
+      display: none;
+      background: var(--ga-vlak);
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 10px 12px; width: auto;
+      margin: 2px 0 4px 0;
+      font-family: var(--ga-font), system-ui, sans-serif;
+    }
+    #nodeSelectPopup h4 {
+      margin: 0 0 10px;
+      font-size: 11px; color: var(--ga-rood); font-weight: 600;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .nsm-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; cursor: pointer;
+      font-size: 12px; color: var(--ga-tekst);
+    }
+    .nsm-option:hover { color: var(--ga-rood); }
+    .nsm-option input[type=radio] { accent-color: var(--ga-rood); cursor: pointer; flex-shrink: 0; }
+    #polygonHint {
+      display: none;
+      font-size: 10px; color: var(--ga-tekst-2);
+      margin-top: 8px; line-height: 1.5;
+      padding: 6px 8px;
+      background: #ffffff; border-radius: var(--ga-radius);
+    }
+    .poly-ctrl-btn {
+      display: none; width: 100%;
+      padding: 6px 0; border-radius: var(--ga-radius);
+      font-size: 11px; cursor: pointer;
+      font-family: var(--ga-font), sans-serif;
+      margin-top: 5px; transition: background 0.15s;
+    }
+    #polygonFinishBtn {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #polygonFinishBtn:hover { background: var(--ga-rood-donker); }
+    #polygonClearBtn {
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #polygonClearBtn:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+
+    /* ── Polygon aanpassing dialoog ───────────────────────────────────────── */
+    #polygonDialog {
+      display: none;
+      position: fixed; left: 16px; top: 70px;
+      z-index: 51;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 18px 20px; width: 260px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+    }
+    #polygonDialog h3 {
+      font-size: 13px; color: var(--ga-rood); margin-bottom: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--ga-lijn);
+    }
+    #polygonNodeInfo { font-size: 11px; color: var(--ga-rood); margin-bottom: 12px; }
+    .poly-per-node {
+      font-size: 10px; color: var(--ga-tekst-2); margin-top: 2px; min-height: 14px;
+    }
+    #polygonDialogOk {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #polygonDialogOk:hover { background: var(--ga-rood-donker); }
+    #polygonDialogCancel {
+      background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #polygonDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+
+    /* ── Link-selectiemodus sub-paneel (inline onder de aanpassing-knoppen) ── */
+    #linkSelectPopup {
+      display: none;
+      background: var(--ga-vlak);
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 10px 12px; width: auto;
+      margin: 2px 0 4px 0;
+      font-family: var(--ga-font), system-ui, sans-serif;
+    }
+    #linkSelectPopup h4 {
+      margin: 0 0 10px;
+      font-size: 11px; color: var(--ga-rood); font-weight: 600;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .lsm-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; cursor: pointer;
+      font-size: 12px; color: var(--ga-tekst);
+    }
+    .lsm-option:hover { color: var(--ga-rood); }
+    .lsm-option input[type=radio] { accent-color: var(--ga-rood); cursor: pointer; flex-shrink: 0; }
+    #linkPolygonHint {
+      display: none;
+      font-size: 10px; color: var(--ga-tekst-2);
+      margin-top: 8px; line-height: 1.5;
+      padding: 6px 8px;
+      background: #ffffff; border-radius: var(--ga-radius);
+    }
+    .link-poly-ctrl-btn {
+      display: none; width: 100%;
+      padding: 6px 0; border-radius: var(--ga-radius);
+      font-size: 11px; cursor: pointer;
+      font-family: var(--ga-font), sans-serif;
+      margin-top: 5px; transition: background 0.15s;
+    }
+    #linkPolygonFinishBtn {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #linkPolygonFinishBtn:hover { background: var(--ga-rood-donker); }
+    #linkPolygonClearBtn {
+      background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #linkPolygonClearBtn:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+
+    /* ── Link polygon aanpassing dialoog ─────────────────────────────────── */
+    #linkPolygonDialog {
+      display: none;
+      position: fixed; left: 16px; top: 70px;
+      z-index: 51;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 18px 20px; width: 260px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+    }
+    #linkPolygonDialog h3 {
+      font-size: 13px; color: var(--ga-rood); margin-bottom: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--ga-lijn);
+    }
+    #linkPolygonLinkInfo { font-size: 11px; color: var(--ga-rood); margin-bottom: 12px; }
+    .link-poly-per-link {
+      font-size: 10px; color: var(--ga-tekst-2); margin-top: 2px; min-height: 14px;
+    }
+    #linkPolygonDialogOk {
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    #linkPolygonDialogOk:hover { background: var(--ga-rood-donker); }
+    #linkPolygonDialogCancel {
+      background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    #linkPolygonDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+
+    /* ── Sim-paneel (floating, draggable, collapsible) ──────────────── */
+    #simPanel {
+      position: fixed;
+      z-index: 25;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      box-shadow: 0 4px 24px rgba(35,41,49,0.12);
+      min-width: 170px;
+      backdrop-filter: blur(6px);
+    }
+    #simPanelHeader {
+      display: flex;
+      align-items: center; justify-content: space-between;
+      padding: 6px 8px 6px 12px;
+      cursor: grab;
+      font-size: 11px; font-weight: 600; color: var(--ga-rood);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      letter-spacing: 0.3px;
+      border-bottom: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius) var(--ga-radius) 0 0;
+    }
+    #simPanelHeader:active { cursor: grabbing; }
+    #simPanelCollapseBtn {
+      background: none; border: none; color: var(--ga-tekst-2);
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      flex-shrink: 0;
+    }
+    #simPanelCollapseBtn:hover { color: var(--ga-rood); }
+    #simPanelBody {
+      padding: 8px 10px;
+      /* display: flex; */
+      flex-direction: column; gap: 7px;
+    }
+    .sim-row { display: flex; align-items: center; gap: 8px; }
+
+    /* ── Edit-paneel (floating, draggable, collapsible) ──────────────────── */
+    #editPanel {
+      position: fixed;
+      z-index: 25;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      box-shadow: 0 4px 24px rgba(35,41,49,0.12);
+      min-width: 170px;
+      backdrop-filter: blur(6px);
+    }
+    #editPanelHeader {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 8px 6px 12px;
+      cursor: grab;
+      font-size: 11px; font-weight: 600; color: var(--ga-rood);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      letter-spacing: 0.3px;
+      border-bottom: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius) var(--ga-radius) 0 0;
+    }
+    #editPanelHeader:active { cursor: grabbing; }
+    #editPanelCollapseBtn {
+      background: none; border: none; color: var(--ga-tekst-2);
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      flex-shrink: 0;
+    }
+    #editPanelCollapseBtn:hover { color: var(--ga-rood); }
+    #editPanelBody {
+      padding: 8px 10px;
+      /* display: flex; */
+      flex-direction: column; gap: 7px;
+    }
+
+    #flowScalerPanel {
+      display: none;
+      position: fixed;
+      top: 60px; left: 16px;
+      z-index: 30;
+      width: 300px;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+      overflow: hidden;
+    }
+    #flowScalerPanel.fsp-visible { display: block; }
+
+    /* ── Instellingen-paneel ───────────────────────────────────────────────── */
+    #settingsPanel {
+      display: none;
+      position: fixed;
+      top: 52px;
+      z-index: 30;
+      width: 320px;
+      background: #ffffff;
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      font-family: var(--ga-font), system-ui, sans-serif;
+      box-shadow: var(--ga-schaduw-zwevend);
+      overflow: hidden;
+    }
+    #settingsPanel.sp-visible { display: block; }
+    .sp-text {
+      background: var(--ga-vlak);
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      color: var(--ga-tekst-2);
+      padding: 2px 5px;
+      font-size: 10px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .sp-text:focus { outline: none; border-color: var(--ga-rood); }
+
+    #fspHeader {
+      padding: 11px 14px 10px;
+      border-bottom: 1px solid var(--ga-lijn);
+      font-size: 12px; color: var(--ga-rood); font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #fspClose {
+      background: transparent; border: none; color: var(--ga-tekst-2);
+      font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+      transition: color 0.15s;
+    }
+    #fspClose:hover { color: var(--ga-tekst); }
+    #fspBody { padding: 12px 14px 14px; }
+    .fsp-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px; gap: 8px;
+    }
+    .fsp-label {
+      font-size: 11px; color: var(--ga-tekst-2); flex-shrink: 0; white-space: nowrap; width: 80px;
+    }
+    .fsp-input, .fsp-select {
+      flex: 1; min-width: 0;
+      background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn); border-radius: var(--ga-radius);
+      padding: 5px 7px; font-size: 11px;
+      font-family: var(--ga-font), system-ui, sans-serif;
+      appearance: none; -webkit-appearance: none;
+    }
+    .fsp-input:focus, .fsp-select:focus {
+      outline: none; border-color: var(--ga-rood);
+    }
+    .fsp-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+    .fsp-input:disabled, .fsp-select:disabled, .sim-opt-btn:disabled {
+      opacity: 0.4; cursor: not-allowed;
+    }
+    .sim-opt-btn:disabled:hover { background: none; }
+    .sim-btn-group .sim-opt-btn.active:disabled { background: var(--ga-rood); color: #fff; }
+    .fsp-slider {
+      flex: 1; min-width: 0; height: 4px; cursor: pointer;
+      accent-color: var(--ga-rood);
+    }
+    .fsp-hour-val {
+      font-size: 11px; color: var(--ga-rood); font-weight: 600;
+      width: 32px; text-align: right; flex-shrink: 0;
+    }
+    #fspBtns {
+      display: flex; gap: 8px; margin-top: 12px;
+    }
+    #fspApply {
+      flex: 1; padding: 7px 0; border-radius: var(--ga-radius);
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+      font-size: 12px; cursor: pointer; font-family: var(--ga-font), system-ui, sans-serif;
+      letter-spacing: 0.3px; transition: background 0.15s;
+    }
+    #fspApply:hover:not(:disabled) { background: var(--ga-rood-donker); }
+    #fspApply:disabled { opacity: 0.4; cursor: not-allowed; }
+    #fspReset {
+      flex: 1; padding: 7px 0; border-radius: var(--ga-radius);
+      background: var(--ga-vlak); color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+      font-size: 12px; cursor: pointer; font-family: var(--ga-font), system-ui, sans-serif;
+      letter-spacing: 0.3px; transition: background 0.15s, color 0.15s;
+    }
+    #fspReset:hover:not(:disabled) { background: var(--ga-vlak); color: var(--ga-tekst); }
+    #fspReset:disabled { opacity: 0.35; cursor: not-allowed; }
+    #fspStatus {
+      font-size: 11px; color: var(--ga-rood); margin-top: 7px;
+      min-height: 14px; line-height: 1.4;
+    }
+    #fspStatus.fsp-error { color: var(--ga-fout); }
+    /* Active-indicator op de toolbar-knop (nu in #daypartBtns) */
+    #fspBtn.active { color: var(--ga-rood); border-color: rgba(0,120,212,0.5); background: rgba(0,120,212,0.12); }
+
+    #spHeader {
+      padding: 11px 14px 10px;
+      border-bottom: 1px solid var(--ga-lijn);
+      font-size: 12px; color: var(--ga-rood); font-weight: 600; letter-spacing: 0.3px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #spHeader button {
+      background: none; border: none; color: var(--ga-tekst-2); cursor: pointer;
+      font-size: 15px; padding: 0; line-height: 1;
+      transition: color 0.15s;
+    }
+    #spHeader button:hover { color: var(--ga-tekst); }
+    #spBody { padding: 12px 16px 14px; }
+    #spApply {
+      width: 100%; padding: 7px 0; margin-top: 2px;
+      background: var(--ga-rood);
+      color: #ffffff;
+      border: 1px solid var(--ga-rood);
+      border-radius: var(--ga-radius);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    #spApply:hover { background: var(--ga-rood-donker); }
+    .sp-section { margin-bottom: 0; }
+    .sp-section + .sp-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ga-lijn); }
+    .sp-label {
+      font-size: 10px; color: var(--ga-tekst-2); text-transform: uppercase;
+      letter-spacing: 0.4px; margin-bottom: 6px; font-weight: 600;
+    }
+    .sp-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 3px 0; cursor: pointer;
+    }
+    .sp-row input { accent-color: var(--ga-rood); cursor: pointer; margin: 0; }
+    .sp-row span  { font-size: 12px; color: var(--ga-tekst); }
+
+    /* ── Debug-paneel ────────────────────────────────────────────────– */
+    #debugPanel {      position: absolute; top: 56px; right: 16px; z-index: 10;
+      background: rgba(255,255,255,0.93);
+      border: 1px solid rgba(221,122,0,0.3);
+      border-radius: var(--ga-radius);
+      padding: 10px 14px;
+      font-family: var(--ga-font), system-ui, monospace;
+      font-size: 11px; color: var(--ga-tekst-2);
+      backdrop-filter: blur(8px);
+      min-width: 240px;
+      display: none;
+      line-height: 1.85;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel b { color: #dd7a00; font-weight: 600; }
+    .dbg-head {
+      font-size: 10px; color: var(--ga-tekst-2); text-transform: uppercase;
+      letter-spacing: 0.06em; margin-top: 7px; margin-bottom: 1px;
+      border-bottom: 1px solid rgba(35,41,49,0.06); padding-bottom: 2px;
+    }
+    .dbg-head:first-child { margin-top: 0; }
+
+    /* ── maquette-modus (?maquette=true) ─────────────────────────────────── */
+    body.maquette-mode #toolbar,
+    body.maquette-mode #legendStrip,
+    body.maquette-mode #changesPanel,
+    body.maquette-mode #simPanel,
+    body.maquette-mode #editPanel,
+    body.maquette-mode #flowScalerPanel,
+    body.maquette-mode #settingsPanel,
+    body.maquette-mode #purposeChartPanel,
+    body.maquette-mode #whatifRcPanel,
+    body.maquette-mode #odEditPanel,
+    body.maquette-mode #nodeSelectPopup,
+    body.maquette-mode #linkSelectPopup,
+    body.maquette-mode #nodeDialog,
+    body.maquette-mode #linkDialog,
+    body.maquette-mode #linkFlowDialog,
+    body.maquette-mode #gmtUploadDialog,
+    body.maquette-mode #linkAddDialog,
+     body.maquette-mode #polygonDialog,
+     body.maquette-mode #linkPolygonDialog,
+     body.maquette-mode #debugPanel,
+     body.maquette-mode #segmentTooltip,
+     body.maquette-mode #buildingTooltip { display: none !important; }
+
+    body.follow-mode #editPanel,
+    body.follow-mode #nodeDialog,
+    body.follow-mode #linkDialog,
+    body.follow-mode #linkFlowDialog,
+    body.follow-mode #linkAddDialog,
+    body.follow-mode #polygonDialog,
+    body.follow-mode #linkPolygonDialog,
+    body.follow-mode #nodeSelectPopup,
+    body.follow-mode #linkSelectPopup { display: none !important; }
+
+    #followIndicator {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(0,120,212,0.35);
+      border-radius: 20px;
+      padding: 7px 18px;
+      color: var(--ga-rood);
+      font-size: 12px;
+      font-family: var(--ga-font), sans-serif;
+      letter-spacing: .4px;
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+    }
+    body.follow-mode #followIndicator { display: block; }
+
+    #cameraIndicator {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      display: none;
+      align-items: center;
+      gap: 7px;
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(0,120,212,0.25);
+      border-radius: 20px;
+      padding: 5px 13px 5px 10px;
+      color: var(--ga-rood);
+      font-size: 12px;
+      font-family: var(--ga-font), sans-serif;
+      letter-spacing: .4px;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    /* #cameraIndicator wordt niet meer getoond — de toggle-knop vervangt dit */
+    #cameraIndicator .cam-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ga-tekst-2);
+      flex-shrink: 0;
+      transition: background .4s;
+    }
+    #cameraIndicator.cam-active .cam-dot   { background: #49a748; }
+    #cameraIndicator.cam-inactive .cam-dot { background: var(--ga-fout); }
+    #cameraToggleBtn {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      display: none;
+      align-items: center;
+      gap: 7px;
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(0,120,212,0.35);
+      border-radius: 20px;
+      padding: 5px 14px 5px 11px;
+      color: var(--ga-rood);
+      font-size: 12px;
+      font-family: var(--ga-font), sans-serif;
+      letter-spacing: .4px;
+      cursor: pointer;
+      z-index: 9999;
+      user-select: none;
+      transition: background .2s, border-color .2s;
+    }
+    #cameraToggleBtn:hover { background: rgba(0,120,212,0.92); border-color: rgba(0,120,212,.7); }
+    body.maquette-mode #cameraToggleBtn { display: flex; }
+    #cameraToggleBtn .cam-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--ga-fout); flex-shrink: 0; transition: background .4s;
+    }
+    #cameraToggleBtn.cam-on .cam-dot { background: #49a748; }
+
+    body.maquette-mode,
+    body.maquette-mode * { cursor: none !important; }
+    body.maquette-mode::after {
+      content: '';
+      position: fixed;
+      width: 12px; height: 18px;
+      background: var(--ga-tekst);
+      pointer-events: none;
+      z-index: 999999;
+      transform: translate(-1px, -1px);
+      left: var(--cur-x, -100px);
+      top:  var(--cur-y, -100px);
+    }

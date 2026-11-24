@@ -2179,7 +2179,6 @@
         parkingBgt: !!document.getElementById('newParkingBgt').checked,
         zoneMethod: document.getElementById('newZoneMethod').value,
         studyFallback: document.getElementById('newStudyFallback').value,
-        zonesStudiegebied: parseInt(document.getElementById('newZonesStudiegebied').value, 10),
         zonesTotaal: parseInt(document.getElementById('newZonesTotaal').value, 10),
         zoneSearchRadiusM: parseFloat(document.getElementById('newZoneSearchRadiusM').value),
       };

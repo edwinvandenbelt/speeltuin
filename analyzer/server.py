@@ -3197,21 +3197,18 @@ def _execute_prepare(inputs: dict):
         zone_source = "spectrum" if zone_method == "fetch" else zone_method
         study_fallback = str(inputs.get("studyFallback", "centroid")).strip() or "centroid"
         try:
-            zones_studiegebied = int(inputs.get("zonesStudiegebied", 20))
             zones_totaal = int(inputs.get("zonesTotaal", 100))
             zone_search_radius_m = float(inputs.get("zoneSearchRadiusM", 100_000.0))
         except (ValueError, TypeError):
             abort(
                 400,
                 "Ongeldige numerieke zone-parameter "
-                "(zonesStudiegebied/zonesTotaal/zoneSearchRadiusM)",
+                "(zonesTotaal/zoneSearchRadiusM)",
             )
         if "zone_source" in _pipeline_params:
             kwargs["zone_source"] = zone_source
         if "study_fallback" in _pipeline_params:
             kwargs["study_fallback"] = study_fallback
-        if "agg_zones_studiegebied" in _pipeline_params:
-            kwargs["agg_zones_studiegebied"] = zones_studiegebied
         if "agg_zones_totaal" in _pipeline_params:
             kwargs["agg_zones_totaal"] = zones_totaal
         if "agg_search_radius_m" in _pipeline_params:
