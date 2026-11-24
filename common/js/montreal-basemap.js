@@ -33,10 +33,10 @@
 
   const _MTL_PALETTES = {
     day:   { land:'#e6e9dc', water:'#8fc7ca', green:'#b8c99e', forest:'#acbf97', road:'#c9cec5',
-             sidewalk:'#ddd3b8', kerb:'#b3a98c', shore:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
+             sidewalk:'#d8d8d3', kerb:'#aaa9a2', shore:'#f4f1e4', line:'#91a197', marking:'#f2d373', laneMarking:'#fffdf3',
              railBed:'#bdb5aa', railTie:'#8c8073', rail:'#5b6066', bikePath:'#d9a596' },
     night: { land:'#111c29', water:'#081321', green:'#162b29', forest:'#142522', road:'#26313b',
-             sidewalk:'#515d63', kerb:'#3a434a', shore:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
+             sidewalk:'#5c5e60', kerb:'#3d3e40', shore:'#3c454a', line:'#101b25', marking:'#8c805f', laneMarking:'#76868c',
              railBed:'#2c3238', railTie:'#3a3530', rail:'#7a838c', bikePath:'#4a3433' },
   };
 
@@ -102,7 +102,8 @@
     // Stoep: strook van _SIDEWALK_STRIP_M, met aan de wegkant een donkerdere
     // stoeprand (_KERB_M) en aan de buitenkant een haarlijn.
     const sidewalk = (name, side, flag) => [
-      sideLine(`mtl-road-sidewalk-${name}`, side, flag, _SIDEWALK_STRIP_M / 2, p.sidewalk, metres(_SIDEWALK_STRIP_M)),
+      sideLine(`mtl-road-sidewalk-${name}`, side, flag, _SIDEWALK_STRIP_M / 2, p.sidewalk, metres(_SIDEWALK_STRIP_M),
+        { paint: { 'line-pattern': _SIDEWALK_PATTERN_ID } }),
       sideLine(`mtl-road-sidewalk-${name}-kerb`, side, flag, _KERB_M / 2, p.kerb, metres(_KERB_M)),
       sideLine(`mtl-road-sidewalk-${name}-edge`, side, flag, _SIDEWALK_STRIP_M, p.line, hairline),
     ];
@@ -149,7 +150,7 @@
       // BGT-stoepen (vlakken, setSidewalks) onder de wegranden: dekken de
       // OSM-voetpadlijnen van mtl-paths af, de wegen liggen eroverheen.
       { id: 'mtl-sidewalk-fill', type: 'fill', ...walk, minzoom: 15, filter: ['==', 'assetType', 'sidewalk'],
-        paint: { 'fill-color': p.sidewalk, 'fill-opacity': fadeIn } },
+        paint: { 'fill-color': p.sidewalk, 'fill-pattern': _SIDEWALK_PATTERN_ID, 'fill-opacity': fadeIn } },
       // Wegrand: haarlijn direct langs het wegdek (gap = wegbreedte).
       { id: 'mtl-road-edge', type: 'line', ...tr, filter: roads, layout: round,
         paint: { 'line-color': p.line, 'line-width': hairline, 'line-gap-width': roadWidth } },
@@ -202,6 +203,46 @@
     ];
   }
 
+  // ── Stoeptegel-patroon (canvas-textuur) ──────────────────────────────────
+  // Klein grijs tegelpatroon (2×2 tegels per herhaal-eenheid, met een lichte
+  // toonvariatie per tegel) voor de BGT-stoepvlakken (fill-pattern) en de
+  // netwerk-afgeleide stoepstrook (line-pattern); per kaart-instantie eenmalig
+  // geregistreerd via addImage.
+  const _SIDEWALK_PATTERN_ID = 'mtl-sidewalk-tiles';
+  function _buildSidewalkPatternCanvas(baseColor, groutColor) {
+    const size = 32, cells = 2, cell = size / cells;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(0, 0, size, size);
+    // Subtiele toonvariatie per tegel, zodat het patroon niet overal exact
+    // dezelfde kleur toont.
+    const shades = ['#00000008', '#ffffff0a', '#00000004', '#ffffff06'];
+    let i = 0;
+    for (let cy = 0; cy < cells; cy++) {
+      for (let cx = 0; cx < cells; cx++) {
+        ctx.fillStyle = shades[i++ % shades.length];
+        ctx.fillRect(cx * cell, cy * cell, cell, cell);
+      }
+    }
+    ctx.strokeStyle = groutColor;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= cells; i++) {
+      const p = i * cell - 0.5;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
+    }
+    // addImage verwacht een object met expliciete width/height (ImageData) —
+    // een kale <canvas> gaf "mismatched image size. expected: 0 but got: ...".
+    return ctx.getImageData(0, 0, size, size);
+  }
+  function _ensureSidewalkPattern(m) {
+    if (m.hasImage(_SIDEWALK_PATTERN_ID)) return;
+    const p = _MTL_PALETTES.day;
+    m.addImage(_SIDEWALK_PATTERN_ID, _buildSidewalkPatternCanvas(p.sidewalk, p.kerb));
+  }
+
   // Voegt de 'mtl-*'-lagen (verborgen) toe aan een kaart, direct boven de
   // Liberty-achtergrond zodat ze onder alle eigen lagen liggen.
   function _vectorSource(style) {
@@ -234,6 +275,7 @@
     const beforeId = style.layers.find(l => liberty.has(l.id) && l.type !== 'background')?.id;
     const roadSrc = _ensureRoadSource(m, src) || src;
     _ensureSidewalkSource(m);
+    _ensureSidewalkPattern(m);
     for (const layer of _montrealLayers(src, _MTL_PALETTES.day, roadSrc)) {
       layer.layout = { ...(layer.layout || {}), visibility: 'none' };
       m.addLayer(layer, beforeId);

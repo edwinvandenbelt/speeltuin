@@ -2119,9 +2119,14 @@
     // achtergrond (bij 'kaart' staan ze al aan, dus daar geen zichtbaar effect).
     const nwbWegenCheck = document.getElementById('lmpNwbWegen');
     if (nwbWegenCheck) {
+      // initLeftMenuPanel() draait meteen na het starten van de async init
+      // (niet erna), dus window._getNwbWegenVisible bestaat hier meestal nog
+      // niet — val dan terug op dezelfde localStorage-sleutel die
+      // _nwbWegenVisible zelf gebruikt, anders staat het vinkje uit terwijl de
+      // laag (op basis van een eerdere sessie) wél aan start.
       nwbWegenCheck.checked = typeof window._getNwbWegenVisible === 'function'
         ? window._getNwbWegenVisible()
-        : false;
+        : localStorage.getItem('nwbWegenVisible') === '1';
       nwbWegenCheck.addEventListener('change', () => {
         if (typeof window._setNwbWegenVisible === 'function') {
           window._setNwbWegenVisible(nwbWegenCheck.checked);
@@ -4734,6 +4739,21 @@
         map.setPaintProperty('buildings-fill', 'fill-color', ['get', `color_${daypart}`]);
       }
 
+      // Pand-weergave weer aangezet na uit te hebben gestaan: laat al geladen
+      // 3D BAG-tegels opnieuw 'uit de grond' groeien in plaats van meteen op
+      // volle hoogte te verschijnen (try/catch: bij vroege aanroep tijdens init
+      // bestaan _bag3dTiles e.d. nog niet, zie _bag3dState hierboven).
+      try {
+        const _b3NowActive = _bag3dActive();
+        if (_b3NowActive && !_bag3dWasActive && _bag3dTiles.length) {
+          const t = performance.now();
+          _bag3dTiles.forEach(tile => { tile.born = t; });
+          _growKick(t);
+          _bag3dRefreshOverlay();
+        }
+        _bag3dWasActive = _b3NowActive;
+      } catch (_) {}
+
       _refreshBuildingsStatusUI();
     }
 
@@ -5385,6 +5405,7 @@
     let _bag3dFailed  = 0;        // aantal mislukte tegels
     let _bag3dDecoder = null;     // MeshoptDecoder (lazy import)
     let _bag3dKeep    = null;     // (lon, lat) → ligt in het studiegebied?
+    let _bag3dWasActive = false;  // vorige _bag3dActive()-stand, voor opnieuw laten 'groeien' bij aan/uit
 
     /** True als de 3D BAG-laag de 3D-weergave verzorgt (anders: extrusie).
      *  Delen van het beeld waarvan de tegel nog onderweg is blijven even leeg
@@ -5405,7 +5426,7 @@
     // Elk object krijgt een geboortetijd; de schaal loopt in _GROW_MS van ~0 naar
     // 1 (easeOutBack: schiet iets door en zakt terug). Zolang er iets groeit,
     // ververst een rAF-lus de overlay; daarna staat alles stil (geen kosten).
-    const _GROW_MS = 900;
+    const _GROW_MS = 1700;
     const _GROW_ON = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
     let _growUntil = 0, _growTick = 0, _growRaf = 0;
     function _growFactor(born, now) {
@@ -9062,7 +9083,16 @@
 
     // Vegetatie (bomen) volledig losgekoppeld van verkeersobjecten.
     function _setVegetationVisibility(vis) {
+      const _wasVisible = _vegetationVisible;
       _vegetationVisible = vis;
+      if (vis && !_wasVisible) {
+        // Weer aangezet na uit te hebben gestaan: laat bomen opnieuw 'uit de
+        // grond' groeien in plaats van meteen op volle grootte te verschijnen.
+        _vegBorn.clear();
+        _vegTrees = null;
+        _vegBushes = null;
+        _vegAreaTrees = null;
+      }
       updateOverlay(true);
       _updateVegetationCount();
       _setVegetationSpinner(vis && _vegLoading > 0);   // job kan nog lopen van een eerdere aanvink
