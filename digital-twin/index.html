@@ -502,6 +502,12 @@
                     title="Boom toevoegen">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-7"/><path d="M12 15c-3.5 0-6-2.3-6-5.5C6 6.2 8.7 3 12 3s6 3.2 6 6.5c0 3.2-2.5 5.5-6 5.5Z"/><path d="M12 11.2 9.3 8.4M12 11.2l2.8-2.8"/></svg>
             </button>
+            <!-- Straatmeubilair toevoegen -->
+            <button class="tb-btn tb-add edit-btn" id="furnitureAddBtn"
+                    data-i18n-title="furnitureAddBtnTitle"
+                    title="Straatmeubilair toevoegen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v11"/><path d="M7.5 6h4.8"/><rect x="10.5" y="13" width="3" height="2.2" rx="0.4"/><path d="M12 15.2v6.8"/><path d="M8.5 22h7"/></svg>
+            </button>
             </div>
 
             <!-- Wijzigingen bekijken -->
@@ -568,6 +574,35 @@
             <button class="tree-ctrl-btn" id="treeAddSaveBtn" data-i18n="treeAddSaveBtn" disabled>&#10003; Opslaan</button>
             <button class="tree-ctrl-btn tree-ctrl-btn-secondary" id="treeAddClearBtn" data-i18n="treeAddClearBtn" disabled>&#10005; Wis nieuwe bomen</button>
             <div id="treeAddStatus"></div>
+          </div>
+
+          <!-- ── Straatmeubilair-plaatsingsmodus sub-paneel (tijdelijk, alleen tijdens straatmeubilair toevoegen) ── -->
+          <div id="furnitureAddPopup">
+            <h4 data-i18n="furnitureAddPanelTitle">Straatmeubilair toevoegen</h4>
+            <div class="sim-btn-group" id="furnitureTypeBtns">
+              <button type="button" class="sim-opt-btn tree-opt-btn active" data-furniture-type="streetLight"
+                      data-i18n-title="furnitureTypeStreetLightTitle" title="Lantaarnpaal" data-i18n="furnitureTypeStreetLightLabel">&#128161; Lantaarnpaal</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-furniture-type="busShelter"
+                      data-i18n-title="furnitureTypeBusShelterTitle" title="Bushokje" data-i18n="furnitureTypeBusShelterLabel">&#128655; Bushokje</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-furniture-type="trashBin"
+                      data-i18n-title="furnitureTypeTrashBinTitle" title="Prullenbak" data-i18n="furnitureTypeTrashBinLabel">&#128465; Prullenbak</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-furniture-type="mailbox"
+                      data-i18n-title="furnitureTypeMailboxTitle" title="Brievenbus" data-i18n="furnitureTypeMailboxLabel">&#128238; Brievenbus</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-furniture-type="mast"
+                      data-i18n-title="furnitureTypeMastTitle" title="Mast" data-i18n="furnitureTypeMastLabel">&#128225; Mast</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-furniture-type="bikeGate"
+                      data-i18n-title="furnitureTypeBikeGateTitle" title="Fietssluis" data-i18n="furnitureTypeBikeGateLabel">&#128690; Fietssluis</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-furniture-type="infoBoard"
+                      data-i18n-title="furnitureTypeInfoBoardTitle" title="Infobord" data-i18n="furnitureTypeInfoBoardLabel">&#8505;&#65039; Infobord</button>
+            </div>
+            <div id="furnitureAddHint" data-i18n="furnitureAddHint">Klik op de kaart om straatmeubilair te plaatsen.</div>
+            <div id="furnitureAddCountRow">
+              <span data-i18n="furnitureAddCountLabel">Nieuw geplaatst:</span>
+              <span id="furnitureAddCount">0</span>
+            </div>
+            <button class="tree-ctrl-btn" id="furnitureAddSaveBtn" data-i18n="furnitureAddSaveBtn" disabled>&#10003; Opslaan</button>
+            <button class="tree-ctrl-btn tree-ctrl-btn-secondary" id="furnitureAddClearBtn" data-i18n="furnitureAddClearBtn" disabled>&#10005; Wis nieuw meubilair</button>
+            <div id="furnitureAddStatus"></div>
           </div>
 
           <!-- ── Wijzigingenlijst (tijdelijk, alleen zichtbaar bij openstaande aanpassingen) ── -->

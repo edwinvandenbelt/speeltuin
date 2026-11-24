@@ -190,6 +190,7 @@ try:
         add_traffic_asset_sources as _add_traffic_asset_sources,
         read_sources as _read_traffic_asset_sources,
         sources_for_asset_types as _ta_sources_for_types,
+        write_traffic_assets_atomic as _write_traffic_assets_atomic,
     )
 
     _TA_SOURCES_AVAILABLE = True
@@ -197,6 +198,7 @@ except ImportError as _e:
     _add_traffic_asset_sources = None  # type: ignore[assignment]
     _read_traffic_asset_sources = None  # type: ignore[assignment]
     _ta_sources_for_types = None  # type: ignore[assignment]
+    _write_traffic_assets_atomic = None  # type: ignore[assignment]
     _TA_SOURCES_AVAILABLE = False
     print(f"[server] WAARSCHUWING: traffic_asset_sources niet beschikbaar — {_e}")
 
@@ -1287,6 +1289,95 @@ def _run_traffic_assets_job(
     finally:
         with _jobs_lock:
             _traffic_assets_jobs_by_area.pop(owner_id, None)
+
+
+# assetType-waarden die de 3D-weergave als straatmeubilair rendert (zie
+# makeFurnitureLayers()/_taFurnMeshes in main.js) — alleen deze mogen
+# handmatig via /traffic-assets/furniture toegevoegd worden.
+_FURNITURE_ASSET_TYPES = frozenset(
+    {"mailbox", "busShelter", "mast", "streetLight", "bikeGate", "infoBoard", "trashBin"}
+)
+
+
+@app.route("/traffic-assets/furniture", methods=["POST"])
+def traffic_assets_add_furniture():
+    """Voeg handmatig op de kaart geplaatst straatmeubilair toe aan TRAFFIC-ASSETS.
+
+    Body (JSON): { "areaId": "...", "features": [ {geometry, properties}, ... ] }
+    (alleen Point-features met properties.assetType uit _FURNITURE_ASSET_TYPES).
+    Schrijft naar het bestaande TRAFFIC-ASSETS-parquet van het gebied of de
+    baseAreaId-keten (zelfde resolutie als het bbox-ophalen hierboven), of
+    maakt het bestand aan in het wortelgebied als er nog nergens een bestaat.
+    Features krijgen properties.src = "manual" zodat ze buiten het
+    bronnenregister van de fetchbare bronnen blijven (zie traffic_asset_sources.py).
+    """
+    if not _TA_SOURCES_AVAILABLE:
+        return jsonify({"error": "traffic_asset_sources niet beschikbaar op de server"}), 500
+
+    body = request.get_json(silent=True) or {}
+    area_id = str(body.get("areaId", "")).strip()
+    new_features = body.get("features")
+    if not area_id or not _safe(area_id):
+        return jsonify({"error": 'Ongeldige of ontbrekende parameter "areaId"'}), 400
+    if not isinstance(new_features, list) or not new_features:
+        return jsonify({"error": "features (niet-lege lijst) vereist"}), 400
+
+    for feat in new_features:
+        if not isinstance(feat, dict):
+            return jsonify({"error": "Elke feature moet een object zijn"}), 400
+        geom = feat.get("geometry") or {}
+        coords = geom.get("coordinates")
+        if geom.get("type") != "Point" or not isinstance(coords, list) or len(coords) < 2:
+            return jsonify({"error": "Alleen Point-features met coordinates [lon, lat] worden ondersteund"}), 400
+        try:
+            float(coords[0])
+            float(coords[1])
+        except (TypeError, ValueError):
+            return jsonify({"error": "Ongeldige coordinates"}), 400
+        asset_type = (feat.get("properties") or {}).get("assetType")
+        if asset_type not in _FURNITURE_ASSET_TYPES:
+            return jsonify({"error": f"Ongeldig of ontbrekend assetType: {asset_type!r}"}), 400
+
+    path = _find_prepared_with_base_fallback(area_id, "TRAFFIC-ASSETS")
+    owner = _traffic_assets_owner(area_id, path)
+    if owner is None:
+        return jsonify({"error": "TRAFFIC-ASSETS-bestand is geen GeoParquet; opslaan wordt niet ondersteund"}), 500
+    owner_id, ta_path = owner
+
+    try:
+        from gmt_shared.geoparquet import from_geoparquet
+
+        if ta_path.is_file():
+            existing = from_geoparquet(ta_path.read_bytes())
+            features = list(existing.get("features") or [])
+            fc_props = dict(existing.get("properties") or {})
+        else:
+            features, fc_props = [], {}
+    except Exception as exc:
+        return jsonify({"error": f"Fout bij lezen TRAFFIC-ASSETS: {exc}"}), 500
+
+    for feat in new_features:
+        props = dict(feat.get("properties") or {})
+        props["src"] = "manual"
+        props.setdefault("manualId", f"manual-{uuid.uuid4().hex[:12]}")
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [feat["geometry"]["coordinates"][0], feat["geometry"]["coordinates"][1]]},
+            "properties": props,
+        })
+
+    try:
+        ta_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_traffic_assets_atomic(ta_path, {"type": "FeatureCollection", "features": features, "properties": fc_props})
+        if _s3_enabled():
+            try:
+                _s3_write_bytes(_s3_key(owner_id, ta_path.name), ta_path.read_bytes())
+            except Exception as _e:
+                print(f"[s3] straatmeubilair opslaan mislukt: {_e}")
+    except Exception as exc:
+        return jsonify({"error": f"Fout bij opslaan TRAFFIC-ASSETS: {exc}"}), 500
+
+    return jsonify({"ok": True, "added": len(new_features), "total": len(features)})
 
 
 # SSE follow-modus: area_id → set van queue.SimpleQueue-objecten voor verbonden browsers

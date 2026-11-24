@@ -244,6 +244,23 @@
       treeAddSaving:'Opslaan\u2026',
       treeAddSaved: n => n === 1 ? '1 boom opgeslagen.' : `${n} bomen opgeslagen.`,
       treeAddSaveError: e => `Opslaan mislukt: ${e}`,
+      // Straatmeubilair toevoegen
+      furnitureAddBtnTitle:'Straatmeubilair toevoegen',
+      furnitureAddPanelTitle:'Straatmeubilair toevoegen',
+      furnitureTypeStreetLightTitle:'Lantaarnpaal', furnitureTypeStreetLightLabel:'\ud83d\udca1 Lantaarnpaal',
+      furnitureTypeBusShelterTitle:'Bushokje', furnitureTypeBusShelterLabel:'\ud83d\ude8f Bushokje',
+      furnitureTypeTrashBinTitle:'Prullenbak', furnitureTypeTrashBinLabel:'\ud83d\uddd1\ufe0f Prullenbak',
+      furnitureTypeMailboxTitle:'Brievenbus', furnitureTypeMailboxLabel:'\ud83d\udcee Brievenbus',
+      furnitureTypeMastTitle:'Mast', furnitureTypeMastLabel:'\ud83d\udce1 Mast',
+      furnitureTypeBikeGateTitle:'Fietssluis', furnitureTypeBikeGateLabel:'\ud83d\udeb2 Fietssluis',
+      furnitureTypeInfoBoardTitle:'Infobord', furnitureTypeInfoBoardLabel:'\u2139\ufe0f Infobord',
+      furnitureAddHint:'Klik op de kaart om straatmeubilair te plaatsen.',
+      furnitureAddCountLabel:'Nieuw geplaatst:',
+      furnitureAddSaveBtn:'\u2713 Opslaan',
+      furnitureAddClearBtn:'\u2715 Wis nieuw meubilair',
+      furnitureAddSaving:'Opslaan\u2026',
+      furnitureAddSaved: n => n === 1 ? '1 object opgeslagen.' : `${n} objecten opgeslagen.`,
+      furnitureAddSaveError: e => `Opslaan mislukt: ${e}`,
       // Node-dialoog
       nodeDialogDefault:'Knoop',
       nodeDialogProd:'Productie', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut (\u22650)',
@@ -531,6 +548,23 @@
       treeAddSaving:'Saving\u2026',
       treeAddSaved: n => n === 1 ? '1 tree saved.' : `${n} trees saved.`,
       treeAddSaveError: e => `Save failed: ${e}`,
+      // Add street furniture
+      furnitureAddBtnTitle:'Add street furniture',
+      furnitureAddPanelTitle:'Add street furniture',
+      furnitureTypeStreetLightTitle:'Street light', furnitureTypeStreetLightLabel:'💡 Street light',
+      furnitureTypeBusShelterTitle:'Bus shelter', furnitureTypeBusShelterLabel:'🚏 Bus shelter',
+      furnitureTypeTrashBinTitle:'Trash bin', furnitureTypeTrashBinLabel:'🗑️ Trash bin',
+      furnitureTypeMailboxTitle:'Mailbox', furnitureTypeMailboxLabel:'📮 Mailbox',
+      furnitureTypeMastTitle:'Mast', furnitureTypeMastLabel:'📡 Mast',
+      furnitureTypeBikeGateTitle:'Bike gate', furnitureTypeBikeGateLabel:'🚲 Bike gate',
+      furnitureTypeInfoBoardTitle:'Info board', furnitureTypeInfoBoardLabel:'ℹ️ Info board',
+      furnitureAddHint:'Click on the map to place street furniture.',
+      furnitureAddCountLabel:'Newly placed:',
+      furnitureAddSaveBtn:'✓ Save',
+      furnitureAddClearBtn:'✕ Clear new furniture',
+      furnitureAddSaving:'Saving…',
+      furnitureAddSaved: n => n === 1 ? '1 object saved.' : `${n} objects saved.`,
+      furnitureAddSaveError: e => `Save failed: ${e}`,
       nodeDialogDefault:'Node',
       nodeDialogProd:'Production', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute (\u22650)',
       nodeDialogProdPh:'+300 or 1200',
@@ -7782,15 +7816,32 @@
       }];
     }
 
+    // Oriëntatiemodus per type, gelijk aan de _taMkInstances-aanroepen in
+    // _applyTrafficAssetFeatures hierboven — nodig om handmatig geplaatste
+    // (nog niet opgeslagen) meubilair-features op dezelfde manier te draaien.
+    const _FURNITURE_ORIENT = {
+      mailbox: 'along', busShelter: 'along', mast: 'none', streetLight: 'none',
+      bikeGate: 'across', infoBoard: 'along', trashBin: 'none',
+    };
+
     function makeFurnitureLayers() {
       if (!_trafficAssetsVisible || !_trafficAssetCategories.furniture) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       _taEnsureFurnMeshes();
+      // Handmatig geplaatste meubilair-features (#furnitureAddPopup) renderen
+      // meteen mee, ook al zijn ze nog niet opgeslagen.
+      const pendingByType = {};
+      for (const f of _furnitureAddPending) {
+        const t = (f.properties || {}).assetType;
+        (pendingByType[t] || (pendingByType[t] = [])).push(f);
+      }
       const layers = [];
-      for (const type of Object.keys(_taFurniture)) {
-        const insts = _taFurniture[type];
+      const types = new Set([...Object.keys(_taFurniture), ...Object.keys(pendingByType)]);
+      for (const type of types) {
+        const insts = (_taFurniture[type] || []).concat(
+          _taMkInstances(pendingByType[type], _FURNITURE_ORIENT[type] || 'none'));
         const groups = _taFurnMeshes[type];
-        if (!insts || !insts.length || !groups) continue;
+        if (!insts.length || !groups) continue;
         groups.forEach((grp, gi) => {
           layers.push(new SimpleMeshLayer({
             id:             `ta-furn-${type}-${gi}`,
@@ -7806,6 +7857,58 @@
         });
       }
       return layers;
+    }
+
+    // ── Straatmeubilair toevoegen (#furnitureAddPopup): handmatig geplaatste
+    // objecten. Blijven in _furnitureAddPending tot op "Opslaan" geklikt
+    // wordt; makeFurnitureLayers() hierboven rendert ze intussen al mee.
+    function _updateFurnitureAddPanel() {
+      const n = _furnitureAddPending.length;
+      const countEl = document.getElementById('furnitureAddCount');
+      if (countEl) countEl.textContent = String(n);
+      const saveBtn  = document.getElementById('furnitureAddSaveBtn');
+      const clearBtn = document.getElementById('furnitureAddClearBtn');
+      if (saveBtn)  saveBtn.disabled  = n === 0;
+      if (clearBtn) clearBtn.disabled = n === 0;
+    }
+
+    function _addPendingFurniture(lng, lat) {
+      _furnitureAddPending.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+        properties: { assetType: furnitureAddType },
+      });
+      updateOverlay(true);
+      _updateFurnitureAddPanel();
+    }
+
+    async function _saveFurnitureAddPending() {
+      if (!_furnitureAddPending.length) return;
+      const saveBtn  = document.getElementById('furnitureAddSaveBtn');
+      const statusEl = document.getElementById('furnitureAddStatus');
+      if (saveBtn) saveBtn.disabled = true;
+      if (statusEl) statusEl.textContent = T('furnitureAddSaving');
+      try {
+        const res = await fetch('/traffic-assets/furniture', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ areaId: AREA_ID, features: _furnitureAddPending }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+        if (statusEl) statusEl.textContent = T('furnitureAddSaved', _furnitureAddPending.length);
+        _furnitureAddPending = [];
+        // Canonieke, opgeslagen data opnieuw ophalen zodat de net opgeslagen
+        // objecten via de normale traffic-assets-pipeline (src, caching) binnenkomen.
+        _lastAssetBbox = null;
+        updateOverlay(true);
+        _updateFurnitureAddPanel();
+        loadTrafficAssetsInView();
+      } catch (err) {
+        if (statusEl) statusEl.textContent = T('furnitureAddSaveError', err?.message || String(err));
+      } finally {
+        _updateFurnitureAddPanel();
+      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -11885,6 +11988,9 @@
     let treeAddActive  = false;        // Boom toevoegen: klik-op-kaart plaatsingsmodus
     let treeAddType    = 'broadleaf_large';  // geselecteerd boomtype in #treeAddPopup
     let _treeAddPending = [];          // handmatig geplaatste, nog niet opgeslagen boom-features
+    let furnitureAddActive  = false;   // Straatmeubilair toevoegen: klik-op-kaart plaatsingsmodus
+    let furnitureAddType    = 'streetLight';  // geselecteerd meubilairtype in #furnitureAddPopup
+    let _furnitureAddPending = [];     // handmatig geplaatste, nog niet opgeslagen meubilair-features
     // ── Selected Link Analysis — state ──────────────────────────────────────
     let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
     let selectedLinkActive = false;   // true als de link-selectie-modus actief is
@@ -14497,6 +14603,7 @@
          if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
          if (linkAddActive) return 'crosshair';
          if (treeAddActive) return 'crosshair';
+         if (furnitureAddActive) return 'crosshair';
          if ((linkEditActive || linkFlowEditActive || selectedLinkActive) && isHovering) return 'pointer';
          return '';
       },
@@ -14561,6 +14668,11 @@
       // Boom toevoegen: plaats een boom van het geselecteerde type op de klikpositie
       if (treeAddActive) {
         _addPendingTree(e.lngLat.lng, e.lngLat.lat);
+        return;
+      }
+      // Straatmeubilair toevoegen: plaats een object van het geselecteerde type
+      if (furnitureAddActive) {
+        _addPendingFurniture(e.lngLat.lng, e.lngLat.lat);
         return;
       }
       // Teller plaatsen: hogere prioriteit dan link-selectie
@@ -17882,9 +17994,10 @@
     // ── Node-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('nodeEditBtn').addEventListener('click', () => {
-      // Zet link-edit, boom toevoegen en what-if uit als die actief waren
+      // Zet link-edit, boom/meubilair toevoegen en what-if uit als die actief waren
       if (linkEditActive) document.getElementById('linkEditBtn').click();
       if (treeAddActive) document.getElementById('treeAddBtn').click();
+      if (furnitureAddActive) document.getElementById('furnitureAddBtn').click();
       deactivateWhatifRc();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
@@ -17927,11 +18040,12 @@
     // ── Link-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('linkEditBtn').addEventListener('click', () => {
-      // Zet node-edit, flow-edit, link-add, boom toevoegen en what-if uit als die actief waren
+      // Zet node-edit, flow-edit, link-add, boom/meubilair toevoegen en what-if uit als die actief waren
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       if (linkAddActive) document.getElementById('linkAddBtn').click();
       if (treeAddActive) document.getElementById('treeAddBtn').click();
+      if (furnitureAddActive) document.getElementById('furnitureAddBtn').click();
       deactivateWhatifRc();
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
@@ -17977,6 +18091,7 @@
       if (linkEditActive)  document.getElementById('linkEditBtn').click();
       if (linkAddActive)   document.getElementById('linkAddBtn').click();
       if (treeAddActive)   document.getElementById('treeAddBtn').click();
+      if (furnitureAddActive) document.getElementById('furnitureAddBtn').click();
       deactivateWhatifRc();
       linkFlowEditActive = !linkFlowEditActive;
       document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
@@ -18011,6 +18126,7 @@
       if (linkEditActive)    document.getElementById('linkEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       if (treeAddActive)     document.getElementById('treeAddBtn').click();
+      if (furnitureAddActive) document.getElementById('furnitureAddBtn').click();
       deactivateWhatifRc();
       linkAddActive = !linkAddActive;
       document.getElementById('linkAddBtn').classList.toggle('active', linkAddActive);
@@ -18088,6 +18204,7 @@
       if (linkEditActive)     document.getElementById('linkEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       if (linkAddActive)      document.getElementById('linkAddBtn').click();
+      if (furnitureAddActive) document.getElementById('furnitureAddBtn').click();
       deactivateWhatifRc();
       treeAddActive = !treeAddActive;
       document.getElementById('treeAddBtn').classList.toggle('active', treeAddActive);
@@ -18126,6 +18243,54 @@
       updateOverlay(true);
       _updateTreeAddPanel();
       document.getElementById('treeAddStatus').textContent = '';
+    });
+
+    // ── Straatmeubilair toevoegen (furnitureAddBtn) ──────────────────────────
+    // Zelfde lichtgewicht plaatsingsmodus als boom toevoegen: simulatie blijft
+    // gewoon doorlopen, meubilair plaatsen heeft geen invloed op het netwerk.
+    document.getElementById('furnitureAddBtn').addEventListener('click', () => {
+      if (nodeEditActive)     document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)     document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive)      document.getElementById('linkAddBtn').click();
+      if (treeAddActive)      document.getElementById('treeAddBtn').click();
+      deactivateWhatifRc();
+      furnitureAddActive = !furnitureAddActive;
+      document.getElementById('furnitureAddBtn').classList.toggle('active', furnitureAddActive);
+      document.getElementById('furnitureAddBtn').innerHTML = furnitureAddActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v11"/><path d="M7.5 6h4.8"/><rect x="10.5" y="13" width="3" height="2.2" rx="0.4"/><path d="M12 15.2v6.8"/><path d="M8.5 22h7"/></svg>';
+
+      if (furnitureAddActive) {
+        // Straatmeubilair-categorie aanzetten zodat bestaand + nieuw zichtbaar is.
+        const furnCheck = document.querySelector('input[name="lmpTrafficAsset"][value="furniture"]');
+        if (furnCheck) furnCheck.checked = true;
+        if (typeof window._setTrafficAssetCategory === 'function') window._setTrafficAssetCategory('furniture', true);
+        document.getElementById('furnitureAddStatus').textContent = '';
+        _updateFurnitureAddPanel();
+        document.getElementById('furnitureAddPopup').style.display = 'block';
+      } else {
+        document.getElementById('furnitureAddPopup').style.display = 'none';
+        map.getCanvas().style.cursor = '';
+      }
+    });
+
+    // Meubilairtype-keuze (toggle-toolbar, net als bij boomtype-keuze)
+    document.querySelectorAll('#furnitureTypeBtns .tree-opt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        furnitureAddType = btn.dataset.furnitureType;
+        document.querySelectorAll('#furnitureTypeBtns .tree-opt-btn').forEach(b =>
+          b.classList.toggle('active', b === btn));
+      });
+    });
+
+    document.getElementById('furnitureAddSaveBtn').addEventListener('click', () => {
+      _saveFurnitureAddPending();
+    });
+    document.getElementById('furnitureAddClearBtn').addEventListener('click', () => {
+      _furnitureAddPending = [];
+      updateOverlay(true);
+      _updateFurnitureAddPanel();
+      document.getElementById('furnitureAddStatus').textContent = '';
     });
 
     // ── Polygon-selectiemodus handlers ──────────────────────────────────────
