@@ -496,6 +496,12 @@
                     title="Nieuw wegvak intekenen">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 25h38M8 39h38"/><path d="M54 39V25M47 32h14"/></svg>
             </button>
+            <!-- Boom toevoegen -->
+            <button class="tb-btn tb-add edit-btn" id="treeAddBtn"
+                    data-i18n-title="treeAddBtnTitle"
+                    title="Boom toevoegen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-7"/><path d="M12 15c-3.5 0-6-2.3-6-5.5C6 6.2 8.7 3 12 3s6 3.2 6 6.5c0 3.2-2.5 5.5-6 5.5Z"/><path d="M12 11.2 9.3 8.4M12 11.2l2.8-2.8"/></svg>
+            </button>
             </div>
 
             <!-- Wijzigingen bekijken -->
@@ -539,6 +545,29 @@
             <div id="linkPolygonHint" data-i18n="linkPolygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
             <button class="link-poly-ctrl-btn" id="linkPolygonFinishBtn" data-i18n="linkPolygonFinishBtn">&#10003; Polygon afsluiten</button>
             <button class="link-poly-ctrl-btn" id="linkPolygonClearBtn" data-i18n="linkPolygonClearBtn">&#10005; Wis polygon</button>
+          </div>
+
+          <!-- ── Boom-plaatsingsmodus sub-paneel (tijdelijk, alleen tijdens boom toevoegen) ── -->
+          <div id="treeAddPopup">
+            <h4 data-i18n="treeAddPanelTitle">Boom toevoegen</h4>
+            <div class="sim-btn-group" id="treeTypeBtns">
+              <button type="button" class="sim-opt-btn tree-opt-btn active" data-tree-type="broadleaf_large"
+                      data-i18n-title="treeTypeBroadLargeTitle" title="Grote loofboom" data-i18n="treeTypeBroadLargeLabel">&#127795; Groot</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-tree-type="broadleaf_small"
+                      data-i18n-title="treeTypeBroadSmallTitle" title="Kleine loofboom" data-i18n="treeTypeBroadSmallLabel">&#127795; Klein</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-tree-type="conifer_large"
+                      data-i18n-title="treeTypeConiferLargeTitle" title="Grote naaldboom" data-i18n="treeTypeConiferLargeLabel">&#127794; Groot</button>
+              <button type="button" class="sim-opt-btn tree-opt-btn" data-tree-type="conifer_small"
+                      data-i18n-title="treeTypeConiferSmallTitle" title="Kleine naaldboom" data-i18n="treeTypeConiferSmallLabel">&#127794; Klein</button>
+            </div>
+            <div id="treeAddHint" data-i18n="treeAddHint">Klik op de kaart om een boom te plaatsen.</div>
+            <div id="treeAddCountRow">
+              <span data-i18n="treeAddCountLabel">Nieuw geplaatst:</span>
+              <span id="treeAddCount">0</span>
+            </div>
+            <button class="tree-ctrl-btn" id="treeAddSaveBtn" data-i18n="treeAddSaveBtn" disabled>&#10003; Opslaan</button>
+            <button class="tree-ctrl-btn tree-ctrl-btn-secondary" id="treeAddClearBtn" data-i18n="treeAddClearBtn" disabled>&#10005; Wis nieuwe bomen</button>
+            <div id="treeAddStatus"></div>
           </div>
 
           <!-- ── Wijzigingenlijst (tijdelijk, alleen zichtbaar bij openstaande aanpassingen) ── -->

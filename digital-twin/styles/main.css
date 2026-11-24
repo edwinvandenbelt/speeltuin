@@ -1125,6 +1125,52 @@
     }
     #linkPolygonClearBtn:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
 
+    /* ── Boom-plaatsingsmodus sub-paneel (inline onder de aanpassing-knoppen) ── */
+    #treeAddPopup {
+      display: none;
+      background: var(--ga-vlak);
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 10px 12px; width: auto;
+      margin: 2px 0 4px 0;
+      font-family: var(--ga-font), system-ui, sans-serif;
+    }
+    #treeAddPopup h4 {
+      margin: 0 0 10px;
+      font-size: 11px; color: var(--ga-rood); font-weight: 600;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .tree-opt-btn { font-size: 12px; gap: 4px; white-space: nowrap; }
+    #treeAddHint {
+      font-size: 10px; color: var(--ga-tekst-2);
+      margin-top: 8px; line-height: 1.5;
+      padding: 6px 8px;
+      background: #ffffff; border-radius: var(--ga-radius);
+    }
+    #treeAddCountRow {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px; color: var(--ga-tekst); margin-top: 8px;
+    }
+    #treeAddCountRow span:last-child { font-weight: 600; }
+    .tree-ctrl-btn {
+      display: block; width: 100%;
+      padding: 6px 0; border-radius: var(--ga-radius);
+      font-size: 11px; cursor: pointer;
+      font-family: var(--ga-font), sans-serif;
+      margin-top: 5px; transition: background 0.15s;
+      background: var(--ga-rood); color: #ffffff;
+      border: 1px solid var(--ga-rood);
+    }
+    .tree-ctrl-btn:hover { background: var(--ga-rood-donker); }
+    .tree-ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; background: var(--ga-rood); }
+    .tree-ctrl-btn-secondary {
+      background: #ffffff; color: var(--ga-tekst);
+      border: 1px solid var(--ga-lijn);
+    }
+    .tree-ctrl-btn-secondary:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+    .tree-ctrl-btn-secondary:disabled { background: #ffffff; }
+    #treeAddStatus { font-size: 10px; color: var(--ga-tekst-2); margin-top: 6px; min-height: 12px; }
+
     /* ── Link polygon aanpassing dialoog ─────────────────────────────────── */
     #linkPolygonDialog {
       display: none;
@@ -1470,6 +1516,7 @@
     body.maquette-mode #odEditPanel,
     body.maquette-mode #nodeSelectPopup,
     body.maquette-mode #linkSelectPopup,
+    body.maquette-mode #treeAddPopup,
     body.maquette-mode #nodeDialog,
     body.maquette-mode #linkDialog,
     body.maquette-mode #linkFlowDialog,
@@ -1489,7 +1536,8 @@
     body.follow-mode #polygonDialog,
     body.follow-mode #linkPolygonDialog,
     body.follow-mode #nodeSelectPopup,
-    body.follow-mode #linkSelectPopup { display: none !important; }
+    body.follow-mode #linkSelectPopup,
+    body.follow-mode #treeAddPopup { display: none !important; }
 
     #followIndicator {
       position: fixed;

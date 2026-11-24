@@ -230,6 +230,20 @@
       linkAddDialogOkBtn:'Toevoegen',
       linkAddChangeLabel: m => `+ Nieuw wegvak (~${m}\u00a0m)`,
       changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pae/u \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0rijstr.`,
+      // Boom toevoegen
+      treeAddBtnTitle:'Boom toevoegen',
+      treeAddPanelTitle:'Boom toevoegen',
+      treeTypeBroadLargeTitle:'Grote loofboom', treeTypeBroadLargeLabel:'\ud83c\udf33 Groot',
+      treeTypeBroadSmallTitle:'Kleine loofboom', treeTypeBroadSmallLabel:'\ud83c\udf33 Klein',
+      treeTypeConiferLargeTitle:'Grote naaldboom', treeTypeConiferLargeLabel:'\ud83c\udf32 Groot',
+      treeTypeConiferSmallTitle:'Kleine naaldboom', treeTypeConiferSmallLabel:'\ud83c\udf32 Klein',
+      treeAddHint:'Klik op de kaart om een boom te plaatsen.',
+      treeAddCountLabel:'Nieuw geplaatst:',
+      treeAddSaveBtn:'\u2713 Opslaan',
+      treeAddClearBtn:'\u2715 Wis nieuwe bomen',
+      treeAddSaving:'Opslaan\u2026',
+      treeAddSaved: n => n === 1 ? '1 boom opgeslagen.' : `${n} bomen opgeslagen.`,
+      treeAddSaveError: e => `Opslaan mislukt: ${e}`,
       // Node-dialoog
       nodeDialogDefault:'Knoop',
       nodeDialogProd:'Productie', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absoluut (\u22650)',
@@ -503,6 +517,20 @@
       linkAddDialogOkBtn:'Add',
       linkAddChangeLabel: m => `+ New road link (~${m}\u00a0m)`,
       changeNewLinkLabel: (cap, spd, lanes) => `cap:\u00a0${cap}\u00a0pcu/h \u00b7 ${spd}\u00a0km/h \u00b7 ${lanes}\u00a0lane${lanes !== 1 ? 's' : ''}`,
+      // Add tree
+      treeAddBtnTitle:'Add tree',
+      treeAddPanelTitle:'Add tree',
+      treeTypeBroadLargeTitle:'Large broadleaf tree', treeTypeBroadLargeLabel:'\ud83c\udf33 Large',
+      treeTypeBroadSmallTitle:'Small broadleaf tree', treeTypeBroadSmallLabel:'\ud83c\udf33 Small',
+      treeTypeConiferLargeTitle:'Large conifer', treeTypeConiferLargeLabel:'\ud83c\udf32 Large',
+      treeTypeConiferSmallTitle:'Small conifer', treeTypeConiferSmallLabel:'\ud83c\udf32 Small',
+      treeAddHint:'Click on the map to place a tree.',
+      treeAddCountLabel:'Newly placed:',
+      treeAddSaveBtn:'\u2713 Save',
+      treeAddClearBtn:'\u2715 Clear new trees',
+      treeAddSaving:'Saving\u2026',
+      treeAddSaved: n => n === 1 ? '1 tree saved.' : `${n} trees saved.`,
+      treeAddSaveError: e => `Save failed: ${e}`,
       nodeDialogDefault:'Node',
       nodeDialogProd:'Production', nodeDialogProdHint:'+300 = delta\u00a0|\u00a01200 = absolute (\u22650)',
       nodeDialogProdPh:'+300 or 1200',
@@ -7793,6 +7821,20 @@
     const _VEG_ROW_STEP  = 8;       // sample-afstand langs tree_row (m)
     const _VEG_MAX_TREES = 4000;    // harde cap op getekende boom-instanties
 
+    // Presets voor handmatig via #treeAddPopup geplaatste bomen (knop "Boom toevoegen").
+    // height/crown/leafType/species volgen exact de propertysleutels uit
+    // vegetation_fetcher_core.elements_to_vegetation_features, zodat deze bomen
+    // zich identiek gedragen als OSM-bomen in _vegBuildTrees/render en opslag.
+    // "Groot" = _VEG_DEF_H (de hoogte die elders al aan OSM-bomen zonder
+    // height-tag wordt toegekend), zodat hij matcht met de bestaande bomen
+    // i.p.v. daar bovenuit te torenen.
+    const TREE_TYPE_PRESETS = {
+      broadleaf_large: { height: _VEG_DEF_H, crown: 6,   leafType: 'broadleaved',  species: 'Loofboom (groot, handmatig)' },
+      broadleaf_small: { height: 6,          crown: 2.5, leafType: 'broadleaved',  species: 'Loofboom (klein, handmatig)' },
+      conifer_large:   { height: _VEG_DEF_H, crown: 4,   leafType: 'needleleaved', species: 'Naaldboom (groot, handmatig)' },
+      conifer_small:   { height: 6,          crown: 1.8, leafType: 'needleleaved', species: 'Naaldboom (klein, handmatig)' },
+    };
+
     let _vegTreeFeatures = [];      // Point/LineString-features → boom-instanties
     let _vegPolyFeatures = [];      // Polygon/MultiPolygon-features → struik-/bosvlakken
     let _vegTrees        = null;    // afgeleide boom-instanties [{position, yaw, scale, needle}]
@@ -7981,7 +8023,9 @@
           born:     _vegBornAt(seed),
         });
       };
-      for (const f of _vegTreeFeatures) {
+      // Handmatig geplaatste bomen (#treeAddPopup) renderen mee, ook al zijn ze
+      // nog niet opgeslagen — zo ziet de gebruiker ze meteen bij het plaatsen.
+      for (const f of _vegTreeFeatures.concat(_treeAddPending)) {
         const g = f.geometry || {}, p = f.properties || {};
         if (g.type === 'Point') {
           const c = g.coordinates || [];
@@ -8594,6 +8638,68 @@
       _vegAreaTrees = null;
       _vegLoaded = true;
       updateOverlay(true);
+    }
+
+    // ── Boom toevoegen (#treeAddPopup): handmatig geplaatste bomen ──────────
+    // Blijven in _treeAddPending tot op "Opslaan" geklikt wordt; _vegBuildTrees
+    // rendert ze intussen al mee (zie hierboven), onafhankelijk van de
+    // bbox-gestuurde _applyVegetationFeatures die _vegTreeFeatures overschrijft.
+    function _updateTreeAddPanel() {
+      const n = _treeAddPending.length;
+      const countEl = document.getElementById('treeAddCount');
+      if (countEl) countEl.textContent = String(n);
+      const saveBtn  = document.getElementById('treeAddSaveBtn');
+      const clearBtn = document.getElementById('treeAddClearBtn');
+      if (saveBtn)  saveBtn.disabled  = n === 0;
+      if (clearBtn) clearBtn.disabled = n === 0;
+    }
+
+    function _addPendingTree(lng, lat) {
+      const preset = TREE_TYPE_PRESETS[treeAddType] || TREE_TYPE_PRESETS.broadleaf_large;
+      _treeAddPending.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+        properties: {
+          vegType:  'tree',
+          height:   preset.height,
+          crown:    preset.crown,
+          leafType: preset.leafType,
+          species:  preset.species,
+        },
+      });
+      _vegTrees = null;   // opnieuw afleiden bij volgende render
+      updateOverlay(true);
+      _updateTreeAddPanel();
+    }
+
+    async function _saveTreeAddPending() {
+      if (!_treeAddPending.length) return;
+      const saveBtn  = document.getElementById('treeAddSaveBtn');
+      const statusEl = document.getElementById('treeAddStatus');
+      if (saveBtn) saveBtn.disabled = true;
+      if (statusEl) statusEl.textContent = T('treeAddSaving');
+      try {
+        const res = await fetch('/vegetation/trees', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ areaId: AREA_ID, features: _treeAddPending }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+        if (statusEl) statusEl.textContent = T('treeAddSaved', _treeAddPending.length);
+        _treeAddPending = [];
+        _vegTrees = null;
+        // Canonieke, opgeslagen data opnieuw ophalen zodat de net opgeslagen
+        // bomen via de normale vegetatie-pipeline (osmId, caching) binnenkomen.
+        _lastVegBbox = null;
+        updateOverlay(true);
+        _updateTreeAddPanel();
+        loadVegetationInView();
+      } catch (err) {
+        if (statusEl) statusEl.textContent = T('treeAddSaveError', err?.message || String(err));
+      } finally {
+        _updateTreeAddPanel();
+      }
     }
 
     let _vegLoadAbort   = null;   // AbortController van de lopende bbox-load
@@ -11776,6 +11882,9 @@
     let linkAddActive  = false;        // Nieuw wegvak intekenen
     let linkAddVertices = [];          // [[lon,lat], ...] vertices van de lijn in aanbouw
     let _linkAddMouseCoord = null;     // huidige muispositie (rubberbanding)
+    let treeAddActive  = false;        // Boom toevoegen: klik-op-kaart plaatsingsmodus
+    let treeAddType    = 'broadleaf_large';  // geselecteerd boomtype in #treeAddPopup
+    let _treeAddPending = [];          // handmatig geplaatste, nog niet opgeslagen boom-features
     // ── Selected Link Analysis — state ──────────────────────────────────────
     let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
     let selectedLinkActive = false;   // true als de link-selectie-modus actief is
@@ -14387,6 +14496,7 @@
         if (nodeEditActive && nodeSelectMode === 'polygon') return 'crosshair';
          if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
          if (linkAddActive) return 'crosshair';
+         if (treeAddActive) return 'crosshair';
          if ((linkEditActive || linkFlowEditActive || selectedLinkActive) && isHovering) return 'pointer';
          return '';
       },
@@ -14446,6 +14556,11 @@
         // Toon "Afronden"-popup zodra we >= 2 vertices hebben
         if (linkAddVertices.length >= 2)
           document.getElementById('linkAddFinishPopup').style.display = 'block';
+        return;
+      }
+      // Boom toevoegen: plaats een boom van het geselecteerde type op de klikpositie
+      if (treeAddActive) {
+        _addPendingTree(e.lngLat.lng, e.lngLat.lat);
         return;
       }
       // Teller plaatsen: hogere prioriteit dan link-selectie
@@ -17767,8 +17882,9 @@
     // ── Node-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('nodeEditBtn').addEventListener('click', () => {
-      // Zet link-edit en what-if uit als die actief waren
+      // Zet link-edit, boom toevoegen en what-if uit als die actief waren
       if (linkEditActive) document.getElementById('linkEditBtn').click();
+      if (treeAddActive) document.getElementById('treeAddBtn').click();
       deactivateWhatifRc();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
@@ -17811,10 +17927,11 @@
     // ── Link-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('linkEditBtn').addEventListener('click', () => {
-      // Zet node-edit, flow-edit, link-add en what-if uit als die actief waren
+      // Zet node-edit, flow-edit, link-add, boom toevoegen en what-if uit als die actief waren
       if (nodeEditActive) document.getElementById('nodeEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       if (linkAddActive) document.getElementById('linkAddBtn').click();
+      if (treeAddActive) document.getElementById('treeAddBtn').click();
       deactivateWhatifRc();
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
@@ -17859,6 +17976,7 @@
       if (nodeEditActive)  document.getElementById('nodeEditBtn').click();
       if (linkEditActive)  document.getElementById('linkEditBtn').click();
       if (linkAddActive)   document.getElementById('linkAddBtn').click();
+      if (treeAddActive)   document.getElementById('treeAddBtn').click();
       deactivateWhatifRc();
       linkFlowEditActive = !linkFlowEditActive;
       document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
@@ -17892,6 +18010,7 @@
       if (nodeEditActive)    document.getElementById('nodeEditBtn').click();
       if (linkEditActive)    document.getElementById('linkEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (treeAddActive)     document.getElementById('treeAddBtn').click();
       deactivateWhatifRc();
       linkAddActive = !linkAddActive;
       document.getElementById('linkAddBtn').classList.toggle('active', linkAddActive);
@@ -17957,6 +18076,56 @@
       document.getElementById('linkAddDialog').style.display = 'none';
       clearLinkAddDraw();
       document.getElementById('linkAddFinishPopup').style.display = 'none';
+    });
+
+    // ── Boom toevoegen (treeAddBtn) ──────────────────────────────────────────
+    // Lichtgewicht plaatsingsmodus: in tegenstelling tot de andere aanpassing-
+    // knoppen wordt de simulatie niet gepauzeerd (vergelijkbaar met de
+    // voertuigteller-plaatsing) — bomen plaatsen heeft geen invloed op het
+    // netwerk/de auto's.
+    document.getElementById('treeAddBtn').addEventListener('click', () => {
+      if (nodeEditActive)     document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)     document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive)      document.getElementById('linkAddBtn').click();
+      deactivateWhatifRc();
+      treeAddActive = !treeAddActive;
+      document.getElementById('treeAddBtn').classList.toggle('active', treeAddActive);
+      document.getElementById('treeAddBtn').innerHTML = treeAddActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-7"/><path d="M12 15c-3.5 0-6-2.3-6-5.5C6 6.2 8.7 3 12 3s6 3.2 6 6.5c0 3.2-2.5 5.5-6 5.5Z"/><path d="M12 11.2 9.3 8.4M12 11.2l2.8-2.8"/></svg>';
+
+      if (treeAddActive) {
+        // Bomenlaag aanzetten zodat bestaande + nieuwe bomen zichtbaar zijn.
+        const vegCheck = document.getElementById('lmpVegetation');
+        if (vegCheck) vegCheck.checked = true;
+        if (typeof window._setVegetationVisibility === 'function') window._setVegetationVisibility(true);
+        document.getElementById('treeAddStatus').textContent = '';
+        _updateTreeAddPanel();
+        document.getElementById('treeAddPopup').style.display = 'block';
+      } else {
+        document.getElementById('treeAddPopup').style.display = 'none';
+        map.getCanvas().style.cursor = '';
+      }
+    });
+
+    // Boomtype-keuze (toggle-toolbar, net als de temperatuur/weer-knoppen)
+    document.querySelectorAll('#treeTypeBtns .tree-opt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        treeAddType = btn.dataset.treeType;
+        document.querySelectorAll('#treeTypeBtns .tree-opt-btn').forEach(b =>
+          b.classList.toggle('active', b === btn));
+      });
+    });
+
+    document.getElementById('treeAddSaveBtn').addEventListener('click', () => {
+      _saveTreeAddPending();
+    });
+    document.getElementById('treeAddClearBtn').addEventListener('click', () => {
+      _treeAddPending = [];
+      _vegTrees = null;
+      updateOverlay(true);
+      _updateTreeAddPanel();
+      document.getElementById('treeAddStatus').textContent = '';
     });
 
     // ── Polygon-selectiemodus handlers ──────────────────────────────────────

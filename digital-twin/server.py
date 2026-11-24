@@ -990,6 +990,92 @@ def _run_vegetation_job(
             _vegetation_jobs_by_area.pop(area_id, None)
 
 
+@app.route("/vegetation/trees", methods=["POST"])
+def vegetation_add_trees():
+    """Voeg handmatig op de kaart geplaatste bomen toe aan het VEGETATION-bestand.
+
+    Body (JSON): { "areaId": "...", "features": [ {geometry, properties}, ... ] }
+    (alleen Point-features). Schrijft naar het bestaande VEGETATION-bestand van
+    het gebied of de baseAreaId-keten (zie _find_prepared_with_base_fallback),
+    of maakt het bestand aan in de eigen area-map als er nog nergens een
+    VEGETATION-bestand bestaat. Dezelfde atomaire schrijfwijze (tempfile +
+    os.replace) als _run_vegetation_job hierboven.
+    """
+    body = request.get_json(silent=True) or {}
+    area_id = str(body.get("areaId", "")).strip()
+    new_features = body.get("features")
+    if not area_id or not _safe(area_id):
+        return jsonify({"error": 'Ongeldige of ontbrekende parameter "areaId"'}), 400
+    if not isinstance(new_features, list) or not new_features:
+        return jsonify({"error": "features (niet-lege lijst) vereist"}), 400
+
+    for feat in new_features:
+        if not isinstance(feat, dict):
+            return jsonify({"error": "Elke feature moet een object zijn"}), 400
+        geom = feat.get("geometry") or {}
+        coords = geom.get("coordinates")
+        if geom.get("type") != "Point" or not isinstance(coords, list) or len(coords) < 2:
+            return jsonify({"error": "Alleen Point-features met coordinates [lon, lat] worden ondersteund"}), 400
+        try:
+            float(coords[0])
+            float(coords[1])
+        except (TypeError, ValueError):
+            return jsonify({"error": "Ongeldige coordinates"}), 400
+
+    path = _find_prepared_with_base_fallback(area_id, "VEGETATION")
+    if path is None:
+        path = _find_area_dir(area_id) / f"{area_id}-VEGETATION.geojson"
+    if path.suffix in _GEOPARQUET_EXTS:
+        # VEGETATION wordt altijd als GeoJSON weggeschreven (zie _run_vegetation_job);
+        # een geoparquet-variant zou hier niet veilig met JSON overschreven kunnen worden.
+        return jsonify({"error": "VEGETATION-bestand is geen GeoJSON; opslaan wordt niet ondersteund"}), 500
+
+    try:
+        data = _read_geodata_cached(path) if path.is_file() else {
+            "type": "FeatureCollection",
+            "features": [],
+            "properties": {},
+        }
+    except Exception as exc:
+        return jsonify({"error": f"Fout bij lezen VEGETATION: {exc}"}), 500
+
+    features = list(data.get("features", []))
+    for feat in new_features:
+        props = dict(feat.get("properties") or {})
+        props.setdefault("vegType", "tree")
+        props["osmId"] = f"manual-{uuid.uuid4().hex[:12]}"
+        props["source"] = "manual"
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [feat["geometry"]["coordinates"][0], feat["geometry"]["coordinates"][1]]},
+            "properties": props,
+        })
+    data = {**data, "type": "FeatureCollection", "features": features}
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False)
+        os.replace(tmp_name, path)
+        if _s3_enabled():
+            try:
+                # path kan via de baseAreaId-keten in een ánder gebied liggen dan
+                # het aangevraagde area_id (zie _find_prepared_with_base_fallback);
+                # de S3-sleutel moet bij de daadwerkelijke eigenaar-map horen.
+                _s3_write_bytes(
+                    _s3_key(path.parent.name, path.name),
+                    json.dumps(data, ensure_ascii=False).encode("utf-8"),
+                    "application/json",
+                )
+            except Exception as _e:
+                print(f"[s3] vegetation opslaan mislukt: {_e}")
+    except Exception as exc:
+        return jsonify({"error": f"Fout bij opslaan VEGETATION: {exc}"}), 500
+
+    return jsonify({"ok": True, "added": len(new_features), "total": len(features)})
+
+
 # ---------------------------------------------------------------------------
 # Verkeersobjecten: ontbrekende bronnen on-demand ophalen
 # ---------------------------------------------------------------------------
