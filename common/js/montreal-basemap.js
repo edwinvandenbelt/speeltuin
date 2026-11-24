@@ -10,6 +10,10 @@
  * API: window.MontrealBasemap.ensure(map, libertyLayerIds)
  *        → voegt de lagen (verborgen) toe als ze nog ontbreken.
  *      window.MontrealBasemap.setVisible(map, bool)
+ *      window.MontrealBasemap.setRoadOverlayVisible(map, bool)
+ *        → toont alleen de wegen/fietspaden/stoepen-lagen (geen land/water/
+ *          groen), ook als de volledige Montréal-ondergrond uit staat; voor
+ *          een 'NWB wegen'-overlay bovenop bijv. de luchtfoto.
  *      window.MontrealBasemap.hiddenBaseLayerIds(map)
  *        → Set met Liberty-lagen die in Montréal-modus uit moeten.
  *      window.MontrealBasemap.setNetwork(features)
@@ -233,12 +237,38 @@
     }
   }
 
+  // Lagen die ook los van de volledige Montréal-ondergrond getoond kunnen
+  // worden als 'NWB wegen'-overlay (zie setRoadOverlayVisible): wegen,
+  // fietspaden en stoepen, zonder de land-/water-/groenvlakken.
+  const _isRoadOverlayLayer = l => l.id.startsWith('mtl-road') || l.id === 'mtl-paths' || l.source === _SIDEWALK_SRC;
+
   function setVisible(m, visible) {
     for (const l of m.getStyle().layers) {
-      if (!l.id.startsWith('mtl-')) continue;
-      const on = visible && (_sidewalksOn || !_isSidewalkLayer(l));
-      m.setLayoutProperty(l.id, 'visibility', on ? 'visible' : 'none');
+      if (!l.id.startsWith('mtl-') || _isRoadOverlayLayer(l)) continue;
+      m.setLayoutProperty(l.id, 'visibility', visible ? 'visible' : 'none');
     }
+    _applyRoadOverlayVisibility(m);
+  }
+
+  // ── 'NWB wegen'-overlay ──────────────────────────────────────────────────
+  // Toont de wegen/fietspaden/stoepen-lagen ook als de Montréal-ondergrond
+  // zelf uit staat (bijv. bovenop de luchtfoto); per kaart-instantie.
+  const _roadOverlayOn = new Map();  // map → bool
+
+  function _applyRoadOverlayVisibility(m) {
+    if (!m.getLayer('mtl-ground')) return;
+    const mtlOn = m.getLayoutProperty('mtl-ground', 'visibility') !== 'none';
+    const baseOn = mtlOn || !!_roadOverlayOn.get(m);
+    for (const l of m.getStyle().layers) {
+      if (!_isRoadOverlayLayer(l)) continue;
+      const show = baseOn && (_sidewalksOn || !_isSidewalkLayer(l));
+      try { m.setLayoutProperty(l.id, 'visibility', show ? 'visible' : 'none'); } catch (_) {}
+    }
+  }
+
+  function setRoadOverlayVisible(m, visible) {
+    _roadOverlayOn.set(m, !!visible);
+    _applyRoadOverlayVisibility(m);
   }
 
   // ── Stoepen en fietspaden (BGT) ─────────────────────────────────────────
@@ -264,16 +294,11 @@
     for (const m of _sidewalkMaps) m.getSource(_SIDEWALK_SRC)?.setData(_sidewalkFC);
   }
 
-  // Alleen zichtbaar als ook de Montréal-ondergrond aanstaat (mtl-ground).
+  // Alleen zichtbaar als ook de Montréal-ondergrond (of de 'NWB wegen'-overlay)
+  // aanstaat.
   function setSidewalksVisible(on) {
     _sidewalksOn = !!on;
-    for (const m of _sidewalkMaps) {
-      if (!m.getLayer('mtl-ground')) continue;
-      const mtlOn = m.getLayoutProperty('mtl-ground', 'visibility') !== 'none';
-      for (const l of m.getStyle().layers) {
-        if (_isSidewalkLayer(l)) m.setLayoutProperty(l.id, 'visibility', mtlOn && _sidewalksOn ? 'visible' : 'none');
-      }
-    }
+    for (const m of _sidewalkMaps) _applyRoadOverlayVisibility(m);
   }
 
   // ── Netwerkdata in de wegen-tiles ───────────────────────────────────────
@@ -681,6 +706,6 @@
     }
   }
 
-  window.MontrealBasemap = { palettes: _MTL_PALETTES, ensure, setVisible, hiddenBaseLayerIds, setNetwork,
+  window.MontrealBasemap = { palettes: _MTL_PALETTES, ensure, setVisible, setRoadOverlayVisible, hiddenBaseLayerIds, setNetwork,
     setSidewalks, setSidewalksVisible, surfaceClass: _surfaceClass, setSeason };
 })();

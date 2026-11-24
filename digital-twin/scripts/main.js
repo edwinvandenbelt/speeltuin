@@ -2115,6 +2115,20 @@
       });
     }
 
+    // 'NWB wegen'-overlay: kaart2-wegen/fietspaden/stoepen bovenop de
+    // achtergrond (bij 'kaart' staan ze al aan, dus daar geen zichtbaar effect).
+    const nwbWegenCheck = document.getElementById('lmpNwbWegen');
+    if (nwbWegenCheck) {
+      nwbWegenCheck.checked = typeof window._getNwbWegenVisible === 'function'
+        ? window._getNwbWegenVisible()
+        : false;
+      nwbWegenCheck.addEventListener('change', () => {
+        if (typeof window._setNwbWegenVisible === 'function') {
+          window._setNwbWegenVisible(nwbWegenCheck.checked);
+        }
+      });
+    }
+
     // Slider-tab: paneel in-/uitklappen (naar links wegschuiven)
     const savedCollapsed = localStorage.getItem('leftMenuPanelCollapsed') === '1';
     if (toggle) {
@@ -3953,6 +3967,10 @@
     let basemapStyle       = localStorage.getItem('basemapStyle') || 'map';
     if (basemapStyle === 'montreal') basemapStyle = 'map';
     window._basemapStyleSafe = basemapStyle;
+    // 'NWB wegen'-overlay: toont de kaart2-wegen/fietspaden/stoepen bovenop elke
+    // achtergrond (bij 'map' staan ze al via de volledige Montréal-ondergrond
+    // aan, dus daar heeft deze toggle geen zichtbaar effect).
+    let _nwbWegenVisible   = localStorage.getItem('nwbWegenVisible') === '1';
 
     // Gebouwclassificatie op basis van OSM-tags
      function classifyBuilding(props) {
@@ -4831,14 +4849,18 @@
           }
         }
         try {
+          // De mtl-*-lagen ook aanmaken (verborgen) als alleen de 'NWB wegen'-
+          // overlay aanstaat, zodat die lagen bestaan zonder de volledige
+          // Montréal-ondergrond te activeren.
+          if (isMtl || _nwbWegenVisible) window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
           if (isMtl) {
-            window.MontrealBasemap.ensure(m, _libertyAllLayerIds);
             window.MontrealBasemap.setSeason(m, _sunMonth || (new Date().getMonth() + 1));
             // Bewegend water boven 'mtl-water' (common/js/animated-water.js);
             // tekent alleen zolang 'mtl-water' zichtbaar is.
             try { window.AnimatedWater?.ensure(m); } catch (e) { console.warn('Bewegend water:', e); }
           }
           window.MontrealBasemap.setVisible(m, isMtl);
+          window.MontrealBasemap.setRoadOverlayVisible(m, isMtl || _nwbWegenVisible);
         } catch (e) { console.warn('Montréal-ondergrond:', e); }
         m.getContainer().style.backgroundColor = isNone ? '#000000' : (isWhite ? '#ffffff' : '');
         // Satelliet: verberg ook de Liberty fill/background lagen
@@ -4866,6 +4888,16 @@
     // Globaal beschikbaar maken zodat panelen buiten deze functie-scope
     // (bijv. initLeftMenuPanel) hem ook kunnen aanroepen.
     window._applyBasemapStyle = _applyBasemapStyle;
+
+    // 'NWB wegen'-overlay aan/uit (los van de achtergrond-radio); herbruikt
+    // _applyBasemapStyle om de mtl-*-lagen op beide kaarten te (de)activeren.
+    function _setNwbWegenVisible(visible) {
+      _nwbWegenVisible = !!visible;
+      localStorage.setItem('nwbWegenVisible', _nwbWegenVisible ? '1' : '0');
+      _applyBasemapStyle(basemapStyle);
+    }
+    window._setNwbWegenVisible = _setNwbWegenVisible;
+    window._getNwbWegenVisible = () => _nwbWegenVisible;
 
     // ── Donkere grondtint bij nacht (gesimuleerde klok) ───────────────────────
     // Tint alleen de grond (park/landuse/landcover) via één halfdoorzichtige
@@ -7721,9 +7753,9 @@
     // ═══════════════════════════════════════════════════════════════════════
     const _VEG_MINZOOM   = _TA_MINZOOM;  // gelijk aan verkeersborden: pas tonen bij ver inzoomen
     const _VEG_REF_H     = 6;       // referentiehoogte van de basis-boommesh (m)
-    const _VEG_DEF_H     = 6;       // aangenomen hoogte als OSM 'height' ontbreekt
+    const _VEG_DEF_H     = 12;      // aangenomen hoogte als OSM 'height' ontbreekt (volwassen straatboom, torent boven de meeste huizen uit)
     const _VEG_MIN_H     = 3;       // ondergrens hoogte (m)
-    const _VEG_MAX_H     = 22;      // bovengrens hoogte (m)
+    const _VEG_MAX_H     = 28;      // bovengrens hoogte (m) — ruimte voor hoge populieren/platanen
     const _VEG_ROW_STEP  = 8;       // sample-afstand langs tree_row (m)
     const _VEG_MAX_TREES = 4000;    // harde cap op getekende boom-instanties
 
@@ -7748,7 +7780,7 @@
     const _VEG_BUSH_COLOR   = { scrub: [104, 142, 74, 255] };  // lichter struikgroen
     // Bos: onderlinge boomafstand (m), hoogtebereik (m) en cap.
     const _VEG_AREA_TREE_SPACING = { forest: 7.0, wood: 8.0 };
-    const _VEG_AREA_TREE_H       = { forest: [5, 10], wood: [4, 8] };  // [min,max] m
+    const _VEG_AREA_TREE_H       = { forest: [10, 22], wood: [8, 18] };  // [min,max] m
     const _VEG_MAX_AREA_TREES    = 3000;
 
     // Seizoenskleuring loofbomen (naaldbomen blijven het hele jaar groen —
@@ -7812,7 +7844,9 @@
       return { pos: new Float32Array(pos), nor: new Float32Array(nor),
                uv: new Float32Array(uv), idx: new Uint32Array(idx), vc };
     }
-    function _vegSphereZ(radius, cz, seg = 8) {
+    function _vegSphereZ(radius, cz, seg = 8, radiusZ = radius) {
+      // radiusZ ≠ radius → prolate ellipsoïde (langgerekte kroon, bv. berk/populier)
+      // i.p.v. een bol (ronde kroon, bv. eik).
       const pos = [], nor = [], uv = [], idx = [];
       const rings = Math.max(4, seg >> 1);
       for (let r = 0; r <= rings; r++) {
@@ -7821,7 +7855,7 @@
         for (let s = 0; s <= seg; s++) {
           const th = 2 * Math.PI * (s / seg);
           const x = Math.cos(th) * rr, y = Math.sin(th) * rr;
-          pos.push(x * radius, y * radius, cz + zr * radius);
+          pos.push(x * radius, y * radius, cz + zr * radiusZ);
           nor.push(x, y, zr);
           uv.push(s / seg, r / rings);
         }
@@ -7839,13 +7873,17 @@
     }
 
     // Gedeelde meshes (lazy, één keer gebouwd op referentiehoogte _VEG_REF_H).
-    let _vegTrunkMesh = null, _vegBroadMesh = null, _vegNeedleMesh = null, _vegBushMesh = null;
+    let _vegTrunkMesh = null, _vegBroadMesh = null, _vegBroadOvalMesh = null, _vegNeedleMesh = null, _vegBushMesh = null;
     function _vegEnsureMeshes() {
       if (_vegTrunkMesh) return;
       const trunkH = _VEG_REF_H * 0.4;
       _vegTrunkMesh  = mergeMeshes([_vegCylZ(0.16, trunkH, 0)]);
-      // Loofboom: bolvormige kroon bovenop de stam.
+      // Loofboom: bolvormige kroon bovenop de stam (bv. eik, plataan).
       _vegBroadMesh  = mergeMeshes([_vegSphereZ(1.7, trunkH + 1.5)]);
+      // Loofboom, langgerekte variant: smallere, hogere ellipsoïde kroon
+      // (bv. berk, populier) i.p.v. een bol — zelfde totale omhullende hoogte
+      // als _vegBroadMesh zodat de hoogteschaal (h/_VEG_REF_H) consistent blijft.
+      _vegBroadOvalMesh = mergeMeshes([_vegSphereZ(1.1, trunkH + 1.8, 8, 1.8)]);
       // Naaldboom: kegelvormige kroon.
       _vegNeedleMesh = mergeMeshes([_vegConeZ(1.5, _VEG_REF_H - trunkH, trunkH)]);
       // Struik: bol met eenheidshoogte ~2 m (radius 1, centrum op z=1), zodat
@@ -7895,13 +7933,17 @@
         const h = _vegClampH(props.height);
         const needle = props.leafType === 'needleleaved';
         const r = _vegHash(seed);
-        const scale = (h / _VEG_REF_H) * (0.85 + r * 0.3);   // hoogte + jitter
+        const scale = (h / _VEG_REF_H) * (0.7 + r * 0.6);   // hoogte + jitter (0.7×–1.3×)
         if (!isFinite(scale)) return;
+        // Langgerekte kroonvorm (berk/populier-achtig) i.p.v. rond: bij een deel
+        // van de loofbomen, deterministisch per boom.
+        const oval = !needle && _vegHash(`${seed}:shape`) < 0.4;
         out.push({
           position: [lng, lat, 0],
           yaw:      r * 360,
           scale,
           needle,
+          oval,
           born:     _vegBornAt(seed),
         });
       };
@@ -8026,14 +8068,15 @@
         const p = f.properties || {}, vt = p.vegType;
         const spacing = _VEG_AREA_TREE_SPACING[vt];
         if (!spacing) continue;                       // niet-bos → geen bomen
-        const range  = _VEG_AREA_TREE_H[vt] || [6, 12];
+        const range  = _VEG_AREA_TREE_H[vt] || [10, 20];
         const hMin = range[0], hSpan = range[1] - range[0];
         const needle = p.leafType === 'needleleaved';
          _vegScatterPolygon(f, spacing, stop, (jx, jy, r1, r2) => {
           const h = hMin + r1 * hSpan;
           const scale = (h / _VEG_REF_H) * (0.9 + r2 * 0.2);
           if (!isFinite(scale)) return;
-          out.push({ position: [jx, jy, 0], yaw: r2 * 360, scale, needle,
+          const oval = !needle && _vegHash(`${jx.toFixed(6)},${jy.toFixed(6)}:shape`) < 0.4;
+          out.push({ position: [jx, jy, 0], yaw: r2 * 360, scale, needle, oval,
                      born: _vegBornAt(`a:${jx.toFixed(6)},${jy.toFixed(6)}`) });
         });
       }
@@ -8067,9 +8110,14 @@
       if (_vegAreaTrees === null) _vegAreaTrees = _vegBuildAreaTrees();
       const allTrees = _vegAreaTrees.length ? _vegTrees.concat(_vegAreaTrees) : _vegTrees;
       if (!allTrees.length) return layers;
-      const broad  = allTrees.filter(t => !t.needle);
-      const needle = allTrees.filter(t => t.needle);
+      const broad     = allTrees.filter(t => !t.needle && !t.oval);
+      const broadOval = allTrees.filter(t => !t.needle && t.oval);
+      const needle    = allTrees.filter(t => t.needle);
       const season = _vegSeasonOfMonth(_sunMonth || (new Date().getMonth() + 1));
+      const _vegBroadColor = season === 'autumn' ? (d => _vegAutumnColor(d.yaw / 360))
+                           : season === 'spring' ? _VEG_CANOPY_SPRING
+                           : season === 'winter' ? _VEG_CANOPY_WINTER
+                           : _VEG_CANOPY_SUMMER;
       const shared = (id, data, scaleMul = 1) => ({
         id, data,
         getPosition:    d => d.position,
@@ -8093,11 +8141,18 @@
         layers.push(new SimpleMeshLayer({
           ...broadShared,
           mesh:     _vegBroadMesh,
-          getColor: season === 'autumn' ? (d => _vegAutumnColor(d.yaw / 360))
-                   : season === 'spring' ? _VEG_CANOPY_SPRING
-                   : season === 'winter' ? _VEG_CANOPY_WINTER
-                   : _VEG_CANOPY_SUMMER,
+          getColor: _vegBroadColor,
           updateTriggers: { ...broadShared.updateTriggers, getColor: season },
+          material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
+        }));
+      }
+      if (broadOval.length) {
+        const broadOvalShared = shared('veg-canopy-broad-oval', broadOval, season === 'winter' ? _VEG_WINTER_CANOPY_SCALE : 1);
+        layers.push(new SimpleMeshLayer({
+          ...broadOvalShared,
+          mesh:     _vegBroadOvalMesh,
+          getColor: _vegBroadColor,
+          updateTriggers: { ...broadOvalShared.updateTriggers, getColor: season },
           material: { ambient: 0.65, diffuse: 0.8, shininess: 5, specularColor: [10, 10, 10] },
         }));
       }
