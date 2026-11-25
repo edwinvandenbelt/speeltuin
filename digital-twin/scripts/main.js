@@ -1707,12 +1707,33 @@
       scenarioTooltip.style.display = 'none';
     }
 
+    // Basiskaart-tegels (CartoDB/OpenFreeMap/ArcGIS) lopen via een lokale
+    // disk-cache-proxy (/map-proxy, zie server.py), zodat een demo met een
+    // zwakke internetverbinding na een eerste warme run niet opnieuw bij deze
+    // externe CDN's hoeft aan te kloppen.
+    const MAP_PROXY_HOSTS = new Set([
+      'basemaps.cartocdn.com',
+      'tiles.basemaps.cartocdn.com',
+      'tiles.openfreemap.org',
+      'server.arcgisonline.com',
+    ]);
+    function mapProxyTransformRequest(url, _resourceType) {
+      try {
+        const u = new URL(url, window.location.href);
+        if (MAP_PROXY_HOSTS.has(u.hostname)) {
+          return { url: '/map-proxy?url=' + encodeURIComponent(url) };
+        }
+      } catch (_e) { /* relatieve of ongeldige URL: ongemoeid laten */ }
+      return { url };
+    }
+
     // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
     const homeMap = new maplibregl.Map({
       container: 'map',
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       center: [5.2913, 52.1326],
       zoom: 7,
+      transformRequest: mapProxyTransformRequest,
     });
     const HOME_BBOX_SOURCE = 'home-bbox-src';
     const HOME_BBOX_LAYER  = 'home-bbox-layer';
@@ -2228,6 +2249,7 @@
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       center: [4.9, 52.3],
       zoom: 7,
+      transformRequest: mapProxyTransformRequest,
     });
 
     let bbox   = null;   // { minLon, minLat, maxLon, maxLat }
@@ -3603,6 +3625,7 @@
       // verkeersobjecten). Deze worden deels via deck.gl gerenderd en zouden
       // anders niet in de standaard-attributie verschijnen.
       attributionControl: { customAttribution: [OSM_ATTRIBUTION, BAG3D_ATTRIBUTION] },
+      transformRequest: mapProxyTransformRequest,
     });
     window.map = map;
 
@@ -5331,7 +5354,8 @@
     const _BAG3D_TILESET_PROXY  = '/3dbag/tileset.json';
     // Terugval — versie gelijk houden met _BAG3D_VERSION in server.py.
     const _BAG3D_TILESET_DIRECT = 'https://data.3dbag.nl/v20250903/cesium3dtiles/lod22/tileset.json';
-    const _BAG3D_MESHOPT = 'https://cdn.jsdelivr.net/npm/meshoptimizer@1.3.0/meshopt_decoder.mjs';
+    // Lokaal gevendord (niet via jsdelivr-CDN): werkt ook zonder internet.
+    const _BAG3D_MESHOPT = '/scripts/meshopt_decoder.mjs';
     const _BAG3D_NL_BBOX = [3.2, 50.7, 7.3, 53.6];
     const _BAG3D_MIN_ZOOM    = 13;   // daaronder geen nieuwe tegels ophalen
     const _BAG3D_CONCURRENCY = 6;    // tegels zijn ~1–3 MB elk
@@ -17369,6 +17393,7 @@
           antialias: true,
           maxPitch:  85,
           attributionControl: { customAttribution: OSM_ATTRIBUTION },
+          transformRequest: mapProxyTransformRequest,
         });
 
         map2.once('load', () => {

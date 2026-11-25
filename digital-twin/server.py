@@ -23,6 +23,7 @@ OGC API:
 import argparse
 import contextlib
 import datetime as _dt
+import hashlib
 import io
 import json
 from collections import OrderedDict
@@ -35,6 +36,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import urllib.parse
 import urllib.request as _urllib_req
 import uuid
 from pathlib import Path
@@ -3301,6 +3303,7 @@ def index():
 _STATIC_EXTS = {
     ".html",
     ".js",
+    ".mjs",
     ".css",
     ".json",
     ".txt",
@@ -4410,6 +4413,79 @@ def ogc_collection_items(collection_id):
     resp.headers["ETag"] = etag
     resp.headers["Last-Modified"] = last_modified
     resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Basiskaart-tegel-proxy (CartoDB/OpenFreeMap/ArcGIS): cachet style/sprite/
+# glyph/tile-bestanden permanent op schijf (en desgewenst in S3), zodat een
+# demo met een zwakke internetverbinding na een eerste warme run niet meer
+# bij deze externe CDN's hoeft aan te kloppen. main.js stuurt deze requests
+# hierheen via MapLibre's `transformRequest` (zelfde idee als de 3D BAG-proxy
+# hierboven). Alleen de toegestane basemap-hosts mogen geproxyd worden — geen
+# open proxy.
+# ---------------------------------------------------------------------------
+_MAP_PROXY_ALLOWED_HOSTS = {
+    "basemaps.cartocdn.com",
+    "tiles.basemaps.cartocdn.com",
+    "tiles.openfreemap.org",
+    "server.arcgisonline.com",
+}
+
+
+@app.route("/map-proxy")
+def map_proxy():
+    url = request.args.get("url", "")
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https") or parsed.netloc not in _MAP_PROXY_ALLOWED_HOSTS:
+        abort(400)
+
+    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()
+    cache_dir = _work_dir() / "_map_cache"
+    data_path = cache_dir / f"{digest}.bin"
+    meta_path = cache_dir / f"{digest}.ctype"
+    s3_key = f"{_S3_PREFIX}_map_cache/{digest}"
+
+    data = None
+    content_type = None
+    if data_path.exists() and meta_path.exists():
+        data = data_path.read_bytes()
+        content_type = meta_path.read_text(encoding="utf-8").strip()
+    elif _s3_enabled() and _s3_exists(s3_key):
+        try:
+            data = _s3_read_bytes(s3_key)
+            content_type = _s3_read_bytes(s3_key + ".ctype").decode("utf-8")
+        except Exception as _e:
+            print(f"[map-proxy] S3-lezen mislukt ({s3_key}): {_e}")
+            data = None
+
+    if data is None:
+        try:
+            upstream = requests.get(url, timeout=15)
+            upstream.raise_for_status()
+        except Exception as exc:
+            app.logger.warning("map-proxy ophalen mislukt (%s): %s", url, exc)
+            abort(502)
+        data = upstream.content
+        content_type = upstream.headers.get("Content-Type", "application/octet-stream")
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp_fd, tmp_name = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+            with os.fdopen(tmp_fd, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp_name, data_path)
+            meta_path.write_text(content_type, encoding="utf-8")
+        except Exception as _e:
+            print(f"[map-proxy] cache schrijven mislukt ({data_path}): {_e}")
+        if _s3_enabled():
+            try:
+                _s3_write_bytes(s3_key, data, content_type)
+                _s3_write_bytes(s3_key + ".ctype", content_type.encode("utf-8"), "text/plain")
+            except Exception as _e:
+                print(f"[map-proxy] S3-schrijven mislukt ({s3_key}): {_e}")
+
+    resp = Response(data, mimetype=content_type)
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return resp
 
 

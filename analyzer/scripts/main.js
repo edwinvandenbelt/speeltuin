@@ -1498,12 +1498,33 @@
       scenarioTooltip.style.display = 'none';
     }
 
+    // Basiskaart-tegels (CartoDB/OpenFreeMap/ArcGIS) lopen via een lokale
+    // disk-cache-proxy (/map-proxy, zie server.py), zodat een demo met een
+    // zwakke internetverbinding na een eerste warme run niet opnieuw bij deze
+    // externe CDN's hoeft aan te kloppen.
+    const MAP_PROXY_HOSTS = new Set([
+      'basemaps.cartocdn.com',
+      'tiles.basemaps.cartocdn.com',
+      'tiles.openfreemap.org',
+      'server.arcgisonline.com',
+    ]);
+    function mapProxyTransformRequest(url, _resourceType) {
+      try {
+        const u = new URL(url, window.location.href);
+        if (MAP_PROXY_HOSTS.has(u.hostname)) {
+          return { url: '/map-proxy?url=' + encodeURIComponent(url) };
+        }
+      } catch (_e) { /* relatieve of ongeldige URL: ongemoeid laten */ }
+      return { url };
+    }
+
     // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
     const homeMap = new maplibregl.Map({
       container: 'map',
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       center: [5.2913, 52.1326],
       zoom: 7,
+      transformRequest: mapProxyTransformRequest,
     });
     const HOME_BBOX_SOURCE = 'home-bbox-src';
     const HOME_BBOX_LAYER  = 'home-bbox-layer';
@@ -1982,6 +2003,7 @@
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       center: [4.9, 52.3],
       zoom: 7,
+      transformRequest: mapProxyTransformRequest,
     });
 
     let bbox   = null;   // { minLon, minLat, maxLon, maxLat }
@@ -2865,6 +2887,7 @@
       // verkeersobjecten). Deze worden deels via deck.gl gerenderd en zouden
       // anders niet in de standaard-attributie verschijnen.
       attributionControl: { customAttribution: OSM_ATTRIBUTION },
+      transformRequest: mapProxyTransformRequest,
     });
     window.map = map;
 
@@ -10954,6 +10977,7 @@
           antialias: true,
           maxPitch:  85,
           attributionControl: { customAttribution: OSM_ATTRIBUTION },
+          transformRequest: mapProxyTransformRequest,
         });
 
         map2.once('load', () => {
