@@ -5420,13 +5420,16 @@
      * worden gefilterd. Geen N_SKIP-trim, geen Dijkstra aanloop/uitloop.
      * @param {object|null} routesFc    - GeoJSON FeatureCollection met routes (null → skip)
      * @param {string}      vehicleMode - 'CAR' | 'BIKE' | 'PEDESTRIAN' of MODE
+     * @param {Array}       targetList  - array om routes aan toe te voegen (default routeList)
+     * @param {Map}         geomMap     - linkId → coords (default linkGeomMap)
+     * @param {Array}       segList     - segmenten voor de lengte-cache (default segments)
      */
-    function _parseAndAddRoutes(routesFc, vehicleMode) {
+    function _parseAndAddRoutes(routesFc, vehicleMode, targetList = routeList, geomMap = linkGeomMap, segList = segments) {
       if (!routesFc?.features) return;
       // linkId → lengte (m); -1 = niet in linkGeomMap / < 2 coördinaten.
       // Voorgevuld met de segmentlengtes (meestal het `length`-attribuut uit het netwerkbestand).
       const linkLenCache = new Map();
-      for (const seg of segments) {
+      for (const seg of segList) {
         if (seg.coords?.length >= 2) linkLenCache.set(seg.props.linkId, seg.length);
       }
       // Pass 1: bereken zone-totaal én OD-totaal voor de isAbsolute-detectie
@@ -5467,12 +5470,12 @@
           const linkIds = [];
           let totalLen  = 0;
           for (const raw of r.linkPath) {
-            const id = linkGeomMap.has(raw) ? raw : parseInt(raw);
+            const id = geomMap.has(raw) ? raw : parseInt(raw);
             // Linklengte één keer per link berekenen (haversine over alle
             // coördinaten), niet opnieuw voor elke route die de link gebruikt.
             let len = linkLenCache.get(id);
             if (len === undefined) {
-              const c = linkGeomMap.get(id);
+              const c = geomMap.get(id);
               len = c?.length >= 2 ? segmentLength(c) : -1;  // -1 = geen bruikbare geometrie
               linkLenCache.set(id, len);
             }
@@ -5482,7 +5485,7 @@
           }
           if (!linkIds.length) continue;
           if (totalLen < 30) continue;
-          routeList.push({
+          targetList.push({
             linkIds,
             fromZoneId,
             toZoneId,
@@ -6483,6 +6486,8 @@
     let origSegments       = [];     // segments-array voor rechterkaart
     let origGeojsonFeatures = [];    // geojson.features voor rechterkaart
     let origZoneFeatures   = [];     // zoneFeaturesRaw voor rechterkaart
+    let routeList2         = [];     // routeList voor rechterkaart (bronscenario)
+    let linkGeomMap2       = new Map(); // linkGeomMap voor rechterkaart, opgebouwd uit origSegments
     let _mapSyncing        = false;  // guard tegen recursieve camera-sync
     let overlayMode        = false;  // swipe-modus: kaarten gestapeld, splitter = clip-lijn
     let overlayX           = 0;      // huidige splitter-positie in px (overlay-modus)
@@ -7754,6 +7759,138 @@
           getLineColor: [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
           getLineWidth: [selectedZoneId, selectedLinkId],
           getRadius:    [zoneCentroidMode, selectedZoneId, selectedLinkId, daypart, flowDaypart],
+        },
+      });
+    }
+
+    /**
+     * Zone-centroïden voor de rechterkaart in split-view (bronscenario).
+     * Vereenvoudigde variant van makeZoneCentroidLayer(): toont productie/
+     * attractie-bollen op basis van origZoneFeatures, zonder de interactieve
+     * selectie-/OD-edit-logica (die hoort bij het doelscenario, niet bron).
+     */
+    function makeZoneCentroidLayer2() {
+      if (zoneCentroidMode === 'off' || !origZoneFeatures.length) {
+        return new ScatterplotLayer({ id: 'zone-centroids-orig', data: [] });
+      }
+
+      const ZONE_RADIUS_MIN = 6;
+      const ZONE_RADIUS_MAX = 26;
+      const normRadius = norm =>
+        ZONE_RADIUS_MIN + (ZONE_RADIUS_MAX - ZONE_RADIUS_MIN) *
+          Math.sqrt(Math.max(0, Math.min(1, norm)));
+      const normAlpha = norm =>
+        Math.round(50 + 190 * Math.sqrt(Math.max(0, Math.min(1, norm))));
+
+      const isProduction = zoneCentroidMode === 'production';
+      const allVals = origZoneFeatures.map(f => {
+        const p = f.properties || {};
+        return isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+      });
+      const globalMax = Math.max(...allVals, 1);
+
+      const pts = [];
+      for (const f of origZoneFeatures) {
+        const p = f.properties || {};
+
+        let lon = p.centroidLon ?? null;
+        let lat = p.centroidLat ?? null;
+        if (lon == null && f.geometry?.type === 'Point') {
+          [lon, lat] = f.geometry.coordinates;
+        } else if (lon == null && f.geometry?.type === 'Polygon' && f.geometry.coordinates?.[0]?.length) {
+          const ring = f.geometry.coordinates[0];
+          lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+          lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+        }
+        if (lon == null || lat == null) continue;
+
+        const ownVal = isProduction ? (p.production ?? 0) : (p.attraction ?? 0);
+        if (ownVal <= 0) continue;
+        const sizeNorm = ownVal / globalMax;
+
+        pts.push({ lon, lat, sizeNorm, alpha: normAlpha(sizeNorm) });
+      }
+
+      return new ScatterplotLayer({
+        id:             'zone-centroids-orig',
+        data:           pts,
+        pickable:       false,
+        stroked:        true,
+        filled:         true,
+        radiusUnits:    'pixels',
+        lineWidthUnits: 'pixels',
+        lineWidthMinPixels: 1,
+        getPosition:    d => [d.lon, d.lat],
+        getRadius:      d => normRadius(d.sizeNorm),
+        getFillColor:   d => isProduction ? [255, 140, 0, d.alpha] : [30, 120, 255, d.alpha],
+        getLineColor:   d => isProduction ? [255, 140, 0, Math.min(d.alpha + 40, 255)]
+                                           : [ 30, 120, 255, Math.min(d.alpha + 40, 255)],
+        getLineWidth:   1.5,
+        updateTriggers: {
+          getFillColor: [zoneCentroidMode],
+          getLineColor: [zoneCentroidMode],
+          getRadius:    [zoneCentroidMode],
+        },
+      });
+    }
+
+    /**
+     * Routes voor de geselecteerde zone, maar dan berekend tegen het
+     * bronscenario (routeList2 / linkGeomMap2) i.p.v. het doelscenario.
+     * selectedZoneId/zoneCentroidMode zijn gedeelde state (de selectie komt
+     * altijd van een klik op de doelscenario-kaart); alleen de onderliggende
+     * route-data verschilt.
+     */
+    function computeZoneRouteData2() {
+      const dpFrac = DP_FRACTION[flowDaypart] ?? (1 / 14.4);
+      const relevant = routeList2.filter(r =>
+        zoneCentroidMode === 'production' ? r.fromZoneId === selectedZoneId : r.toZoneId === selectedZoneId
+      );
+
+      const flowByLink = new Map();  // linkId → gesommeerde flow van alle routes over dit wegvak
+      for (const route of relevant) {
+        const flow = (route.originProduction ?? 0) * dpFrac * (route.weight ?? 0);
+        for (const linkId of route.linkIds ?? []) {
+          flowByLink.set(linkId, (flowByLink.get(linkId) ?? 0) + flow);
+        }
+      }
+
+      const pathData = [];
+      for (const [linkId, flow] of flowByLink) {
+        const coords = linkGeomMap2.get(linkId) ?? linkGeomMap2.get(Number(linkId));
+        if (coords && coords.length >= 2) pathData.push({ coords, flow, linkId });
+      }
+      return { pathData };
+    }
+
+    /** Routes-laag voor de rechterkaart in split-view (bronscenario). */
+    function makeZoneRoutesLayer2() {
+      if (!selectedZoneId || zoneCentroidMode === 'off' || !routeList2.length) {
+        return new PathLayer({ id: 'zone-routes-orig', data: [] });
+      }
+
+      const { pathData } = computeZoneRouteData2();
+      if (!pathData.length) return new PathLayer({ id: 'zone-routes-orig', data: [] });
+
+      const maxFlow = pathData.reduce((m, d) => Math.max(m, d.flow), 1e-9);
+      const isProduction = zoneCentroidMode === 'production';
+      const baseColor = isProduction ? [255, 120, 0] : [0, 220, 255];
+      const norm = d => Math.max(0, Math.min(1, d.flow / maxFlow));
+
+      return new PathLayer({
+        id:             'zone-routes-orig',
+        data:           pathData,
+        pickable:       false,
+        widthUnits:     'pixels',
+        widthMinPixels: 1,
+        widthMaxPixels: 14,
+        getPath:        d => d.coords,
+        getWidth:       d => Math.max(1, Math.sqrt(norm(d)) * 14),
+        getColor:       d => [...baseColor, Math.round(50 + 190 * Math.sqrt(norm(d)))],
+        updateTriggers: {
+          getColor: [zoneCentroidMode, selectedZoneId, daypart, flowDaypart],
+          getWidth: [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
+          getPath:  [selectedZoneId, zoneCentroidMode, daypart, flowDaypart],
         },
       });
     }
@@ -9033,7 +9170,7 @@
         ]});
         // Rechterkaart (bronscenario) synchroon bijwerken als split-view actief is
         if (splitViewActive && overlay2) {
-          overlay2.setProps({ layers: [makeNetworkLayer2()].filter(Boolean) });
+          overlay2.setProps({ layers: [makeNetworkLayer2(), makeZoneCentroidLayer2(), makeZoneRoutesLayer2()].filter(Boolean) });
         }
       }
 
@@ -11012,6 +11149,31 @@
         }));
         origGeojsonFeatures = origGeoJson.features;
 
+        // ── Laad zones van het bronscenario (voor Zone productie/attractie) ──
+        origZoneFeatures.length = 0;
+        try {
+          const origZoneJson = await fetch(mkUrl2('ZONE')).then(r => r.json());
+          origZoneFeatures.push(...(origZoneJson.features || []));
+        } catch (e) { console.info('Bronscenario-zones niet beschikbaar:', e.message); }
+
+        // ── Laad routes van het bronscenario (voor route-highlight bij zone-klik) ──
+        routeList2.length = 0;
+        linkGeomMap2.clear();
+        for (const seg of origSegments) linkGeomMap2.set(seg.props.linkId, seg.coords);
+        try {
+          if (MODE === 'MIXED') {
+            const [origCarFc, origBikeFc] = await Promise.all([
+              fetch(mkUrl2('ROUTES').replace(/mode=[^&]+/, 'mode=CAR')).then(r => r.ok ? r.json() : null).catch(() => null),
+              fetch(mkUrl2('ROUTES').replace(/mode=[^&]+/, 'mode=BIKE')).then(r => r.ok ? r.json() : null).catch(() => null),
+            ]);
+            _parseAndAddRoutes(origCarFc,  'CAR',  routeList2, linkGeomMap2, origSegments);
+            _parseAndAddRoutes(origBikeFc, 'BIKE', routeList2, linkGeomMap2, origSegments);
+          } else {
+            const origRoutesResp = await fetch(mkUrl2('ROUTES'));
+            if (origRoutesResp.ok) _parseAndAddRoutes(await origRoutesResp.json(), MODE, routeList2, linkGeomMap2, origSegments);
+          }
+        } catch (e) { console.info('Bronscenario-routes niet beschikbaar:', e.message); }
+
         // ── Activeer split-layout ──────────────────────────────────────────
         splitViewActive = true;
         _mapContainer.classList.add('split-mode');
@@ -11098,6 +11260,9 @@
       // Originele data leegmaken
       origSegments.length  = 0;
       origGeojsonFeatures  = [];
+      origZoneFeatures.length = 0;
+      routeList2.length = 0;
+      linkGeomMap2.clear();
 
       // Layout terugzetten
       map.getContainer().style.flexBasis = '';
