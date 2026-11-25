@@ -9162,6 +9162,9 @@
     // Helpers
     const NODE_SOURCE = 'edit-nodes-src';
     const NODE_LAYER  = 'edit-nodes-layer';
+    const ZONE_EXPLODE_SOURCE     = 'zone-explode-src';
+    const ZONE_EXPLODE_FILL_LAYER = 'zone-explode-fill';
+    const ZONE_EXPLODE_LINE_LAYER = 'zone-explode-line';
     const LINK_SOURCE = 'edit-links-src';
     const LINK_LAYER  = 'edit-links-layer';
     const CMP_SOURCE  = 'compare-src';
@@ -9192,9 +9195,8 @@
       initPolygonDrawLayers();
       // 1. BOUNDARY + NODE zones (met productie/attractie-info), en STUDY/
       //    INFLUENCE zones op hun centroid (nodig om ze te kunnen selecteren
-      //    voor productie/attractie-wijzigingen én voor "zone opsplitsen" —
-      //    BOUNDARY-zones hebben geen eigen geometrie om te splitsen en
-      //    worden daarom in de explode-dialoog zelf uitgesloten).
+      //    voor productie/attractie-wijzigingen). "Zone opsplitsen" gebruikt
+      //    een eigen laag met de echte zonepolygonen (addZoneExplodeLayer).
       const zonePts = zoneFeaturesRaw
         .filter(f => {
           const cl = f.properties?.zoneClass;
@@ -9268,27 +9270,15 @@
 
         map.on('click', NODE_LAYER, e => {
           const f = e.features[0];
-          if (zoneExplodeActive) {
-            const cl = f.properties?.zoneClass;
-            if (cl !== 'STUDY' && cl !== 'INFLUENCE') return;  // alleen echte zones te exploderen
-            openZoneExplodeDialog(f, e.point);
-            e.originalEvent.stopPropagation();
-            return;
-          }
           if (!nodeEditActive || nodeSelectMode !== 'click') return;
           openNodeDialog(f, e.point);
           e.originalEvent.stopPropagation();
         });
-        map.on('mouseenter', NODE_LAYER, e => {
-          if (zoneExplodeActive) {
-            const cl = e.features[0]?.properties?.zoneClass;
-            map.getCanvas().style.cursor = (cl === 'STUDY' || cl === 'INFLUENCE') ? 'pointer' : '';
-            return;
-          }
+        map.on('mouseenter', NODE_LAYER, () => {
           if (nodeEditActive && nodeSelectMode === 'click') map.getCanvas().style.cursor = 'pointer';
         });
         map.on('mouseleave', NODE_LAYER, () => {
-          map.getCanvas().style.cursor = zoneExplodeActive ? '' :
+          map.getCanvas().style.cursor =
             (nodeEditActive && nodeSelectMode === 'polygon') ? 'crosshair' : '';
         });
       } else {
@@ -9300,6 +9290,64 @@
     function removeNodeLayer() {
       if (map.getLayer(NODE_LAYER))
         map.setLayoutProperty(NODE_LAYER, 'visibility', 'none');
+    }
+
+    // ── Zone-grenzen laag (voor "zone opsplitsen") ──────────────────────────
+    // Toont de echte zonepolygonen (STUDY/INFLUENCE — de enige exploodbare
+    // zones) zodat de gebruiker de zone-indeling/grenzen ziet, zonder de
+    // netwerk-knooppunten die voor het opsplitsen niet relevant zijn.
+    function addZoneExplodeLayer() {
+      const feats = zoneFeaturesRaw.filter(f => {
+        const cl = f.properties?.zoneClass;
+        const gt = f.geometry?.type;
+        return (cl === 'STUDY' || cl === 'INFLUENCE') &&
+          (gt === 'Polygon' || gt === 'MultiPolygon');
+      });
+
+      if (!map.getSource(ZONE_EXPLODE_SOURCE)) {
+        map.addSource(ZONE_EXPLODE_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: feats } });
+        map.addLayer({
+          id: ZONE_EXPLODE_FILL_LAYER,
+          type: 'fill',
+          source: ZONE_EXPLODE_SOURCE,
+          paint: {
+            'fill-color': ['case', ['==', ['get', 'zoneClass'], 'STUDY'], '#49a748', '#2f8f7a'],
+            'fill-opacity': 0.15,
+          }
+        });
+        map.addLayer({
+          id: ZONE_EXPLODE_LINE_LAYER,
+          type: 'line',
+          source: ZONE_EXPLODE_SOURCE,
+          paint: {
+            'line-color': ['case', ['==', ['get', 'zoneClass'], 'STUDY'], '#49a748', '#2f8f7a'],
+            'line-width': 1.5,
+          }
+        });
+
+        map.on('click', ZONE_EXPLODE_FILL_LAYER, e => {
+          if (!zoneExplodeActive) return;
+          openZoneExplodeDialog(e.features[0], e.point);
+          e.originalEvent.stopPropagation();
+        });
+        map.on('mouseenter', ZONE_EXPLODE_FILL_LAYER, () => {
+          if (zoneExplodeActive) map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', ZONE_EXPLODE_FILL_LAYER, () => {
+          if (zoneExplodeActive) map.getCanvas().style.cursor = '';
+        });
+      } else {
+        map.getSource(ZONE_EXPLODE_SOURCE).setData({ type: 'FeatureCollection', features: feats });
+      }
+      map.setLayoutProperty(ZONE_EXPLODE_FILL_LAYER, 'visibility', 'visible');
+      map.setLayoutProperty(ZONE_EXPLODE_LINE_LAYER, 'visibility', 'visible');
+    }
+
+    function removeZoneExplodeLayer() {
+      if (map.getLayer(ZONE_EXPLODE_FILL_LAYER))
+        map.setLayoutProperty(ZONE_EXPLODE_FILL_LAYER, 'visibility', 'none');
+      if (map.getLayer(ZONE_EXPLODE_LINE_LAYER))
+        map.setLayoutProperty(ZONE_EXPLODE_LINE_LAYER, 'visibility', 'none');
     }
 
     // ── Link-edit laag ──────────────────────────────────────────────────────
@@ -11792,9 +11840,9 @@
 
       if (zoneExplodeActive) {
         updateOverlay(false);
-        map.once('idle', addNodeLayer);
+        map.once('idle', addZoneExplodeLayer);
       } else {
-        removeNodeLayer();
+        removeZoneExplodeLayer();
         closeZoneExplodeDialog();
         map.getCanvas().style.cursor = '';
       }
