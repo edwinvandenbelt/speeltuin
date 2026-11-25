@@ -5202,25 +5202,37 @@ def map_proxy():
             abort(502)
         data = upstream.content
         content_type = upstream.headers.get("Content-Type", "application/octet-stream")
-        try:
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            tmp_fd, tmp_name = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
-            with os.fdopen(tmp_fd, "wb") as fh:
-                fh.write(data)
-            os.replace(tmp_name, data_path)
-            meta_path.write_text(content_type, encoding="utf-8")
-        except Exception as _e:
-            print(f"[map-proxy] cache schrijven mislukt ({data_path}): {_e}")
-        if _s3_enabled():
-            try:
-                _s3_write_bytes(s3_key, data, content_type)
-                _s3_write_bytes(s3_key + ".ctype", content_type.encode("utf-8"), "text/plain")
-            except Exception as _e:
-                print(f"[map-proxy] S3-schrijven mislukt ({s3_key}): {_e}")
+        # Cachen (schijf + S3) gebeurt async: de respons naar de client hoeft
+        # niet te wachten op deze I/O.
+        threading.Thread(
+            target=_map_proxy_persist,
+            args=(data, content_type, cache_dir, data_path, meta_path, s3_key),
+            daemon=True,
+        ).start()
 
     resp = Response(data, mimetype=content_type)
     resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return resp
+
+
+def _map_proxy_persist(data, content_type, cache_dir, data_path, meta_path, s3_key):
+    """Slaat een opgehaalde map-proxy-tile op schijf (en desgewenst S3) op.
+    Draait in een achtergrondthread zodat map_proxy() niet op deze I/O wacht."""
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp_name = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+        with os.fdopen(tmp_fd, "wb") as fh:
+            fh.write(data)
+        os.replace(tmp_name, data_path)
+        meta_path.write_text(content_type, encoding="utf-8")
+    except Exception as _e:
+        print(f"[map-proxy] cache schrijven mislukt ({data_path}): {_e}")
+    if _s3_enabled():
+        try:
+            _s3_write_bytes(s3_key, data, content_type)
+            _s3_write_bytes(s3_key + ".ctype", content_type.encode("utf-8"), "text/plain")
+        except Exception as _e:
+            print(f"[map-proxy] S3-schrijven mislukt ({s3_key}): {_e}")
 
 
 @app.route("/proxy/mvt/<path:layer_uuid>/<int:z>/<int:x>/<int:y>.mvt")
