@@ -556,6 +556,28 @@
       gap: 16px;
     }
     #calcOverlay p { color: var(--ga-rood); font-size: 14px; font-family: var(--ga-font), sans-serif; }
+    /* Storyboard-gimmick tijdens het doorvoeren van wijzigingen — geen
+       inhoudelijke betekenis. De 4 losgeknipte panelen uit storyboard.jpg
+       (img/calc-overlay-{1..4}.jpg) vloeien in een oneindige lus in elkaar over. */
+    #calcOverlayScene { width: 420px; max-width: 85vw; aspect-ratio: 3 / 2; max-height: 45vh;
+      position: relative; overflow: hidden; border-radius: 10px; }
+    .cos-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+      opacity: 0; animation: cosFrameFade 8s ease-in-out infinite; }
+    .cos-frame:nth-child(1) { animation-delay: 0s; }
+    .cos-frame:nth-child(2) { animation-delay: 2s; }
+    .cos-frame:nth-child(3) { animation-delay: 4s; }
+    .cos-frame:nth-child(4) { animation-delay: 6s; }
+    @keyframes cosFrameFade {
+      0%   { opacity: 0; }
+      10%  { opacity: 1; }
+      25%  { opacity: 1; }
+      35%  { opacity: 0; }
+      100% { opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cos-frame { animation: none; opacity: 0; }
+      .cos-frame:nth-child(1) { opacity: 1; }
+    }
     /* Laad-indicator over de kaart tijdens een dagdeel-/simulatie-overgang op de
        achtergrond (dagdeel-knop op de klok) — niet-blokkerend,
        alleen zichtbaar rechts van het linker menu-paneel. */
