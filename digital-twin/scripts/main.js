@@ -4068,6 +4068,7 @@
       height:    false,
       furniture: false,
       bumps:     false,
+      parking:   false,
     };
     let _trafficAssetsVisible = false;
     // Vegetatie (bomen) is volledig losgekoppeld van verkeersobjecten: eigen
@@ -6414,6 +6415,7 @@
      let _taLaneMarkArrowFeatures = [];  // laneMarkArrow-features (pijlen op middellijn)
      let _taRefugeAreaCrossingFeatures = [];  // refugeAreaCrossing-polygonen (verhoogde voetganger-eilanden)
      let _taRefugeAreaTrafficFeatures = [];   // refugeAreaTraffic-polygonen (verhoogde verkeersremmers)
+     let _taParkingAreaPolys  = [];   // BGT/OSM-parkeervlakken (assets-parquet) → platte vlakken
      let _taFurniture         = {};   // straatmeubilair-instanties per type: {type: [{position,yaw,scale}]}
      let _taHover             = null; // {props,lngLat} van het object onder de cursor
      let _taDebugSignLink     = null; // {signPt,roadPt,linkId} — laatst geklikte bord → gekoppelde weg
@@ -7333,6 +7335,13 @@
     const _TA_CULVERT_WIDTH_M = 2.5;   // breedte van de duiker-kruising (m)
      const _TA_UNDERPASS_H_M   = 4.0;   // hoogte waarop de overspanning boven de verdiepte weg zweeft (m)
 
+     // Parkeervlakken (assetType 'parkingArea', uit dezelfde TRAFFIC-ASSETS/
+     // assets-parquet als drempels): platte vlakken nét boven maaiveld, zelfde
+     // grijstint als de 'parking'-motiefkleur elders in de viewer.
+     const _TA_PARKING_FLOOR_Z    = 0.04;
+     const _TA_PARKING_FILL_COLOR = [99, 110, 114, 130];
+     const _TA_PARKING_LINE_COLOR = [99, 110, 114, 220];
+
      // Verzonken wegdelen (tunnel-polygonen): donker vloervlak nét boven
      // maaiveld. De satelliet-basemap is ondoorzichtig op z=0, dus een écht
      // verdiept vlak zou onzichtbaar zijn.
@@ -7423,7 +7432,18 @@
         _taTunnelDecks  = decks;
       }
 
-
+     // (Her)bouw de parkeervlakken-store uit BGT/OSM-parkeervlak-polygonen
+     // (assetType 'parkingArea'): platte vlakken, één polygon per BGT-vak.
+     function _taRebuildParkingAreas(features) {
+       const polys = [];
+       for (const f of features) {
+         const props = f.properties || {};
+         for (const ring of _sunkenRings(f)) {
+           polys.push({ polygon: ring.map(c => [c[0], c[1], _TA_PARKING_FLOOR_Z]), props });
+         }
+       }
+       _taParkingAreaPolys = polys;
+     }
 
     // Zet een lijn-feature om naar per-segment quads (dunne footprint) voor de
     // geëxtrudeerde PolygonLayer. Perpendiculaire offset in meters → graden.
@@ -7766,6 +7786,33 @@
           }));
         }
         return layers;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      //  PARKEERPLAATSEN — BGT/OSM-parkeervlakken uit de assets-parquet
+      //  (TRAFFIC-ASSETS, assetType 'parkingArea'). Platte, licht doorschijnende
+      //  vlakken op maaiveld; losstaand van de BUILDINGS-laag (waar fysieke
+      //  parkeergebouwen/-terreinen al als 'pand'-motief 'parking' meelopen in
+      //  de productie/attractie-berekening, zie _tryZoneJoin).
+      // ═══════════════════════════════════════════════════════════════════════
+      function makeParkingAreaLayers() {
+        if (!_trafficAssetsVisible || !_trafficAssetCategories.parking) return [];
+        if (!_taParkingAreaPolys.length) return [];
+        return [new PolygonLayer({
+          id:                 'ta-parking-areas',
+          data:                _taParkingAreaPolys,
+          extruded:            false,
+          stroked:             true,
+          filled:              true,
+          getPolygon:          d => d.polygon,
+          getFillColor:        _TA_PARKING_FILL_COLOR,
+          getLineColor:        _TA_PARKING_LINE_COLOR,
+          lineWidthUnits:      'pixels',
+          getLineWidth:        1,
+          lineWidthMinPixels:  1,
+          pickable:            true,
+          onHover:             info => { _taHover = info.object ? { props: info.object.props || {}, lngLat: info.coordinate } : null; },
+        })];
       }
 
      // ═══════════════════════════════════════════════════════════════════════
@@ -8687,13 +8734,14 @@
 
     // Welke assetTypes horen bij welke checkbox in het '3D weergave'-blok. Dient
     // zowel voor het totaal tussen haakjes (telverzoek per categorie) als voor de
-    // bbox-fetch, die alleen deze types opvraagt (dus geen parkingArea).
+    // bbox-fetch.
     const _TA_CATEGORY_TYPES = {
       signs:     ['trafficSign', 'trafficSignal', 'pedestrianCrossing', 'stopSign', 'giveWay', 'busStop'],
       paths:     ['footPath', 'cyclePath'],
       height:    ['viaduct', 'bridge', 'tunnel', 'culvert', 'underpass', 'screen', 'retainingWall'],
       furniture: ['mailbox', 'busShelter', 'mast', 'streetLight', 'bikeGate', 'infoBoard', 'trashBin'],
       bumps:     ['speedBump'],
+      parking:   ['parkingArea'],
     };
     // Types die geen eigen checkbox hebben maar wel gerenderd/gebruikt worden
     // (rijstrookpijlen, vluchtheuvels voor de snelheids-/kruispuntlogica).
@@ -9106,6 +9154,11 @@
         html = `<div style="text-align:center;min-width:90px"><strong>${label}</strong>`;
         if (road) html += `<br><span style="font-size:0.85em;color:#4b5159">${road}</span>`;
         html += '</div>';
+      } else if (at === 'parkingArea') {
+        const cap = p.parkingCapacity || p.tag_capacity;
+        html = '<div style="text-align:center;min-width:90px"><strong>Parkeervak</strong>';
+        if (cap) html += `<br><span style="font-size:0.85em;color:#4b5159">${cap} plaatsen</span>`;
+        html += '</div>';
       } else {
         const road   = p.roadName || p.road_name || '';
         const imgUrl = p.imageUrl || '';
@@ -9361,6 +9414,7 @@
         const _tunnels = byType.tunnel || [];
         _taTunnelFeatures  = _tunnels.filter(f => !_isPoly(f));
         _taRebuildSunken(_tunnels.filter(_isPoly));
+        _taRebuildParkingAreas(byType.parkingArea || []);
         _taCulvertFeatures = byType.culvert || [];
         _taUnderpassFeatures = [
           ...(byType.underpass || []),
@@ -9404,7 +9458,7 @@
 
     // Haal verkeersobjecten op voor het zichtbare kaartdeel (bbox) en render per type.
     // Gepagineerd via OGC API Features (limit/offset, rel=next); alleen de
-    // assetTypes die de 3D-weergave gebruikt (dus geen parkingArea).
+    // assetTypes die de 3D-weergave gebruikt.
     let _taLoadAbort = null;    // AbortController van de lopende bbox-load
     let _taLoadingBbox = null;  // bbox die nu geladen wordt
     async function loadTrafficAssetsInView() {
@@ -15016,6 +15070,7 @@
          const _uoT0 = performance.now();
          overlay.setProps({ layers: [
            ...makeSunkenLayers(),
+           ...makeParkingAreaLayers(),
            ...makePathRibbonLayers(),
            makeSpeedBumpLayer(),
           makeNetworkLayer(),
