@@ -2721,6 +2721,32 @@
   const PARK_RATIOS  = { mrh: 0.50, erh: 0.15, rest: 0.35 };
   const PARK_MAX_SPEED_MS = 50 / 3.6;  // auto's parkeren alleen op links ≤50 km/u
 
+  // Waarden van parkingLeft/Right die een echt parkeervak op de link zelf
+  // betekenen (zelfde onderscheid als analyzer/wegenscan_inputs.py:
+  // derive_parking_location — "shoulder"/"separate"/"no" tellen niet mee).
+  const _PARK_SPOT_SIDE_VALUES = new Set(['street_side', 'on_kerb', 'half_on_kerb', 'lane']);
+
+  /** Heeft deze link een parkeervak (BGT/OSM-parkeervlak, of parkingLeft/Right)? */
+  function _linkHasParkingSpot(props) {
+    if (!props) return false;
+    if (props.assetParkingLocation) return true;
+    return _PARK_SPOT_SIDE_VALUES.has(props.parkingLeft) || _PARK_SPOT_SIDE_VALUES.has(props.parkingRight);
+  }
+
+  /** Mag een auto hier parkeren? ≤50 km/u, en geen voorrangsweg tenzij er een parkeervak is. */
+  function _linkAllowsParking(speedMs, priorityRoad, hasParkSpot) {
+    if (speedMs > PARK_MAX_SPEED_MS) return false;
+    if (priorityRoad && !hasParkSpot) return false;
+    return true;
+  }
+
+  /** Mag een auto parkeren op de laatste link van *path*? (herhalende stadsweg-auto) */
+  function _pathLastLinkAllowsParking(path) {
+    if (!path?.links?.length) return false;
+    const ll = path.links[path.links.length - 1];
+    return _linkAllowsParking(ll.speedMs, ll.priorityRoad, ll.hasParkSpot);
+  }
+
   /** Box-Muller transform: normaalverdeeld getal met gegeven gemiddelde en std */
   function normalRandom(mean, std) {
     let u, v;
@@ -9625,11 +9651,17 @@
     const linkFlowMap   = new Map();
     // linkId → route[] — gebouwd door buildLinkRouteMap() na het vullen van routeList
     const linkRouteMap  = new Map();
+    // linkId → voorrangsweg (RVV B3) + parkeervak-aanwezigheid; samen bepalen
+    // ze of hier geparkeerd mag worden (zie _linkAllowsParking).
+    const linkPriorityMap  = new Map();
+    const linkParkSpotMap  = new Map();
     for (const seg of segments) {
       linkGeomMap.set(seg.props.linkId,     seg.coords);
       linkSpeedMap.set(seg.props.linkId,    seg.speedMs);
       linkCapacityMap.set(seg.props.linkId, seg.props.capacity ?? 1800);
       linkLenAttrMap.set(seg.props.linkId,  seg.length);
+      linkPriorityMap.set(seg.props.linkId, seg.props.priorityRoad === true);
+      linkParkSpotMap.set(seg.props.linkId, _linkHasParkingSpot(seg.props));
     }
     // Haaientanden (B6) — eerste opbouw op basis van het netwerk alleen;
     // wordt aangevuld/herbouwd zodra trafficSign-features (B6-borden) binnenkomen.
@@ -11042,7 +11074,10 @@
         const lo    = linkObjs[i];
         const coords = lo.coords;
         const len   = segmentLengthCached(coords);
-        links.push({ length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0 });
+        links.push({
+          length: len, speedMs: lo.speedMs, flow: lo.flow ?? 0,
+          priorityRoad: lo.priorityRoad ?? false, hasParkSpot: lo.hasParkSpot ?? false,
+        });
         boundaries.push(boundaries[boundaries.length - 1] + len);
         nodeIds.push(lo.toNode ?? null);
         if (i > 0) mergedCoords.push(...coords.slice(1));
@@ -11225,7 +11260,8 @@
      * Parkeer-offset voor de LL-vulmethode: bevoordeelt beide routeuiteinden boven het
      * midden (U-vorm — een geparkeerde auto staat te wachten vóór vertrek of ná aankomst,
      * niet ergens halverwege), getild naar het meest plausibele eind op basis van
-     * motief + huidig dagdeel. Retourneert `null` als geen enkele link ≤50 km/u is.
+     * motief + huidig dagdeel. Retourneert `null` als geen enkele link mag
+     * parkeren (zie _linkAllowsParking: ≤50 km/u, geen voorrangsweg tenzij parkeervak).
      */
     function weightedParkOffsetOnPath(rp) {
       const path = rp.path;
@@ -11234,7 +11270,7 @@
       const weights  = [];
       for (let i = 0; i < path.links.length; i++) {
         const l = path.links[i];
-        if (l.speedMs > PARK_MAX_SPEED_MS) continue;
+        if (!_linkAllowsParking(l.speedMs, l.priorityRoad, l.hasParkSpot)) continue;
         const mid          = (path.boundaries[i] + path.boundaries[i + 1]) / 2 / path.length;
         const endProximity = 1 + 2 * Math.abs(2 * mid - 1);   // 3 aan de uiteinden, 1 in het midden
         const dirWeight    = mid < 0.5 ? bias : (1 / bias);
@@ -11273,7 +11309,9 @@
             const speedMs = linkSpeedMap.get(id) ?? 10;
             const flow    = linkFlowMap.get(id) ?? 0;
             const nodes   = nodeLinkMap.get(id);
-            return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null } : null;
+            const priorityRoad = linkPriorityMap.get(id) ?? false;
+            const hasParkSpot  = linkParkSpotMap.get(id) ?? false;
+            return coords ? { id, coords, speedMs, flow, toNode: nodes?.toNode ?? null, priorityRoad, hasParkSpot } : null;
           }).filter(Boolean);
         },
         get innerLinkPairs() { return this.allLinkObjs; },
@@ -11405,7 +11443,8 @@
               // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
               const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
               const offset      = Math.min(posInMetres / rp.path.length, 0.999);
-              const linkCanPark = speedMs <= PARK_MAX_SPEED_MS && (rp.route.vehicleMode ?? MODE) !== 'BIKE';
+              const linkCanPark = _linkAllowsParking(speedMs, linkPriorityMap.get(linkId), linkParkSpotMap.get(linkId))
+                                 && (rp.route.vehicleMode ?? MODE) !== 'BIKE';
               const isParked    = linkCanPark && Math.random() < parkRatio;
               const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
@@ -11469,7 +11508,8 @@
               // Zet auto op willekeurige positie binnen de inner-link; normaliseer naar [0, 1]
               const posInMetres = offsets.startOffset + Math.random() * offsets.linkLength;
               const offset      = Math.min(posInMetres / rp.path.length, 0.999);
-              const linkCanPark = speedMs <= PARK_MAX_SPEED_MS && (rp.route.vehicleMode ?? MODE) !== 'BIKE';
+              const linkCanPark = _linkAllowsParking(speedMs, linkPriorityMap.get(linkId), linkParkSpotMap.get(linkId))
+                                 && (rp.route.vehicleMode ?? MODE) !== 'BIKE';
               const isParked    = linkCanPark && Math.random() < parkRatio;
               const pendingPath = null;
               const departAt = isParked ? Math.random() * PARK_MEAN_S / timeScale : 0;
@@ -15009,12 +15049,10 @@
               // Productie- / warmup-auto: bij aankomst bestemming verdwijnen
               car.state = 'done';
               attractionAccum++;
-            } else if (car.path.links?.length
-                       && car.path.links[car.path.links.length - 1].speedMs <= PARK_MAX_SPEED_MS
-                       && car.vehicleMode !== 'BIKE') {
-              // Herhalende stadsweg-auto: parkeer aan het einde (laatste link ≤50 km/u) en
-              // wacht voor volgende rit. Herberekend uit car.path (niet een gecachete vlag),
-              // zodat dit ook na route-chaining (pendingPath) klopt.
+            } else if (_pathLastLinkAllowsParking(car.path) && car.vehicleMode !== 'BIKE') {
+              // Herhalende stadsweg-auto: parkeer aan het einde (laatste link mag parkeren,
+              // zie _linkAllowsParking) en wacht voor volgende rit. Herberekend uit car.path
+              // (niet een gecachete vlag), zodat dit ook na route-chaining (pendingPath) klopt.
               car.offset   = 0.99;
               car.speed    = 0;
               car.state    = 'parked';
