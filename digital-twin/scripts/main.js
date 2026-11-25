@@ -256,6 +256,8 @@
       furnitureTypeInfoBoardTitle:'Infobord', furnitureTypeInfoBoardLabel:'\u2139\ufe0f Infobord',
       furnitureAddHint:'Klik op de kaart om straatmeubilair te plaatsen.',
       furnitureAddCountLabel:'Nieuw geplaatst:',
+      furnitureAddRotateLabel:'Geselecteerd — hoek:',
+      furnitureAddRotateHint:'(scroll om te draaien, Shift = fijn)',
       furnitureAddSaveBtn:'\u2713 Opslaan',
       furnitureAddClearBtn:'\u2715 Wis nieuw meubilair',
       furnitureAddSaving:'Opslaan\u2026',
@@ -560,6 +562,8 @@
       furnitureTypeInfoBoardTitle:'Info board', furnitureTypeInfoBoardLabel:'ℹ️ Info board',
       furnitureAddHint:'Click on the map to place street furniture.',
       furnitureAddCountLabel:'Newly placed:',
+      furnitureAddRotateLabel:'Selected — angle:',
+      furnitureAddRotateHint:'(scroll to rotate, Shift = fine)',
       furnitureAddSaveBtn:'✓ Save',
       furnitureAddClearBtn:'✕ Clear new furniture',
       furnitureAddSaving:'Saving…',
@@ -7701,6 +7705,25 @@
       return mode === 'across' ? theta + 90 : theta;   // 'along' = theta
     }
 
+    // Variant van _taYawFor voor handmatig geplaatst (#furnitureAddPopup),
+    // nog niet opgeslagen meubilair: 'none'-types (mast/streetLight/trashBin)
+    // negeren properties.bearing normaal volledig (vaste richting, prima voor
+    // bulk OSM-data) — hier mag de gebruiker ze via scrollen wél draaien.
+    function _taYawForPending(f, mode) {
+      if (mode !== 'none') return _taYawFor(f, mode);
+      const p = f.properties || {};
+      if (p.bearing != null && !isNaN(p.bearing)) return 90 - Number(p.bearing);
+      return 0;
+    }
+
+    // Inverse van de theta-berekening in _taYawFor: geeft het kompas-bearing
+    // dat bij de huidige (automatische) yaw hoort, als startpunt voor de
+    // eerste scroll-draai aan een geselecteerd object (zie _rotateSelectedFurniture).
+    function _taBearingFromYaw(yaw, mode) {
+      const theta = mode === 'across' ? yaw - 90 : yaw;
+      return ((90 - theta) % 360 + 360) % 360;
+    }
+
     // Bouw instantie-array [{position:[lng,lat,0], yaw}] uit Point-features.
     function _taMkInstances(feats, mode) {
       const out = [];
@@ -7824,22 +7847,39 @@
       bikeGate: 'across', infoBoard: 'along', trashBin: 'none',
     };
 
+    const _FURN_SELECT_COLOR = [255, 214, 0, 255];   // highlight voor geselecteerd pending object
+
+    // Hover-index (in _furnitureAddPending) tijdens Straatmeubilair toevoegen;
+    // null = niets gehoverd. Alleen gezet/gelezen terwijl furnitureAddActive.
+    let _furnHoverIdx = null;
+
+    function _onFurnHover(info) {
+      _furnHoverIdx = (info.object && info.object.idx != null) ? info.object.idx : null;
+    }
+
     function makeFurnitureLayers() {
       if (!_trafficAssetsVisible || !_trafficAssetCategories.furniture) return [];
       if (map.getZoom() < _TA_MINZOOM) return [];
       _taEnsureFurnMeshes();
       // Handmatig geplaatste meubilair-features (#furnitureAddPopup) renderen
-      // meteen mee, ook al zijn ze nog niet opgeslagen.
+      // meteen mee, ook al zijn ze nog niet opgeslagen. Elke pending-instantie
+      // draagt zijn index in _furnitureAddPending (voor hover/klik-selectie +
+      // scroll-rotatie); opgeslagen instanties hebben geen idx (niet selecteerbaar).
       const pendingByType = {};
-      for (const f of _furnitureAddPending) {
+      _furnitureAddPending.forEach((f, idx) => {
         const t = (f.properties || {}).assetType;
-        (pendingByType[t] || (pendingByType[t] = [])).push(f);
-      }
+        (pendingByType[t] || (pendingByType[t] = [])).push({ f, idx });
+      });
       const layers = [];
       const types = new Set([...Object.keys(_taFurniture), ...Object.keys(pendingByType)]);
       for (const type of types) {
-        const insts = (_taFurniture[type] || []).concat(
-          _taMkInstances(pendingByType[type], _FURNITURE_ORIENT[type] || 'none'));
+        const mode = _FURNITURE_ORIENT[type] || 'none';
+        const pendingInsts = (pendingByType[type] || []).map(({ f, idx }) => ({
+          position: [f.geometry.coordinates[0], f.geometry.coordinates[1], 0],
+          yaw: _taYawForPending(f, mode),
+          idx,
+        }));
+        const insts = (_taFurniture[type] || []).concat(pendingInsts);
         const groups = _taFurnMeshes[type];
         if (!insts.length || !groups) continue;
         groups.forEach((grp, gi) => {
@@ -7849,10 +7889,12 @@
             mesh:           grp.mesh,
             getPosition:    d => d.position,
             getOrientation: d => [0, d.yaw, 0],
-            getColor:       grp.color,
+            getColor:       d => (d.idx != null && d.idx === _furnSelectedIdx) ? _FURN_SELECT_COLOR : grp.color,
             material:       grp.material,
             sizeScale:      1,
-            pickable:       false,
+            pickable:       furnitureAddActive,
+            onHover:        furnitureAddActive ? _onFurnHover : undefined,
+            updateTriggers: { getColor: [_furnSelectedIdx] },
           }));
         });
       }
@@ -7870,14 +7912,66 @@
       const clearBtn = document.getElementById('furnitureAddClearBtn');
       if (saveBtn)  saveBtn.disabled  = n === 0;
       if (clearBtn) clearBtn.disabled = n === 0;
+      const rotRow = document.getElementById('furnitureAddRotateRow');
+      const sel = _furnSelectedIdx != null ? _furnitureAddPending[_furnSelectedIdx] : null;
+      if (rotRow) rotRow.style.display = sel ? 'flex' : 'none';
+      if (sel) {
+        const angleEl = document.getElementById('furnitureAddAngle');
+        const p = sel.properties || {};
+        const mode = _FURNITURE_ORIENT[p.assetType] || 'none';
+        const bearing = (p.bearing != null && !isNaN(p.bearing))
+          ? Number(p.bearing)
+          : _taBearingFromYaw(_taYawFor(sel, mode), mode);
+        if (angleEl) angleEl.textContent = `${Math.round(bearing)}°`;
+      }
+    }
+
+    // Kompasrichting (0-360) van (lng,lat) náár het dichtstbijzijnde wegvak —
+    // d.w.z. haaks op dat wegvak, wijzend ín de richting van de weg. Gebruikt
+    // om een lantaarnpaal bij plaatsing standaard met de lamp richting de weg
+    // te zetten i.p.v. een willekeurige vaste richting. null als er geen weg
+    // dichtbij genoeg is (te ver weg, of al zo goed als óp de weg geplaatst,
+    // waar de richting onbetrouwbaar wordt).
+    function _taPerpendicularRoadBearing(lng, lat, maxM = _TA_LINK_ASSET_SNAP_M) {
+      const nearest = _taNearestLinkPoint(lng, lat);
+      if (!nearest || nearest.distM > maxM || nearest.distM < 0.5) return null;
+      const mLng = 111320 * Math.cos(lat * Math.PI / 180) || 1, mLat = 110540;
+      const dx = (nearest.point[0] - lng) * mLng;
+      const dy = (nearest.point[1] - lat) * mLat;
+      const theta = Math.atan2(dy, dx) * 180 / Math.PI;
+      return ((90 - theta) % 360 + 360) % 360;
     }
 
     function _addPendingFurniture(lng, lat) {
+      const props = { assetType: furnitureAddType };
+      if (furnitureAddType === 'streetLight') {
+        const bearing = _taPerpendicularRoadBearing(lng, lat);
+        if (bearing != null) props.bearing = bearing;
+      }
       _furnitureAddPending.push({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [lng, lat] },
-        properties: { assetType: furnitureAddType },
+        properties: props,
       });
+      _furnSelectedIdx = _furnitureAddPending.length - 1;   // direct selecteren: meteen bij te draaien
+      updateOverlay(true);
+      _updateFurnitureAddPanel();
+    }
+
+    // Draai het geselecteerde (nog niet opgeslagen) object over *deltaDeg*
+    // kompasgraden. Eerste draai aan een object zonder expliciete bearing
+    // start vanaf zijn huidige (automatische) richting i.p.v. een sprong.
+    function _rotateSelectedFurniture(deltaDeg) {
+      if (_furnSelectedIdx == null) return;
+      const feat = _furnitureAddPending[_furnSelectedIdx];
+      if (!feat) { _furnSelectedIdx = null; return; }
+      const props = feat.properties || (feat.properties = {});
+      const mode = _FURNITURE_ORIENT[props.assetType] || 'none';
+      let bearing = (props.bearing != null && !isNaN(props.bearing))
+        ? Number(props.bearing)
+        : _taBearingFromYaw(_taYawFor(feat, mode), mode);
+      bearing = ((bearing + deltaDeg) % 360 + 360) % 360;
+      props.bearing = Math.round(bearing * 10) / 10;
       updateOverlay(true);
       _updateFurnitureAddPanel();
     }
@@ -7898,6 +7992,7 @@
         if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
         if (statusEl) statusEl.textContent = T('furnitureAddSaved', _furnitureAddPending.length);
         _furnitureAddPending = [];
+        _furnSelectedIdx = null;
         // Canonieke, opgeslagen data opnieuw ophalen zodat de net opgeslagen
         // objecten via de normale traffic-assets-pipeline (src, caching) binnenkomen.
         _lastAssetBbox = null;
@@ -11991,6 +12086,7 @@
     let furnitureAddActive  = false;   // Straatmeubilair toevoegen: klik-op-kaart plaatsingsmodus
     let furnitureAddType    = 'streetLight';  // geselecteerd meubilairtype in #furnitureAddPopup
     let _furnitureAddPending = [];     // handmatig geplaatste, nog niet opgeslagen meubilair-features
+    let _furnSelectedIdx = null;       // index in _furnitureAddPending van het geselecteerde object (scroll-rotatie)
     // ── Selected Link Analysis — state ──────────────────────────────────────
     let selectedLinkId     = null;    // linkId van geselecteerd wegvak (herkomst/bestemmingsanalyse)
     let selectedLinkActive = false;   // true als de link-selectie-modus actief is
@@ -14603,7 +14699,7 @@
          if (linkEditActive && linkSelectMode === 'polygon') return 'crosshair';
          if (linkAddActive) return 'crosshair';
          if (treeAddActive) return 'crosshair';
-         if (furnitureAddActive) return 'crosshair';
+         if (furnitureAddActive) return _furnHoverIdx != null ? 'pointer' : 'crosshair';
          if ((linkEditActive || linkFlowEditActive || selectedLinkActive) && isHovering) return 'pointer';
          return '';
       },
@@ -14670,8 +14766,16 @@
         _addPendingTree(e.lngLat.lng, e.lngLat.lat);
         return;
       }
-      // Straatmeubilair toevoegen: plaats een object van het geselecteerde type
+      // Straatmeubilair toevoegen: klik op een nog niet opgeslagen object
+      // selecteert het (voor scroll-rotatie, zie _rotateSelectedFurniture);
+      // klik op lege kaart plaatst een nieuw object van het gekozen type.
       if (furnitureAddActive) {
+        if (_furnHoverIdx != null) {
+          _furnSelectedIdx = (_furnSelectedIdx === _furnHoverIdx) ? null : _furnHoverIdx;
+          updateOverlay(true);
+          _updateFurnitureAddPanel();
+          return;
+        }
         _addPendingFurniture(e.lngLat.lng, e.lngLat.lat);
         return;
       }
@@ -18271,6 +18375,9 @@
       } else {
         document.getElementById('furnitureAddPopup').style.display = 'none';
         map.getCanvas().style.cursor = '';
+        _furnSelectedIdx = null;
+        _furnHoverIdx = null;
+        updateOverlay(true);
       }
     });
 
@@ -18288,9 +18395,22 @@
     });
     document.getElementById('furnitureAddClearBtn').addEventListener('click', () => {
       _furnitureAddPending = [];
+      _furnSelectedIdx = null;
       updateOverlay(true);
       _updateFurnitureAddPanel();
       document.getElementById('furnitureAddStatus').textContent = '';
+    });
+
+    // Scroll om het geselecteerde (nog niet opgeslagen) object te draaien —
+    // 15° per stap, Shift ingedrukt voor fijnere stappen van 2°. Onderdrukt
+    // alleen de standaard zoom-op-scroll zolang er iets geselecteerd is.
+    map.on('wheel', (e) => {
+      if (_furnSelectedIdx == null) return;
+      e.preventDefault();
+      const oe = e.originalEvent;
+      const step = (oe && oe.shiftKey) ? 2 : 15;
+      const dir  = (oe && oe.deltaY > 0) ? 1 : -1;
+      _rotateSelectedFurniture(dir * step);
     });
 
     // ── Polygon-selectiemodus handlers ──────────────────────────────────────

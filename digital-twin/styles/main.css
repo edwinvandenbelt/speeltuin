@@ -1159,6 +1159,12 @@
       font-size: 11px; color: var(--ga-tekst); margin-top: 8px;
     }
     #treeAddCountRow span:last-child, #furnitureAddCountRow span:last-child { font-weight: 600; }
+    #furnitureAddRotateRow {
+      align-items: center; gap: 6px; flex-wrap: wrap;
+      font-size: 11px; color: var(--ga-tekst); margin-top: 8px;
+    }
+    #furnitureAddAngle { font-weight: 600; }
+    #furnitureAddRotateHint { font-size: 10px; color: var(--ga-tekst-2); }
     .tree-ctrl-btn {
       display: block; width: 100%;
       padding: 6px 0; border-radius: var(--ga-radius);
