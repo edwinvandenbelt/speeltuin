@@ -1511,6 +1511,31 @@
     document.getElementById('mapContainer').style.height = _vpHeight + 'px';
   }
 
+  // Basiskaart-tegels (CartoDB/OpenFreeMap/ArcGIS) lopen via een lokale
+  // disk-cache-proxy (/map-proxy, zie server.py), zodat een demo met een
+  // zwakke internetverbinding na een eerste warme run niet opnieuw bij deze
+  // externe CDN's hoeft aan te kloppen.
+  // Buiten het "geen areaId"-blok gedefinieerd: wordt ook gebruikt door
+  // openNewScreen() en de hoofdkaart, die buiten dat blok liggen.
+  const MAP_PROXY_HOSTS = new Set([
+    'basemaps.cartocdn.com',
+    'tiles.basemaps.cartocdn.com',
+    'tiles.openfreemap.org',
+    'server.arcgisonline.com',
+  ]);
+  function mapProxyTransformRequest(url, _resourceType) {
+    try {
+      const u = new URL(url, window.location.href);
+      if (MAP_PROXY_HOSTS.has(u.hostname)) {
+        // Absolute URL: tegel-tegels worden in een worker geparsed, en die
+        // kan een relatieve '/map-proxy?...'-URL niet altijd tegen de juiste
+        // base oplossen (lokaal origin → "Failed to construct 'Request'").
+        return { url: window.location.origin + '/map-proxy?url=' + encodeURIComponent(url) };
+      }
+    } catch (_e) { /* relatieve of ongeldige URL: ongemoeid laten */ }
+    return { url };
+  }
+
   // ── Geen areaId: toon keuzescherm (menu-paneel + kaart, zoals bij een gebied) ──
   if (!AREA_ID) {
     document.getElementById('loader').style.display = 'none';
@@ -1707,27 +1732,6 @@
       scenarioTooltip.style.display = 'none';
     }
 
-    // Basiskaart-tegels (CartoDB/OpenFreeMap/ArcGIS) lopen via een lokale
-    // disk-cache-proxy (/map-proxy, zie server.py), zodat een demo met een
-    // zwakke internetverbinding na een eerste warme run niet opnieuw bij deze
-    // externe CDN's hoeft aan te kloppen.
-    const MAP_PROXY_HOSTS = new Set([
-      'basemaps.cartocdn.com',
-      'tiles.basemaps.cartocdn.com',
-      'tiles.openfreemap.org',
-      'server.arcgisonline.com',
-    ]);
-    function mapProxyTransformRequest(url, _resourceType) {
-      try {
-        const u = new URL(url, window.location.href);
-        if (MAP_PROXY_HOSTS.has(u.hostname)) {
-          return { url: '/map-proxy?url=' + encodeURIComponent(url) };
-        }
-      } catch (_e) { /* relatieve of ongeldige URL: ongemoeid laten */ }
-      return { url };
-    }
-
-    // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
     const homeMap = new maplibregl.Map({
       container: 'map',
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
@@ -5520,7 +5524,7 @@
     let _bag3dBusy    = 0;        // aantal tegels dat nu geladen wordt
     let _bag3dFailed  = 0;        // aantal mislukte tegels
     let _bag3dDecoder = null;     // MeshoptDecoder (lazy import)
-    let _bag3dKeep    = null;     // (lon, lat) → ligt in het studiegebied?
+    let _bag3dKeep    = null;     // (bbox) → overlapt het studiegebied?
     let _bag3dWasActive = false;  // vorige _bag3dActive()-stand, voor opnieuw laten 'groeien' bij aan/uit
 
     /** True als de 3D BAG-laag de 3D-weergave verzorgt (anders: extrusie).
@@ -5756,10 +5760,13 @@
       // Per pand het laagste punt naar z=0 (vlakke kaart → geen NAP-/geoïde-correctie nodig).
       for (let i = 0; i < nv; i++) pos[i*3+2] -= zMin[F[i] | 0];
 
-      // Panden buiten het studiegebied weglaten (middelpunt van de ENU-bbox).
+      // Panden weglaten die het studiegebied niet overlappen (bbox-overlap,
+      // niet enkel het middelpunt van de ENU-bbox — zie _b3StudyFilter).
       const mPerDegLat = _B3_A * _B3_D2R, mPerDegLon = mPerDegLat * Math.cos(lat0 * _B3_D2R);
-      const kept = fb.map(b => isFinite(b[0]) &&
-        keep(lon0 + (b[0] + b[2]) / 2 / mPerDegLon, lat0 + (b[1] + b[3]) / 2 / mPerDegLat));
+      const kept = fb.map(b => isFinite(b[0]) && keep([
+        lon0 + b[0] / mPerDegLon, lat0 + b[1] / mPerDegLat,
+        lon0 + b[2] / mPerDegLon, lat0 + b[3] / mPerDegLat,
+      ]));
 
       // #19: kleuren [gevel, schuin dak, plat dak] per pand — expliciet uit de
       // tegel (bag-panden-fetcher) met terugval op het periode-palet; zie
@@ -5851,17 +5858,53 @@
       return polys;
     }
 
-    /** Filter 'ligt in het studiegebied' voor een punt: STUDY-zonepolygonen
-     *  (zelfde regel als de server-side panden-filter), fail-open naar de bbox. */
+    /** True als lijnstuk p1-p2 lijnstuk p3-p4 kruist (zelfde test als de
+     *  server-side _segments_intersect in buildings_fetcher_core.py). */
+    function _b3SegmentsIntersect(p1, p2, p3, p4) {
+      const side = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+      const d1 = side(p3, p4, p1), d2 = side(p3, p4, p2);
+      const d3 = side(p1, p2, p3), d4 = side(p1, p2, p4);
+      return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0);
+    }
+
+    /** True als de axis-aligned bbox [minLon, minLat, maxLon, maxLat] de polygon
+     *  `rings` (buitenring + eventuele gaten) overlapt: een hoek van de bbox in
+     *  de zone (buiten de gaten), een hoekpunt van de zone-buitenring in de
+     *  bbox, of een rand van de bbox die een rand van de zone-buitenring
+     *  kruist. Zelfde aanpak als _ring_overlaps_polygon in
+     *  buildings_fetcher_core.py, maar met de bbox van het pand i.p.v. zijn
+     *  echte voetafdruk (die is hier niet voorhanden — alleen mesh-vertices). */
+    function _b3BboxOverlapsPolygon([x0, y0, x1, y1], rings) {
+      const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+      const outer = rings[0], holes = rings.slice(1);
+      for (const [x, y] of corners) {
+        if (_pointInPolygon(x, y, outer) && !holes.some(h => _pointInPolygon(x, y, h))) return true;
+      }
+      for (const [x, y] of outer) {
+        if (x >= x0 && x <= x1 && y >= y0 && y <= y1) return true;
+      }
+      for (let i = 0; i < 4; i++) {
+        const a1 = corners[i], a2 = corners[(i + 1) % 4];
+        for (let j = 0; j < outer.length; j++) {
+          if (_b3SegmentsIntersect(a1, a2, outer[j], outer[(j + 1) % outer.length])) return true;
+        }
+      }
+      return false;
+    }
+
+    /** Filter 'overlapt het studiegebied' voor de bbox (lon/lat) van een pand:
+     *  STUDY-zonepolygonen (zelfde regel als de server-side panden-filter, zie
+     *  filter_features_to_zone_class in buildings_fetcher_core.py), fail-open
+     *  naar de tegel-bbox. Test overlap i.p.v. een enkel representatief punt:
+     *  bij grote, niet-convexe panden (vleugels rond een binnenplaats, zoals
+     *  een kazerne) ligt het midden van de bbox soms buiten het pand zelf,
+     *  waardoor zo'n pand anders ten onrechte wegviel. */
     function _b3StudyFilter(bbox) {
       const polys = _b3StudyPolys();
       if (!polys.length) {
-        return (lon, lat) => lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
+        return pandBbox => _b3Overlaps(pandBbox, bbox);
       }
-      return (lon, lat) => polys.some(p =>
-        lon >= p.bb[0] && lon <= p.bb[2] && lat >= p.bb[1] && lat <= p.bb[3] &&
-        _pointInPolygon(lon, lat, p.rings[0]) &&
-        !p.rings.slice(1).some(h => _pointInPolygon(lon, lat, h)));
+      return pandBbox => polys.some(p => _b3Overlaps(pandBbox, p.bb) && _b3BboxOverlapsPolygon(pandBbox, p.rings));
     }
 
     /** Start de 3D BAG-weergave: eenmalig de tegel-index binnen het

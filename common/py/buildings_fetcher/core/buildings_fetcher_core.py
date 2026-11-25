@@ -11,8 +11,8 @@ Publieke API
         Converteert ruwe Overpass-elementen naar GeoJSON Feature-dicts.
 
     filter_features_to_zone_class(data, zone_fc, zone_class)
-        Houdt alleen features over met een representatief punt binnen een zone
-        van de opgegeven klasse (bv. "STUDY"), zodat gebouwen uit de (veel
+        Houdt alleen features over waarvan de voetafdruk een zone van de
+        opgegeven klasse (bv. "STUDY") overlapt, zodat gebouwen uit de (veel
         bredere) invloedsgebied-zones niet in de viewer belanden.
 
 Constanten
@@ -195,48 +195,46 @@ def _ring_bbox(ring: list) -> tuple:
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def point_in_polygons(px: float, py: float, polygons: list) -> bool:
-    """True als (px, py) binnen één van de polygonen ligt. Elke polygon is een
-    lijst rings (buitenring + eventuele gaten, zoals geleverd door `_polygon_rings`);
-    een punt telt mee als het wél in de buitenring maar in geen enkel gat ligt."""
-    for rings in polygons:
-        if not rings or not rings[0]:
-            continue
-        if not py_pip(px, py, rings[0]):
-            continue
-        if any(py_pip(px, py, hole) for hole in rings[1:]):
-            continue
-        return True
+def _segments_intersect(p1, p2, p3, p4) -> bool:
+    """True als lijnstuk p1-p2 het lijnstuk p3-p4 kruist (bedoeld als overlap-
+    test tussen twee polygonranden, geen exacte-rakingslogica nodig)."""
+    def side(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    d1, d2 = side(p3, p4, p1), side(p3, p4, p2)
+    d3, d4 = side(p1, p2, p3), side(p1, p2, p4)
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0))
+
+
+def _ring_overlaps_polygon(ring: list, rings: list) -> bool:
+    """True als de (buiten)ring `ring` van een gebouw-voetafdruk de polygon
+    `rings` (buitenring + eventuele gaten, van een zone) overlapt: een
+    hoekpunt van het gebouw in de zone (buiten de gaten), een hoekpunt van de
+    zone-buitenring in het gebouw, of een rand van het gebouw die een rand
+    van de zone-buitenring kruist. Werkt ook voor grote, niet-convexe
+    voetafdrukken (vleugels rond een binnenplaats), waarbij een enkel
+    representatief punt soms buiten het gebouw zelf valt."""
+    outer, holes = rings[0], rings[1:]
+    for x, y in ring:
+        if py_pip(x, y, outer) and not any(py_pip(x, y, h) for h in holes):
+            return True
+    for x, y in outer:
+        if py_pip(x, y, ring):
+            return True
+    n, m = len(ring), len(outer)
+    for i in range(n):
+        a1, a2 = ring[i], ring[(i + 1) % n]
+        for j in range(m):
+            if _segments_intersect(a1, a2, outer[j], outer[(j + 1) % m]):
+                return True
     return False
 
 
-def feature_representative_point(feature: dict):
-    """Representatief punt (gemiddelde van de buitenring, of het punt zelf) voor
-    een GeoJSON-feature. Geeft None terug voor niet-ondersteunde geometrietypen
-    (bv. LineString) of lege geometrie. Zelfde aanpak als de centroid-berekening
-    in `elements_to_building_features` hierboven (bedoeld voor de landuse-join)."""
-    geom = feature.get("geometry") or {}
-    gtype = geom.get("type")
-    coords = geom.get("coordinates")
-    if not coords:
-        return None
-    if gtype == "Point":
-        return coords[0], coords[1]
-    if gtype == "Polygon":
-        ring = coords[0]
-    elif gtype == "MultiPolygon":
-        ring = max((poly[0] for poly in coords if poly), key=len, default=None)
-        if ring is None:
-            return None
-    else:
-        return None
-    n = len(ring) - 1 if len(ring) > 1 and ring[0] == ring[-1] else len(ring)
-    if n <= 0:
-        return None
-    return (
-        sum(p[0] for p in ring[:n]) / n,
-        sum(p[1] for p in ring[:n]) / n,
-    )
+def feature_footprint_parts(feature: dict) -> list:
+    """Geeft de voetafdruk van een GeoJSON-feature terug als lijst van
+    buitenringen (één per polygoondeel; gaten in het gebouw zelf tellen niet
+    mee voor een overlap-test). Lege lijst voor niet-ondersteunde
+    geometrietypen (bv. LineString) of lege geometrie."""
+    return [rings[0] for rings in _polygon_rings(feature.get("geometry") or {}) if rings and rings[0]]
 
 
 def zone_class_polygons(zone_fc: dict | None, zone_class: str) -> list:
@@ -254,8 +252,12 @@ def zone_class_polygons(zone_fc: dict | None, zone_class: str) -> list:
 
 
 def filter_features_to_zone_class(data: dict, zone_fc: dict | None, zone_class: str) -> dict:
-    """Beperkt `data["features"]` tot features waarvan het representatieve punt
-    binnen een zone van `zone_class` ligt (bv. de STUDY-zones van het gebied).
+    """Beperkt `data["features"]` tot features waarvan de voetafdruk een zone
+    van `zone_class` overlapt (bv. de STUDY-zones van het gebied) — niet enkel
+    een representatief punt: bij grote, niet-convexe panden (vleugels rond een
+    binnenplaats, zoals een kazerne) kan zo'n punt buiten het gebouw zelf
+    vallen, waardoor het hele pand ten onrechte wegviel terwijl het
+    grotendeels in het gebied ligt.
 
     Fail-open: als er geen zones van die klasse gevonden worden (geen ZONE-bestand,
     oud bestand zonder zoneClass-metadata, …) wordt `data` ongewijzigd teruggegeven
@@ -269,16 +271,21 @@ def filter_features_to_zone_class(data: dict, zone_fc: dict | None, zone_class: 
         return data
     kept = []
     for feat in data.get("features", []):
-        pt = feature_representative_point(feat)
-        if pt is None:
+        parts = feature_footprint_parts(feat)
+        if not parts:
             continue
-        px, py = pt
-        for z in zones:
-            minx, miny, maxx, maxy = z["bbox"]
-            if px < minx or px > maxx or py < miny or py > maxy:
-                continue
-            if point_in_polygons(px, py, [z["rings"]]):
-                kept.append(feat)
+        for ring in parts:
+            bx0, by0, bx1, by1 = _ring_bbox(ring)
+            matched = False
+            for z in zones:
+                minx, miny, maxx, maxy = z["bbox"]
+                if bx1 < minx or bx0 > maxx or by1 < miny or by0 > maxy:
+                    continue
+                if _ring_overlaps_polygon(ring, z["rings"]):
+                    kept.append(feat)
+                    matched = True
+                    break
+            if matched:
                 break
     result = dict(data)
     result["features"] = kept

@@ -1302,6 +1302,31 @@
     document.getElementById('mapContainer').style.height = _vpHeight + 'px';
   }
 
+  // Basiskaart-tegels (CartoDB/OpenFreeMap/ArcGIS) lopen via een lokale
+  // disk-cache-proxy (/map-proxy, zie server.py), zodat een demo met een
+  // zwakke internetverbinding na een eerste warme run niet opnieuw bij deze
+  // externe CDN's hoeft aan te kloppen.
+  // Buiten het "geen areaId"-blok gedefinieerd: wordt ook gebruikt door
+  // openNewScreen() en de hoofdkaart, die buiten dat blok liggen.
+  const MAP_PROXY_HOSTS = new Set([
+    'basemaps.cartocdn.com',
+    'tiles.basemaps.cartocdn.com',
+    'tiles.openfreemap.org',
+    'server.arcgisonline.com',
+  ]);
+  function mapProxyTransformRequest(url, _resourceType) {
+    try {
+      const u = new URL(url, window.location.href);
+      if (MAP_PROXY_HOSTS.has(u.hostname)) {
+        // Absolute URL: tegel-tegels worden in een worker geparsed, en die
+        // kan een relatieve '/map-proxy?...'-URL niet altijd tegen de juiste
+        // base oplossen (lokaal origin → "Failed to construct 'Request'").
+        return { url: window.location.origin + '/map-proxy?url=' + encodeURIComponent(url) };
+      }
+    } catch (_e) { /* relatieve of ongeldige URL: ongemoeid laten */ }
+    return { url };
+  }
+
   // ── Geen areaId: toon keuzescherm (menu-paneel + kaart, zoals bij een gebied) ──
   if (!AREA_ID) {
     document.getElementById('loader').style.display = 'none';
@@ -1496,26 +1521,6 @@
     function hideScenarioTooltip() {
       _tooltipToken++;
       scenarioTooltip.style.display = 'none';
-    }
-
-    // Basiskaart-tegels (CartoDB/OpenFreeMap/ArcGIS) lopen via een lokale
-    // disk-cache-proxy (/map-proxy, zie server.py), zodat een demo met een
-    // zwakke internetverbinding na een eerste warme run niet opnieuw bij deze
-    // externe CDN's hoeft aan te kloppen.
-    const MAP_PROXY_HOSTS = new Set([
-      'basemaps.cartocdn.com',
-      'tiles.basemaps.cartocdn.com',
-      'tiles.openfreemap.org',
-      'server.arcgisonline.com',
-    ]);
-    function mapProxyTransformRequest(url, _resourceType) {
-      try {
-        const u = new URL(url, window.location.href);
-        if (MAP_PROXY_HOSTS.has(u.hostname)) {
-          return { url: '/map-proxy?url=' + encodeURIComponent(url) };
-        }
-      } catch (_e) { /* relatieve of ongeldige URL: ongemoeid laten */ }
-      return { url };
     }
 
     // Lichte overzichtskaart (geen 3D/deck.gl nodig zonder gekozen gebied)
