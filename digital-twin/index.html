@@ -306,17 +306,6 @@
     </div>
   </div>
 
-  <!-- Counter-paneel (voertuigtellers per wegvak) -->
-  <div id="counterPanel">
-    <div id="cpHeader">
-      <span data-i18n="counterPanelTitle">Voertuigtellers</span>
-      <button id="cpClose">×</button>
-    </div>
-    <div id="cpBody">
-      <div class="cp-hint" id="cpHint" data-i18n="counterHint">Klik op een wegvak om een teller te plaatsen.</div>
-    </div>
-  </div>
-
   <!-- Debug-paneel (rechts onder toolbar, verborgen tot DBG-knop) -->
   <div id="debugPanel">
     <div class="dbg-head">Gebied</div>
@@ -638,10 +627,25 @@
         </div>
         <div class="lmp-block-body" id="analysisPanelBody">
           <div class="sim-row">
-            <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak">&#8644;</button>
+            <!-- selectedLinkBtn blijft in de DOM (niet verwijderd): whatifRc/odEdit roepen
+                 'selectedLinkBtn'.click() aan om deze modus te deactiveren bij het wisselen
+                 van modus; alleen uit dit paneel gehaald, niet uit de app. -->
+            <button class="tb-btn" id="selectedLinkBtn" data-i18n-title="selectedLinkTitle" title="Herkomst/bestemming per wegvak" style="display:none">&#8644;</button>
             <button class="tb-btn" id="counterBtn" data-i18n-title="counterBtnTitle" title="Voertuigteller">⊕</button>
           </div>
-          <div class="sim-row">
+
+          <!-- ── Voertuigteller-paneel (inline onder de knoppenrij, net als de aanpassing-wizards) ── -->
+          <div id="counterPanel">
+            <div id="cpHeader">
+              <span data-i18n="counterPanelTitle">Voertuigtellers</span>
+              <button id="cpClose">×</button>
+            </div>
+            <div id="cpBody">
+              <div class="cp-hint" id="cpHint" data-i18n="counterHint">Klik op een wegvak om een teller te plaatsen.</div>
+            </div>
+          </div>
+
+          <div class="sim-row" style="display:none">
             <!-- Scenario-vergelijker (alleen zichtbaar als er een bronscenario is) -->
             <button class="tb-btn" id="splitViewBtn" data-i18n-title="splitViewTitle"
                     title="ScenarioVergelijker" style="display:none">⧉</button>

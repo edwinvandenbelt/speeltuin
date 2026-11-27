@@ -1459,17 +1459,15 @@
     }
     .dbg-head:first-child { margin-top: 0; }
 
-    /* ── Voertuigteller-paneel ───────────────────────────────────── */
+    /* ── Voertuigteller-paneel (inline sub-paneel, net als de aanpassing-wizards) ── */
     #counterPanel {
       display: none;
-      position: fixed;
-      top: 52px;
-      z-index: 30;
-      width: 290px;
+      width: auto;
+      margin: 2px 0 4px 0;
       background: #ffffff;
       border: 1px solid var(--ga-lijn);
       border-radius: var(--ga-radius);
-      box-shadow: var(--ga-schaduw-zwevend);
+      font-family: var(--ga-font), system-ui, sans-serif;
       overflow: hidden;
     }
     #counterPanel.cp-visible { display: block; }

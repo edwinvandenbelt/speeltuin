@@ -19158,9 +19158,6 @@
     const counterPanel = document.getElementById('counterPanel');
 
     function _openCounterPanel() {
-      const r = counterBtn.getBoundingClientRect();
-      counterPanel.style.top  = (r.bottom + 4) + 'px';
-      counterPanel.style.left = Math.min(r.left, window.innerWidth - 302) + 'px';
       counterPanel.classList.add('cp-visible');
       _updateCounterPanel();
     }
