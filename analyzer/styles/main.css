@@ -640,6 +640,54 @@
       font-family: var(--ga-font), system-ui, sans-serif;
       box-shadow: var(--ga-schaduw-zwevend);
     }
+
+    /* ── Evenement-wizard sub-paneel (inline onder de aanpassing-knoppen) ── */
+    #eventWizardPopup {
+      display: none;
+      background: var(--ga-vlak);
+      border: 1px solid var(--ga-lijn);
+      border-radius: var(--ga-radius);
+      padding: 10px 12px; width: auto;
+      margin: 2px 0 4px 0;
+      font-family: var(--ga-font), system-ui, sans-serif;
+    }
+    #eventWizardPopup h4 {
+      margin: 0 0 10px;
+      font-size: 11px; color: var(--ga-rood); font-weight: 600;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    #eventWizardHint {
+      font-size: 11px; color: var(--ga-tekst-2); font-style: italic; line-height: 1.5;
+    }
+    #eventWizardTarget {
+      font-size: 12px; color: var(--ga-tekst); font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .event-section { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--ga-lijn); }
+    .event-section:last-of-type { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
+    .event-section-toggle {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--ga-tekst); font-weight: 600;
+      margin-bottom: 10px; cursor: pointer;
+    }
+    .event-section-toggle input { accent-color: var(--ga-rood); width: 14px; height: 14px; flex-shrink: 0; }
+    .event-nextday-toggle {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10px; color: var(--ga-tekst-2);
+      margin-top: 4px; cursor: pointer;
+    }
+    .event-nextday-toggle input { accent-color: var(--ga-rood); width: 12px; height: 12px; flex-shrink: 0; }
+    .event-section-fields {
+      padding-left: 8px; margin-left: 2px;
+      border-left: 2px solid var(--ga-lijn);
+    }
+    .event-section-fields .node-field:last-child { margin-bottom: 0; }
+    #eventWizardPopup .node-field-row input[type="date"],
+    #eventWizardPopup .node-field-row input[type="time"] {
+      flex: 1; min-width: 0; padding: 6px 6px; font-size: 12px;
+    }
+    .event-dist-field { padding-top: 10px; border-top: 1px solid var(--ga-lijn); }
+    #eventWizardBody .node-dialog-btns { margin-top: 14px; }
     #gmtUploadDialog {
       display: none;
       position: fixed;
@@ -753,16 +801,18 @@
       font-size: 12px; cursor: pointer; font-family: var(--ga-font), sans-serif;
       transition: background 0.15s;
     }
-    #nodeDialogOk, #zoneExplodeDialogOk {
+    #nodeDialogOk, #zoneExplodeDialogOk, #eventDialogOk {
       background: var(--ga-rood); color: #ffffff;
       border: 1px solid var(--ga-rood);
     }
-    #nodeDialogOk:hover, #zoneExplodeDialogOk:hover { background: var(--ga-rood-donker); }
-    #nodeDialogCancel, #zoneExplodeDialogCancel {
+    #nodeDialogOk:hover, #zoneExplodeDialogOk:hover, #eventDialogOk:hover { background: var(--ga-rood-donker); }
+    #nodeDialogCancel, #zoneExplodeDialogCancel, #eventDialogCancel {
       background: #ffffff; color: var(--ga-tekst);
       border: 1px solid var(--ga-lijn);
     }
-    #nodeDialogCancel:hover, #zoneExplodeDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+    #nodeDialogCancel:hover, #zoneExplodeDialogCancel:hover, #eventDialogCancel:hover { background: var(--ga-vlak); color: var(--ga-tekst); }
+    /* #eventDialogCancel zit in #eventWizardPopup, dat zelf al --ga-vlak als achtergrond heeft */
+    #eventWizardPopup #eventDialogCancel:hover { background: #ffffff; }
 
     /* ── Wijzigingenlijst (inline sub-paneel onder de aanpassing-knoppen) ──── */
     #changesPanel {
@@ -1503,6 +1553,7 @@
     body.maquette-mode #odEditPanel,
     body.maquette-mode #nodeSelectPopup,
     body.maquette-mode #linkSelectPopup,
+    body.maquette-mode #eventWizardPopup,
     body.maquette-mode #nodeDialog,
     body.maquette-mode #linkDialog,
     body.maquette-mode #linkFlowDialog,
@@ -1522,7 +1573,8 @@
     body.follow-mode #polygonDialog,
     body.follow-mode #linkPolygonDialog,
     body.follow-mode #nodeSelectPopup,
-    body.follow-mode #linkSelectPopup { display: none !important; }
+    body.follow-mode #linkSelectPopup,
+    body.follow-mode #eventWizardPopup { display: none !important; }
 
     #followIndicator {
       position: fixed;

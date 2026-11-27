@@ -643,6 +643,12 @@
                     title="Zone opsplitsen">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 3h7.5v7.5H3z"/><path d="M13.5 3H21v7.5h-7.5z"/><path d="M3 13.5h18V21H3z"/></svg>
             </button>
+            <!-- Evenement toevoegen -->
+            <button class="tb-btn edit-btn" id="eventEditBtn"
+                    data-i18n-title="eventEditBtnTitle"
+                    title="Evenement toevoegen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3l2.47 5.01 5.53.8-4 3.9.94 5.5L12 15.77 7.06 18.2l.94-5.5-4-3.9 5.53-.8z"/></svg>
+            </button>
             </div>
             <!-- Maatregelsets importeren -->
             <button class="tb-btn" id="measureSetBtn"
@@ -692,6 +698,93 @@
             <div id="linkPolygonHint" data-i18n="linkPolygonHint">Klik om hoekpunten te plaatsen. Gebruik 'Afsluiten' als de polygon klaar is.</div>
             <button class="link-poly-ctrl-btn" id="linkPolygonFinishBtn" data-i18n="linkPolygonFinishBtn">&#10003; Polygon afsluiten</button>
             <button class="link-poly-ctrl-btn" id="linkPolygonClearBtn" data-i18n="linkPolygonClearBtn">&#10005; Wis polygon</button>
+          </div>
+
+          <!-- ── Evenement-wizard sub-paneel (inline, alleen tijdens evenement-aanpassing) ── -->
+          <div id="eventWizardPopup">
+            <h4 data-i18n="eventDialogDefault">Evenement</h4>
+            <div id="eventWizardHint" data-i18n="eventWizardHint">Klik een knoop of zone om een evenement toe te voegen.</div>
+            <div id="eventWizardBody" style="display:none">
+              <div id="eventWizardTarget"></div>
+
+              <div class="event-section">
+                <label class="event-section-toggle">
+                  <input type="checkbox" id="eventArrivalEnabled"/>
+                  <span data-i18n="eventArrivalLabel">Aankomst (toestroom)</span>
+                </label>
+                <div class="event-section-fields" id="eventArrivalFields">
+                  <div class="node-field">
+                    <label><span data-i18n="fspDateLabel">Datum</span></label>
+                    <div class="node-field-row"><input type="date" id="eventArrivalDate"/></div>
+                  </div>
+                  <div class="node-field">
+                    <label><span data-i18n="eventFromLabel">Vanaf</span> / <span data-i18n="eventToLabel">Tot</span></label>
+                    <div class="node-field-row">
+                      <input type="time" id="eventArrivalStart"/>
+                      <input type="time" id="eventArrivalEnd"/>
+                    </div>
+                    <label class="event-nextday-toggle">
+                      <input type="checkbox" id="eventArrivalNextDay"/>
+                      <span data-i18n="eventNextDayLabel">Eindigt de volgende dag</span>
+                    </label>
+                  </div>
+                  <div class="node-field">
+                    <label><span data-i18n="nodeDialogAttr">Attractie</span> <span class="field-hint" data-i18n="nodeDialogAttrHint">+300 = delta &nbsp;|&nbsp; 800 = absoluut (≥0)</span></label>
+                    <div class="node-field-row">
+                      <button id="eventAttrMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
+                      <input type="text" id="eventAttrVal" placeholder="+2000 of 2000" data-i18n-ph="nodeDialogAttrPh"/>
+                      <button id="eventAttrPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="event-section">
+                <label class="event-section-toggle">
+                  <input type="checkbox" id="eventDepartureEnabled"/>
+                  <span data-i18n="eventDepartureLabel">Vertrek (uitstroom)</span>
+                </label>
+                <div class="event-section-fields" id="eventDepartureFields">
+                  <div class="node-field">
+                    <label><span data-i18n="fspDateLabel">Datum</span></label>
+                    <div class="node-field-row"><input type="date" id="eventDepartureDate"/></div>
+                  </div>
+                  <div class="node-field">
+                    <label><span data-i18n="eventFromLabel">Vanaf</span> / <span data-i18n="eventToLabel">Tot</span></label>
+                    <div class="node-field-row">
+                      <input type="time" id="eventDepartureStart"/>
+                      <input type="time" id="eventDepartureEnd"/>
+                    </div>
+                    <label class="event-nextday-toggle">
+                      <input type="checkbox" id="eventDepartureNextDay"/>
+                      <span data-i18n="eventNextDayLabel">Eindigt de volgende dag</span>
+                    </label>
+                  </div>
+                  <div class="node-field">
+                    <label><span data-i18n="nodeDialogProd">Productie</span> <span class="field-hint" data-i18n="nodeDialogProdHint">+300 = delta &nbsp;|&nbsp; 1200 = absoluut (≥0)</span></label>
+                    <div class="node-field-row">
+                      <button id="eventProdMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
+                      <input type="text" id="eventProdVal" placeholder="+1800 of 1800" data-i18n-ph="nodeDialogProdPh"/>
+                      <button id="eventProdPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="node-field event-dist-field">
+                <label><span data-i18n="eventDistLabel">Gemiddelde reisafstand (km)</span> <span class="field-hint" data-i18n="eventDistHint">bepaalt spreiding over zones</span></label>
+                <div class="node-field-row">
+                  <button id="eventDistMinus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-minus"/></svg></button>
+                  <input type="text" id="eventDistVal" placeholder="25" data-i18n-ph="eventDistPh"/>
+                  <button id="eventDistPlus"><svg class="ga-icon" aria-hidden="true"><use href="#ga-i-plus"/></svg></button>
+                </div>
+              </div>
+
+              <div class="node-dialog-btns">
+                <button id="eventDialogCancel" data-i18n="eventWizardResetBtn">Andere selectie</button>
+                <button id="eventDialogOk" data-i18n="eventWizardAddBtn">+ Toevoegen</button>
+              </div>
+            </div>
           </div>
 
           <!-- ── Wijzigingenlijst (tijdelijk, alleen zichtbaar bij openstaande aanpassingen) ── -->

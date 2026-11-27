@@ -128,6 +128,15 @@
       zoneExplodeBtnTitle:'Zone opsplitsen',
       zoneExplodeDialogDefault:'Zone opsplitsen', zoneExplodeDialogCount:'Aantal delen',
       zoneExplodeDialogHint:'minimaal 2', zoneExplodeDialogPh:'bijv. 3',
+      // Evenement-wizard
+      eventEditBtnTitle:'Evenement toevoegen',
+      eventDialogDefault:'Evenement',
+      eventWizardHint:'Klik een knoop of zone om een evenement toe te voegen.',
+      eventWizardResetBtn:'Andere selectie', eventWizardAddBtn:'+ Toevoegen',
+      eventArrivalLabel:'Aankomst (toestroom)', eventDepartureLabel:'Vertrek (uitstroom)',
+      eventFromLabel:'Vanaf', eventToLabel:'Tot', eventNextDayLabel:'Eindigt de volgende dag',
+      eventDistLabel:'Gemiddelde reisafstand (km)', eventDistHint:'bepaalt spreiding over zones',
+      eventDistPh:'25',
       // Gedeeld dialoog
       dialogCancel:'Annuleren', dialogOk:'OK',
       // Wijzigingenlijst
@@ -138,6 +147,8 @@
       changeCapLabel: (v, u) => `cap: ${v} ${u}`, changeSpeedLabel: v => `snelh: ${v} km/h`,
       changeProdLabel: v => `prod: ${v}`, changeAttrLabel: v => `attr: ${v}`,
       changeExplodeLabel: n => `opsplitsen \u00d7${n}`,
+      changeEventArrivalLabel: (s, e, nd) => `aankomst ${s}\u2013${e}${nd ? ' (+1d)' : ''}`,
+      changeEventDepartureLabel: (s, e, nd) => `vertrek ${s}\u2013${e}${nd ? ' (+1d)' : ''}`,
       changeItemDel:'Verwijder',
       noChanges:'Geen wijzigingen', viewChangesBtnTitle:'Wijzigingen bekijken',
       changesPendingSection:'Openstaand',
@@ -6501,6 +6512,7 @@
     let linkFlowEditActive = false;
     let linkAddActive  = false;        // Nieuw wegvak intekenen
     let zoneExplodeActive = false;     // Zone opsplitsen (explode)
+    let eventEditActive = false;       // Evenement toevoegen (hergebruikt NODE_LAYER)
     let linkAddVertices = [];          // [[lon,lat], ...] vertices van de lijn in aanbouw
     let _linkAddMouseCoord = null;     // huidige muispositie (rubberbanding)
     // ── Selected Link Analysis — state ──────────────────────────────────────
@@ -9407,12 +9419,17 @@
 
         map.on('click', NODE_LAYER, e => {
           const f = e.features[0];
+          if (eventEditActive) {
+            _selectEventTarget(f);
+            e.originalEvent.stopPropagation();
+            return;
+          }
           if (!nodeEditActive || nodeSelectMode !== 'click') return;
           openNodeDialog(f, e.point);
           e.originalEvent.stopPropagation();
         });
         map.on('mouseenter', NODE_LAYER, () => {
-          if (nodeEditActive && nodeSelectMode === 'click') map.getCanvas().style.cursor = 'pointer';
+          if (eventEditActive || (nodeEditActive && nodeSelectMode === 'click')) map.getCanvas().style.cursor = 'pointer';
         });
         map.on('mouseleave', NODE_LAYER, () => {
           map.getCanvas().style.cursor =
@@ -10130,6 +10147,97 @@
       activeZoneExplodeFeature = null;
     }
 
+    // ── Evenement-wizard (inline sub-paneel in het Aanpassingen-blok) ────────
+    // In tegenstelling tot de node-/zone-explode-dialogen is dit géén los,
+    // bij het klikpunt gepositioneerd venster (dat liep makkelijk buiten
+    // beeld) maar een vast sub-paneel onder de aanpassing-knoppen, net als
+    // #nodeSelectPopup / #linkSelectPopup.
+
+    let activeEventFeature = null;
+    // Zolang de gebruiker Productie niet zelf heeft aangepast, wordt de
+    // waarde van Attractie er automatisch in gekopieerd (ze zijn normaliter
+    // gelijk) — zie de 'input'-listener op eventAttrVal hieronder.
+    let _eventProdManuallyEdited = false;
+
+    function _updateEventSectionVisibility() {
+      document.getElementById('eventArrivalFields').style.display =
+        document.getElementById('eventArrivalEnabled').checked ? 'block' : 'none';
+      document.getElementById('eventDepartureFields').style.display =
+        document.getElementById('eventDepartureEnabled').checked ? 'block' : 'none';
+    }
+    document.getElementById('eventArrivalEnabled').addEventListener('change', _updateEventSectionVisibility);
+    document.getElementById('eventDepartureEnabled').addEventListener('change', _updateEventSectionVisibility);
+
+    document.getElementById('eventAttrVal').addEventListener('input', () => {
+      if (_eventProdManuallyEdited) return;
+      document.getElementById('eventProdVal').value = document.getElementById('eventAttrVal').value;
+    });
+    document.getElementById('eventProdVal').addEventListener('input', () => {
+      _eventProdManuallyEdited = true;
+    });
+
+    /** Reset de wizard naar de wachtstand ("klik een knoop of zone…"). */
+    function _resetEventWizard() {
+      activeEventFeature = null;
+      document.getElementById('eventWizardHint').style.display = 'block';
+      document.getElementById('eventWizardBody').style.display = 'none';
+    }
+
+    /** Vul de wizard met de aangeklikte knoop/zone (nieuw of bestaande wijziging). */
+    function _selectEventTarget(feature) {
+      activeEventFeature = feature;
+      const p = feature.properties;
+      document.getElementById('eventWizardTarget').textContent = p.zoneName || p.zoneId;
+
+      const existing = pendingChanges.find(c => c._isEvent && (c.zoneId ?? c.nodeId) === p.zoneId);
+      // Standaard de simulatiedatum (Simulatieblok, #fspDate) voorinvullen zodat
+      // de gebruiker bij een nieuw evenement niet steeds dezelfde datum hoeft te kiezen.
+      const simDate = document.getElementById('fspDate').value || '';
+
+      const arrival = existing?.arrival ?? null;
+      document.getElementById('eventArrivalEnabled').checked = !!arrival;
+      document.getElementById('eventArrivalDate').value  = arrival?.date ?? simDate;
+      document.getElementById('eventArrivalStart').value = arrival?.startTime ?? '';
+      document.getElementById('eventArrivalEnd').value   = arrival?.endTime ?? '';
+      document.getElementById('eventArrivalNextDay').checked =
+        !!(arrival?.endDate && arrival.endDate !== arrival.date);
+      document.getElementById('eventAttrVal').value      = existing?.attraction ?? '';
+
+      const departure = existing?.departure ?? null;
+      document.getElementById('eventDepartureEnabled').checked = !!departure;
+      document.getElementById('eventDepartureDate').value  = departure?.date ?? simDate;
+      document.getElementById('eventDepartureStart').value = departure?.startTime ?? '';
+      document.getElementById('eventDepartureEnd').value   = departure?.endTime ?? '';
+      document.getElementById('eventDepartureNextDay').checked =
+        !!(departure?.endDate && departure.endDate !== departure.date);
+      document.getElementById('eventProdVal').value         = existing?.production ?? '';
+      // Bij een bestaand evenement is Productie al een bewuste keuze (ook als
+      // die toevallig gelijk is aan Attractie) — niet opnieuw laten overschrijven.
+      _eventProdManuallyEdited = existing?.production != null;
+
+      document.getElementById('eventDistVal').value = existing?.avgDistanceKm ?? '';
+
+      _updateEventSectionVisibility();
+
+      document.getElementById('eventWizardHint').style.display = 'none';
+      document.getElementById('eventWizardBody').style.display = 'block';
+    }
+
+    /** Bouw een arrival/departure-tijdvak op, inclusief endDate bij "volgende dag". */
+    function _buildEventWindow(dateId, startId, endId, nextDayId) {
+      const date  = document.getElementById(dateId).value;
+      const start = document.getElementById(startId).value;
+      const end   = document.getElementById(endId).value;
+      if (!date || !start || !end) return null;
+      const win = { date, startTime: start, endTime: end };
+      if (document.getElementById(nextDayId).checked) {
+        const d = new Date(`${date}T00:00:00`);
+        d.setDate(d.getDate() + 1);
+        win.endDate = d.toISOString().slice(0, 10);
+      }
+      return win;
+    }
+
     // ── Link-dialoog ─────────────────────────────────────────────────────────
 
     let activeLinkFeature = null;
@@ -10269,6 +10377,21 @@
       inp.value = Math.max(2, cur + 1);
     };
 
+    document.getElementById('eventAttrMinus').onclick = () => stepValue('eventAttrVal', -100);
+    document.getElementById('eventAttrPlus' ).onclick = () => stepValue('eventAttrVal', +100);
+    document.getElementById('eventProdMinus').onclick = () => stepValue('eventProdVal', -100);
+    document.getElementById('eventProdPlus' ).onclick = () => stepValue('eventProdVal', +100);
+    document.getElementById('eventDistMinus').onclick = () => {
+      const inp = document.getElementById('eventDistVal');
+      const cur = parseFloat(inp.value) || 0;
+      inp.value = Math.max(0, cur - 5);
+    };
+    document.getElementById('eventDistPlus' ).onclick = () => {
+      const inp = document.getElementById('eventDistVal');
+      const cur = parseFloat(inp.value) || 0;
+      inp.value = cur + 5;
+    };
+
     document.getElementById('linkCapMinus').onclick = () => {
       const inp = document.getElementById('linkCapVal');
       const step = parseInt(inp.step) || 50;
@@ -10391,6 +10514,55 @@
       _setChangesPanelReadOnly(false);
       renderChangesList();
       closeZoneExplodeDialog();
+    };
+
+    // "Andere selectie": wizard terug naar wachtstand, modus blijft actief.
+    document.getElementById('eventDialogCancel').onclick = () => _resetEventWizard();
+
+    document.getElementById('eventDialogOk').onclick = () => {
+      if (!activeEventFeature) return;
+      const p = activeEventFeature.properties;
+      const featureId = p.zoneId;
+
+      const arrivalOn   = document.getElementById('eventArrivalEnabled').checked;
+      const departureOn = document.getElementById('eventDepartureEnabled').checked;
+      if (!arrivalOn && !departureOn) { _resetEventWizard(); return; }
+
+      const distRaw = document.getElementById('eventDistVal').value.trim();
+      const avgDistanceKm = parseFloat(distRaw);
+      if (!distRaw || isNaN(avgDistanceKm) || avgDistanceKm <= 0) { _resetEventWizard(); return; }
+
+      const isNetworkNode = p.zoneClass === 'NETWORK_NODE';
+      const change = isNetworkNode ? { nodeId: p.zoneId } : { zoneId: p.zoneId };
+
+      if (arrivalOn) {
+        const win  = _buildEventWindow('eventArrivalDate', 'eventArrivalStart', 'eventArrivalEnd', 'eventArrivalNextDay');
+        const attr = document.getElementById('eventAttrVal').value.trim();
+        if (!win || !attr) { _resetEventWizard(); return; }
+        change.arrival    = win;
+        change.attraction = attr;
+      }
+      if (departureOn) {
+        const win  = _buildEventWindow('eventDepartureDate', 'eventDepartureStart', 'eventDepartureEnd', 'eventDepartureNextDay');
+        const prod = document.getElementById('eventProdVal').value.trim();
+        if (!win || !prod) { _resetEventWizard(); return; }
+        change.departure  = win;
+        change.production = prod;
+      }
+      change.avgDistanceKm = avgDistanceKm;
+      change._label      = p.zoneName || p.zoneId;
+      change._zoneClass  = p.zoneClass;
+      change._isEvent    = true;
+
+      pendingChanges = pendingChanges.filter(c => !(c._isEvent && (c.zoneId ?? c.nodeId) === featureId));
+      pendingChanges.push(change);
+
+      _setChangesPanelReadOnly(false);
+      renderChangesList();
+
+      // Afgerond: schakel de evenement-toevoegmodus weer uit (de knop-handler
+      // verzorgt ook het verbergen van het paneel, de node-laag en de reset).
+      document.getElementById('eventEditBtn').click();
     };
 
     // ── Wijzigingenlijst ────────────────────────────────────────────────────
@@ -10608,6 +10780,11 @@
           parts.push(T('changeOdTripsLabel', trips));
         } else if (c._isZoneExplode) {
           parts.push(T('changeExplodeLabel', c.explodeInto));
+        } else if (c._isEvent) {
+          if (c.arrival)   parts.push(T('changeEventArrivalLabel', c.arrival.startTime, c.arrival.endTime,
+            !!(c.arrival.endDate && c.arrival.endDate !== c.arrival.date)));
+          if (c.departure) parts.push(T('changeEventDepartureLabel', c.departure.startTime, c.departure.endTime,
+            !!(c.departure.endDate && c.departure.endDate !== c.departure.date)));
         } else {
           if (c.production != null) parts.push(T('changeProdLabel', fmt(c.production)));
           if (c.attraction != null) parts.push(T('changeAttrLabel', fmt(c.attraction)));
@@ -10736,6 +10913,15 @@
         }
         if (c._isZoneExplode) {
           return { zoneId: c.zoneId, explodeInto: c.explodeInto };
+        }
+        if (c._isEvent) {
+          const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
+          if (c.arrival)   obj.arrival = c.arrival;
+          if (c.departure) obj.departure = c.departure;
+          if (c.attraction != null) obj.attraction = c.attraction;
+          if (c.production != null) obj.production = c.production;
+          obj.avgDistanceKm = c.avgDistanceKm;
+          return obj;
         }
         const obj = c.nodeId ? { nodeId: c.nodeId } : { zoneId: c.zoneId };
         if (c.production != null) obj.production = c.production;
@@ -11826,6 +12012,7 @@
       if (linkEditActive)     document.getElementById('linkEditBtn').click();
       if (selectedLinkActive) document.getElementById('selectedLinkBtn').click();
       if (zoneExplodeActive)  document.getElementById('zoneExplodeBtn').click();
+      if (eventEditActive)    document.getElementById('eventEditBtn').click();
       deactivateWhatifRc();
 
       if (odEditActive) {
@@ -11957,9 +12144,10 @@
     // ── Node-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('nodeEditBtn').addEventListener('click', () => {
-      // Zet link-edit, zone-explode en what-if uit als die actief waren
+      // Zet link-edit, zone-explode, evenement en what-if uit als die actief waren
       if (linkEditActive) document.getElementById('linkEditBtn').click();
       if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      if (eventEditActive) document.getElementById('eventEditBtn').click();
       deactivateWhatifRc();
       nodeEditActive = !nodeEditActive;
       document.getElementById('nodeEditBtn').classList.toggle('active', nodeEditActive);
@@ -11997,6 +12185,7 @@
       if (linkFlowEditActive)  document.getElementById('linkFlowEditBtn').click();
       if (linkAddActive)       document.getElementById('linkAddBtn').click();
       if (odEditActive) document.getElementById('odEditBtn').click();
+      if (eventEditActive) document.getElementById('eventEditBtn').click();
       deactivateWhatifRc();
       zoneExplodeActive = !zoneExplodeActive;
       document.getElementById('zoneExplodeBtn').classList.toggle('active', zoneExplodeActive);
@@ -12013,6 +12202,35 @@
       }
     });
 
+    // ── Evenement-knop ──────────────────────────────────────────────────────
+
+    document.getElementById('eventEditBtn').addEventListener('click', () => {
+      // Zet alle andere aanpassing-tools uit als die actief waren
+      if (nodeEditActive)      document.getElementById('nodeEditBtn').click();
+      if (linkEditActive)      document.getElementById('linkEditBtn').click();
+      if (linkFlowEditActive)  document.getElementById('linkFlowEditBtn').click();
+      if (linkAddActive)       document.getElementById('linkAddBtn').click();
+      if (zoneExplodeActive)   document.getElementById('zoneExplodeBtn').click();
+      if (odEditActive) document.getElementById('odEditBtn').click();
+      deactivateWhatifRc();
+      eventEditActive = !eventEditActive;
+      document.getElementById('eventEditBtn').classList.toggle('active', eventEditActive);
+      document.getElementById('eventEditBtn').innerHTML = eventEditActive ? '✕'
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3l2.47 5.01 5.53.8-4 3.9.94 5.5L12 15.77 7.06 18.2l.94-5.5-4-3.9 5.53-.8z"/></svg>';
+
+      if (eventEditActive) {
+        updateOverlay(false);
+        map.once('idle', addNodeLayer);
+        document.getElementById('eventWizardPopup').style.display = 'block';
+        _resetEventWizard();
+      } else {
+        removeNodeLayer();
+        document.getElementById('eventWizardPopup').style.display = 'none';
+        _resetEventWizard();
+        map.getCanvas().style.cursor = '';
+      }
+    });
+
     // ── Link-edit knop ──────────────────────────────────────────────────────
 
     document.getElementById('linkEditBtn').addEventListener('click', () => {
@@ -12021,6 +12239,7 @@
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       if (linkAddActive) document.getElementById('linkAddBtn').click();
       if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      if (eventEditActive) document.getElementById('eventEditBtn').click();
       deactivateWhatifRc();
       linkEditActive = !linkEditActive;
       document.getElementById('linkEditBtn').classList.toggle('active', linkEditActive);
@@ -12057,6 +12276,7 @@
       if (linkEditActive)  document.getElementById('linkEditBtn').click();
       if (linkAddActive)   document.getElementById('linkAddBtn').click();
       if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      if (eventEditActive) document.getElementById('eventEditBtn').click();
       deactivateWhatifRc();
       linkFlowEditActive = !linkFlowEditActive;
       document.getElementById('linkFlowEditBtn').classList.toggle('active', linkFlowEditActive);
@@ -12082,6 +12302,7 @@
       if (linkEditActive)    document.getElementById('linkEditBtn').click();
       if (linkFlowEditActive) document.getElementById('linkFlowEditBtn').click();
       if (zoneExplodeActive) document.getElementById('zoneExplodeBtn').click();
+      if (eventEditActive) document.getElementById('eventEditBtn').click();
       deactivateWhatifRc();
       linkAddActive = !linkAddActive;
       document.getElementById('linkAddBtn').classList.toggle('active', linkAddActive);

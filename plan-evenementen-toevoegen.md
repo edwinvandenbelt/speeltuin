@@ -32,7 +32,7 @@ functies `openZoneExplodeDialog`/`closeZoneExplodeDialog`, handler
 
 ## Stappen
 
-- [ ] **Stap 1 — Toolbar-knop, dialoog en volledige JS-wiring (NL)**
+- [x] **Stap 1 — Toolbar-knop, dialoog en volledige JS-wiring (NL)**
   - Nieuwe knop `eventEditBtn` in `index.html` (Aanpassingen-paneel, naast
     `zoneExplodeBtn`), eigen icoon.
   - Nieuw dialoogblok `#eventDialog` in `index.html` (na `#zoneExplodeDialog`):
@@ -60,8 +60,42 @@ functies `openZoneExplodeDialog`/`closeZoneExplodeDialog`, handler
     subsecties.
   - **Stop hier voor test/akkoord door gebruiker in de browser.**
 
-- [ ] **Stap 2 — CSS-fijnslijpen**
-  - Eventuele visuele correcties naar aanleiding van de test in Stap 1.
+- [x] **Tussenstap — Wizard geïntegreerd in het Aanpassingen-blok i.p.v. los dialoogvenster**
+  - De evenement-dialoog liep bij een klik dicht bij de vensterrand makkelijk
+    buiten beeld (floating `position:absolute` bij het klikpunt, net als
+    `#nodeDialog`/`#zoneExplodeDialog`). Omgebouwd naar een vast inline
+    sub-paneel `#eventWizardPopup` binnen `#editPanelBody`, net als
+    `#nodeSelectPopup`/`#linkSelectPopup`: toont een wachttekst ("Klik een
+    knoop of zone…") tot er geklikt wordt, vult dan de velden met de
+    geselecteerde knoop/zone.
+  - "Andere selectie" (voorheen Annuleren) zet de wizard terug naar de
+    wachtstand zonder de aanpassing-modus te verlaten.
+  - Na "Toevoegen" wordt de evenement-toevoegmodus automatisch weer
+    uitgeschakeld (knop + node-laag + paneel), zoals gevraagd.
+  - **Stop voor test/akkoord.**
+
+- [x] **Tussenstap — "Tot" op de volgende dag + Attractie kopiëren naar Productie**
+  - Per tijdvak (aankomst/vertrek) een checkbox "Eindigt de volgende dag"
+    toegevoegd; indien aangevinkt wordt een `endDate` (datum + 1 dag) aan het
+    venster-object toegevoegd. `adjust_core._validate_event_adjustment`
+    controleert alleen op de aanwezigheid van `date`/`startTime`/`endTime` en
+    laat extra sleutels ongemoeid — geverifieerd dat een venster met
+    `endDate` nog steeds geldig gevalideerd wordt.
+  - Attractie wordt live gekopieerd naar Productie zolang de gebruiker
+    Productie niet zelf heeft aangepast (per sessie/selectie); bij het openen
+    van een bestaand evenement met een eigen Productie-waarde wordt dat gedrag
+    uitgezet, zodat een bewuste afwijkende waarde niet wordt overschreven.
+    Productie blijft te allen tijde los wijzigbaar.
+  - **Stop voor test/akkoord.**
+
+- [x] **Stap 2 — CSS-fijnslijpen**
+  - Dialoog krijgt `max-height`/`overflow-y:auto` (veiligheidsnet bij kleine vensters).
+  - Visuele scheiding tussen Aankomst/Vertrek-secties (dunne lijn) en een
+    lichte inspringing/linker-accentlijn voor de velden onder elke sectie-
+    checkbox, zodat duidelijk is welke velden bij welke sectie horen.
+  - Datum/tijd-invoervelden iets compacter (`font-size`/`padding`) zodat twee
+    tijdvelden naast elkaar prettig passen in de 300px-brede dialoog.
+  - Scheidingslijn boven het (gedeelde) afstandsveld.
   - **Stop voor akkoord.**
 
 - [ ] **Stap 3 — Engelse en Finse vertalingen**
